@@ -2074,6 +2074,15 @@ QStringList EntityScriptingInterface::getJointNames(const QUuid& entityID) {
     return result;
 }
 
+QVariantMap EntityScriptingInterface::getModelExtras(const QUuid& entityID) {
+    if (!_entityTree) {
+        return QVariantMap();
+    }
+    QVariantMap result;
+    _entityTree->withReadLock([&] { result = _entityTree->getModelExtras(entityID); });
+    return result;
+}
+
 QVector<QUuid> EntityScriptingInterface::getChildrenIDs(const QUuid& parentID) {
     QVector<QUuid> result;
     if (!_entityTree) {

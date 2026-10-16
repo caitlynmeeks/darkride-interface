@@ -113,6 +113,7 @@ public:
     glm::quat inverseBindRotation;
     glm::mat4 bindTransform;
     QString name;
+    QVariantMap extras; // custom properties from the model file, e.g., glTF node extras
     bool isSkeletonJoint;
     bool bindTransformFoundInCluster;
 
@@ -202,6 +203,7 @@ public:
 
     QString materialID;
     QString name;
+    QVariantMap extras; // custom properties from the model file, e.g., glTF material extras
     QString shadingModel;
     graphics::MaterialPointer _material;
 

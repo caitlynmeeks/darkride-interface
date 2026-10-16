@@ -920,6 +920,29 @@ QStringList RenderableModelEntityItem::getJointNames() const {
     return result;
 }
 
+QVariantMap RenderableModelEntityItem::getModelExtras() const {
+    QVariantMap result;
+    auto model = getModel();
+    if (model && model->isActive()) {
+        const HFMModel& hfmModel = model->getHFMModel();
+        QVariantMap objects;
+        for (const auto& joint : hfmModel.joints) {
+            if (!joint.extras.isEmpty()) {
+                objects[joint.name] = joint.extras;
+            }
+        }
+        QVariantMap materials;
+        for (const auto& material : hfmModel.materials) {
+            if (!material.extras.isEmpty()) {
+                materials[material.name] = material.extras;
+            }
+        }
+        result["objects"] = objects;
+        result["materials"] = materials;
+    }
+    return result;
+}
+
 scriptable::ScriptableModelBase render::entities::ModelEntityRenderer::getScriptableModel() {
     auto model = resultWithReadLock<ModelPointer>([this]{ return _model; });
 

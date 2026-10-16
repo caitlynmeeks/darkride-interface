@@ -119,6 +119,7 @@ public:
 
     virtual int getJointIndex(const QString& name) const override;
     virtual QStringList getJointNames() const override;
+    virtual QVariantMap getModelExtras() const override;
 
 private:
     bool needsUpdateModelBounds() const;

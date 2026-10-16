@@ -3292,6 +3292,15 @@ QStringList EntityTree::getJointNames(const QUuid& entityID) const {
     return entity->getJointNames();
 }
 
+QVariantMap EntityTree::getModelExtras(const QUuid& entityID) const {
+    EntityTree* nonConstThis = const_cast<EntityTree*>(this);
+    EntityItemPointer entity = nonConstThis->findEntityByEntityItemID(entityID);
+    if (!entity) {
+        return QVariantMap();
+    }
+    return entity->getModelExtras();
+}
+
 std::function<QObject*(const QUuid&)> EntityTree::_getEntityObjectOperator = nullptr;
 std::function<QSizeF(const QUuid&, const QString&)> EntityTree::_textSizeOperator = nullptr;
 std::function<bool()> EntityTree::_areEntityClicksCapturedOperator = nullptr;

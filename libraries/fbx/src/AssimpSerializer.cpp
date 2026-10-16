@@ -28,6 +28,10 @@
 
 #include <QtGui/QImage>
 #include <QtCore/QBuffer>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QtEndian>
 
 // disabled because it causes crashes with Assimp::DefaultLogger::WriteToStreams
 // #define ENABLE_ASSIMP_LOGGING
@@ -736,6 +740,45 @@ void AssimpSerializer::processScene(const hifi::VariantHash& mapping) {
     processAnimations();
 }
 
+// Assimp drops glTF "extras" (e.g., Blender custom properties), so read the nodes' and materials' extras from the file's
+// JSON and match them to the joints and materials by name.
+void AssimpSerializer::processGltfExtras(const hifi::ByteArray& data) {
+    hifi::ByteArray json = data;
+    if (data.startsWith("glTF")) {
+        // A .glb is a 12-byte header, then the JSON chunk: its length, its type, and the JSON itself.
+        const int JSON_LENGTH_OFFSET = 12;
+        const int JSON_OFFSET = 20;
+        if (data.size() < JSON_OFFSET) {
+            return;
+        }
+        auto jsonLength = qFromLittleEndian<quint32>(data.constData() + JSON_LENGTH_OFFSET);
+        json = data.mid(JSON_OFFSET, jsonLength);
+    }
+    QJsonObject gltf = QJsonDocument::fromJson(json).object();
+
+    auto getExtrasByName = [](const QJsonArray& items) {
+        QHash<QString, QVariantMap> extrasByName;
+        for (const auto& item : items) {
+            QJsonObject object = item.toObject();
+            QString name = object["name"].toString();
+            QJsonObject extras = object["extras"].toObject();
+            if (!name.isEmpty() && !extras.isEmpty()) {
+                extrasByName[name] = extras.toVariantMap();
+            }
+        }
+        return extrasByName;
+    };
+
+    auto nodeExtras = getExtrasByName(gltf["nodes"].toArray());
+    for (auto& joint : hfmModel->joints) {
+        joint.extras = nodeExtras.value(joint.name);
+    }
+    auto materialExtras = getExtrasByName(gltf["materials"].toArray());
+    for (auto& material : hfmModel->materials) {
+        material.extras = materialExtras.value(material.name);
+    }
+}
+
 #ifdef ENABLE_ASSIMP_LOGGING
 class TivoliLogStream : public Assimp::LogStream {
 public:
@@ -811,6 +854,9 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
     }
 
     processScene(mapping);
+    if (ext == "gltf" || ext == "glb") {
+        processGltfExtras(data);
+    }
 
 #ifdef ENABLE_ASSIMP_LOGGING
     Assimp::DefaultLogger::get()->detachStream(&tivoliLogStream, errorSeverity);

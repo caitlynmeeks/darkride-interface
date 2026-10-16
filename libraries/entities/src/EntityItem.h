@@ -536,6 +536,7 @@ public:
 
     virtual int getJointIndex(const QString& name) const { return -1; }
     virtual QStringList getJointNames() const { return QStringList(); }
+    virtual QVariantMap getModelExtras() const { return QVariantMap(); }
 
     virtual void loader() {} // called indirectly when urls for geometry are updated
 

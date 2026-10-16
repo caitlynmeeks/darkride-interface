@@ -1621,6 +1621,41 @@ public slots:
     // FIXME move to a renderable entity interface
     Q_INVOKABLE QStringList getJointNames(const QUuid& entityID);
 
+    /**jsdoc
+     * Gets the custom properties stored in a {@link Entities.EntityProperties-Model|Model} entity's model file: the
+     * <code>extras</code> of a glTF file's nodes and materials. Blender writes an object's or material's custom properties
+     * there when the glTF exporter's "Include &gt; Custom Properties" option is on.
+     * <p>The model is loaded separately by each client from the same file, so every client gets the same values. They aren't
+     * available in server entity scripts, which don't load models.</p>
+     * @function Entities.getModelExtras
+     * @param {Uuid} entityID - The ID of the {@link Entities.EntityProperties-Model|Model} entity.
+     * @returns {Entities.ModelExtras} The custom properties if the entity is a
+     *     {@link Entities.EntityProperties-Model|Model} entity and is loaded, otherwise <code>{}</code>.
+     * @example <caption>Report a model's custom properties.</caption>
+     * entityID = Entities.addEntity({
+     *     type: "Model",
+     *     modelURL: "https://example.com/tagged.glb",
+     *     position: Vec3.sum(MyAvatar.position, Vec3.multiplyQbyV(MyAvatar.orientation, { x: 0, y: 0, z: -5 })),
+     *     lifetime: 300  // Delete after 5 minutes.
+     * });
+     *
+     * Script.setTimeout(function () {
+     *     // Custom properties aren't available until after the model has loaded.
+     *     var extras = Entities.getModelExtras(entityID);
+     *     print("Custom properties: " + JSON.stringify(extras));
+     *     // E.g., { "objects": { "Tree": { "isFoliage": true } }, "materials": { "Leaves": { "sway": 0.2 } } }
+     * }, 2000);
+     */
+    /**jsdoc
+     * The custom properties in a model file.
+     * @typedef {object} Entities.ModelExtras
+     * @property {Object<string, object>} objects - The custom properties of each object (glTF node) that has some, by object
+     *     name. Object names are the model's joint names, per {@link Entities.getJointNames|getJointNames}.
+     * @property {Object<string, object>} materials - The custom properties of each material that has some, by material name.
+     */
+    // FIXME move to a renderable entity interface
+    Q_INVOKABLE QVariantMap getModelExtras(const QUuid& entityID);
+
 
     /**jsdoc
      * Gets the IDs of entities and avatars that are directly parented to an entity or avatar model. To get all descendants, 
