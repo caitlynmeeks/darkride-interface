@@ -20,6 +20,9 @@ if (NOT SERVER_ONLY AND NOT ANDROID)
   add_subdirectory(${DIR})
   set(DIR "openvr-plugin")
   add_subdirectory(${DIR})
+  # OpenXR headsets on Windows, such as a Quest over Link with hand tracking
+  set(DIR "openxr-plugin")
+  add_subdirectory(${DIR})
   set(DIR "oculus-legacy-plugin")
   add_subdirectory(${DIR})
 

@@ -150,10 +150,12 @@ void GL45Backend::do_blit(const Batch& batch, size_t paramOffset) {
     }
 
     // what is copied: the colour, or, from a framebuffer that has none (one depth atlas into another), the depth,
-    // which GL copies only point for point
+    // which GL copies only point for point. A null framebuffer is the window's, which has colour: the HMD preview
+    // copies the window into the preview framebuffer.
     GLbitfield mask = GL_COLOR_BUFFER_BIT;
     GLenum filter = GL_LINEAR;
-    if (!srcframebuffer->hasColor() && srcframebuffer->hasDepth() && dstframebuffer->hasDepth()) {
+    if (srcframebuffer && dstframebuffer && !srcframebuffer->hasColor() && srcframebuffer->hasDepth() &&
+        dstframebuffer->hasDepth()) {
         mask = GL_DEPTH_BUFFER_BIT;
         filter = GL_NEAREST;
     }

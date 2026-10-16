@@ -1,0 +1,7 @@
+{
+  "name": "openxr-loader",
+  "version-string": "1.1.62",
+  "description": "The Khronos OpenXR loader, which finds the active OpenXR runtime (Meta Quest Link, SteamVR, Monado...)",
+  "homepage": "https://github.com/KhronosGroup/OpenXR-SDK",
+  "supports": "!android & !uwp"
+}

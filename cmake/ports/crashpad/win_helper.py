@@ -198,15 +198,24 @@ class WinTool(object):
       from_env = os.environ.get('VSINSTALLDIR')
       if from_env and os.path.exists(os.path.join(from_env, setenv_path)):
         return from_env, setenv_path
+      # The Visual Studio whose environment this runs in (hifi_vcpkg.py loads one with the compiler it
+      # builds with), which has the MSVC version asked for below; the newest one may not
+      vcvarsall_path = os.path.join('VC', 'Auxiliary', 'Build', 'vcvarsall.bat')
+      if from_env and os.path.exists(os.path.join(from_env, vcvarsall_path)):
+        # without its trailing backslash, which would end the gn string it's written into
+        return os.path.normpath(from_env), vcvarsall_path
 
     def autodetect():
       # Try vswhere, which will find VS2017.2+. Note that earlier VS2017s will
-      # not be found. -products * also finds Build Tools installs.
+      # not be found. -products * also finds Build Tools installs, and products built on Visual Studio's
+      # shell that have no compiler (SQL Server Management Studio 22 is one), so ask for the C++ tools.
       vswhere_path = os.path.join(os.environ.get('ProgramFiles(x86)'),
           'Microsoft Visual Studio', 'Installer', 'vswhere.exe')
       if os.path.exists(vswhere_path):
         installation_path = subprocess.check_output(
-            [vswhere_path, '-latest', '-products', '*', '-property', 'installationPath'],
+            [vswhere_path, '-latest', '-products', '*',
+             '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+             '-property', 'installationPath'],
             universal_newlines=True).strip()
         if installation_path:
           return (installation_path,
