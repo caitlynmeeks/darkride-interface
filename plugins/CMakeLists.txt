@@ -12,10 +12,13 @@ list(REMOVE_ITEM PLUGIN_SUBDIRS "CMakeFiles")
 
 # client-side plugins
 if (NOT SERVER_ONLY AND NOT ANDROID)
-  # The Oculus SDK 1.43 it builds against came from cdn.tivolicloud.com (gone):
-  # Meta headsets run through SteamVR and the openvr-plugin instead
-  # set(DIR "oculus-plugin")
-  # add_subdirectory(${DIR})
+  # The Oculus PC SDK (LibOVR) archive is no longer downloadable, so vcpkg leaves it out;
+  # the plugin is built only when LibOVR has been put in the vcpkg tree by hand.
+  # Rift and Quest headsets still work through SteamVR with the openvr plugin.
+  if (EXISTS "${VCPKG_INSTALL_ROOT}/lib/LibOVR.lib")
+    set(DIR "oculus-plugin")
+    add_subdirectory(${DIR})
+  endif()
   set(DIR "sdl2-plugin")
   add_subdirectory(${DIR})
   set(DIR "openvr-plugin")
@@ -82,12 +85,14 @@ endif()
 set(DIR "tea-protocol-plugin")
 if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/${DIR}")
   add_subdirectory(${DIR})
-elseif (EXISTS "${CMAKE_CURRENT_LIST_DIR}/tea-protocol-plugin-prebuilt/tea-protocol-plugin-2021-12-12")
-  # Only where it was downloaded before: the prebuilt plugin came from cdn.tivolicloud.com (gone)
+elseif (EXISTS "${CMAKE_CURRENT_LIST_DIR}/tea-protocol-plugin-prebuilt/tea-protocol-plugin-2021-12-12"
+        AND NOT (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"))
+  # the prebuilt plugin's archive came from cdn.tivolicloud.com, which is gone; it is used when someone
+  # has extracted a copy beside its CMakeLists.txt (it was x86_64 only)
   set(DIR "tea-protocol-plugin-prebuilt")
   add_subdirectory(${DIR})
 else()
-  message(STATUS "Tea protocol plugin unavailable (its prebuilt download is gone); skipping")
+  message(STATUS "Tea protocol plugin unavailable (its prebuilt archive is no longer downloadable); skipping")
 endif()
 
 # example plugins

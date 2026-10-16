@@ -17,12 +17,39 @@
 
 #include <Sound.h>
 
+#ifdef WIN32
+// What sphelper.h's SpGetDefaultTokenFromCategoryId does, without ATL
+static HRESULT getDefaultVoiceToken(ISpObjectToken** token) {
+    Microsoft::WRL::ComPtr<ISpObjectTokenCategory> category;
+    HRESULT hr = CoCreateInstance(CLSID_SpObjectTokenCategory, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&category));
+    if (SUCCEEDED(hr)) {
+        hr = category->SetId(SPCAT_VOICES, FALSE);
+    }
+    WCHAR* tokenId = nullptr;
+    if (SUCCEEDED(hr)) {
+        hr = category->GetDefaultTokenId(&tokenId);
+    }
+    Microsoft::WRL::ComPtr<ISpObjectToken> defaultToken;
+    if (SUCCEEDED(hr)) {
+        hr = CoCreateInstance(CLSID_SpObjectToken, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&defaultToken));
+    }
+    if (SUCCEEDED(hr)) {
+        hr = defaultToken->SetId(nullptr, tokenId, FALSE);
+    }
+    CoTaskMemFree(tokenId);
+    if (SUCCEEDED(hr)) {
+        *token = defaultToken.Detach();
+    }
+    return hr;
+}
+#endif
+
 TTSScriptingInterface::TTSScriptingInterface() {
 #ifdef WIN32
     //
     // Create text to speech engine
     //
-    HRESULT hr = m_tts.CoCreateInstance(CLSID_SpVoice);
+    HRESULT hr = CoCreateInstance(CLSID_SpVoice, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&m_tts));
     if (FAILED(hr)) {
         qDebug() << "Text-to-speech engine creation failed.";
     }
@@ -30,7 +57,7 @@ TTSScriptingInterface::TTSScriptingInterface() {
     //
     // Get token corresponding to default voice
     //
-    hr = SpGetDefaultTokenFromCategoryId(SPCAT_VOICES, &m_voiceToken, FALSE);
+    hr = getDefaultVoiceToken(&m_voiceToken);
     if (FAILED(hr)) {
         qDebug() << "Can't get default voice token.";
     }
@@ -38,9 +65,11 @@ TTSScriptingInterface::TTSScriptingInterface() {
     //
     // Set default voice
     //
-    hr = m_tts->SetVoice(m_voiceToken);
-    if (FAILED(hr)) {
-        qDebug() << "Can't set default voice.";
+    if (m_tts && m_voiceToken) {
+        hr = m_tts->SetVoice(m_voiceToken.Get());
+        if (FAILED(hr)) {
+            qDebug() << "Can't set default voice.";
+        }
     }
 
     _lastSoundAudioInjectorUpdateTimer.setSingleShot(true);
@@ -79,6 +108,11 @@ void TTSScriptingInterface::updateLastSoundAudioInjector() {
 #if defined(WIN32) || defined(Q_OS_LINUX) || defined(Q_OS_MACOS)
 void TTSScriptingInterface::speakText(const QString& textToSpeak) {
 #ifdef WIN32
+    if (!m_tts) {
+        qDebug() << "Text to speech isn't available: its engine wasn't created.";
+        return;
+    }
+
     WAVEFORMATEX fmt;
     fmt.wFormatTag = WAVE_FORMAT_PCM;
     fmt.nSamplesPerSec = AudioConstants::SAMPLE_RATE;

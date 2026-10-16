@@ -27,4 +27,5 @@ configure_file(${SOURCE_PATH}/COPYING ${CURRENT_PACKAGES_DIR}/share/${PORT}/copy
 
 vcpkg_copy_pdbs()
 
-vcpkg_fixup_pkgconfig()
+# SKIP_CHECK: the check runs pkg-config, which vcpkg fetches on Windows from a retired MSYS2 i686 repository
+vcpkg_fixup_pkgconfig(SKIP_CHECK)

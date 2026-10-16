@@ -16,8 +16,18 @@ vcpkg_from_github(
         fix-arm64-darwin.patch
 )
 
+# MSVC has had log2f and exp2f since Visual Studio 2013, and Visual Studio 2022 refuses a definition of
+# the log2f intrinsic, so keep nvmath's own versions for older compilers only (nvmath.h mixes line ends).
+file(READ ${SOURCE_PATH}/src/nvmath/nvmath.h NVMATH_H)
+string(REGEX REPLACE "#if NV_CC_MSVC(\r?\n)NV_FORCEINLINE float log2f"
+    "#if NV_CC_MSVC && _MSC_VER < 1800\\1NV_FORCEINLINE float log2f" NVMATH_H "${NVMATH_H}")
+file(WRITE ${SOURCE_PATH}/src/nvmath/nvmath.h "${NVMATH_H}")
+
 vcpkg_configure_cmake(
     SOURCE_PATH ${SOURCE_PATH}
+    # Ninja rather than a Visual Studio generator, which vcpkg's CMake 3.21 names "Visual Studio 17 2022"
+    # and so cannot find a Visual Studio 2026 install
+    PREFER_NINJA
     OPTIONS
         -DBUILD_TESTS=OFF
         -DBUILD_TOOLS=OFF

@@ -70,6 +70,8 @@ Create a build directory in the root of your checkout and then run the CMake bui
     cmake ..
 ```
 
+**On Windows, use the whole command from [BUILD_WINDOWS.md](BUILD_WINDOWS.md) step 4** (`-G "Visual Studio …" -A x64 -T v143 …`) from the first run. A folder configured once with a plain `cmake ..` remembers its empty platform, and every later run with `-A x64` fails with `generator platform: x64 Does not match the platform used previously`. Delete the folder and start again.
+
 If cmake gives you the same error message repeatedly after the build fails, try removing `CMakeCache.txt` or the entire build folder.
 
 ## Variables

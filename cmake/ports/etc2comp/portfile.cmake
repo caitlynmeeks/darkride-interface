@@ -25,6 +25,9 @@ vcpkg_from_github(
 
 vcpkg_configure_cmake(
     SOURCE_PATH ${SOURCE_PATH}
+    # Ninja rather than a Visual Studio generator, which vcpkg's CMake 3.21 names "Visual Studio 17 2022"
+    # and so cannot find a Visual Studio 2026 install
+    PREFER_NINJA
 )
 
 vcpkg_install_cmake()

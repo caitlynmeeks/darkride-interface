@@ -20,8 +20,11 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <sapi.h>      // SAPI
-#include <sphelper.h>  // SAPI Helper
+// SAPI without its helper header sphelper.h, which needs ATL: a build then needs only the C++ workload
+#include <sapi.h>
+#include <shlwapi.h>  // SHCreateMemStream, IStream_Read and friends
+#include <wrl/client.h>
+#pragma comment(lib, "shlwapi.lib")
 #endif
 #include <AudioInjector.h>
 #include <AudioConstants.h>
@@ -58,46 +61,30 @@ public:
 
 private:
 #ifdef WIN32
-    class CComAutoInit {
+    class ComAutoInit {
     public:
-        // Initializes COM using CoInitialize.
-        // On failure, signals error using AtlThrow.
-        CComAutoInit() {
-            HRESULT hr = ::CoInitialize(NULL);
-            if (FAILED(hr)) {
-                ATLTRACE(TEXT("CoInitialize() failed in CComAutoInit constructor (hr=0x%08X).\n"), hr);
-                AtlThrow(hr);
+        // Initializes COM using CoInitialize, and uninitializes it if that succeeded
+        ComAutoInit() : _initialized(SUCCEEDED(::CoInitialize(NULL))) {}
+        ~ComAutoInit() {
+            if (_initialized) {
+                ::CoUninitialize();
             }
         }
+        ComAutoInit(const ComAutoInit&) = delete;
+        ComAutoInit& operator=(const ComAutoInit&) = delete;
 
-        // Initializes COM using CoInitializeEx.
-        // On failure, signals error using AtlThrow.
-        explicit CComAutoInit(__in DWORD dwCoInit) {
-            HRESULT hr = ::CoInitializeEx(NULL, dwCoInit);
-            if (FAILED(hr)) {
-                ATLTRACE(TEXT("CoInitializeEx() failed in CComAutoInit constructor (hr=0x%08X).\n"), hr);
-                AtlThrow(hr);
-            }
-        }
-
-        // Uninitializes COM using CoUninitialize.
-        ~CComAutoInit() { ::CoUninitialize(); }
-
-        //
-        // Ban copy
-        //
     private:
-        CComAutoInit(const CComAutoInit&);
+        bool _initialized;
     };
 
     // COM initialization and cleanup (must precede other COM related data members)
-    CComAutoInit m_comInit;
+    ComAutoInit m_comInit;
 
     // Text to speech engine
-    CComPtr<ISpVoice> m_tts;
+    Microsoft::WRL::ComPtr<ISpVoice> m_tts;
 
     // Default voice token
-    CComPtr<ISpObjectToken> m_voiceToken;
+    Microsoft::WRL::ComPtr<ISpObjectToken> m_voiceToken;
 #endif
 
     QSharedPointer<Resource> _tempResource;

@@ -73,7 +73,8 @@ else()
     )
 endif()
 
-vcpkg_fixup_pkgconfig(SYSTEM_LIBRARIES m)
+# SKIP_CHECK: the check runs pkg-config, which vcpkg fetches on Windows from a retired MSYS2 i686 repository
+vcpkg_fixup_pkgconfig(SYSTEM_LIBRARIES m SKIP_CHECK)
 
 # This license (BSD) is relevant only for library - if someone would want to install
 # FLAC cmd line tools as well additional license (GPL) should be included

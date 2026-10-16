@@ -5,6 +5,7 @@ import time
 import os
 import json
 import argparse
+import faulthandler
 import concurrent
 import platform
 from os.path import expanduser
@@ -54,17 +55,15 @@ extensionsHeaderMutex = Lock()
 
 def getExtensionsHeader(dialect, variant, extensions):
     extensionHeader = '{}/extensions_{}_{}.glsl'.format(args.build_dir, dialect, variant)
-    global extensionsHeaderMutex
-    extensionsHeaderMutex.acquire()
-    if not os.path.exists(extensionHeader):
-        extensionsDefines = []
-        for extension in extensions:
-            extensionsDefines.append('#define HAVE_{}'.format(extension))
-        # make sure we end with a line feed
-        extensionsDefines.append("\r\n")
-        with open(extensionHeader, "w") as f:
-            f.write('\r\n'.join(extensionsDefines))
-    extensionsHeaderMutex.release()
+    with extensionsHeaderMutex:
+        if not os.path.exists(extensionHeader):
+            extensionsDefines = []
+            for extension in extensions:
+                extensionsDefines.append('#define HAVE_{}'.format(extension))
+            # make sure we end with a line feed
+            extensionsDefines.append("\r\n")
+            with open(extensionHeader, "w") as f:
+                f.write('\r\n'.join(extensionsDefines))
     return extensionHeader
 
 def getDialectAndVariantHeaders(dialect, variant, extensions=None):
@@ -108,13 +107,10 @@ class ScribeDependenciesCache:
             f.write(json.dumps(self.cache))
 
     def get(self, scribefile, dialect, variant, defines):
-        self.lock.acquire()
         key = self.key(scribefile, dialect, variant, defines)
-        try:
+        with self.lock:
             if key in self.cache:
                 return self.cache[key].copy()
-        finally:
-            self.lock.release()
         return None
 
     def key(self, scribeFile, dialect, variant, defines):
@@ -129,7 +125,7 @@ class ScribeDependenciesCache:
     def gen(self, scribefile, includeLibs, dialect, variant, defines):
         scribeArgs = getCommonScribeArgs(scribefile, includeLibs)
         scribeArgs.extend(['-M'])
-        processResult = subprocess.run(scribeArgs, stdout=subprocess.PIPE)
+        processResult = subprocess.run(scribeArgs, stdout=subprocess.PIPE, stdin=subprocess.DEVNULL, timeout=TOOL_TIMEOUT)
         if (0 != processResult.returncode):
             raise RuntimeError("Unable to parse scribe dependencies for file {} with defines: {}".format(scribefile, defines))
         result = processResult.stdout.decode("utf-8").splitlines(False)
@@ -137,9 +133,8 @@ class ScribeDependenciesCache:
         result.extend(getDialectAndVariantHeaders(dialect, variant))
         result.extend(getDefines(defines))
         key = self.key(scribefile, dialect, variant, defines)
-        self.lock.acquire()
-        self.cache[key] = result.copy()
-        self.lock.release()
+        with self.lock:
+            self.cache[key] = result.copy()
         return result
 
 def getFileTimes(files):
@@ -153,8 +148,12 @@ def outOfDate(inputs, output):
     diff = youngestOutput - oldestInput
     return oldestInput >= youngestOutput
 
+# A tool that hangs fails the build after this long, naming the command, instead of stalling it
+TOOL_TIMEOUT = 600
+
 def executeSubprocess(processArgs):
-    processResult = subprocess.run(processArgs, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    processResult = subprocess.run(processArgs, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   stdin=subprocess.DEVNULL, timeout=TOOL_TIMEOUT)
     if (0 != processResult.returncode):
         raise RuntimeError('Call to "{}" failed.\n\narguments:\n{}\n\nstdout:\n{}\n\nstderr:\n{}'.format(
             processArgs[0],
@@ -175,8 +174,10 @@ def processCommand(line):
     params = line.split(';')
     dialect = params.pop(0)
     variant = params.pop(0)
-    scribeFile  = args.source_dir + '/' + params.pop(0)
-    unoptGlslFile = args.source_dir + '/' + params.pop(0)
+    # relative to the source folder, or absolute when the build folder is on another drive (CMake's relative
+    # path between drives is the absolute one), which os.path.join keeps as it is
+    scribeFile  = os.path.join(args.source_dir, params.pop(0))
+    unoptGlslFile = os.path.join(args.source_dir, params.pop(0))
     defines = ""
     if len(params) > 1 and params[0].startswith("defines:"):
         defines = params.pop(0)
@@ -193,18 +194,15 @@ def processCommand(line):
 
     # Serialize checking and creation of the output directory to avoid occasional 
     # crashes
-    global folderMutex
-    folderMutex.acquire()
-    if not os.path.exists(scribeOutputDir):
-        os.makedirs(scribeOutputDir) 
-    folderMutex.release()
+    with folderMutex:
+        os.makedirs(scribeOutputDir, exist_ok=True)
 
     scribeDeps = scribeDepCache.getOrGen(scribeFile, libs, dialect, variant, defines)
 
     # if the scribe sources (slv, slf, slh, etc), or the dialect/ variant headers are out of date
     # regenerate the scribe GLSL output
     if args.force or outOfDate(scribeDeps, outputFiles):
-        print('Processing file {} dialect {} variant {} defines {}'.format(scribeFile, dialect, variant, defines))
+        print('Processing file {} dialect {} variant {} defines {}'.format(scribeFile, dialect, variant, defines), flush=True)
         if args.dry_run:
             return True
 
@@ -270,6 +268,20 @@ parser.add_argument('--source-dir', type=str, help='The root directory of the gi
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--force', action='store_true', help='Ignore timestamps and force regeneration of all files')
 parser.add_argument('--dry-run', action='store_true', help='Report the files that would be process, but do not output')
+
+# Windows: a tool that can't load a DLL fails with an error code instead of opening a dialog that nobody
+# answers on a build machine (the children inherit this)
+if platform.system() == "Windows":
+    import ctypes
+    SEM_FAILCRITICALERRORS = 0x0001
+    SEM_NOGPFAULTERRORBOX = 0x0002
+    SEM_NOOPENFILEERRORBOX = 0x8000
+    ctypes.windll.kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX)
+
+# SHADERGEN_STACK_DUMP=<seconds>: print every thread's stack that often, to show where a stalled run is stuck
+faulthandler.enable()
+if os.environ.get('SHADERGEN_STACK_DUMP'):
+    faulthandler.dump_traceback_later(int(os.environ['SHADERGEN_STACK_DUMP']), repeat=True)
 
 args = None
 if len(sys.argv) == 1:

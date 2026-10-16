@@ -38,10 +38,17 @@ endif()
         self.path = os.path.join(self.basePath, self.version)
         self.fullPath = os.path.join(self.path, 'qt5-install')
 
+        # where BUILD_WINDOWS.md's aqtinstall command puts the official Qt, used when QT_CMAKE_PREFIX_PATH isn't set
+        windowsQtCmakePath = 'C:/Qt/5.15.2/msvc2019_64/lib/cmake'
+
         self.hasQt = False
         if os.getenv("QT_CMAKE_PREFIX_PATH"):
             self.hasQt = True
             self.cmakePath = os.getenv("QT_CMAKE_PREFIX_PATH")
+        elif platform.system() == 'Windows' and not args.android and os.path.isdir(windowsQtCmakePath):
+            self.hasQt = True
+            self.cmakePath = windowsQtCmakePath
+            print("Using the Qt in {}".format(os.path.dirname(os.path.dirname(windowsQtCmakePath))))
         else:
             self.cmakePath = os.path.join(self.fullPath, 'lib/cmake')
 

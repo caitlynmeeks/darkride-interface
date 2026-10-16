@@ -90,13 +90,19 @@ else()
   endif()
 endif()
 
+# on Windows, hifi_vcpkg.py builds the vcpkg tool with the same CMake, generator and toolset
+set(ENV{HIFI_CMAKE_COMMAND} "${CMAKE_COMMAND}")
+set(ENV{HIFI_CMAKE_GENERATOR} "${CMAKE_GENERATOR}")
+set(ENV{HIFI_CMAKE_GENERATOR_TOOLSET} "${CMAKE_GENERATOR_TOOLSET}")
+set(ENV{HIFI_CMAKE_GENERATOR_INSTANCE} "${CMAKE_GENERATOR_INSTANCE}")
+
 execute_process(
   COMMAND ${HIFI_PYTHON_EXEC} ${CMAKE_CURRENT_SOURCE_DIR}/prebuild.py --release-type ${RELEASE_TYPE} --build-root ${CMAKE_BINARY_DIR} ${EXTRA_PREBUILD_ARGS}
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 if(NOT EXISTS "${CMAKE_BINARY_DIR}/vcpkg.cmake")
-    message(FATAL_ERROR "vcpkg configuration missing.")
+    message(FATAL_ERROR "vcpkg configuration missing: setting up the dependencies failed, and the first error above says why.")
 endif()
 include("${CMAKE_BINARY_DIR}/vcpkg.cmake")
 

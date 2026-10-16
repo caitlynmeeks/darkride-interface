@@ -52,7 +52,8 @@ if(EXISTS "${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/libzstd.pc")
     vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/debug/lib/pkgconfig/libzstd.pc" "-lzstd" "-lzstd${static_suffix}d")
 endif()
 
-vcpkg_fixup_pkgconfig()
+# SKIP_CHECK: the check runs pkg-config, which vcpkg fetches on Windows from a retired MSYS2 i686 repository
+vcpkg_fixup_pkgconfig(SKIP_CHECK)
 
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include" "${CURRENT_PACKAGES_DIR}/debug/share")
 

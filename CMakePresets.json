@@ -1,0 +1,60 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows",
+      "hidden": true,
+      "description": "Builds with the v143 compiler (14.4x): Qt 5.15's headers don't compile with Visual Studio 2026's own",
+      "binaryDir": "${sourceDir}/build",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "toolset": { "value": "v143", "strategy": "set" },
+      "cacheVariables": {
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "vs2026",
+      "inherits": "windows",
+      "displayName": "Visual Studio 2026 (or its Build Tools)",
+      "generator": "Visual Studio 18 2026"
+    },
+    {
+      "name": "vs2022",
+      "inherits": "windows",
+      "displayName": "Visual Studio 2022 (or its Build Tools)",
+      "generator": "Visual Studio 17 2022"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2026",
+      "displayName": "Darkride (interface)",
+      "configurePreset": "vs2026",
+      "configuration": "RelWithDebInfo",
+      "targets": [ "interface" ]
+    },
+    {
+      "name": "vs2026-servers",
+      "displayName": "Darkride and the servers",
+      "configurePreset": "vs2026",
+      "configuration": "RelWithDebInfo",
+      "targets": [ "interface", "domain-server", "assignment-client" ]
+    },
+    {
+      "name": "vs2022",
+      "displayName": "Darkride (interface)",
+      "configurePreset": "vs2022",
+      "configuration": "RelWithDebInfo",
+      "targets": [ "interface" ]
+    },
+    {
+      "name": "vs2022-servers",
+      "displayName": "Darkride and the servers",
+      "configurePreset": "vs2022",
+      "configuration": "RelWithDebInfo",
+      "targets": [ "interface", "domain-server", "assignment-client" ]
+    }
+  ]
+}

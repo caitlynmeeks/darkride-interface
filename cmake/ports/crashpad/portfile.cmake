@@ -35,6 +35,10 @@ if(CMAKE_HOST_WIN32)
     # This mini_chromium's win_helper.py, which gn runs to set up and wrap the MSVC tools, is Python 2
     file(COPY "${CMAKE_CURRENT_LIST_DIR}/win_helper.py"
         DESTINATION "${SOURCE_PATH}/third_party/mini_chromium/mini_chromium/build")
+    # gn runs it with the Python that vcpkg_configure_gn puts first on PATH, Python 2.7 unless PYTHON2 is
+    # already set, and the port is Python 3: give gn vcpkg's Python 3
+    vcpkg_find_acquire_program(PYTHON3)
+    set(PYTHON2 "${PYTHON3}")
 endif()
 
 if(VCPKG_TARGET_IS_LINUX)

@@ -10,6 +10,10 @@ vcpkg_from_github(
   PATCHES "fix_install_ilmimf.patch"
 )
 
+# ImfAttribute.cpp uses std::binary_function without including <functional>, which newer MSVC headers
+# no longer bring in through <map>.
+vcpkg_replace_string(${SOURCE_PATH}/OpenEXR/IlmImf/ImfAttribute.cpp "#include <map>\n" "#include <map>\n#include <functional>\n")
+
 set(OPENEXR_STATIC ON)
 set(OPENEXR_SHARED OFF)
 

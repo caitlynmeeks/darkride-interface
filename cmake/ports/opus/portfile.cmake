@@ -30,7 +30,8 @@ vcpkg_configure_cmake(
 vcpkg_install_cmake()
 vcpkg_fixup_cmake_targets(CONFIG_PATH lib/cmake/Opus)
 vcpkg_copy_pdbs()
-vcpkg_fixup_pkgconfig(SYSTEM_LIBRARIES m)
+# SKIP_CHECK: the check runs pkg-config, which vcpkg fetches on Windows from a retired MSYS2 i686 repository
+vcpkg_fixup_pkgconfig(SYSTEM_LIBRARIES m SKIP_CHECK)
 
 file(INSTALL
      ${SOURCE_PATH}/COPYING
