@@ -205,7 +205,9 @@ LightClusters::Stats LightClusters::updateClusters(const RenderArgs* args) {
         Candidate candidate;
         candidate.id = lightId;
         const glm::vec3 position = light->getPosition();
-        const float range = std::max(light->getMaximumRadius(), 0.0f);
+        // the reach of the light's energy, not the entity's size: a light whose entity is far larger than its falloff lit
+        // nothing in most of the tiles and bins it was put in, yet every fragment there ran its shadow and shading
+        const float range = light->getCutoffRadius();
         const glm::vec3 eyePosition = glm::vec3(worldToEye * glm::vec4(position, 1.0f));
         const float depth = -eyePosition.z;
         candidate.center = position;

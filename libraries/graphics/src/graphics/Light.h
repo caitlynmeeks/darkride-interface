@@ -146,6 +146,9 @@ public:
     // Setting it low will result in a noticeable cutoff.
     void setMaximumRadius(float radius);
     float getMaximumRadius() const { return _lightSchemaBuffer->volume.radius; }
+    // Where the light's energy falls under the cutoff intensity (updateLightRadius): never beyond the maximum radius, and
+    // often well inside it, since the maximum radius is the entity's size. Nothing is lit past it.
+    float getCutoffRadius() const { return glm::max(_lightSchemaBuffer->irradiance.cutoffRadius, 0.0f); }
 
     // Spot properties
     bool isSpot() const { return getType() == SPOT; }

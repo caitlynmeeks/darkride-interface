@@ -52,6 +52,11 @@ vec4 evalLocalLighting(LightCluster cluster, vec3 fragWorldPos, vec3 fragWorldPo
             // Allright we re in the light sphere volume
             fragLightDirLen.w = length(fragLightVecLen2.xyz);
             fragLightDirLen.xyz = fragLightVecLen2.xyz / fragLightDirLen.w;
+            // past the light's cutoff its attenuation is 0: leave before the shadow and cookie lookups, not after them
+            float radialAttenuation = lightIrradiance_evalLightAttenuation(light.irradiance, fragLightDirLen.w);
+            if (radialAttenuation <= 0.0) {
+                continue;
+            }
             if (dot(surface.normal, fragLightDirLen.xyz) < 0.0) {
                 continue;
             }
@@ -85,8 +90,6 @@ vec4 evalLocalLighting(LightCluster cluster, vec3 fragWorldPos, vec3 fragWorldPo
 
             updateSurfaceDataWithLight(surface, fragLightDir);
 
-            // Eval attenuation
-            float radialAttenuation = lightIrradiance_evalLightAttenuation(light.irradiance, fragLightDistance);
             vec3 lightEnergy = radialAttenuation * angularAttenuation * shadow * cookie * getLightIrradiance(light);
 
             // Eval shading
