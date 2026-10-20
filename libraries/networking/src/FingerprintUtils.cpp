@@ -13,6 +13,8 @@
 #include "NetworkLogging.h"
 
 #include <QDebug>
+#include <QMessageAuthenticationCode>
+#include <QStringList>
 
 #include <SettingHandle.h>
 #include <SettingManager.h>
@@ -80,6 +82,29 @@ QString FingerprintUtils::getMachineFingerprintString() {
 
     return uuidString;
 
+}
+
+static QByteArray domainDigest(const QString& domain, const QByteArray& purpose) {
+    QByteArray key = FingerprintUtils::getMachineFingerprint().toRfc4122();
+    return QMessageAuthenticationCode::hash(purpose + "|" + domain.trimmed().toLower().toUtf8(), key,
+                                            QCryptographicHash::Sha256);
+}
+
+QUuid FingerprintUtils::getDomainFingerprint(const QString& domain) {
+    QByteArray digest = domainDigest(domain, "fingerprint").left(16);
+    digest[6] = (char)((digest[6] & 0x0f) | 0x50);  // a name-based UUID (version 5 layout)
+    digest[8] = (char)((digest[8] & 0x3f) | 0x80);
+    return QUuid::fromRfc4122(digest);
+}
+
+QString FingerprintUtils::getDomainHardwareAddress(const QString& domain) {
+    QByteArray digest = domainDigest(domain, "hardware-address").left(6);
+    digest[0] = (char)((digest[0] & 0xfc) | 0x02);  // a locally administered, unicast address
+    QStringList parts;
+    for (char byte : digest) {
+        parts << QString("%1").arg((uchar)byte, 2, 16, QChar('0')).toUpper();
+    }
+    return parts.join(":");
 }
 
 QUuid FingerprintUtils::getMachineFingerprint() {

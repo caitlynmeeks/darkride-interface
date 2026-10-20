@@ -19,6 +19,12 @@ class FingerprintUtils {
 public:
     static QUuid getMachineFingerprint();
 
+    // What a domain is told: an ID and a network-card address of this computer's own for that domain, made from the
+    // machine fingerprint and the domain's address. Each domain sees the same ones every time (so its bans by
+    // computer keep working), and no two domains see the same ones (so they can't match a visitor between them).
+    static QUuid getDomainFingerprint(const QString& domain);
+    static QString getDomainHardwareAddress(const QString& domain);
+
 private:
     static QString getMachineFingerprintString();
     static QUuid _machineFingerprint;
