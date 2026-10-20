@@ -159,7 +159,9 @@ ditto -c -k --sequesterRsrc --keepParent stage/Darkride.app Darkride-1.0.1-mac.z
 
 ## Windows
 
-You need VS 2022 Build Tools (the v143 toolset) and Qt 5.15.2, as in [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
+You need Visual Studio 2026 or 2022, or its Build Tools, with the v143 toolset, and Qt 5.15.2, as in
+[BUILD_WINDOWS.md](BUILD_WINDOWS.md). The commands below use the `vs2022` preset; with Visual Studio 2026, use
+`cmake --preset vs2026` instead (the same v143 compiler).
 
 ### 1. Build
 

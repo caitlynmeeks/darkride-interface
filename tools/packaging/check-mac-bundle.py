@@ -68,6 +68,9 @@ def main():
             if dependency.startswith(SYSTEM_PREFIXES):
                 continue
             if dependency.startswith("@rpath/"):
+                # Only the file's own search paths count. dyld also tries those of whatever loaded it (the main
+                # executable, say), so this is stricter than macOS: right for an app packaged as in RELEASING.md,
+                # where every Mach-O carries its own, but a bundle packaged another way can fail here and still run.
                 found = any(os.path.exists(os.path.join(p, dependency[len("@rpath/"):])) for p in bundle_search_paths)
             elif dependency.startswith(("@executable_path", "@loader_path")):
                 found = os.path.exists(expand(dependency))

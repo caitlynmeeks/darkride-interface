@@ -5,8 +5,10 @@ goes in.
 
 ## How a change gets in
 
-1. Fork the repository, or push a branch here if you're a collaborator.
-2. Open a pull request into `main`. Say what it changes, why, and how you tested it, including on which system.
+1. Fork the repository, or push a branch here if you're a collaborator. Make a branch for the change, rather than
+   working on your fork's `main`.
+2. Open a pull request from that branch into `main`. Say what it changes, why, and how you tested it, including on
+   which system. If it fixes an issue, write "Fixes #123" in the description, and the issue closes when it merges.
 3. Someone with write access other than you approves it, and then it can be merged. If you push again after an
    approval, it needs a fresh one.
 4. Nobody pushes straight to `main`, and nobody force-pushes it. GitHub enforces both.
@@ -22,10 +24,15 @@ Keep each pull request to one change. Two unrelated fixes are easier to review, 
 
 ## Ask Caity before merging
 
-- **Network protocol changes.** These are changes to a packet type's version in
-  `libraries/networking/src/udt/PacketHeaders.cpp`, which changes the protocol signature. A client built from such
-  a change can't join the live worlds until their servers are updated, so it ships together with a server update.
-  Put "(protocol change)" in the pull request's title.
+- **Network protocol changes.** These are any change to the packet types or their versions in
+  `libraries/networking/src/udt/PacketHeaders.h` and `.cpp`, and any change to what a packet carries (avatar data,
+  entity properties and so on). The protocol signature is a hash of how many packet types there are and each one's
+  version, so adding a type or bumping a version changes it. A client built from such a change can't join the live
+  worlds until their servers are updated, so it ships together with a server update. Put "(protocol change)" in the
+  pull request's title.
+
+  A change to what a packet carries needs that packet's version bumped. Without the bump the signature stays the
+  same, so old and new builds still connect, and each silently misreads the other's packets.
 - **New dependencies,** or anything the build downloads.
 - **Sign-in and accounts.**
 
