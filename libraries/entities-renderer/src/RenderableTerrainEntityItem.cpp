@@ -658,10 +658,6 @@ void TerrainLayerSet::drawAllMapsDue(RenderArgs* args) {
 }
 
 TerrainLayerSet::TerrainLayerSet(const terrain::LayerStack& stack, const Pointer& previous) {
-    {
-        std::lock_guard<std::mutex> lock(registryMutex());
-        registry().insert(this);
-    }
     auto textureCache = DependencyManager::get<TextureCache>();
     auto fetch = [&](const std::string& address, image::TextureUsage::Type type) -> NetworkTexturePointer {
         if (address.empty()) {
@@ -707,6 +703,13 @@ TerrainLayerSet::TerrainLayerSet(const terrain::LayerStack& stack, const Pointer
     }
     if (!_albedos || !_normals || !_masks) {
         makeArrays();
+    }
+    // registered last, whole: the render thread's DrawTerrainLayerMaps walks the registry at the start of every
+    // frame and draws the slices due, and a set registered before its targets were made crashed it on arrival
+    // (10-20: batch.setFramebuffer on a target vector still empty)
+    {
+        std::lock_guard<std::mutex> lock(registryMutex());
+        registry().insert(this);
     }
 }
 
