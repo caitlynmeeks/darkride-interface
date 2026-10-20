@@ -48,10 +48,15 @@ MediaType AssimpSerializer::getMediaType() const {
     aiString aiExts;
     importer.GetExtensionList(aiExts);
 
+    // The model formats Darkride reads through Assimp: the common ones for worlds and avatars. Assimp has importers for
+    // dozens more, many old and little used; content from anywhere only reaches these. (FBX and OBJ have their own
+    // serializers.) Add a format here to support it.
+    static const QStringList ALLOWED_EXTENSIONS = { "gltf", "glb", "dae", "3ds", "ply", "stl" };
+
     auto exts = QString(aiExts.C_Str()).split(";");
     for (QString anyExt : exts) {
         QString ext = anyExt.replace("*.", "");
-        if (ext == "fbx" || ext == "obj") continue;
+        if (!ALLOWED_EXTENSIONS.contains(ext.toLower())) continue;
 
         // qDebug(modelformat) << "Available format:" << ext; 
         mediaType.extensions.push_back(ext.toStdString());
