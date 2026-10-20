@@ -49,7 +49,14 @@ void FileResourceRequest::doSend() {
         filename = fileSelector.select(filename);
     }
 
-    if (!_byteRange.isValid()) {
+    // files on this computer only: a file URL naming another machine (a network share) isn't opened
+    bool isNetworkPath = _url.scheme() != URL_SCHEME_QRC &&
+        (!_url.host().isEmpty() || filename.startsWith("//") || filename.startsWith("\\\\"));
+
+    if (isNetworkPath) {
+        qCWarning(networking) << "Not opening a network path as a file:" << _url.toDisplayString();
+        _result = ResourceRequest::AccessDenied;
+    } else if (!_byteRange.isValid()) {
         _result = ResourceRequest::InvalidByteRange;
     } else {
         QFile file(filename);
