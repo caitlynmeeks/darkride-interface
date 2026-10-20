@@ -904,7 +904,11 @@ void DomainServerSettingsManager::processNodeKickRequestPacket(QSharedPointer<Re
                         // get this machine's fingerprint
                         auto domainServerFingerprint = FingerprintUtils::getMachineFingerprint();
 
-                        if (nodeData->getMachineFingerprint() == domainServerFingerprint) {
+                        // a client tells each domain an ID of its own for that domain, so one on this machine is
+                        // also recognised by connecting from it
+                        bool onThisMachine = nodeData->getMachineFingerprint() == domainServerFingerprint ||
+                            matchingNode->getPublicSocket().getAddress().isLoopback();
+                        if (onThisMachine) {
                             qWarning() << "attempt to kick node running on same machine as domain server (by fingerprint), ignoring KickRequest";
                             return;
                         }
