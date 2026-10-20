@@ -320,6 +320,9 @@ void AssignmentClient::signInWithConnectionKey() {
         return;
     }
 
+    // the key is kept in memory from here; out of the environment, nothing this process runs or starts can read it
+    qunsetenv(KEY_ENV.toLocal8Bit().constData());
+
     auto accountManager = DependencyManager::get<AccountManager>();
     accountManager->setAuthURL(NetworkingConstants::METAVERSE_SERVER_URL());
 
