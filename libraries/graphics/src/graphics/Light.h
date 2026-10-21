@@ -106,6 +106,12 @@ public:
     void setCastShadows(const bool castShadows);
     bool getCastShadows() const;
 
+    // a spot or point light casts shadows only when its builder turned them on (the build mode Inspector's Shadows
+    // field: On or Important) and Cast Shadows is on. Cast Shadows alone says nothing for a light: it is on for every
+    // entity unless turned off, so with it alone every light of every world cast (2026-10-11 to 10-21)
+    void setShadowsOn(bool on);
+    bool getShadowsOn() const;
+
     // a spot or point light marked important gets its shadow maps before the others when more lights cast shadows
     // than there are maps (the build mode Inspector's Shadows field: Important)
     void setShadowsImportant(bool important);
@@ -233,6 +239,7 @@ protected:
     float _shadowsMaxDistance { 40.0f };
     float _shadowBias { 0.5f };
     bool _castShadows{ false };
+    bool _shadowsOn { false };
     bool _shadowsImportant { false };
     gpu::TextureSourcePointer _cookie;
 

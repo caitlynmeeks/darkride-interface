@@ -75,6 +75,14 @@ bool Light::getCastShadows() const {
     return _castShadows;
 }
 
+void Light::setShadowsOn(bool on) {
+    _shadowsOn = on;
+}
+
+bool Light::getShadowsOn() const {
+    return _shadowsOn;
+}
+
 void Light::setShadowsImportant(bool important) {
     _shadowsImportant = important;
 }

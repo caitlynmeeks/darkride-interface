@@ -39,10 +39,12 @@ private:
     const LightPayload::Pointer _lightPayload{ std::make_shared<LightPayload>() };
 
     // the cookie: the picture the userData's "cookie" entry names (the build mode Inspector's Cookie field); and
-    // whether the userData's "shadows" entry is "important" (the Inspector's Shadows field)
+    // the userData's "shadows" entry, "on" or "important" (the Inspector's Shadows field), without which the light
+    // casts no shadows
     QString _userData;
     QString _cookieURL;
     NetworkTexturePointer _cookie;
+    bool _shadowsOn { false };
     bool _shadowsImportant { false };
 };
 

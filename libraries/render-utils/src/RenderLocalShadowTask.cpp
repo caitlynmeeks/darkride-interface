@@ -144,10 +144,25 @@ namespace {
             offset.x, offset.y, 0.0f, 1.0f);
     }
 
+    // A light whose shadow map's texels would be wider than this where the camera is gets no map, as a light beyond
+    // Unity's shadow distance casts none: its shadows near the camera would be a blur, and every caster in its reach
+    // would be drawn for them. For a point light's 512-texel face that is about 50 m from the camera (URP's default
+    // shadow distance); a spot light's 1024-texel tile goes further, the narrower its cone the further. A light
+    // marked Important casts at any distance
+    const float MAX_SHADOW_TEXEL_AT_CAMERA = 0.2f;
+
+    // how wide a texel of the light's shadow map is at the camera, for a map of the given field of view and size
+    float shadowTexelAtCamera(const graphics::Light& light, const glm::vec3& viewPosition, float fieldOfView, int tileSize) {
+        return 2.0f * tanf(0.5f * fieldOfView) * glm::distance(viewPosition, light.getPosition()) / tileSize;
+    }
+
     // how much a light matters to the view: how big its reach looks from the camera, which grows as the camera
     // nears it and stays large inside it, times how bright it is
     float importance(const graphics::Light& light, const glm::vec3& viewPosition) {
-        float range = light.getMaximumRadius();
+        float range = light.getCutoffRadius();
+        if (range <= 0.0f) {
+            return 0.0f;
+        }
         float gap = std::max(glm::distance(viewPosition, light.getPosition()) - range, 0.1f * range);
         float size = range / gap;
         return size * size * light.getIntensity() * std::max(glm::compMax(light.getColor()), 0.01f);
@@ -162,9 +177,10 @@ namespace {
         frustum.calculate();
     }
 
-    // the box around everything the light reaches
+    // the box around everything the light reaches: as far as its light goes (its cutoff radius), which may be well
+    // inside the entity's size, its maximum radius
     AABox reachOf(const graphics::Light& light) {
-        float reach = light.getMaximumRadius();
+        float reach = light.getCutoffRadius();
         return AABox(light.getPosition() - glm::vec3(reach), 2.0f * reach);
     }
 }
@@ -208,8 +224,8 @@ glm::ivec4 LocalShadows::getTileViewport(int tile) const {
 }
 
 void LocalShadows::faceFrustum(const graphics::Light& light, int face, ViewFrustum& frustum) {
-    float nearClip = std::max(MIN_NEAR_CLIP, light.getMaximumRadius() * NEAR_CLIP_SCALE);
-    float farClip = std::max(light.getMaximumRadius(), 2.0f * nearClip);
+    float nearClip = std::max(MIN_NEAR_CLIP, light.getCutoffRadius() * NEAR_CLIP_SCALE);
+    float farClip = std::max(light.getCutoffRadius(), 2.0f * nearClip);
     frustum.setPosition(light.getPosition());
     frustum.setOrientation(faceOrientation(face));
     frustum.setProjection(glm::perspective(FACE_FIELD_OF_VIEW, 1.0f, nearClip, farClip));
@@ -627,13 +643,22 @@ void RenderLocalShadowSetup::run(const render::RenderContextPointer& renderConte
     if (shadowFrame && lightFrame && lightStage && lightingModel) {
         const ViewFrustum& view = args->getViewFrustum();
         bool shadows = lightingModel->isShadowEnabled();
+        // a light casts when its Shadows field is On or Important (or every light does, for comparing), and gets a
+        // map when that map would be sharp enough at the camera or the light is Important
+        auto casts = [&](const graphics::Light& light) {
+            return light.getCastShadows() && (light.getShadowsOn() || _everyLightCasts);
+        };
+        auto sharpEnough = [&](const graphics::Light& light, float fieldOfView, int tileSize) {
+            return light.getShadowsImportant() ||
+                shadowTexelAtCamera(light, view.getPosition(), fieldOfView, tileSize) <= MAX_SHADOW_TEXEL_AT_CAMERA;
+        };
         if (lightingModel->isSpotLightEnabled()) {
             for (auto index : lightFrame->_spotLights) {
                 if (index < 0 || index >= LocalShadows::LIGHT_COUNT) {
                     continue;   // beyond the light array the shaders hold
                 }
                 auto light = lightStage->getLight(index);
-                if (!light || !view.sphereIntersectsKeyhole(light->getPosition(), light->getMaximumRadius())) {
+                if (!light || !view.sphereIntersectsKeyhole(light->getPosition(), light->getCutoffRadius())) {
                     continue;
                 }
                 float rank = importance(*light, view.getPosition());
@@ -642,7 +667,8 @@ void RenderLocalShadowSetup::run(const render::RenderContextPointer& renderConte
                 if (cookie && light->getSpotAngle() <= MAX_COOKIE_SPOT_ANGLE) {
                     cookieLights.push_back({ index, light, false, rank, cookie, false });
                 }
-                if (shadows && light->getCastShadows() && light->getSpotAngle() <= MAX_SPOT_ANGLE) {
+                if (shadows && casts(*light) && light->getSpotAngle() <= MAX_SPOT_ANGLE &&
+                        sharpEnough(*light, 2.0f * light->getSpotAngle() + FIELD_OF_VIEW_MARGIN, LocalShadows::SPOT_TILE_SIZE)) {
                     bool hadTile = previousTile(index) >= 0;
                     spots.push_back({ index, light, light->getShadowsImportant(), hadTile ? rank * KEEP_TILE_BONUS : rank, nullptr, false });
                 }
@@ -654,7 +680,7 @@ void RenderLocalShadowSetup::run(const render::RenderContextPointer& renderConte
                     continue;
                 }
                 auto light = lightStage->getLight(index);
-                if (!light || !view.sphereIntersectsKeyhole(light->getPosition(), light->getMaximumRadius())) {
+                if (!light || !view.sphereIntersectsKeyhole(light->getPosition(), light->getCutoffRadius())) {
                     continue;
                 }
                 float rank = importance(*light, view.getPosition());
@@ -663,7 +689,7 @@ void RenderLocalShadowSetup::run(const render::RenderContextPointer& renderConte
                 if (cookie) {
                     cookieLights.push_back({ index, light, false, rank, cookie, true });
                 }
-                if (shadows && light->getCastShadows()) {
+                if (shadows && casts(*light) && sharpEnough(*light, FACE_FIELD_OF_VIEW, LocalShadows::FACE_TILE_SIZE)) {
                     bool hadTiles = previousTile(index) >= 0;
                     points.push_back({ index, light, light->getShadowsImportant(), hadTiles ? rank * KEEP_TILE_BONUS : rank, nullptr, true });
                 }
@@ -746,8 +772,8 @@ void RenderLocalShadowSetup::run(const render::RenderContextPointer& renderConte
     AABox reach;
     for (size_t i = 0; i < spots.size(); ++i) {
         const auto& light = spots[i].light;
-        float nearClip = std::max(MIN_NEAR_CLIP, light->getMaximumRadius() * NEAR_CLIP_SCALE);
-        float farClip = std::max(light->getMaximumRadius(), 2.0f * nearClip);
+        float nearClip = std::max(MIN_NEAR_CLIP, light->getCutoffRadius() * NEAR_CLIP_SCALE);
+        float farClip = std::max(light->getCutoffRadius(), 2.0f * nearClip);
         frustum.setPosition(light->getPosition());
         frustum.setOrientation(light->getOrientation());
         frustum.setProjection(glm::perspective(2.0f * light->getSpotAngle() + FIELD_OF_VIEW_MARGIN, 1.0f, nearClip, farClip));

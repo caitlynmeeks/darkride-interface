@@ -193,6 +193,9 @@ class RenderLocalShadowSetupConfig : public render::Job::Config {
     // whether this view draws local light shadows at all (a mirror's view does without: an atlas each would cost
     // too much)
     Q_PROPERTY(bool localLights READ isLocalLights WRITE setLocalLights NOTIFY dirty)
+    // whether every light with Cast Shadows on casts, as before a light's shadows had to be turned on (its Shadows
+    // field On or Important): for comparing a world's cost both ways, off by default
+    Q_PROPERTY(bool everyLightCasts READ isEveryLightCasts WRITE setEveryLightCasts NOTIFY dirty)
 public:
     bool isCaching() const { return _caching; }
     void setCaching(bool caching) { if (_caching != caching) { _caching = caching; emit dirty(); } }
@@ -200,6 +203,8 @@ public:
     void setStaticCaching(bool staticCaching) { if (_staticCaching != staticCaching) { _staticCaching = staticCaching; emit dirty(); } }
     bool isLocalLights() const { return _localLights; }
     void setLocalLights(bool localLights) { if (_localLights != localLights) { _localLights = localLights; emit dirty(); } }
+    bool isEveryLightCasts() const { return _everyLightCasts; }
+    void setEveryLightCasts(bool every) { if (_everyLightCasts != every) { _everyLightCasts = every; emit dirty(); } }
 
 signals:
     void dirty();
@@ -208,6 +213,7 @@ private:
     bool _caching { true };
     bool _staticCaching { true };
     bool _localLights { true };
+    bool _everyLightCasts { false };
 };
 
 // Picks the lights and gives each its tiles, and takes in a view wide enough for all of them, for fetching what they
@@ -224,6 +230,7 @@ public:
         _caching = config.isCaching();
         _staticCaching = config.isStaticCaching();
         _localLights = config.isLocalLights();
+        _everyLightCasts = config.isEveryLightCasts();
     }
     void run(const render::RenderContextPointer& renderContext, const Input& input, Output& output);
 
@@ -233,6 +240,7 @@ private:
     bool _caching { true };
     bool _staticCaching { true };
     bool _localLights { true };
+    bool _everyLightCasts { false };
 };
 
 // One tile's turn: takes the view from its light, or selects nothing when the tile has no light this frame. For a

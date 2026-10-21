@@ -39,9 +39,11 @@ void LightEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& sce
             _cookieURL = cookieURL;
             _cookie = cookieURL.isEmpty() ? NetworkTexturePointer() : DependencyManager::get<TextureCache>()->getTexture(QUrl(cookieURL));
         }
-        // the Inspector's Shadows field: Important puts the light before the others when more cast shadows than
-        // there are maps (Off is Cast Shadows off)
-        _shadowsImportant = entries.value("shadows").toString() == "important";
+        // the Inspector's Shadows field: On casts, and Important puts the light before the others when more cast
+        // shadows than there are maps; without the entry the light casts none (Off also turns Cast Shadows off)
+        QString shadows = entries.value("shadows").toString();
+        _shadowsImportant = shadows == "important";
+        _shadowsOn = _shadowsImportant || shadows == "on";
     });
 }
 
@@ -83,15 +85,18 @@ void LightEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPoint
         light->setSpotAngle(cutoff);
         light->setSpotExponent(exponent);
     }
-    // the entity's Cast Shadows; spot and point lights' shadows are drawn by RenderLocalShadowTask, as are their
-    // cookies
+    // the entity's Cast Shadows and its Shadows field; spot and point lights' shadows are drawn by
+    // RenderLocalShadowTask, as are their cookies
     light->setCastShadows(entity->getCanCastShadow());
+    bool shadowsOn = false;
     bool shadowsImportant = false;
     gpu::TextureSourcePointer cookie;
     withReadLock([&] {
+        shadowsOn = _shadowsOn;
         shadowsImportant = _shadowsImportant;
         cookie = _cookie ? _cookie->_textureSource : gpu::TextureSourcePointer();
     });
+    light->setShadowsOn(shadowsOn);
     light->setShadowsImportant(shadowsImportant);
     light->setCookie(cookie);
 }

@@ -753,19 +753,21 @@ namespace {
                 lightmap.insert("params", QJsonArray { offset, std::round(v.toDouble() * 10000.0) / 10000.0 });
                 setLightmapEntry(p, lightmap);
             });
-        // a light's Shadows: Off is Cast Shadows off; Normal and Important cast, and Important, the entry "shadows"
-        // set to "important", goes before the other lights when more cast shadows than there are maps
+        // a light's Shadows: the entry "shadows", "on" or "important" (Important goes before the other lights when
+        // more cast shadows than there are maps); without it the light casts none. Off also turns Cast Shadows off,
+        // which is all that clients from before 2026-10-21 read, so that they leave it without shadows too
         a.insert(SHADOWS_KEY, Accessor {
             [=](const EP& p) {
-                if (!p.getCanCastShadow()) {
+                QString mode = userDataEntry(p, "shadows");
+                if (!p.getCanCastShadow() || (mode != "on" && mode != "important")) {
                     return QVariant("off");
                 }
-                return QVariant(userDataEntry(p, "shadows") == "important" ? "important" : "normal");
+                return QVariant(mode);
             },
             [=](EP& p, const QVariant& v) {
                 QString mode = v.toString();
                 p.setCanCastShadow(mode != "off");
-                setUserDataEntry(p, "shadows", mode == "important" ? mode : QString());
+                setUserDataEntry(p, "shadows", mode == "off" ? QString() : mode);
             }
         });
 
@@ -1172,10 +1174,11 @@ namespace {
         range(add(spec("range", "Range", K::Float, "light")), 0.01, 5000, 0.1, 2, "m");
         range(add(spec("intensity", "Intensity", K::Float, "light")), 0, 10000, 0.1, 2);
         range(add(spec("falloffRadius", "Falloff Radius", K::Float, "light")), 0, 10000, 0.1, 2, "m");
-        // whether the light casts shadows (its Cast Shadows, which the Behavior section leaves out for a light), and
-        // whether it comes before the other lights for one of the shadow maps there are at once (eight for spot
-        // lights, four for point lights); Important is kept in userData
-        en(SHADOWS_KEY, "Shadows", "light", { "off:Off", "normal:Normal", "important:Important" });
+        // whether the light casts shadows, which a light does only when turned On (Cast Shadows, which the Behavior
+        // section leaves out for a light, is on for every entity unless turned off), and whether it comes before the
+        // other lights for one of the shadow maps there are at once (eight for spot lights, four for point lights) and
+        // casts at any distance; On and Important are kept in userData
+        en(SHADOWS_KEY, "Shadows", "light", { "off:Off", "on:On", "important:Important" });
         with(range(add(spec("exponent", "Spot Exponent", K::Float, "light")), 0, DBL_MAX, 0.01, 2), "isSpotlight=true");
         with(range(add(spec("cutoff", "Spot Cutoff", K::Float, "light")), 0, 90, 0.5, 1, "°"), "isSpotlight=true");
         // a picture the light shines through (Unity's cookie): a spot light projects it down its cone, as a slide in a
