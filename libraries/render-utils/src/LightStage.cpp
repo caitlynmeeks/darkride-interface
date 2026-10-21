@@ -11,6 +11,7 @@
 
 #include "LightStage.h"
 
+#include <array>
 #include <cmath>
 
 #include "ViewFrustum.h"
@@ -243,9 +244,12 @@ void LightStage::Shadow::setKeylightFrustum(const ViewFrustum& viewFrustum,
         orientation = glm::quat_cast(glm::mat3(side, up, -lightDirection));
     }
 
-    // Position the keylight frustum
+    // Position the keylight frustum (a held cascade keeps the view it was drawn from)
     auto position = viewFrustum.getPosition() - (nearDepth + farDepth)*lightDirection;
     for (auto& cascade : _cascades) {
+        if (cascade.isHeld()) {
+            continue;
+        }
         cascade._frustum->setOrientation(orientation);
         cascade._frustum->setPosition(position);
     }
@@ -261,11 +265,44 @@ void LightStage::Shadow::setKeylightCascadeFrustum(unsigned int cascadeIndex, co
     const auto viewMaxCascadeShadowDistance = std::min(viewFrustum.getFarClip(), cascade.getMaxDistance());
     const auto viewMaxShadowDistance = _cascades.back().getMaxDistance();
 
-    const Transform shadowView{ cascade._frustum->getView()};
-    const Transform shadowViewInverse{ shadowView.getInverseMatrix() };
-
     auto nearCorners = viewFrustum.getCorners(viewMinCascadeShadowDistance);
     auto farCorners = viewFrustum.getCorners(viewMaxCascadeShadowDistance);
+    const std::array<glm::vec3, 8> sliceCorners {{ nearCorners.bottomLeft, nearCorners.bottomRight, nearCorners.topLeft,
+        nearCorners.topRight, farCorners.bottomLeft, farCorners.bottomRight, farCorners.topLeft, farCorners.topRight }};
+
+    // the stable fit: the sphere around the slice, centred on the view's axis where its near and far corners are
+    // about as far, its radius kept in steps so that rounding doesn't change it as the camera turns, and its centre
+    // snapped to the cascade's texels in the light's plane, the view placed back from it along the light
+    float sphereRadius = 0.0f;
+    if (_stableCascades) {
+        const float near = viewMinCascadeShadowDistance;
+        const float far = viewMaxCascadeShadowDistance;
+        const glm::vec3 eye = viewFrustum.getPosition();
+        const glm::vec3 axis = viewFrustum.getDirection();
+        // the slice's half-width per metre of depth, at its widest corner
+        float spread = 0.0f;
+        for (int i = 0; i < 8; ++i) {
+            float depth = i < 4 ? near : far;
+            spread = glm::max(spread, glm::distance(sliceCorners[i], eye + axis * depth) / depth);
+        }
+        const glm::vec3 center = eye + axis * glm::clamp(0.5f * (near + far) * (1.0f + spread * spread), near, far);
+        for (const auto& corner : sliceCorners) {
+            sphereRadius = glm::max(sphereRadius, glm::distance(center, corner));
+        }
+        const float RADIUS_STEP = 1.0f / 64.0f;
+        sphereRadius = ceilf(sphereRadius / RADIUS_STEP) * RADIUS_STEP;
+
+        const glm::quat orientation = cascade._frustum->getOrientation();
+        glm::vec3 lightCenter = glm::inverse(orientation) * center;
+        const float texel = 2.0f * sphereRadius / MAP_SIZE;
+        lightCenter.x = floorf(lightCenter.x / texel) * texel;
+        lightCenter.y = floorf(lightCenter.y / texel) * texel;
+        const glm::vec3 lightDirection = glm::normalize(_light->getDirection());
+        cascade._frustum->setPosition(orientation * lightCenter - (nearDepth + farDepth) * lightDirection);
+    }
+
+    const Transform shadowView{ cascade._frustum->getView()};
+    const Transform shadowViewInverse{ shadowView.getInverseMatrix() };
 
     vec3 min{ shadowViewInverse.transform(nearCorners.bottomLeft) };
     vec3 max{ min };
@@ -288,6 +325,11 @@ void LightStage::Shadow::setKeylightCascadeFrustum(unsigned int cascadeIndex, co
     fitFrustum(farCorners.bottomRight);
     fitFrustum(farCorners.topLeft);
     fitFrustum(farCorners.topRight);
+    if (_stableCascades) {
+        // the sphere's square around the snapped centre, which the view's position is on
+        min.x = min.y = -sphereRadius;
+        max.x = max.y = sphereRadius;
+    }
 
     // Re-adjust near and far shadow distance
     auto near = glm::min(-max.z, nearDepth);
@@ -298,6 +340,7 @@ void LightStage::Shadow::setKeylightCascadeFrustum(unsigned int cascadeIndex, co
 
     // Calculate the frustum's internal state
     cascade._frustum->calculate();
+    cascade._fitted = true;
 
     // Update the buffer
     auto& schema = _schemaBuffer.edit<Schema>();

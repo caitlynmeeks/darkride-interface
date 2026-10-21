@@ -140,6 +140,10 @@ namespace render {
         float _meshLodErrorPixels{ 0.0f };
         // a level every mesh draws (LODManager.meshLodForceLevel, a test hook): below 0 the error decides; 0 is full
         int _meshLodForceLevel{ -1 };
+        // the camera a shadow map's casters choose their level from while a light's view is pushed (the shadow
+        // setups set it): its position and its pixels per radian at the view's centre; 0 for none yet
+        glm::vec3 _shadowLodEye;
+        float _shadowLodPixelsPerRadian{ 0.0f };
 
         RenderMode _renderMode { DEFAULT_RENDER_MODE };
         DisplayMode _displayMode { MONO };

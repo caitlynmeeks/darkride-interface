@@ -66,11 +66,20 @@ public:
             float getMinDistance() const { return _minDistance; }
             float getMaxDistance() const { return _maxDistance; }
 
+            // held this frame: neither fitted to the view again nor drawn, so its map and the matrix the shaders
+            // read it by stay as they were (a far cascade waiting for its turn, RenderShadowSetup)
+            bool isHeld() const { return _held; }
+            void setHeld(bool held) { _held = held; }
+            // fitted to a view at least once, so that it can be held
+            bool isFitted() const { return _fitted; }
+
         private:
 
             std::shared_ptr<ViewFrustum> _frustum;
             float _minDistance;
             float _maxDistance;
+            bool _held { false };
+            bool _fitted { false };
 
             float computeFarDistance(const ViewFrustum& viewFrustum, const Transform& shadowViewInverse,
                                      float left, float right, float bottom, float top, float viewMaxShadowDistance) const;
@@ -91,6 +100,20 @@ public:
 
         unsigned int getCascadeCount() const { return (unsigned int)_cascades.size(); }
         const Cascade& getCascade(unsigned int index) const { return _cascades[index]; }
+        void holdCascade(unsigned int index, bool held) { _cascades[index].setHeld(held); }
+
+        // a stable fit (Unity's Stable Fit): each cascade takes in the sphere around its slice of the view, whose
+        // size stays the same as the camera turns, centred on a point snapped to the cascade's texels, so that a
+        // still camera draws the same map frame after frame and a moving one doesn't make the shadows' edges crawl;
+        // else the box around the slice in the light's view, which fits tighter but changes with every turn
+        void setStableCascades(bool stable) { _stableCascades = stable; }
+        bool isStableCascades() const { return _stableCascades; }
+        // the cascades' maps kept while nothing in them changes (RenderShadowMap)
+        void setCacheCascades(bool cache) { _cacheCascades = cache; }
+        bool isCacheCascades() const { return _cacheCascades; }
+        // the cascades drawn since the count was last taken (RenderShadowMap counts, RenderShadowSetup takes it)
+        void noteCascadeDrawn() { _cascadesDrawn++; }
+        int takeCascadesDrawn() { int drawn = _cascadesDrawn; _cascadesDrawn = 0; return drawn; }
 
         float getMaxDistance() const { return _maxDistance; }
         void setMaxDistance(float value);
@@ -114,6 +137,9 @@ public:
         graphics::LightPointer _light;
         float _maxDistance{ 0.0f };
         Cascades _cascades;
+        bool _stableCascades { true };
+        bool _cacheCascades { true };
+        int _cascadesDrawn { 0 };
 
         UniformBufferView _schemaBuffer = nullptr;
     };

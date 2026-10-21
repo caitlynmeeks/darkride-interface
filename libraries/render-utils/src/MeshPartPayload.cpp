@@ -562,6 +562,9 @@ namespace {
     // the main view's hysteresis band on the error test, as the impostor switch's: a part steps down to a coarser
     // level where that level's error is a fifth under the tolerance, and back up where it is a fifth over
     const float LOD_BAND = 0.2f;
+    // a caster's shadow takes this many times the view's error: a shadow shows a mesh's outline, softened by the
+    // filtering, never its shading, so about a level coarser does
+    const float SHADOW_LOD_ERROR_SCALE = 2.0f;
 }
 
 int ModelMeshPartPayload::chooseLodLevel(const RenderArgs* args) {
@@ -569,20 +572,24 @@ int ModelMeshPartPayload::chooseLodLevel(const RenderArgs* args) {
     if (levels == 0) {
         return 0;
     }
-    if (args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE) {
-        return _mainViewLodLevel;   // the shadow pass's camera is the light's
+    const bool shadow = args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE;
+    if (shadow && (args->_meshLodForceLevel < 0 && args->_shadowLodPixelsPerRadian <= 0.0f)) {
+        return _mainViewLodLevel;   // no camera to choose from: as the main view last drew it
     }
     const bool mainView = args->_renderMode == RenderArgs::RenderMode::DEFAULT_RENDER_MODE;
     int level = 0;
     if (args->_meshLodForceLevel >= 0) {
         level = std::min(args->_meshLodForceLevel, levels);
     } else if (args->_meshLodErrorPixels > 0.0f && args->hasViewFrustum()) {
+        // a shadow pass's view is the light's: its casters choose from the camera the shadow is seen from, every
+        // caster from where it is, in view or not (one out of view kept full detail before, 2026-10-21)
         const ViewFrustum& frustum = args->getViewFrustum();
-        glm::vec3 eye = frustum.getPosition();
+        glm::vec3 eye = shadow ? args->_shadowLodEye : frustum.getPosition();
         glm::vec3 nearest = glm::clamp(eye, _worldBound.getMinimumPoint(), _worldBound.getMaximumPoint());
         float distance = glm::distance(eye, nearest);   // 0 inside the part's box: full detail
         // the view's pixels per radian at its centre, and the part's scale from its mesh's units to the world's
-        float pixelsPerRadian = 0.5f * (float)args->_viewport.w * frustum.getProjection()[1][1];
+        float pixelsPerRadian = shadow ? args->_shadowLodPixelsPerRadian
+            : 0.5f * (float)args->_viewport.w * frustum.getProjection()[1][1];
         glm::vec3 scale = glm::abs(_worldFromLocalTransform.getScale());
         float worldPerUnit = std::max(scale.x, std::max(scale.y, scale.z));
         // the coarsest level, going from the finest, whose error looks no bigger than the tolerance: a level's error in
@@ -601,6 +608,8 @@ int ModelMeshPartPayload::chooseLodLevel(const RenderArgs* args) {
             int stepDownTo = coarsestWithin(args->_meshLodErrorPixels * (1.0f - LOD_BAND));
             int coarsestAllowed = coarsestWithin(args->_meshLodErrorPixels * (1.0f + LOD_BAND));
             level = glm::clamp(_mainViewLodLevel, stepDownTo, coarsestAllowed);
+        } else if (shadow) {
+            level = coarsestWithin(args->_meshLodErrorPixels * SHADOW_LOD_ERROR_SCALE);
         } else {
             level = coarsestWithin(args->_meshLodErrorPixels);   // mirrors and the secondary camera: no band
         }

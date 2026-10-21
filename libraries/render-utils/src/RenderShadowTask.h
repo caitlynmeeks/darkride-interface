@@ -12,6 +12,9 @@
 #ifndef hifi_RenderShadowTask_h
 #define hifi_RenderShadowTask_h
 
+#include <array>
+#include <vector>
+
 #include <gpu/Framebuffer.h>
 #include <gpu/Pipeline.h>
 
@@ -39,6 +42,16 @@ public:
 protected:
     render::ShapePlumberPointer _shapePlumber;
     unsigned int _cascadeIndex;
+
+    // what the cascade's map shows, so that with caching (RenderShadowSetupConfig.cacheCascades) it is drawn again
+    // only when that would differ: the view and projection it was drawn from, its casters (sorted) and the scene
+    // frame it was drawn in, after which a caster that changed or is fading means drawing it again
+    bool _drawn { false };
+    glm::mat4 _drawnView;
+    glm::mat4 _drawnProjection;
+    std::vector<render::ItemID> _drawnCasters;
+    uint64_t _drawnFrame { 0 };
+    std::vector<render::ItemID> _casterIds;   // scratch
 };
 
 //class RenderShadowTaskConfig : public render::Task::Config::Persistent {
@@ -91,8 +104,27 @@ class RenderShadowSetupConfig : public render::Job::Config {
     Q_PROPERTY(float slopeBias3 MEMBER slopeBias3 NOTIFY dirty)
     Q_PROPERTY(float biasInput MEMBER biasInput NOTIFY dirty)
     Q_PROPERTY(float maxDistance MEMBER maxDistance NOTIFY dirty)
+    // the cascades fitted stably (LightStage::Shadow::setStableCascades), their maps kept while nothing in them
+    // changes, and the far cascades (2 and 3) fitted and drawn again in turns, one each frame, every this many
+    // frames each (1: every frame); FORWARD-PLUS.md §4, sun shadows
+    Q_PROPERTY(bool stableCascades MEMBER stableCascades NOTIFY dirty)
+    Q_PROPERTY(bool cacheCascades MEMBER cacheCascades NOTIFY dirty)
+    Q_PROPERTY(int farCascadeInterval MEMBER farCascadeInterval NOTIFY dirty)
+    // last frame's cascades: drawn, and held for their turn (set by the job, without a dirty signal)
+    Q_PROPERTY(int cascadesDrawn READ getCascadesDrawn NOTIFY dirty)
+    Q_PROPERTY(int cascadesHeld READ getCascadesHeld NOTIFY dirty)
 
 public:
+    int getCascadesDrawn() const { return cascadesDrawn; }
+    int getCascadesHeld() const { return cascadesHeld; }
+    void setCascadeCounts(int drawn, int held) { cascadesDrawn = drawn; cascadesHeld = held; }
+
+    bool stableCascades { true };
+    bool cacheCascades { true };
+    int farCascadeInterval { 2 };
+    int cascadesDrawn { 0 };
+    int cascadesHeld { 0 };
+
     // Set to > 0 to experiment with these values
     float constantBias0 { 0.0f };
     float constantBias1 { 0.0f };
@@ -142,25 +174,48 @@ private:
     float slopeBias3;
     float biasInput;
     float maxDistance;
+    bool _stableCascades { true };
+    bool _cacheCascades { true };
+    int _farCascadeInterval { 2 };
+    uint64_t _frameCount { 0 };
 
     void setConstantBias(int cascadeIndex, float value);
     void setSlopeBias(int cascadeIndex, float value);
     void calculateBiases(float biasInput);
 };
 
+class RenderShadowCascadeSetupConfig : public render::Job::Config {
+    Q_OBJECT
+    // a caster smaller than this many of the cascade's texels doesn't draw into it; 0 takes the cascade's default
+    // (RenderShadowCascadeSetup::DEFAULT_MIN_CASTER_TEXELS)
+    Q_PROPERTY(float minCasterTexels MEMBER minCasterTexels NOTIFY dirty)
+public:
+    float minCasterTexels { 0.0f };
+signals:
+    void dirty();
+};
+
 class RenderShadowCascadeSetup {
 public:
     using Inputs = LightStage::ShadowFramePointer;
     using Outputs = render::VaryingSet3<render::ItemFilter, ViewFrustumPointer, RenderShadowTask::CullFunctor>;
-    using JobModel = render::Job::ModelIO<RenderShadowCascadeSetup, Inputs, Outputs>;
+    using Config = RenderShadowCascadeSetupConfig;
+    using JobModel = render::Job::ModelIO<RenderShadowCascadeSetup, Inputs, Outputs, Config>;
+
+    // the near cascades' texels are small, so 24 of them is a small caster; the far cascades', after the distance
+    // has thinned the detail out, skip casters at least twice as wide (Madders Place, 2026-10-21: cascades 2 and 3
+    // drew 1,635 of the sun's 1,725 draw calls)
+    static const std::array<float, SHADOW_CASCADE_MAX_COUNT> DEFAULT_MIN_CASTER_TEXELS;
 
     RenderShadowCascadeSetup(unsigned int cascadeIndex, render::ItemFilter filter) : _cascadeIndex(cascadeIndex), _filter(filter) {}
 
+    void configure(const Config& config) { _minCasterTexels = config.minCasterTexels; }
     void run(const render::RenderContextPointer& renderContext, const Inputs& input, Outputs& output);
 
 private:
     unsigned int _cascadeIndex;
     render::ItemFilter _filter;
+    float _minCasterTexels { 0.0f };
 };
 
 class RenderShadowCascadeTeardown {

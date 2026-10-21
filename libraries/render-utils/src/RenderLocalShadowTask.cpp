@@ -645,6 +645,10 @@ RenderLocalShadowSetup::RenderLocalShadowSetup() :
 
 void RenderLocalShadowSetup::run(const render::RenderContextPointer& renderContext, const Input& input, Output& output) {
     RenderArgs* args = renderContext->args;
+    // the camera the casters choose their mesh's level of detail from while the lights' views are pushed
+    // (MeshPartPayload::chooseLodLevel), as the sun's shadow setup does
+    args->_shadowLodEye = args->getViewFrustum().getPosition();
+    args->_shadowLodPixelsPerRadian = 0.5f * (float)args->_viewport.w * args->getViewFrustum().getProjection()[1][1];
     const auto& lightFrame = input.get0();
     const auto& lightingModel = input.get1();
     const auto& shadowFrame = input.get2();

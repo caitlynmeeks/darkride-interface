@@ -13,11 +13,15 @@
 
 #include <gpu/Context.h>
 
+#include <algorithm>
+
 #include <ViewFrustum.h>
 
 #include <render/CullTask.h>
 #include <render/SortTask.h>
 #include <render/DrawTask.h>
+#include <render/Scene.h>
+#include <render/TransitionStage.h>
 
 #include "DeferredLightingEffect.h"
 #include "FramebufferCache.h"
@@ -222,6 +226,9 @@ void RenderShadowMap::run(const render::RenderContextPointer& renderContext, con
     }
 
     auto& cascade = shadow->getCascade(_cascadeIndex);
+    if (cascade.isHeld()) {
+        return;   // waiting for its turn: the map and its matrix stay as they were (RenderShadowSetup)
+    }
     auto& fbo = cascade.framebuffer;
 
     RenderArgs* args = renderContext->args;
@@ -234,6 +241,34 @@ void RenderShadowMap::run(const render::RenderContextPointer& renderContext, con
     shadow->setCascadeFrustum(_cascadeIndex, adjustedShadowFrustum);
     args->popViewFrustum();
     args->pushViewFrustum(adjustedShadowFrustum);
+
+    // With caching the map stays while it would show the same: the view it was drawn from, the same casters, and
+    // none of them changed or fading since (a stable fit keeps the view the same while the camera is still)
+    const auto& scene = renderContext->_scene;
+    const uint64_t frame = scene->getFrame();
+    const glm::mat4 view = adjustedShadowFrustum.getView();
+    const glm::mat4 projection = adjustedShadowFrustum.getProjection();
+    _casterIds.clear();
+    bool castersChanged = false;
+    for (const auto& shapes : inShapes) {
+        for (const auto& bound : shapes.second) {
+            const auto& item = scene->getItem(bound.id);
+            _casterIds.push_back(bound.id);
+            castersChanged = castersChanged || item.getChangeFrame() > _drawnFrame ||
+                !render::TransitionStage::isIndexInvalid(item.getTransitionId());
+        }
+    }
+    std::sort(_casterIds.begin(), _casterIds.end());
+    if (shadow->isCacheCascades() && _drawn && !castersChanged && view == _drawnView && projection == _drawnProjection &&
+            _casterIds == _drawnCasters) {
+        return;
+    }
+    _drawn = true;
+    _drawnView = view;
+    _drawnProjection = projection;
+    _drawnCasters.swap(_casterIds);
+    _drawnFrame = frame;
+    shadow->noteCascadeDrawn();
 
     gpu::doInBatch("RenderShadowMap::run", args->_context, [&](gpu::Batch& batch) {
         args->_batch = &batch;
@@ -337,6 +372,9 @@ void RenderShadowSetup::configure(const Config& config) {
     slopeBias3 = config.slopeBias3;
     biasInput = config.biasInput;
     maxDistance = config.maxDistance;
+    _stableCascades = config.stableCascades;
+    _cacheCascades = config.cacheCascades;
+    _farCascadeInterval = std::max(1, config.farCascadeInterval);
 }
 
 void RenderShadowSetup::calculateBiases(float biasInput) {
@@ -394,11 +432,33 @@ void RenderShadowSetup::run(const render::RenderContextPointer& renderContext, c
     // Save main camera frustum
     *_cameraFrustum = args->getViewFrustum();
     output.edit2() = _cameraFrustum;
+    // the camera the casters choose their mesh's level of detail from while the light's view is pushed
+    // (MeshPartPayload::chooseLodLevel), as seen in this view
+    args->_shadowLodEye = _cameraFrustum->getPosition();
+    args->_shadowLodPixelsPerRadian = 0.5f * (float)args->_viewport.w * _cameraFrustum->getProjection()[1][1];
 
     if (!_globalShadowObject) {
         _globalShadowObject = std::make_shared<LightStage::Shadow>(currentKeyLight, SHADOW_CASCADE_MAX_COUNT);
     }
     _globalShadowObject->setLight(currentKeyLight);
+    _globalShadowObject->setStableCascades(_stableCascades);
+    _globalShadowObject->setCacheCascades(_cacheCascades);
+
+    // The far cascades take turns: each is fitted to the view and drawn again only on its frame, one every
+    // _farCascadeInterval frames, and held as it was in between (its map, and the matrix the shaders read it by).
+    // Their casters are most of the sun's draws, and far from the camera a frame's lag in their shadows doesn't show
+    ++_frameCount;
+    const unsigned int FIRST_FAR_CASCADE = 2;
+    int heldCascades = 0;
+    for (unsigned int cascadeIndex = 0; cascadeIndex < _globalShadowObject->getCascadeCount(); ++cascadeIndex) {
+        const auto& cascade = _globalShadowObject->getCascade(cascadeIndex);
+        bool hold = _farCascadeInterval > 1 && cascadeIndex >= FIRST_FAR_CASCADE && cascade.isFitted() &&
+            _frameCount % _farCascadeInterval != (cascadeIndex - FIRST_FAR_CASCADE) % _farCascadeInterval;
+        _globalShadowObject->holdCascade(cascadeIndex, hold);
+        heldCascades += hold ? 1 : 0;
+    }
+    std::static_pointer_cast<Config>(renderContext->jobConfig)->setCascadeCounts(_globalShadowObject->takeCascadesDrawn(), heldCascades);
+
     _globalShadowObject->setKeylightFrustum(args->getViewFrustum(), SHADOW_FRUSTUM_NEAR, SHADOW_FRUSTUM_FAR);
 
     // Update our biases and maxDistance from the light or config
@@ -406,6 +466,9 @@ void RenderShadowSetup::run(const render::RenderContextPointer& renderContext, c
 
     // Adjust each cascade frustum
     for (unsigned int cascadeIndex = 0; cascadeIndex < _globalShadowObject->getCascadeCount(); ++cascadeIndex) {
+        if (_globalShadowObject->getCascade(cascadeIndex).isHeld()) {
+            continue;
+        }
         _globalShadowObject->setKeylightCascadeFrustum(cascadeIndex, args->getViewFrustum(), SHADOW_FRUSTUM_NEAR, SHADOW_FRUSTUM_FAR);
     }
 
@@ -481,6 +544,8 @@ void RenderShadowSetup::run(const render::RenderContextPointer& renderContext, c
     output.edit1() = queryResolution;
 }
 
+const std::array<float, SHADOW_CASCADE_MAX_COUNT> RenderShadowCascadeSetup::DEFAULT_MIN_CASTER_TEXELS {{ 24.0f, 24.0f, 48.0f, 48.0f }};
+
 void RenderShadowCascadeSetup::run(const render::RenderContextPointer& renderContext, const Inputs& input, Outputs& output) {
     const auto shadowFrame = input;
 
@@ -492,17 +557,22 @@ void RenderShadowCascadeSetup::run(const render::RenderContextPointer& renderCon
         const auto globalShadow = shadowFrame->_objects[0];
 
         if (globalShadow && _cascadeIndex < globalShadow->getCascadeCount()) {
+            auto& cascade = globalShadow->getCascade(_cascadeIndex);
+            auto& cascadeFrustum = cascade.getFrustum();
+            if (cascade.isHeld()) {
+                // a far cascade waiting for its turn: nothing is culled or drawn for it, and its map stays
+                output.edit0() = ItemFilter::Builder::nothing();
+                output.edit1() = cascadeFrustum;
+                output.edit2() = cullFunctor;
+                return;
+            }
             output.edit0() = _filter;
 
             // Set the keylight render args
-            auto& cascade = globalShadow->getCascade(_cascadeIndex);
-            auto& cascadeFrustum = cascade.getFrustum();
             args->pushViewFrustum(*cascadeFrustum);
             auto texelSize = glm::min(cascadeFrustum->getHeight(), cascadeFrustum->getWidth()) / cascade.framebuffer->getSize().x;
-            // Set the cull threshold to 24 shadow texels. This is totally arbitrary
-            const auto minTexelCount = 24.0f;
-            // TODO : maybe adapt that with LOD management system?
-            texelSize *= minTexelCount;
+            // a caster smaller than this many of the cascade's texels doesn't draw into it
+            texelSize *= _minCasterTexels > 0.0f ? _minCasterTexels : DEFAULT_MIN_CASTER_TEXELS[_cascadeIndex];
             cullFunctor._minSquareSize = texelSize * texelSize;
 
             output.edit1() = cascadeFrustum;
