@@ -122,6 +122,12 @@ class AABox;
  * @property {number} impostorDebug - The impostor card's debug view: <code>0</code> draws the cards as they are,
  *     <code>10</code> tints them blue (the Inspector's Tint Cards), <code>1</code> to <code>9</code> paint what the card's
  *     shader reads. Not saved.
+ * @property {number} impostorMarch - How the impostor card's shader finds the subject along each pixel's ray:
+ *     <code>1</code> stops reading a point's views once one puts it outside and refines the hit once, which finds the
+ *     same surface as <code>0</code>, the march as first built; <code>2</code> (the default) also takes steps no shorter
+ *     than <code>impostorMarchFootprints</code> of the card's pixel footprint. Not saved.
+ * @property {number} impostorMarchFootprints - The shortest step of march <code>2</code>, in the card's pixel footprints
+ *     (default <code>0.25</code>; at <code>1</code> thin parts such as a chair's tubes break into dots). Not saved.
  * @property {boolean} impostorsEnabled - <code>true</code> (the default) draws impostor cards; <code>false</code> draws
  *     every entity's model instead (Developer &gt; Render &gt; Impostor Cards). Not saved.
  * @property {boolean} meshLodsEnabled - <code>true</code> (the default) draws the automatic LODs, the simplified versions
@@ -171,6 +177,8 @@ class LODManager : public QObject, public Dependency {
         Q_PROPERTY(float impostorAngleDeg READ getImpostorAngleSetting WRITE setImpostorAngleDeg)
         Q_PROPERTY(float impostorAngleInEffectDeg READ getImpostorAngleDeg)
         Q_PROPERTY(int impostorDebug READ getImpostorDebug WRITE setImpostorDebug)
+        Q_PROPERTY(int impostorMarch READ getImpostorMarch WRITE setImpostorMarch)
+        Q_PROPERTY(float impostorMarchFootprints READ getImpostorMarchFootprints WRITE setImpostorMarchFootprints)
         Q_PROPERTY(float impostorCrossfade READ getImpostorCrossfade WRITE setImpostorCrossfade)
         Q_PROPERTY(bool impostorsEnabled READ getImpostorsEnabled WRITE setImpostorsEnabled)
         Q_PROPERTY(bool meshLodsEnabled READ getMeshLodsEnabled WRITE setMeshLodsEnabled)
@@ -329,6 +337,13 @@ public:
     // the card shader's debug view (impostor.slf), not saved: 0 draws the card
     int getImpostorDebug() const { return _impostorDebug; }
     void setImpostorDebug(int mode) { _impostorDebug = mode; }
+    // the card shader's march (impostor.slf), not saved: 0 as first built (every frame read at every step, the hit
+    // refined at every step), 1 the same hit for less work (a point's frames read until one puts it outside, the hit
+    // refined once), 2 (the default) also a step no shorter than impostorMarchFootprints of the card's pixel footprint
+    int getImpostorMarch() const { return _impostorMarch; }
+    void setImpostorMarch(int mode) { _impostorMarch = std::max(0, std::min(mode, 2)); }
+    float getImpostorMarchFootprints() const { return _impostorMarchFootprints; }
+    void setImpostorMarchFootprints(float footprints) { _impostorMarchFootprints = std::max(0.0f, footprints); }
     // the cross-fade between a model and its card held at a share (ImpostorSwitch), not saved: below 0 the switch
     // times its own; 0 the model alone, 1 the card alone, between them both, dissolved (a test hook)
     float getImpostorCrossfade() const { return _impostorCrossfade; }
@@ -452,6 +467,8 @@ private:
     float _lodHalfAngle = getHalfAngleFromVisibilityDistance(DEFAULT_VISIBILITY_DISTANCE_FOR_UNIT_ELEMENT);
     float _impostorAngleDeg { 0.0f };   // 0: automatic, four times the LOD angle
     int _impostorDebug { 0 };
+    int _impostorMarch { 2 };
+    float _impostorMarchFootprints { 0.25f };
     float _impostorCrossfade { -1.0f };
     bool _impostorsEnabled { true };
     bool _meshLodsEnabled { true };

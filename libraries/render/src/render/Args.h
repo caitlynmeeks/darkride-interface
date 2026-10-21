@@ -132,6 +132,10 @@ namespace render {
         // the impostor card's debug view (LODManager.impostorDebug, impostor.slf): 0 draws the card, other values paint
         // what the shader reads
         int _impostorDebug{ 0 };
+        // the impostor card's march (LODManager.impostorMarch, impostor.slf): 0 as first built, 1 with the exact
+        // savings, 2 also stepping by the screen's pixels, at least this many pixel footprints a step
+        int _impostorMarch{ 2 };
+        float _impostorMarchFootprints{ 0.25f };
         // the impostor cross-fade forced to a share (LODManager.impostorCrossfade, a test hook): below 0 the switch
         // times its own; 0 draws the model alone, 1 the card alone, between them both, dissolved
         float _impostorCrossfade{ -1.0f };

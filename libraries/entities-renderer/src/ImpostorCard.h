@@ -107,6 +107,8 @@ private:
     render::Item::Bound _bound;
     gpu::BufferPointer _params;
     int _debugMode { 0 };
+    int _marchMode { 2 };
+    float _marchFootprints { 0.25f };
     ImpostorSwitchPointer _switch;
 };
 

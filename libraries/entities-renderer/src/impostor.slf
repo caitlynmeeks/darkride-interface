@@ -63,7 +63,9 @@ struct ImpostorParams {
     vec4 centerRadius;    // xyz: the sphere's centre in world space; w: its radius, metres
     vec4 material;        // x: roughness; y: metallic (both the entry's, for a bake without a material atlas);
                           // z: the frame size in texels; w: 1 when the material atlas is bound
-    vec4 flags;           // x: the debug view; the rest unused
+    vec4 flags;           // x: the debug view; y: the march (LODManager.impostorMarch: 0 as first built, 1 with the
+                          // exact savings, 2 also stepping by the screen's pixels); z: march 2's step in pixel
+                          // footprints (LODManager.impostorMarchFootprints); w unused
 };
 
 LAYOUT_STD140(binding=ENTITIES_BUFFER_IMPOSTOR) uniform impostorParamsBuffer {
@@ -150,12 +152,17 @@ bool frameSurface(int frame, vec3 point, float radius, out float height) {
 // the visual hull the frames carve, each pair of opposite frames bounding the subject's extent along their axis.
 // No point outside it is drawn, which is what keeps a frame's picture from smearing across another's view.
 // slack: metres a point may stand proud of a frame's surface and still count inside (a texel's worth)
-bool inside(vec3 point, float radius, float slack) {
+// early: read no more frames once one has put the point outside (the march's points are mostly outside, in the
+// empty part of the card's square, where one frame decides); an if around the body, not a break, which the macOS
+// compiler is not trusted with inside a loop
+bool inside(vec3 point, float radius, float slack, bool early) {
     bool within = true;
     for (int frame = 0; frame < 6; frame++) {
-        float height;
-        bool covered = frameSurface(frame, point, radius, height);
-        within = within && covered && (dot(point, frameBackward(frame)) <= height + slack);
+        if (within || !early) {
+            float height;
+            bool covered = frameSurface(frame, point, radius, height);
+            within = within && covered && (dot(point, frameBackward(frame)) <= height + slack);
+        }
     }
     return within;
 }
@@ -200,6 +207,12 @@ void main(void) {
     // one mip level for every read: the card's pixel footprint in metres against the frames' texels (the reads sit
     // in branches that differ from one pixel to the next, where the hardware's own derivatives are undefined)
     float footprint = max(length(dFdx(p)), length(dFdy(p)));
+    // the march (LODManager.impostorMarch, IMPOSTORS.md): 1 and 2 stop reading frames once a point is outside and
+    // refine the hit once after the march, which finds the same hit as 0 for less work; 2 also steps by a share of
+    // the card's pixel footprint (flags.z) where that is longer than two texels, so a card a few pixels across takes
+    // a few steps (at a whole footprint the school chair's 2 cm tubes broke into dots at 30 m: they were stepped over)
+    int march = int(params.flags.y + 0.5);
+    bool early = march >= 1;
     float texelsPerMetre = params.material.z / (2.0 * radius);
     float lod = log2(max(footprint * texelsPerMetre, 1.0));
     float texel = 1.0 / texelsPerMetre;   // a frame texel's side, metres: the hull's tolerance and the march's measure
@@ -233,7 +246,7 @@ void main(void) {
         } else if (debugMode == 5) {
             float pvDebug = dot(p, v);
             bool chord = (pvDebug * pvDebug - (dot(p, p) - radius * radius)) > 0.0;
-            debugColor = !chord ? vec3(1.0, 0.0, 0.0) : (inside(p, radius, texel) ? vec3(1.0) : vec3(0.0));
+            debugColor = !chord ? vec3(1.0, 0.0, 0.0) : (inside(p, radius, texel, false) ? vec3(1.0) : vec3(0.0));
         } else if (debugMode == 6) {
             vec2 uv = frameUV(frames[0], p, radius);
             debugColor = vec3(uv, float(frames[0]) / 5.0);
@@ -287,32 +300,56 @@ void main(void) {
         }
         // the candidate sits on the frame's surface, where the other frames' coverage is a texel's toss-up at a
         // thin surface's edge: it is judged a texel inside, along the frame's axis
-        bool candidate = valid && (t < tHit) && inside(p + v * t - backward * texel, radius, texel);
+        bool candidate = valid && (t < tHit) && inside(p + v * t - backward * texel, radius, texel, early);
         tHit = candidate ? t : tHit;
     }
     {
         // the march's step is two texels of the atlas along the chord, so that a tube a few texels across (the
         // school chair's 2 cm frame) is met rather than stepped over; a coarse atlas or a short chord takes fewer
         // steps, a fine one is capped
-        int steps = int(clamp((tExit - tEnter) / (STEP_TEXELS * texel), float(MARCH_MIN), float(MARCH_MAX)));
+        float stepLength = STEP_TEXELS * texel;
+        stepLength = (march >= 2) ? max(stepLength, params.flags.z * footprint) : stepLength;
+        int steps = int(clamp((tExit - tEnter) / stepLength, float(MARCH_MIN), float(MARCH_MAX)));
         float step = (tExit - tEnter) / float(steps);
         float tPrev = tEnter;
         bool found = false;
+        // the first step inside and the last one outside before it, for the refinement after the march (1 and 2)
+        float firstLo = tEnter;
+        float firstHi = tEnter;
         for (int i = 1; i <= steps; i++) {
             float t = tEnter + step * float(i);
-            bool hit = !found && (t < tHit) && inside(p + v * t, radius, texel);
-            // the surface is between the last outside point and this one
-            float lo = tPrev;
-            float hi = t;
+            bool hit = false;
+            if (!early || (!found && t < tHit)) {
+                hit = !found && (t < tHit) && inside(p + v * t, radius, texel, early);
+            }
+            // march 0: the surface refined at once, between the last outside point and this one
+            if (!early) {
+                float lo = tPrev;
+                float hi = t;
+                for (int b = 0; b < 4; b++) {
+                    float mid = 0.5 * (lo + hi);
+                    bool midInside = hit && inside(p + v * mid, radius, texel, false);
+                    hi = midInside ? mid : hi;
+                    lo = midInside ? lo : mid;
+                }
+                tHit = hit ? min(tHit, hi) : tHit;
+            }
+            firstLo = hit ? tPrev : firstLo;
+            firstHi = hit ? t : firstHi;
+            found = found || hit;
+            tPrev = found ? tPrev : t;
+        }
+        // marches 1 and 2: the same refinement once, after the march, for the one step that found the surface
+        if (early && found) {
+            float lo = firstLo;
+            float hi = firstHi;
             for (int b = 0; b < 4; b++) {
                 float mid = 0.5 * (lo + hi);
-                bool midInside = hit && inside(p + v * mid, radius, texel);
+                bool midInside = inside(p + v * mid, radius, texel, true);
                 hi = midInside ? mid : hi;
                 lo = midInside ? lo : mid;
             }
-            tHit = hit ? min(tHit, hi) : tHit;
-            found = found || hit;
-            tPrev = found ? tPrev : t;
+            tHit = min(tHit, hi);
         }
     }
     if (tHit > tExit) {

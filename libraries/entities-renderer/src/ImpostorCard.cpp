@@ -36,7 +36,7 @@ namespace {
         glm::mat4 objectToWorld;
         glm::vec4 centerRadius;
         glm::vec4 material;   // roughness, metallic, the frame size in texels, 1 with a material atlas
-        glm::vec4 flags;      // the debug view, unused
+        glm::vec4 flags;      // the debug view, the march, march 2's step in pixel footprints, unused
     };
 
     // The card's pipelines: the G-buffer write, the forward shading and the shadow pass's depth, all from
@@ -202,7 +202,7 @@ void ImpostorCard::update() {
         // the atlas is 3 x 2 frames: a frame's side is half the atlas's height
         float frameSize = (float)(_albedoTexture->getHeight() / 2);
         params.material = glm::vec4(entry.roughness, entry.metallic, frameSize, _materialTexture ? 1.0f : 0.0f);
-        params.flags = glm::vec4((float)_debugMode, 0.0f, 0.0f, 0.0f);
+        params.flags = glm::vec4((float)_debugMode, (float)_marchMode, _marchFootprints, 0.0f);
         _params->setSubData(0, params);
     }
 }
@@ -266,10 +266,13 @@ void ImpostorCard::render(RenderArgs* args) {
     transform.setRotation(glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), toCamera));
     transform.setScale(glm::vec3(halfSide));
 
-    if (args->_impostorDebug != _debugMode) {
-        // the shader's debug view, in the parameters' flags
+    if (args->_impostorDebug != _debugMode || args->_impostorMarch != _marchMode ||
+        args->_impostorMarchFootprints != _marchFootprints) {
+        // the shader's debug view and march, in the parameters' flags
         _debugMode = args->_impostorDebug;
-        glm::vec4 flags((float)_debugMode, 0.0f, 0.0f, 0.0f);
+        _marchMode = args->_impostorMarch;
+        _marchFootprints = args->_impostorMarchFootprints;
+        glm::vec4 flags((float)_debugMode, (float)_marchMode, _marchFootprints, 0.0f);
         _params->setSubData(offsetof(Params, flags), sizeof(flags), reinterpret_cast<const gpu::Byte*>(&flags));
     }
 
