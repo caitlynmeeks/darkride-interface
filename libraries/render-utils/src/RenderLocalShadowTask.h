@@ -72,6 +72,14 @@ public:
         glm::mat4 staticProjection;
         std::vector<render::ItemID> staticCasters;  // sorted
         uint64_t staticFrame { 0 };
+
+        // whether the working map was drawn over a copy of the static map (layered) or with every caster at once;
+        // the frames in a row the tile has been drawn, and kept; and whether it is busy, drawn every frame for a
+        // while (something in the light's view keeps moving), until it has been kept for a while
+        bool drawnLayered { false };
+        int drawnStreak { 0 };
+        int keptStreak { 0 };
+        bool busy { false };
     };
 
     // what drawing a tile takes this frame
@@ -116,10 +124,13 @@ public:
     // view this frame are those drawn, none has changed or is fading since, and the view itself hasn't moved. With
     // static caching a caster unchanged for a while counts as static and goes in the static map, drawn again only
     // when those casters or the view change, so that a moving avatar costs its own drawing over a copy of that map.
-    // The records are brought up to date for the maps about to be drawn; caching off, every tile is drawn every frame
+    // The records are brought up to date for the maps about to be drawn; caching off, every tile is drawn every frame.
+    // A busy tile, one drawn every frame anyway, draws every caster at once rather than over a copy of the static map
+    // when it has no more static casters than a copy costs draws (setBlitCostInDraws)
     const TilePlan* planTile(int tile, const render::ShapeBounds& casters, const render::Scene& scene);
     void setCaching(bool caching) { _caching = caching; }
     void setStaticCaching(bool staticCaching) { _staticCaching = staticCaching; }
+    void setBlitCostInDraws(int draws) { _blitCostInDraws = draws; }
     // the static atlas's framebuffer; none until static caching has been used
     const gpu::FramebufferPointer& getStaticFramebuffer() const { return _staticFramebuffer; }
     // copies the static atlas's tile into the working atlas's tile, texel for texel (a depth blit)
@@ -163,6 +174,7 @@ private:
     TilePlan _plan;
     bool _caching { true };
     bool _staticCaching { true };
+    int _blitCostInDraws { 0 };
 
     gpu::TexturePointer _staticAtlas;
     gpu::FramebufferPointer _staticFramebuffer;
@@ -196,6 +208,14 @@ class RenderLocalShadowSetupConfig : public render::Job::Config {
     // whether every light with Cast Shadows on casts, as before a light's shadows had to be turned on (its Shadows
     // field On or Important): for comparing a world's cost both ways, off by default
     Q_PROPERTY(bool everyLightCasts READ isEveryLightCasts WRITE setEveryLightCasts NOTIFY dirty)
+    // what copying a static map into the working atlas costs, in draw calls: a busy tile with no more static casters
+    // than this draws them all itself instead of copying their map in. macOS's OpenGL copies slowly (Madders Place,
+    // 2026-10-21: 29 tiles drawn whole every frame cost less than 29 copies and their moving casters, about 1,900
+    // draws more); elsewhere 0, the copy always, until measured
+    Q_PROPERTY(int blitCostInDraws READ getBlitCostInDraws WRITE setBlitCostInDraws NOTIFY dirty)
+    // last frame's tiles: busy ones, and those drawn over a copy of their static map
+    Q_PROPERTY(int busyTiles READ getBusyTiles NOTIFY dirty)
+    Q_PROPERTY(int layeredTiles READ getLayeredTiles NOTIFY dirty)
 public:
     bool isCaching() const { return _caching; }
     void setCaching(bool caching) { if (_caching != caching) { _caching = caching; emit dirty(); } }
@@ -205,6 +225,18 @@ public:
     void setLocalLights(bool localLights) { if (_localLights != localLights) { _localLights = localLights; emit dirty(); } }
     bool isEveryLightCasts() const { return _everyLightCasts; }
     void setEveryLightCasts(bool every) { if (_everyLightCasts != every) { _everyLightCasts = every; emit dirty(); } }
+    int getBlitCostInDraws() const { return _blitCostInDraws; }
+    void setBlitCostInDraws(int draws) { if (_blitCostInDraws != draws) { _blitCostInDraws = draws; emit dirty(); } }
+    int getBusyTiles() const { return _busyTiles; }
+    int getLayeredTiles() const { return _layeredTiles; }
+    // set by the job each frame, without a dirty signal (which would configure the job again)
+    void setTileCounts(int busy, int layered) { _busyTiles = busy; _layeredTiles = layered; }
+
+#if defined(Q_OS_MACOS)
+    static const int DEFAULT_BLIT_COST_IN_DRAWS = 128;
+#else
+    static const int DEFAULT_BLIT_COST_IN_DRAWS = 0;
+#endif
 
 signals:
     void dirty();
@@ -214,6 +246,9 @@ private:
     bool _staticCaching { true };
     bool _localLights { true };
     bool _everyLightCasts { false };
+    int _blitCostInDraws { DEFAULT_BLIT_COST_IN_DRAWS };
+    int _busyTiles { 0 };
+    int _layeredTiles { 0 };
 };
 
 // Picks the lights and gives each its tiles, and takes in a view wide enough for all of them, for fetching what they
@@ -231,6 +266,7 @@ public:
         _staticCaching = config.isStaticCaching();
         _localLights = config.isLocalLights();
         _everyLightCasts = config.isEveryLightCasts();
+        _blitCostInDraws = config.getBlitCostInDraws();
     }
     void run(const render::RenderContextPointer& renderContext, const Input& input, Output& output);
 
@@ -241,6 +277,7 @@ private:
     bool _staticCaching { true };
     bool _localLights { true };
     bool _everyLightCasts { false };
+    int _blitCostInDraws { Config::DEFAULT_BLIT_COST_IN_DRAWS };
 };
 
 // One tile's turn: takes the view from its light, or selects nothing when the tile has no light this frame. For a

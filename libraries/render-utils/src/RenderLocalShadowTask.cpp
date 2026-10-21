@@ -13,6 +13,8 @@
 #include <functional>
 #include <limits>
 
+#include <QStringList>
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/component_wise.hpp>
 
@@ -28,6 +30,7 @@
 #include <render/TransitionStage.h>
 
 #include "FadeEffect.h"
+#include "RenderUtilsLogging.h"
 
 using namespace render;
 
@@ -79,6 +82,12 @@ namespace {
     // a caster unchanged for this many scene frames counts as static (an avatar, or an animated model, changes every
     // frame and never does); one that changes stays dynamic this long after, then joins the static map
     const uint64_t STATIC_AFTER_FRAMES = 60;
+    // a tile drawn this many frames in a row is busy (something in its light's view keeps moving); one kept this many
+    // frames in a row is calm again
+    const int BUSY_AFTER_FRAMES = 30;
+    const int CALM_AFTER_FRAMES = 60;
+    // scene frames between the shadow diagnostic's lines (TIVOLI_SHADOW_DIAG)
+    const uint64_t SHADOW_DIAG_FRAMES = 240;
     const float FIELD_OF_VIEW_MARGIN = glm::radians(2.0f);   // so the edge of the cone is filtered like its middle
     const float MIN_NEAR_CLIP = 0.05f;
     const float NEAR_CLIP_SCALE = 0.01f;
@@ -313,7 +322,14 @@ const LocalShadows::TilePlan* LocalShadows::planTile(int tile, const render::Sha
     _staticIds.clear();
     _casterIds.clear();
     bool staticChanged = false;
+    bool staticChangedSinceDrawn = false;
     bool dynamicChanged = false;
+    int staticCount = 0;
+    // TIVOLI_SHADOW_DIAG in the environment: every few seconds a line per tile, with the first of its dynamic casters
+    // (where and how big, how long since they changed), to tell what keeps a light's map busy
+    static const bool SHADOW_DIAG = getenv("TIVOLI_SHADOW_DIAG") != nullptr;
+    const bool diagFrame = SHADOW_DIAG && frame % SHADOW_DIAG_FRAMES == 0;
+    QStringList diagCasters;
     for (const auto& shapes : casters) {
         for (const auto& bound : shapes.second) {
             const auto& item = scene.getItem(bound.id);
@@ -323,23 +339,47 @@ const LocalShadows::TilePlan* LocalShadows::planTile(int tile, const render::Sha
                 _plan.dynamicCasters[shapes.first].push_back(bound);
                 _casterIds.push_back(bound.id);
                 dynamicChanged = dynamicChanged || transitioning || item.getChangeFrame() > entry.drawnFrame;
+                if (diagFrame && split && diagCasters.size() < 4) {
+                    glm::vec3 center = bound.bound.calcCenter();
+                    diagCasters << QString("(%1, %2, %3) %4 m, changed %5 frames ago%6").arg(center.x, 0, 'f', 1)
+                        .arg(center.y, 0, 'f', 1).arg(center.z, 0, 'f', 1).arg(glm::compMax(bound.bound.getScale()), 0, 'f', 1)
+                        .arg(frame - item.getChangeFrame()).arg(transitioning ? ", fading" : "");
+                }
             } else {
                 _plan.staticCasters[shapes.first].push_back(bound);
                 _staticIds.push_back(bound.id);
                 staticChanged = staticChanged || item.getChangeFrame() > entry.staticFrame;
+                staticChangedSinceDrawn = staticChangedSinceDrawn || item.getChangeFrame() > entry.drawnFrame;
+                ++staticCount;
             }
         }
     }
     std::sort(_casterIds.begin(), _casterIds.end());
     std::sort(_staticIds.begin(), _staticIds.end());
+    const int dynamicCount = (int)_casterIds.size();
 
     const glm::mat4& view = entry.frustum->getView();
     const glm::mat4& projection = entry.frustum->getProjection();
 
+    // A busy tile, drawn every frame anyway because something in its light's view keeps moving, draws its static
+    // casters with the others when copying their map in would cost more draws than they take; their map is left
+    // as it was, and drawn again when the tile is layered once more
+    const bool layered = split && !(entry.busy && staticCount <= _blitCostInDraws);
+    if (split && !layered) {
+        for (const auto& shapes : _plan.staticCasters) {
+            auto& into = _plan.dynamicCasters[shapes.first];
+            into.insert(into.end(), shapes.second.begin(), shapes.second.end());
+        }
+        _casterIds.insert(_casterIds.end(), _staticIds.begin(), _staticIds.end());
+        std::sort(_casterIds.begin(), _casterIds.end());
+        dynamicChanged = dynamicChanged || staticChangedSinceDrawn;
+        entry.staticDrawn = false;
+    }
+
     // the static map: drawn again when the view moved or the static casters differ from those in it
-    _plan.redrawStatic = split && (!entry.staticDrawn || staticChanged || view != entry.staticView
+    _plan.redrawStatic = layered && (!entry.staticDrawn || staticChanged || view != entry.staticView
         || projection != entry.staticProjection || _staticIds != entry.staticCasters);
-    _plan.copyStatic = split;
+    _plan.copyStatic = layered;
     if (_plan.redrawStatic) {
         entry.staticDrawn = true;
         entry.staticView = view;
@@ -348,13 +388,30 @@ const LocalShadows::TilePlan* LocalShadows::planTile(int tile, const render::Sha
         entry.staticFrame = frame;
     }
 
-    // the working map: kept while the view, the static map under it and the dynamic casters over it are as drawn
-    uint64_t staticFrame = split ? entry.staticFrame : 0;
-    if (_caching && entry.drawn && !dynamicChanged && view == entry.drawnView && projection == entry.drawnProjection
-            && _casterIds == entry.drawnCasters && staticFrame == entry.drawnStaticFrame) {
+    // the working map: kept while the view, the static map under it and the casters drawn into it are as drawn
+    uint64_t staticFrame = layered ? entry.staticFrame : 0;
+    bool keep = _caching && entry.drawn && !dynamicChanged && layered == entry.drawnLayered && view == entry.drawnView
+        && projection == entry.drawnProjection && _casterIds == entry.drawnCasters && staticFrame == entry.drawnStaticFrame;
+    // busy after it has been drawn every frame for a while, calm again after it has been kept for a while
+    if (keep) {
+        entry.keptStreak++;
+        entry.drawnStreak = 0;
+    } else {
+        entry.drawnStreak++;
+        entry.keptStreak = 0;
+    }
+    entry.busy = entry.busy ? entry.keptStreak < CALM_AFTER_FRAMES : entry.drawnStreak >= BUSY_AFTER_FRAMES;
+    if (diagFrame) {
+        qCDebug(renderutils).noquote() << "SHADOW-DIAG tile" << tile << "light" << entry.lightIndex
+            << (keep ? "kept" : "drawn") << (layered ? "layered" : "whole") << (entry.busy ? "busy" : "calm")
+            << "static" << staticCount << "dynamic" << dynamicCount << (diagCasters.isEmpty() ? QString() : ":")
+            << diagCasters.join("; ");
+    }
+    if (keep) {
         return nullptr;
     }
     entry.drawn = true;
+    entry.drawnLayered = layered;
     entry.drawnView = view;
     entry.drawnProjection = projection;
     entry.drawnCasters.swap(_casterIds);
@@ -613,11 +670,21 @@ void RenderLocalShadowSetup::run(const render::RenderContextPointer& renderConte
     }
     _localShadows->setCaching(_caching);
     _localShadows->setStaticCaching(_staticCaching);
-    // which light had which tile last frame (a point light all six of its faces)
+    _localShadows->setBlitCostInDraws(_blitCostInDraws);
+    // which light had which tile last frame (a point light all six of its faces), and how many of those tiles were
+    // busy, and drawn over a copy of their static map
     std::vector<LightStage::Index> previousTiles;
+    int busyTiles = 0;
+    int layeredTiles = 0;
     for (int tile = 0; tile < _localShadows->getTileCount(); ++tile) {
-        previousTiles.push_back(_localShadows->getTile(tile).light ? _localShadows->getTile(tile).lightIndex : LightStage::INVALID_INDEX);
+        const auto& previous = _localShadows->getTile(tile);
+        previousTiles.push_back(previous.light ? previous.lightIndex : LightStage::INVALID_INDEX);
+        if (previous.light) {
+            busyTiles += previous.busy ? 1 : 0;
+            layeredTiles += previous.drawnLayered ? 1 : 0;
+        }
     }
+    std::static_pointer_cast<Config>(renderContext->jobConfig)->setTileCounts(busyTiles, layeredTiles);
     auto previousTile = [&](LightStage::Index index) {
         auto found = std::find(previousTiles.begin(), previousTiles.end(), index);
         return found == previousTiles.end() ? -1 : (int)(found - previousTiles.begin());
