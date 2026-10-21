@@ -51,6 +51,16 @@ it. The build copies it from the first place it exists:
 
 If it's in none of them, the build warns and scripts run on QtScript only. See `cmake/macros/CopyJavaScriptGuest.cmake`.
 
+**When a release changes a dependency** (anything in `cmake/ports/`), make sure the build really rebuilds it. A vcpkg
+folder pinned with `TIVOLI_VCPKG_PATH`, or reused from an earlier build, keeps the ports it was made with, so the
+release would quietly ship the old library. Either:
+- unset `TIVOLI_VCPKG_PATH`, so prebuild makes a new vcpkg folder named after the ports (a full dependency build), or
+- copy the existing vcpkg folder, copy `cmake/ports` over the copy's `ports`, run
+  `vcpkg remove <port>:<triplet> --recurse` in the copy, and point `TIVOLI_VCPKG_PATH` at it. Only that port rebuilds.
+
+Then check that the built app has the change. For v1.0.2 that was a message from the Assimp patch,
+"Sparse accessor index", found in the library that loads models.
+
 ## macOS
 
 You need:
@@ -184,6 +194,9 @@ cmake --build build --config RelWithDebInfo --target interface
 - Copy `build\interface\RelWithDebInfo\` to a folder named `Darkride`.
 - Delete the debug files from it: `*.pdb`, `*.ilk`, `*.lib` and `*.exp`.
 - Make sure `resources\wasm\darkride-js.wasm` is in it.
+- Compare its file list with the previous release's. The build's bundle step copies DLLs it finds on `PATH`, so a
+  Windows DLL from another program's folder can end up in it. For v1.0.2 it was `dbghelp.dll`, from Meta Horizon's
+  folder. Delete any that don't belong.
 
 ### 3. Add Microsoft's runtime
 
@@ -244,8 +257,17 @@ To run a world from the tarball:
 1. Caity tags `main` (`git tag -a v1.0.1`) and pushes the tag.
 2. Build the three downloads from the tag, and run every check above.
 3. Write the notes, with each file's SHA-256 (`shasum -a 256` or `Get-FileHash`).
-4. Publish with `gh release create v1.0.1 --verify-tag --latest --title "…" --notes-file notes.md <files>`.
-   A download can follow later with `gh release upload v1.0.1 <file>`.
+4. Create the release as a draft with the files you have:
+   `gh release create v1.0.1 --verify-tag --draft --title "…" --notes-file notes.md <files>`. Add the rest with
+   `gh release upload v1.0.1 <file>`, and check that the checksums GitHub shows match the notes.
+5. Publish it: `gh release edit v1.0.1 --draft=false --latest`. Every download appears at once.
+
+**A security release** keeps the fix private until its downloads exist:
+- Open a draft security advisory on the repository, and make its temporary private fork. The fix goes there, not to
+  a public branch. Build every download from that fork, including on other machines.
+- Push `main` and the tag only once all three downloads are built. Publish the release, then the advisory, with
+  1.0.x as its patched version. Rewrite the advisory's text for the public before publishing it.
+- GitHub deletes the temporary private fork when the advisory is published.
 
 Caity publishes releases, or a release is published after she says so, even when a workflow built the files.
 
