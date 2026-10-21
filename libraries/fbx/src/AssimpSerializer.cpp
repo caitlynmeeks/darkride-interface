@@ -757,7 +757,8 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
         url = hifi::URL(QFileInfo(localFileName).absoluteFilePath());
     }
 
-    ext = QFileInfo(url.path()).completeSuffix();
+    // what follows the last dot, as the format registry chose this reader by: Blender's Tree.001.glb is a "glb"
+    ext = QFileInfo(url.path()).suffix();
 
     // qCDebug(modelformat) << "AssimpSerializer::read url"<<url<<ext;
 
