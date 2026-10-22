@@ -1,35 +1,38 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Create JS Assignment</title>
-    <link href='css/style.css' rel='stylesheet'>
-  </head>
-  <body>
-    <pre id='editor' style='font-size: 14px;'><!--#include file="placeholder.js"--></object></pre>
-    <script src='../js/jquery-2.1.4.min.js'></script>
-    <script src='js/ace/ace.js' type='text/javascript'></script>
-    <script src='js/assignment.js' type='text/javascript'></script>
-    <div class='big-button' id='deploy-button'>
-      <a href='#'>
-        Run
-      </a>
-    </div>
+<!--#include virtual="header.html"-->
+<link href='/assignment/css/style.css' rel='stylesheet'>
+
+<h1 class="dr-page-title">Run a script</h1>
+<p class="dr-page-intro">
+  Write or paste a script, then press Run: the server runs it on its own, like a visitor nobody controls. It stops
+  when the server restarts. To keep a script running, add it under
+  <a href="/content/#scripts">Always-running scripts</a> on the World content page.
+</p>
+
+<div class="panel panel-default dr-run-panel">
+  <div class="panel-heading dr-run-toolbar">
     <div id="extra-fields">
-      <div class='big-field' id='instance-field'>
-        <input type='text' name='instances' placeholder='# of instances'>
-      </div>
-      <div class='big-field' id='pool-field'>
-        <input type='text' name='pool' placeholder='pool'>
-      </div>
+      <label class='big-field' id='instance-field'>
+        <span>Copies</span>
+        <input type='number' min='1' name='instances' placeholder='1' class="form-control">
+      </label>
+      <label class='big-field' id='pool-field' title="Leave empty unless you run script runners in named groups">
+        <span>Runner group</span>
+        <input type='text' name='pool' placeholder='Any' class="form-control">
+      </label>
     </div>
-    <!-- %div#stop-button.big-button -->
-  </body>
-</html>
-<!-- %a{:href => "#"} -->
-<!-- Stop -->
-<!-- %div#other-commands -->
-<!-- %ul -->
-<!-- %li -->
-<!-- %a{:href => "#"} New Script -->
-<!-- %li -->
-<!-- %a{:href => "#"} Make a copy -->
+    <span class="dr-run-status" id="run-message" role="status"></span>
+    <button type="button" class='btn btn-success' id='deploy-button'>
+      <span class="glyphicon glyphicon-play"></span> Run
+    </button>
+  </div>
+  <div class="dr-run-editor">
+    <pre id='editor'><!--#include file="placeholder.js"--></pre>
+  </div>
+</div>
+
+<!--#include virtual="footer.html"-->
+<script src='/assignment/js/ace/ace.js' type='text/javascript'></script>
+<script src='/assignment/js/ace/theme-twilight.js' type='text/javascript'></script>
+<script src='/assignment/js/ace/theme-darkride-light.js' type='text/javascript'></script>
+<script src='/assignment/js/assignment.js' type='text/javascript'></script>
+<!--#include virtual="page-end.html"-->

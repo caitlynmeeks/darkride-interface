@@ -32,6 +32,8 @@ $(document).ready(function(){
 
   Settings.afterReloadActions = function(data) {
 
+    setupAdminSignIn();
+
     getMetaverseUrl(function(metaverse_url) {
       METAVERSE_URL = metaverse_url;
 
@@ -55,7 +57,7 @@ $(document).ready(function(){
         // we need to ask the API what a shareable name for this domain is
         getShareName(function(success, shareName) {
           if (success) {
-            var shareLink = "https://hifi.place/" + shareName;
+            var shareLink = "hifi://" + shareName;
             $('#visit-domain-link').attr("href", shareLink).show();
           }
         });
@@ -87,56 +89,8 @@ $(document).ready(function(){
         return false;
     }
 	  
-    // check if we've set the basic http password
-    if (formJSON["security"]) {
-
-      var password = formJSON["security"]["http_password"];
-      var verify_password = formJSON["security"]["verify_http_password"];
-
-      // if they've only emptied out the default password field, we should go ahead and acknowledge
-      // the verify password field
-      if (password != undefined && verify_password == undefined) {
-        verify_password = "";
-      }
-
-      // if we have a password and its verification, convert it to sha256 for comparison
-      if (password != undefined && verify_password != undefined) {
-        formJSON["security"]["http_password"] = sha256_digest(password);
-        formJSON["security"]["verify_http_password"] = sha256_digest(verify_password);
-
-        if (password == verify_password) {
-          delete formJSON["security"]["verify_http_password"];
-        } else {
-          bootbox.alert({ "message": "Passwords must match!", "title": "Password Error" });
-          return false;
-        }
-      }
-    }
-
     console.log("----- handlePostSettings() called ------");
     console.log(formJSON);
-
-    if (formJSON["security"]) {
-      var username = formJSON["security"]["http_username"];
-
-      var password = formJSON["security"]["http_password"];
-
-      if ((password == sha256_digest("")) && (username == undefined || (username && username.length != 0))) {
-        swalAreYouSure(
-          "You have entered a blank password with a non-blank username. Are you sure you want to require a blank password?",
-          "Use blank password",
-          function() {
-            swal.close();
-            
-            formJSON["security"]["http_password"] = "";
-
-            postSettings(formJSON);
-          }
-        );
-
-        return;
-      }
-    }
 
     if (formJSON["oauth"]) {
       var private_key = formJSON["oauth"]["key-contents"];
@@ -145,13 +99,13 @@ $(document).ready(function(){
       if (private_key != undefined) {
         var pattern = /-+BEGIN PRIVATE KEY-+[A-Za-z0-9+/\n=]*-+END PRIVATE KEY-+/m;
         if (!pattern.test(private_key)) {
-          oauthErrors += "Private key must be in PEM format<BR/>";
+          oauthErrors += "The private key must be a PEM file<BR/>";
         }
       }
       if (cert != undefined) {
         var pattern = /-+BEGIN CERTIFICATE-+[A-Za-z0-9+/\n=]*-+END CERTIFICATE-+/m;
         if (!pattern.test(cert)) {
-          oauthErrors += "Certificate must be in PEM format<BR/>";
+          oauthErrors += "The certificate must be a PEM file<BR/>";
         }
       }
       if ($('#oauth.panel').length) {
@@ -262,11 +216,11 @@ $(document).ready(function(){
 
             // show a dialog with a copiable share URL
             swal({
-              title: "Share",
+              title: "Invite people",
               type: "input",
               inputPlaceholder: shareLink,
               inputValue: shareLink,
-              text: "Copy this URL to invite friends to your domain.",
+              text: "Send this address to friends: opening it in Darkride takes them to your world.",
               closeOnConfirm: true
             });
 
@@ -277,14 +231,14 @@ $(document).ready(function(){
             swal({
               title: '',
               type: 'error',
-              text: "There was a problem retrieving world information from the Darkride metaverse.",
+              text: "Your world's details couldn't be fetched from Darkride.",
               confirmButtonText: 'Try again',
               showCancelButton: true,
               closeOnConfirm: false
             }, function(isConfirm){
               if (isConfirm) {
                 // they want to try getting domain share info again
-                showSpinnerAlert("Requesting domain information...")
+                showSpinnerAlert("Fetching your world's details…")
                 handleAction();
               } else {
                 swal.close();
@@ -305,21 +259,24 @@ $(document).ready(function(){
     var el;
 
     if (hasAccessToken) {
-      el = "<p>";
-      el += "<span class='account-connected-header'>Darkride world connected</span>";
-      el += "<button id='" + Settings.DISCONNECT_ACCOUNT_BTN_ID + "' class='btn'>Disconnect</button>";
-      el += "</p>";
+      el = "<div class='form-group'><label class='control-label'>Darkride world</label>";
+      el += "<div class='dr-password-state'><span class='dr-state dr-state-on'><span class='dr-dot dr-dot-on'></span>"
+        + "Connected: your world can be listed in Places and visitors can find it</span>";
+      el += "<button id='" + Settings.DISCONNECT_ACCOUNT_BTN_ID + "' class='btn btn-link'>Disconnect</button></div>";
+      el += "</div>";
       el = $(el);
     } else {
       // setup an object for the settings we want our button to have
       var buttonSetting = {
         type: 'button',
         name: 'connected_account',
-        label: 'Connected Account',
+        label: 'Darkride world',
       }
-      buttonSetting.help = "";
-      buttonSetting.classes = "btn-primary";
-      buttonSetting.button_label = "Connect Darkride world";
+      buttonSetting.help = "Connect this server to a world on your Darkride account, so it can be listed in Places and "
+        + "visitors can find it. Pressing the button opens your Darkride worlds in a new tab: make a world there (or "
+        + "pick one), copy its access token, then come back and paste it here.";
+      buttonSetting.classes = "btn-primary dr-connect-button";
+      buttonSetting.button_label = "<span class='glyphicon glyphicon-link'></span> Connect to Darkride";
       buttonSetting.html_id = Settings.CONNECT_ACCOUNT_BTN_ID;
 
       //buttonSetting.href = METAVERSE_URL + "/user/tokens/new?for_domain_server=true";
@@ -340,9 +297,9 @@ $(document).ready(function(){
   function disonnectHighFidelityAccount() {
     // the user clicked on the disconnect account btn - give them a sweet alert to make sure this is what they want to do
     swal({
-      title: "Are you sure?",
-      text: "This will remove your domain-server OAuth access token."
-        + "</br></br>This could cause your domain to appear offline and no longer be reachable via any place names.",
+      title: "Disconnect from Darkride?",
+      text: "This server forgets its access token for your Darkride world."
+        + "</br></br>Your world then shows as offline, and visitors can't reach it by its place names until you connect again.",
       type: "warning",
       html: true,
       showCancelButton: true
@@ -357,9 +314,9 @@ $(document).ready(function(){
 
   function showDomainCreationAlert(justConnected) {
     swal({
-      title: 'Create new domain ID',
+      title: 'Make a new world ID',
       type: 'input',
-      text: 'Enter a label for this machine.</br></br>This will help you identify which domain ID belongs to which machine.</br></br>',
+      text: 'Give this computer a name.</br></br>It helps you tell which world ID belongs to which computer.</br></br>',
       showCancelButton: true,
       confirmButtonText: "Create",
       closeOnConfirm: false,
@@ -374,7 +331,7 @@ $(document).ready(function(){
         }
       } else {
         // we're going to change the alert to a new one with a spinner while we create this domain
-        showSpinnerAlert('Creating domain ID');
+        showSpinnerAlert('Making a world ID');
         createNewDomainID(inputValue, justConnected);
       }
     });
@@ -398,11 +355,11 @@ $(document).ready(function(){
         var successText = Strings.CREATE_DOMAIN_SUCCESS;
       }
 
-      successText += "</br></br>Click the button below to save your new settings and restart your domain-server.";
+      successText += "</br></br>Press Save to keep it. Your server restarts to use it.";
 
       // show a sweet alert to say we are all finished up and that we need to save
       swal({
-        title: 'Success!',
+        title: 'Done',
         type: 'success',
         text: successText,
         html: true,
@@ -412,12 +369,12 @@ $(document).ready(function(){
       });
     }, 'json').fail(function(){
 
-      var errorText = "There was a problem creating your new domain ID. Do you want to try again or";
+      var errorText = "A new world ID couldn't be made. Do you want to try again, or";
 
       if (justConnected) {
-        errorText += " just save your new access token?</br></br>You can always create a new domain ID later.";
+        errorText += " just save your access token?</br></br>You can make a world ID later.";
       } else {
-        errorText += " cancel?"
+        errorText += " leave it for now?"
       }
 
       // we failed to create the new domain ID, show a sweet-alert that lets them try again or cancel
@@ -455,7 +412,7 @@ $(document).ready(function(){
     var errorEl = $("<div class='domain-loading-error alert alert-warning' style='display: none'></div>");
     errorEl.append(message + "  ");
 
-    var retryLink = $("<a href='#'>Please click here to try again.</a>");
+    var retryLink = $("<a href='#'>Try again</a>");
     retryLink.click(function(ev) {
       ev.preventDefault();
       reloadDomainInfo();
@@ -477,7 +434,7 @@ $(document).ready(function(){
     showOrHideLabel();
 
     var html = "<div>"
-    html += "<label class='control-label'>Specify a label for your domain</label> <a class='domain-loading-hide' href='#'>Edit</a>";
+    html += "<label class='control-label'>Your world's label</label> <a class='domain-loading-hide' href='#'>Change</a>";
     html += "<input id='network-label' type='text' class='form-control domain-loading-hide' disabled></input>";
     html += "</div>";
 
@@ -494,7 +451,7 @@ $(document).ready(function(){
       modal_body += "</div>";
 
       var dialog = bootbox.dialog({
-        title: 'Edit Label',
+        title: 'Change the label',
         message: modal_body,
         closeButton: false,
         onEscape: true,
@@ -555,7 +512,7 @@ $(document).ready(function(){
     });
 
     var spinner = createDomainSpinner();
-    var errorEl = createDomainLoadingError("Error loading label.");
+    var errorEl = createDomainLoadingError("The label couldn't be loaded.");
 
     html.append(spinner);
     html.append(errorEl);
@@ -586,17 +543,18 @@ $(document).ready(function(){
     var includeAddress = autoNetworkingSetting === 'disabled';
 
     if (includeAddress) {
-      var label = "Network Address:Port";
+      var label = "Address and port visitors connect to";
     } else {
-      var label = "Network Port";
+      var label = "Port visitors connect to";
     }
 
     var lowerName = name.toLowerCase();
     var form = '<div id="network-address-port">';
     form += '<label class="control-label">' + label + '</label>';
-    form += ' <a id="edit-network-address-port" class="domain-loading-hide" href="#">Edit</a>';
+    form += ' <a id="edit-network-address-port" class="domain-loading-hide" href="#">Change</a>';
     form += '<input type="text" class="domain-loading-hide form-control" disabled></input>';
-    form += '<div class="domain-loading-hide help-block">This defines how nodes will connect to your domain. You can read more about automatic networking <a href="">here</a>.</div>';
+    form += '<div class="domain-loading-hide help-block">Where visitors and the other servers reach this one. '
+      + 'Darkride tells visitors this address when they come to your world.</div>';
     form += '</div>';
 
     form = $(form);
@@ -608,7 +566,7 @@ $(document).ready(function(){
       var port = DomainInfo.network_port === null ? '' : DomainInfo.network_port;
       var modal_body = "<div class='form-group'>";
       if (isCloudDomain()) {
-        modal_body += '<div style="color:red;font-weight: bold">Changing the network settings may actually break your domain.</div>';
+        modal_body += '<div class="alert alert-warning">This world is hosted for you: changing its address can stop visitors reaching it.</div>';
       }
       if (includeAddress) {
         modal_body += "<label class='control-label'>Address</label>";
@@ -621,7 +579,7 @@ $(document).ready(function(){
       modal_body += "</div>";
 
       var dialog = bootbox.dialog({
-        title: 'Edit Network',
+        title: 'Change the address',
         message: modal_body,
         closeButton: false,
         onEscape: true,
@@ -693,9 +651,9 @@ $(document).ready(function(){
 
     var errorMessage = ''
     if (includeAddress) {
-      errorMessage = "We were unable to load the network address and port.";
+      errorMessage = "The address and port couldn't be loaded.";
     } else {
-      errorMessage = "We were unable to load the network port."
+      errorMessage = "The port couldn't be loaded."
     }
     var errorEl = createDomainLoadingError(errorMessage);
 
@@ -710,11 +668,10 @@ $(document).ready(function(){
     var placesTableSetting = {
       type: 'table',
       name: 'places',
-      label: 'Places',
+      label: 'Place names',
       html_id: Settings.PLACES_TABLE_ID,
-      help: "The following places currently point to this domain.</br>To point places to this domain, "
-        + " go to the <a href='" + METAVERSE_URL + "/user/places'>My Places</a> "
-        + "page in your Darkride account.",
+      help: "The names people can type to come to your world. Add one you own here, or register a new one on "
+        + "<a href='" + METAVERSE_URL + "/user/places' target='_blank'>your places</a> in your Darkride account.",
       read_only: true,
       can_add_new_rows: false,
       columns: [
@@ -724,7 +681,7 @@ $(document).ready(function(){
         },
         {
           "name": "path",
-          "label": "Viewpoint or Path"
+          "label": "Where they arrive"
         },
         {
           "name": "remove",
@@ -743,7 +700,7 @@ $(document).ready(function(){
     var spinner = createDomainSpinner();
     $('#' + Settings.PLACES_TABLE_ID).after($(spinner));
 
-    var errorEl = createDomainLoadingError("There was an error retrieving your places.");
+    var errorEl = createDomainLoadingError("Your place names couldn't be loaded.");
     $("#" + Settings.PLACES_TABLE_ID).after(errorEl);
 
     var temporaryPlaceButton = dynamicButton(Settings.GET_TEMPORARY_NAME_BTN_ID, 'Get a temporary place name');
@@ -979,7 +936,7 @@ $(document).ready(function(){
     if (Settings.initialValues.metaverse.access_token) {
 
       // add a spinner to the choose button
-      clickedButton.html("Loading worlds...");
+      clickedButton.html("Fetching your worlds…");
       clickedButton.attr('disabled', 'disabled');
 
       // get a list of user domains from data-web
@@ -998,7 +955,7 @@ $(document).ready(function(){
 
           if (data.data.domains.length) {
             // setup a select box for the returned domains
-            modal_body = "<p>Choose the Darkride world you want this server to represent.<br/>This will set your world ID on the settings page.</p>";
+            modal_body = "<p>Choose which of your Darkride worlds this server runs. Its world ID is filled in for you; press Save after.</p>";
             domain_select = $("<select id='domain-name-select' class='form-control'></select>");
             _.each(data.data.domains, function(domain){
               var domainString = "";
@@ -1011,9 +968,9 @@ $(document).ready(function(){
 
               domain_select.append("<option value='" + domain.id + "'>" + domainString + "</option>");
             })
-            modal_body += "<label for='domain-name-select'>Domains</label>" + domain_select[0].outerHTML
+            modal_body += "<label for='domain-name-select'>Your worlds</label>" + domain_select[0].outerHTML
             modal_buttons["success"] = {
-              label: 'Choose domain',
+              label: 'Use this world',
               callback: function() {
                 domainID = $('#domain-name-select').val()
                 // set the domain ID on the form
@@ -1022,54 +979,52 @@ $(document).ready(function(){
             }
           } else {
             modal_buttons["success"] = {
-              label: 'Create new domain',
+              label: 'Make a world',
               callback: function() {
                 window.open(METAVERSE_URL + "/user/domains", '_blank');
               }
             }
-            modal_body = "<p>You do not have any worlds in your Darkride account." +
-              "<br/><br/>Go to your domains page to create a new one. Once your domain is created re-open this dialog to select it.</p>"
+            modal_body = "<p>You don't have any worlds on your Darkride account yet." +
+              "<br/><br/>Make one on your Darkride worlds page, then come back and choose it here.</p>"
           }
 
           bootbox.dialog({
-            title: "Choose matching domain",
+            title: "Choose your world",
             onEscape: true,
             message: modal_body,
             buttons: modal_buttons
           })
         },
         error: function() {
-          bootbox.alert("Failed to retrieve your worlds from the Darkride metaverse");
+          bootbox.alert("Your worlds couldn't be fetched from Darkride. Try again in a moment.");
         },
         complete: function() {
           // remove the spinner from the choose button
-          clickedButton.html("Choose from my domains")
+          clickedButton.html(Strings.CHOOSE_DOMAIN_BUTTON)
           clickedButton.removeAttr('disabled')
         }
       });
 
       } else {
         bootbox.alert({
-          message: "You must have an access token to query your Darkride worlds.<br><br>" +
-          "Please follow the instructions on the settings page to add an access token.",
-          title: "Access token required"
+          message: "Connect this server to Darkride first: press Connect to Darkride at the top of the Connection section.",
+          title: "Connect to Darkride first"
         })
       }
     }
 
   function createTemporaryDomain() {
     swal({
-      title: 'Create temporary place name',
-      text: "This will create a temporary place name and domain ID"
-        + " so other users can easily connect to your domain.</br></br>"
-        + "In order to make your domain reachable, this will also enable full automatic networking.",
+      title: 'Get a temporary place name',
+      text: "Your world gets a temporary name and world ID, so people can come to it straight away.</br></br>"
+        + "So it can be reached, Darkride also looks after its network address for you.",
       showCancelButton: true,
       confirmButtonText: 'Create',
       closeOnConfirm: false,
       html: true
     }, function(isConfirm){
       if (isConfirm) {
-        showSpinnerAlert('Creating temporary place name');
+        showSpinnerAlert('Getting a temporary place name');
 
         // make a get request to get a temporary domain
         $.post(METAVERSE_URL + '/api/v1/domains/temporary', function(data){
@@ -1084,10 +1039,9 @@ $(document).ready(function(){
 
             swal({
               type: 'success',
-              title: 'Success!',
-              text: "We have created a temporary name and domain ID for you.</br></br>"
-                + "Your temporary place name is <strong>" + domain.name + "</strong>.</br></br>"
-                + "Press the button below to save your new settings and restart your domain-server.",
+              title: 'Your world has a name',
+              text: "Your temporary place name is <strong>" + domain.name + "</strong>.</br></br>"
+                + "Press Save to keep it. Your server restarts to use it.",
               confirmButtonText: 'Save',
               html: true
             }, function(){
@@ -1102,14 +1056,14 @@ $(document).ready(function(){
   function setupSettingsOAuth(data) {
     // construct the HTML needed for the settings backup panel
     var html = "<div class='form-group undefined'>";
-    html += "<label class='control-label'>SSL Private Key</label><BR/>";
+    html += "<label class='control-label'>SSL private key</label><BR/>";
     html += "<label id='key-path-label'class='control-label'>Path</label>";
     html += "<input id='" + SSL_PRIVATE_KEY_FILE_ID + "' type='file' accept='.key'/>";
     html += "<input id='" + SSL_PRIVATE_KEY_CONTENTS_ID + "' name='" + SSL_PRIVATE_KEY_CONTENTS_NAME + "' type='hidden'/>";
     html += "</div>";
     html += "<div class='form-group undefined'>";
-    html += "<label class='control-label'>SSL Cert</label>";
-    html += "<div id='cert-fingerprint'><b>Fingerprint:</b><span id='" + SSL_CERT_FINGERPRINT_SPAN_ID + "'>" + data.values.oauth["cert-fingerprint"] + "</span></div>";
+    html += "<label class='control-label'>SSL certificate</label>";
+    html += "<div id='cert-fingerprint'><b>Fingerprint:</b> <span id='" + SSL_CERT_FINGERPRINT_SPAN_ID + "'>" + data.values.oauth["cert-fingerprint"] + "</span></div>";
     html += "<label id='cert-path-label' class='control-label'>Path</label>";
     html += "<input id='" + SSL_CERT_FILE_ID + "' type='file' accept='.cer,.crt'/>";
     html += "<input id='" + SSL_CERT_CONTENTS_ID + "' name='" + SSL_CERT_CONTENTS_NAME + "' type='hidden'/>";
@@ -1169,15 +1123,15 @@ $(document).ready(function(){
     e.preventDefault();
 
     swalAreYouSure(
-      "Your domain settings will be replaced by the uploaded settings",
-      "Restore settings",
+      "All of this server's settings are replaced by the ones in the file, and the server restarts.",
+      "Replace my settings",
       function() {
         var files = $('#' + RESTORE_SETTINGS_FILE_ID).prop('files');
 
         var fileFormData = new FormData();
         fileFormData.append('restore-file', files[0]);
 
-        showSpinnerAlert("Restoring Settings");
+        showSpinnerAlert("Putting the settings in place");
 
         $.ajax({
           url: '/settings/restore',
@@ -1192,8 +1146,8 @@ $(document).ready(function(){
         }).fail(function(jqXHR, textStatus, errorThrown) {
           showErrorMessage(
             "Error",
-            "There was a problem restoring domain settings.\n"
-            + "Please ensure that your current domain settings are valid and try again."
+            "The settings couldn't be put in place.\n"
+            + "Check that the file is one downloaded from a world server's settings page, and try again."
           );
 
           reloadSettings();
@@ -1206,30 +1160,181 @@ $(document).ready(function(){
     if ($(this).val()) {
         $('#' + RESTORE_SETTINGS_UPLOAD_ID).attr('disabled', false);
     }
+    var files = $(this).prop('files');
+    $('#restore-settings-file-name').text(files && files.length ? files[0].name : "No file chosen");
   });
 
   function setupSettingsBackup() {
     // construct the HTML needed for the settings backup panel
     var html = "<div class='form-group'>";
 
-    html += "<label class='control-label'>Save Your Settings Configuration</label>";
-    html += "<span class='help-block'>Download this domain's settings to quickly configure another domain or to restore them later</span>";
-    html += "<a href='/settings/backup.json' class='btn btn-primary'>Download Domain Settings</a>";
+    html += "<label class='control-label'>Download your settings</label>";
+    html += "<span class='help-block'>Keep a copy of every setting on this page, to go back to later or to set up another "
+      + "world server the same way. World content is backed up separately, on the World content page.</span>";
+    html += "<a href='/settings/backup.json' class='btn btn-primary'><span class='glyphicon glyphicon-download-alt'></span> "
+      + "Download settings</a>";
     html += "</div>";
 
     html += "<div class='form-group'>";
-    html += "<label class='control-label'>Upload a Settings Configuration</label>";
-    html += "<span class='help-block'>Upload a settings configuration to quickly configure this domain";
-    html += "<br/>Note: Your domain settings will be replaced by the settings you upload</span>";
+    html += "<label class='control-label'>Use settings from a file</label>";
+    html += "<span class='help-block'>Choose a settings file downloaded from here or from another world server. All of "
+      + "this server's settings are replaced by the ones in the file.</span>";
 
-    html += "<input id='restore-settings-file' name='restore-settings' type='file'>";
-    html += "<button type='button' id='" + RESTORE_SETTINGS_UPLOAD_ID + "' disabled='true' class='btn btn-primary'>Upload Domain Settings</button>";
+    html += "<div class='dr-file-pick'>";
+    html += "<label class='btn btn-default' for='restore-settings-file'><span class='glyphicon glyphicon-folder-open'></span> Choose a file</label>";
+    html += "<input id='restore-settings-file' name='restore-settings' type='file' accept='.json'>";
+    html += "<span class='dr-file-name' id='restore-settings-file-name'>No file chosen</span>";
+    html += "<button type='button' id='" + RESTORE_SETTINGS_UPLOAD_ID + "' disabled='true' class='btn btn-primary'>"
+      + "<span class='glyphicon glyphicon-upload'></span> Use these settings</button>";
+    html += "</div>";
 
     html += "</div>";
 
     $('#settings_backup .panel-body').html(html);
   }
   
+  // The admin sign-in (the username and password these pages ask for) is changed in a dialog of its own and saved
+  // there and then, apart from the other settings. In the form, a browser filled the password field in from the
+  // sign-in it remembered, which counted as a change, so every save asked for the password twice; and emptying both
+  // fields saved an empty password, which removed it.
+  function setupAdminSignIn() {
+    var $username = $('[data-keypath="security.http_username"]');
+    var $password = $('[data-keypath="security.http_password"]');
+    if (!$username.length || !$password.length) {
+      return;
+    }
+    $('[data-keypath="security.verify_http_password"]').remove();
+    $password.remove();
+
+    var username = (Settings.data.values.security && Settings.data.values.security.http_username) || "";
+    var passwordSet = Settings.data.http_password_set === true;
+
+    // these pages ask for a sign-in whenever there's a username, with or without a password
+    var signInOn = username !== "";
+    var state;
+    if (signInOn && passwordSet) {
+      state = "<span class='dr-state dr-state-on'><span class='glyphicon glyphicon-lock'></span> " +
+        "Signed in as <strong>" + _.escape(username) + "</strong>, with a password</span>";
+    } else if (signInOn) {
+      state = "<span class='dr-state dr-state-off'><span class='glyphicon glyphicon-warning-sign'></span> " +
+        "Username <strong>" + _.escape(username) + "</strong>, but no password: anyone who knows the username can " +
+        "change your world</span>";
+    } else {
+      state = "<span class='dr-state dr-state-off'><span class='glyphicon glyphicon-warning-sign'></span> " +
+        "No sign-in: anyone who can open these pages can change your world</span>";
+    }
+
+    $username.html(
+      "<label class='control-label'>Admin sign-in</label>" +
+      "<div class='dr-password-state'>" + state +
+      "<button type='button' class='btn btn-default' id='change-admin-sign-in'>" +
+      "<span class='glyphicon glyphicon-pencil'></span> " + (signInOn ? "Change sign-in" : "Set up a sign-in") + "</button>" +
+      (signInOn ? "<button type='button' class='btn btn-link' id='remove-admin-password'>Turn off sign-in</button>" : "") +
+      "</div>" +
+      "<span class='help-block'>The username and password these pages ask for. They're saved as soon as you change " +
+      "them here, apart from your other settings, and your browser then asks you to sign in with them.</span>"
+    );
+
+    $('#change-admin-sign-in').on('click', function() {
+      showAdminSignInDialog(username, signInOn && passwordSet);
+    });
+    // the overview's reminder links here to set one up
+    if (qs["action"] === "sign-in") {
+      showAdminSignInDialog(username, signInOn && passwordSet);
+    }
+    $('#remove-admin-password').on('click', function() {
+      swalAreYouSure(
+        "Without a sign-in, anyone who can open these pages can change your world's settings and content.",
+        "Turn off sign-in",
+        function() {
+          swal.close();
+          saveAdminSignIn({ "http_username": "", "http_password": "" }, "Sign-in is turned off.");
+        }
+      );
+    });
+  }
+
+  function showAdminSignInDialog(username, passwordSet) {
+    var html =
+      "<div class='dr-password-dialog'>" +
+      "<div class='form-group'><label for='dr-admin-username'>Username</label>" +
+      "<input id='dr-admin-username' class='form-control' type='text' autocomplete='off' value='" + _.escape(username) + "'></div>" +
+      "<div class='form-group'><label for='dr-admin-password'>" + (passwordSet ? "New password" : "Password") + "</label>" +
+      "<input id='dr-admin-password' class='form-control' type='password' autocomplete='new-password' " +
+      "placeholder='" + (passwordSet ? "Leave empty to keep the current password" : "") + "'></div>" +
+      "<div class='form-group'><label for='dr-admin-password-again'>Type it again</label>" +
+      "<input id='dr-admin-password-again' class='form-control' type='password' autocomplete='new-password'></div>" +
+      "<label class='checkbox-inline' style='font-weight: 400;'><input type='checkbox' id='dr-admin-password-show'> Show the password</label>" +
+      "<p class='dr-password-error' id='dr-admin-password-error'></p>" +
+      "</div>";
+
+    var dialog = bootbox.dialog({
+      title: passwordSet ? "Change the admin sign-in" : "Set up an admin sign-in",
+      message: html,
+      buttons: {
+        cancel: { label: "Cancel", className: "btn-default" },
+        save: {
+          label: "Save sign-in",
+          className: "btn-primary",
+          callback: function() {
+            var newUsername = $('#dr-admin-username').val().trim();
+            var password = $('#dr-admin-password').val();
+            var again = $('#dr-admin-password-again').val();
+            var error = "";
+            if (!newUsername) {
+              error = "Choose a username: the browser asks for one with the password.";
+            } else if (!password && !passwordSet) {
+              error = "Choose a password.";
+            } else if (password !== again) {
+              error = "The two passwords aren't the same.";
+            }
+            if (error) {
+              $('#dr-admin-password-error').text(error);
+              return false;
+            }
+            var security = {};
+            if (newUsername !== username) {
+              security.http_username = newUsername;
+            }
+            if (password) {
+              security.http_password = sha256_digest(password);
+            }
+            if (_.isEmpty(security)) {
+              return true;
+            }
+            saveAdminSignIn(security, "The admin sign-in is saved. Your browser will ask you to sign in with it.");
+            return true;
+          }
+        }
+      }
+    });
+    dialog.on('shown.bs.modal', function() {
+      $('#' + (username ? 'dr-admin-password' : 'dr-admin-username')).focus();
+    });
+    dialog.on('change', '#dr-admin-password-show', function() {
+      var type = this.checked ? 'text' : 'password';
+      $('#dr-admin-password, #dr-admin-password-again').attr('type', type);
+    });
+  }
+
+  function saveAdminSignIn(security, message) {
+    $.ajax(Settings.endpoint, {
+      data: JSON.stringify({ "security": security }),
+      contentType: 'application/json',
+      type: 'POST'
+    }).done(function(data) {
+      if (data.status == "success") {
+        swal({ title: "Saved", text: message, type: "success" }, function() {
+          location.reload(true);
+        });
+      } else {
+        showErrorMessage("Error", SETTINGS_ERROR_MESSAGE);
+      }
+    }).fail(function() {
+      showErrorMessage("Error", SETTINGS_ERROR_MESSAGE);
+    });
+  }
+
   function verifyAvatarHeights() {
     var errorString = '';
     var minAllowedHeight = 0.009;
@@ -1242,16 +1347,16 @@ $(document).ready(function(){
     var maxHeight = Number(maxHeightElement.val());
 
     if (maxHeight < minHeight) {
-      errorString = 'Maximum avatar height must not be less than minimum avatar height<br>';
+      errorString = "The tallest avatar height can't be less than the shortest<br>";
       minHeightElement.css(alertCss);
       maxHeightElement.css(alertCss);
     };
     if (minHeight < minAllowedHeight) {
-      errorString += 'Minimum avatar height must not be less than ' + minAllowedHeight + '<br>';
+      errorString += "The shortest avatar height can't be less than " + minAllowedHeight + " metres<br>";
       minHeightElement.css(alertCss);
     }
     if (maxHeight > maxAllowedHeight) {
-      errorString += 'Maximum avatar height must not be greater than ' + maxAllowedHeight + '<br>';
+      errorString += "The tallest avatar height can't be more than " + maxAllowedHeight + " metres<br>";
       maxHeightElement.css(alertCss);
     }
 

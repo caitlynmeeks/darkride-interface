@@ -1,3 +1,4 @@
-// Here you can put a script that will be run by an assignment-client (AC)
-// For examples, please go to https://git.tivolicloud.com/tivolicloud/interface/-/tree/master/script-archive/acScripts
-// The directory named acScripts contains assignment-client specific scripts you can try.
+// A script the server runs on its own, as an agent: it can move an avatar, play sounds and change objects,
+// like a visitor nobody controls.
+// For examples, see the acScripts folder of Darkride's script archive:
+// https://github.com/caitlynmeeks/darkride-interface/tree/main/script-archive/acScripts

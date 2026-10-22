@@ -1,81 +1,101 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8">
     <title>Darkride world server</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+      // the light or dark look, before anything is drawn: the choice from the top bar, or (Auto) the computer's own
+      (function() {
+        var mode = null;
+        try {
+          mode = localStorage.getItem("darkride.theme");
+        } catch (e) {
+        }
+        var light = mode === "light" ||
+          (mode !== "dark" && !!window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+      })();
+    </script>
 
     <link href="/css/bootstrap.min.css" rel="stylesheet" media="screen">
-    <link href="/stats/css/json.human.css" rel="stylesheet" media="screen">
     <link href="/css/style.css" rel="stylesheet" media="screen">
     <link href="/css/sweetalert.css" rel="stylesheet" media="screen">
     <link href="/css/bootstrap-switch.min.css" rel="stylesheet" media="screen">
     <link href="/css/bootstrap-sortable.css" rel="stylesheet" media="screen">
+    <link href="/css/darkride.css" rel="stylesheet" media="screen">
     <link rel="icon" type="image/x-icon" href="/favicon.png">
 
     <script src='/js/sweetalert.min.js'></script>
   </head>
-  <body>
-    <nav class="navbar navbar-default navbar-fixed-top" role="navigation">
-      <div class="container-fluid">
-        <!-- Brand and toggle get grouped for better mobile display -->
-        <div class="navbar-header">
-          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#collapsed-navbar">
-            <span class="sr-only">Toggle navigation</span>
-            <span id="hamburger-badge" class="badge"></span>
+  <body class="dr-app">
+    <!-- The top bar: what this is, and the actions for the whole server -->
+    <header class="dr-topbar">
+      <button type="button" class="dr-menu-toggle" id="dr-menu-toggle" aria-label="Show the menu">
+        <span class="glyphicon glyphicon-menu-hamburger"></span>
+        <span id="hamburger-badge" class="badge"></span>
+      </button>
+      <a class="dr-brand" href="/">
+        <img src="/favicon.png" alt="" />
+        <span class="dr-brand-text">Darkride <span class="dr-brand-sub">World server</span></span>
+      </a>
+      <div class="dr-topbar-actions">
+        <button type="button" class="btn btn-default dr-theme-toggle" id="dr-theme-toggle" title="Light or dark look">
+          <span class="glyphicon glyphicon-adjust"></span><span class="hidden-xs dr-theme-toggle-text"> Auto</span>
+        </button>
+        <a id="visit-domain-link" class="btn btn-default" role="button" target="_blank" style="display: none;"
+           title="Open this world in Darkride">
+          <img id="visit-hmd-icon" src="/images/hmd-w-eyes.svg" alt="" />
+          <span class="hidden-xs">Visit world</span>
+        </a>
+        <a href="#" id="restart-server" class="btn btn-default" title="Restart the world server">
+          <span class="glyphicon glyphicon-refresh"></span><span class="hidden-xs"> Restart</span>
+        </a>
+        <button id="save-settings-button" class="save-button btn btn-success" disabled="true"
+                title="Save your changes">
+          <span class="glyphicon glyphicon-floppy-disk"></span> <span class="save-button-text">Save</span>
+        </button>
+      </div>
+    </header>
 
-            <div id="button-bars">
-              <span class="icon-bar"></span>
-              <span class="icon-bar"></span>
-              <span class="icon-bar"></span>
-            </div>
-          </button>
-
-          <button id="save-settings-xs-button" class="save-button btn btn-success navbar-btn hidden-sm hidden-md hidden-lg" disabled="true"><span class="save-button-text">Save</span></button>
-        </div>
-
-        <!-- Collect the nav links, forms, and other content for toggling -->
-        <div class="collapse navbar-collapse" id="collapsed-navbar">
-          <ul class="nav navbar-nav">
-            <li><a href="/">Nodes</a></li>
-            <li><a href="/assignment">Assignment</a></li>
-
-            <li class="dropdown dropdown-on-hover">
-              <a href="/content/" class="hidden-xs">Content <span class="content-settings-badge badge"></span> <span class="caret"></span></a>
-              <a href="#" class="dropdown-toggle hidden-sm hidden-md hidden-lg" data-toggle="dropdown">Content <span class="content-badge badge"></span> <span class="caret"></span></a>
-              <ul id="content-settings-nav-dropdown" class="dropdown-menu" role="menu">
-              </ul>
-            </li>
-
-            <li class="dropdown dropdown-on-hover">
-              <a href="/settings/" class="hidden-xs">Settings <span class="domain-settings-badge badge"></span> <span class="caret"></span></a>
-              <a href="#" class="dropdown-toggle hidden-sm hidden-md hidden-lg" data-toggle="dropdown">Settings <span class="domain-settings-badge badge"></span> <span class="caret"></span></a>
-              <ul id="domain-settings-nav-dropdown" class="dropdown-menu" role="menu">
-              </ul>
-            </li>
-          </ul>
-          <ul class="nav navbar-right navbar-nav">
-            <a id="visit-domain-link" class="btn btn-default navbar-btn" role="button" target="_blank" style="display: none;">
-              <img id="visit-hmd-icon" src="/images/hmd-w-eyes.svg" alt="Head-mounted display" />
-              Visit in VR
-            </a>
-            <button id="save-settings-button" class="save-button btn btn-success navbar-btn hidden-xs" disabled="true"><span class="save-button-text">Save</span></button>
-            <a href="#" id="restart-server" class="navbar-btn btn btn-link"><span class="glyphicon glyphicon-refresh"></span> Restart</a>
-          </ul>
-        </div>
-      </div><!-- /.container-fluid -->
+    <!-- The sidebar: the pages, and on the page you're on, its sections -->
+    <nav class="dr-sidebar" id="collapsed-navbar" role="navigation">
+      <ul class="nav dr-nav">
+        <li>
+          <a href="/"><span class="glyphicon glyphicon-dashboard"></span> Overview</a>
+        </li>
+        <li>
+          <a href="/content/"><span class="glyphicon glyphicon-globe"></span> World content
+            <span class="content-settings-badge badge"></span></a>
+          <ul id="content-settings-nav-dropdown" class="dr-subnav"></ul>
+        </li>
+        <li>
+          <a href="/settings/"><span class="glyphicon glyphicon-cog"></span> Settings
+            <span class="domain-settings-badge badge"></span></a>
+          <ul id="domain-settings-nav-dropdown" class="dr-subnav"></ul>
+        </li>
+        <li>
+          <a href="/assignment/"><span class="glyphicon glyphicon-console"></span> Run a script</a>
+        </li>
+      </ul>
+      <div class="dr-sidebar-footer">
+        <a href="https://vr.darkride.ai" target="_blank">vr.darkride.ai</a>
+      </div>
     </nav>
+    <div class="dr-sidebar-backdrop" id="dr-sidebar-backdrop"></div>
 
     <div class="modal fade" id="restart-modal">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
-            <h4 class="modal-title">Domain Server is restarting</h4>
+            <h4 class="modal-title">The world server is restarting</h4>
           </div>
           <div class="modal-body">
-            <h5>This page will automatically refresh in <span id="refresh-time">3 seconds</span>.</h5>
+            <p>Your world will be back in a moment. This page will refresh by itself in <span id="refresh-time">3 seconds</span>.</p>
           </div>
         </div><!-- /.modal-content -->
       </div><!-- /.modal-dialog -->
     </div><!-- /.modal -->
 
+    <main class="dr-main">
     <div class="container-fluid">

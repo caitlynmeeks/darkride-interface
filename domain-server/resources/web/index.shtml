@@ -1,79 +1,189 @@
 <!--#include file="header.html"-->
-<div class="col-md-10 col-md-offset-1">
-  <div class="panel panel-default">
-    <div class="panel-heading">
-      <h3 class="panel-title">Nodes</h3>
-    </div>
-    <div class="panel-body">
-      <table id="nodes-table" class="table table-striped">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Version</th>
-            <th>UUID</th>
-            <th>Pool</th>
-            <th>Username</th>
-            <th>Public</th>
-            <th>Local</th>
-            <th>Uptime (s)</th>
-            <th>Pending Credits</th>
-            <th>Kill?</th>
-          </tr>
-        </thead>
-        <tbody>
-          <script id="nodes-template" type="text/template">
-            <% _.each(nodes, function(node, node_index){ %>
+<h1 class="dr-page-title">Overview</h1>
+<p class="dr-page-intro">
+  How your world server is doing right now. It runs a few services, each looking after one part of your world.
+  They start by themselves, and this page refreshes every couple of seconds.
+</p>
+
+<div class="dr-banner" id="dr-sign-in-banner" role="alert" style="display: none;">
+  <span class="glyphicon glyphicon-lock dr-banner-icon"></span>
+  <div class="dr-banner-text">
+    <strong id="dr-sign-in-banner-title">These admin pages aren't locked</strong>
+    <p id="dr-sign-in-banner-body">
+      Anyone who can reach this page can change your world's settings, replace its content or restart it. Setting up a
+      sign-in takes a minute, and then your browser asks for it before showing these pages.
+    </p>
+  </div>
+  <div class="dr-banner-actions">
+    <a class="btn btn-primary" href="/settings/?action=sign-in#security">Set up a sign-in</a>
+    <button type="button" class="btn btn-link" id="dr-sign-in-banner-later">Remind me later</button>
+  </div>
+</div>
+
+<div class="dr-status-cards">
+  <div class="dr-status-card">
+    <div class="dr-status-label">Services running</div>
+    <div class="dr-status-value" id="dr-services-running">&ndash;</div>
+    <div class="dr-status-hint" id="dr-services-hint">Checking&hellip;</div>
+  </div>
+  <div class="dr-status-card">
+    <div class="dr-status-label">People here now</div>
+    <div class="dr-status-value" id="dr-people-count">&ndash;</div>
+    <div class="dr-status-hint">Visitors and scripts connected to your world</div>
+  </div>
+  <div class="dr-status-card">
+    <div class="dr-status-label">Running for</div>
+    <div class="dr-status-value" id="dr-uptime">&ndash;</div>
+    <div class="dr-status-hint">Since the longest-running service started</div>
+  </div>
+</div>
+
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">Services</h3>
+    <p class="panel-description">
+      The parts of your world server, each looking after one thing. A service that's waiting hasn't started yet, so
+      give it a moment. If one stops working, restart it here and it starts again by itself.
+    </p>
+  </div>
+  <div class="panel-body">
+    <ul class="dr-service-list" id="dr-service-list">
+      <script id="services-template" type="text/template">
+        <% _.each(services, function(service) { %>
+          <li class="dr-service">
+            <span class="dr-dot <%- service.node ? 'dr-dot-on' : 'dr-dot-waiting' %>"></span>
+            <div class="dr-service-text">
+              <div class="dr-service-name"><%- service.name %></div>
+              <div class="dr-service-about"><%- service.about %></div>
+            </div>
+            <div class="dr-service-state">
+              <%- service.node ? "Running for " + service.uptime : "Waiting to start" %>
+            </div>
+            <div class="dr-service-actions">
+              <% if (service.node) { %>
+                <a class="btn btn-link btn-sm" href="stats/?uuid=<%- service.node.uuid %>">Details</a>
+                <button type="button" class="btn btn-default btn-sm dr-restart-node" data-uuid="<%- service.node.uuid %>"
+                  data-name="<%- service.name %>">Restart</button>
+              <% } %>
+            </div>
+          </li>
+        <% }); %>
+      </script>
+    </ul>
+  </div>
+</div>
+
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">People here now</h3>
+    <p class="panel-description">Everyone connected to your world, and any scripts running on their own.</p>
+  </div>
+  <div class="panel-body">
+    <ul class="dr-service-list" id="dr-people-list">
+      <script id="people-template" type="text/template">
+        <% if (people.length === 0) { %>
+          <li class="dr-empty">Nobody's here at the moment.</li>
+        <% } %>
+        <% _.each(people, function(person) { %>
+          <li class="dr-service">
+            <span class="dr-dot dr-dot-on"></span>
+            <div class="dr-service-text">
+              <div class="dr-service-name"><%- person.username || "Someone not signed in" %></div>
+              <div class="dr-service-about"><%- person.username ? "Signed in to Darkride" : "A visitor or a script" %></div>
+            </div>
+            <div class="dr-service-state">Here for <%- person.uptimeText %></div>
+            <div class="dr-service-actions">
+              <a class="btn btn-link btn-sm" href="stats/?uuid=<%- person.uuid %>">Details</a>
+            </div>
+          </li>
+        <% }); %>
+      </script>
+    </ul>
+  </div>
+</div>
+
+<div class="panel panel-default">
+  <div class="panel-heading">
+    <h3 class="panel-title">Technical details <span class="dr-tag">For experts</span></h3>
+    <p class="panel-description">Every connection and waiting job, with its addresses and IDs. Useful for working out a problem.</p>
+  </div>
+  <div class="panel-body">
+    <button type="button" class="btn btn-default" id="dr-show-details">Show the details</button>
+    <div id="dr-details" style="display: none;">
+      <h4 class="dr-setting-section">Connected</h4>
+      <div class="table-responsive">
+        <table id="nodes-table" class="table table-striped">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Version</th>
+              <th>ID</th>
+              <th>Pool</th>
+              <th>Username</th>
+              <th>Public address</th>
+              <th>Local address</th>
+              <th>Uptime (s)</th>
+              <th>Pending credits</th>
+              <th>Disconnect</th>
+            </tr>
+          </thead>
+          <tbody>
+            <script id="nodes-template" type="text/template">
+              <% _.each(nodes, function(node, node_index){ %>
+                <tr>
+                  <td><%- node.type %></td>
+                  <td><%- node.version %></td>
+                  <td><a href="stats/?uuid=<%- node.uuid %>"><%- node.uuid %></a></td>
+                  <td><%- node.pool %></td>
+                  <td><%- node.username %></td>
+                  <td><%- node.public.ip %><span class='port'>:<%- node.public.port %></span></td>
+                  <td><%- node.local.ip %><span class='port'>:<%- node.local.port %></span></td>
+                  <td><%- node.uptime %></td>
+                  <td><%- (typeof node.pending_credits == 'number' ? node.pending_credits.toLocaleString() : 'N/A') %></td>
+                  <td><span class='glyphicon glyphicon-remove dr-kill-node' title="Disconnect" data-uuid="<%- node.uuid %>"></span></td>
+                </tr>
+              <% }); %>
+            </script>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 class="dr-setting-section">Waiting to start</h4>
+      <div class="table-responsive">
+        <table id="assignments-table" class="table table-striped">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>ID</th>
+              <th>Pool</th>
+            </tr>
+          </thead>
+          <tbody>
+            <script id="queued-template" type="text/template">
+              <% _.each(queued, function(assignment, uuid){ %>
               <tr>
-                <td><%- node.type %></td>
-                <td><%- node.version %></td>
-                <td><a href="stats/?uuid=<%- node.uuid %>"><%- node.uuid %></a></td>
-                <td><%- node.pool %></td>
-                <td><%- node.username %></td>
-                <td><%- node.public.ip %><span class='port'>:<%- node.public.port %></span></td>
-                <td><%- node.local.ip %><span class='port'>:<%- node.local.port %></span></td>
-                <td><%- node.uptime %></td>
-                <td><%- (typeof node.pending_credits == 'number' ? node.pending_credits.toLocaleString() : 'N/A') %></td>
-                <td><span class='glyphicon glyphicon-remove' data-uuid="<%- node.uuid %>"></span></td>
+                <td><%- assignment.type %></td>
+                <td><%- uuid %></td>
+                <td><%- assignment.pool %></td>
               </tr>
-            <% }); %>
-          </script>
-      </table>
-    </div>
-    <div class="panel-footer">
+              <% }); %>
+            </script>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 class="dr-setting-section">Start everything again</h4>
+      <p class="help-block">
+        This disconnects every service and visitor. The services start again by themselves and visitors reconnect,
+        but anyone in your world is interrupted.
+      </p>
       <button type="button" class="btn btn-danger" id="kill-all-btn">
-        <span class="glyphicon glyphicon-remove-circle"></span> Kill all Nodes
+        <span class="glyphicon glyphicon-refresh"></span> Restart all services
       </button>
     </div>
   </div>
-  <div class="panel panel-default">
-    <div class="panel-heading">
-      <h3 class="panel-title">Queued Assignments</h3>
-    </div>
-    <div class="panel-body">
-      <table id="assignments-table" class="table table-striped">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>UUID</th>
-            <th>Pool</th>
-          </tr>
-        </thead>
-        <tbody>
-          <script id="queued-template" type="text/template">
-            <% _.each(queued, function(assignment, uuid){ %>
-            <tr>
-              <td><%- assignment.type %></td>
-              <td><%- uuid %></td>
-              <td><%- assignment.pool %></td>
-            </tr>
-            <% }); %>
-          </script>
-        </tbody>
-      </table>
-    <div>
-  </div>
 </div>
-  
+
 <!--#include file="footer.html"-->
 <script src='js/underscore-min.js'></script>
 <script src='js/tables.js'></script>

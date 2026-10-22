@@ -76,8 +76,8 @@ $(document).ready(function(){
         if (jqXHR.status != 0) {
           showErrorMessage(
             "Error",
-            "There was a problem restoring domain content.\n"
-            + "Please ensure that the content archive or entity file is valid and try again."
+            "The content couldn't be put in your world.\n"
+            + "Check that the file is a backup (.zip) or a file of objects (.json or .json.gz), and try again."
           );
         } else {
             isRestoring = true;
@@ -111,32 +111,34 @@ $(document).ready(function(){
     // construct the HTML needed for the settings backup panel
     var html = "<div class='form-group'><div id='" + UPLOAD_CONTENT_ALLOWED_DIV_ID + "'>";
 
-    html += "<span class='help-block'>Upload a content archive (.zip) or entity file (.json, .json.gz) to replace the content of this domain.";
-    html += "<br/>Note: Your domain content will be replaced by the content you upload, but the existing backup files of your domain's content will not immediately be changed.</span>";
+    html += "<span class='help-block'>Choose a backup (.zip) or a file of objects (.json or .json.gz). Everything in your world "
+      + "now is replaced by what's in the file. Your backups stay as they are, so you can go back to one of them.</span>";
 
-    html += "<input id='restore-settings-file' name='restore-settings' type='file'>";
-    html += "<button type='button' id='" + RESTORE_SETTINGS_UPLOAD_ID + "' disabled='true' class='btn btn-primary'>Upload Content</button>";
+    html += "<div class='dr-file-pick'>";
+    html += "<label class='btn btn-default' for='restore-settings-file'><span class='glyphicon glyphicon-folder-open'></span> Choose a file</label>";
+    html += "<input id='restore-settings-file' name='restore-settings' type='file' accept='.zip,.json,.gz'>";
+    html += "<span class='dr-file-name' id='restore-settings-file-name'>No file chosen</span>";
+    html += "<button type='button' id='" + RESTORE_SETTINGS_UPLOAD_ID + "' disabled='true' class='btn btn-primary'>"
+      + "<span class='glyphicon glyphicon-upload'></span> Replace the content</button>";
+    html += "</div>";
 
     html += "</div><div id='" + UPLOAD_CONTENT_RECOVERING_DIV_ID + "'>";
-    html += "<span class='help-block'>Restore in progress</span>";
+    html += "<span class='help-block'>Putting the content in your world&hellip;</span>";
     html += progressBarHTML('recovery', 'Restoring');
     html += "</div></div>";
     $('#' + Settings.UPLOAD_CONTENT_BACKUP_PANEL_ID + ' .panel-body').html(html);
   }
 
   function setupInstalledContentInfo() {
-    var html = "<table class='table table-bordered'><tbody>";
-    html += "<tr class='headers'><td class='data'><strong>Name</strong></td>";
-    html += "<td class='data'><strong>File Name</strong></td>";
-    html += "<td class='data'><strong>Created</strong></td>";
-    html += "<td class='data'><strong>Installed</strong></td>";
-    html += "<td class='data'><strong>Installed By</strong></td></tr>";
-    html += "<tr><td class='data' id='" + INSTALLED_CONTENT_NAME_ID + "'/>";
-    html += "<td class='data' id='" + INSTALLED_CONTENT_FILENAME_ID + "'/>";
-    html += "<td class='data' id='" + INSTALLED_CONTENT_CREATED_ID + "'/>";
-    html += "<td class='data' id='" + INSTALLED_CONTENT_INSTALLED_ID + "'/>";
-    html += "<td class='data' id='" + INSTALLED_CONTENT_INSTALLED_BY_ID + "'/></tr>";
-    html += "</tbody></table>";
+    var html = "<p class='dr-empty' id='installed-content-none'>Nothing has been put in from a file yet: your world has "
+      + "what's been built in it.</p>";
+    html += "<dl class='dr-facts' id='installed-content-facts' style='display: none;'>";
+    html += "<div><dt>Name</dt><dd id='" + INSTALLED_CONTENT_NAME_ID + "'></dd></div>";
+    html += "<div><dt>File</dt><dd id='" + INSTALLED_CONTENT_FILENAME_ID + "'></dd></div>";
+    html += "<div><dt>Made</dt><dd id='" + INSTALLED_CONTENT_CREATED_ID + "'></dd></div>";
+    html += "<div><dt>Put in</dt><dd id='" + INSTALLED_CONTENT_INSTALLED_ID + "'></dd></div>";
+    html += "<div><dt>By</dt><dd id='" + INSTALLED_CONTENT_INSTALLED_BY_ID + "'></dd></div>";
+    html += "</dl>";
     $('#' + Settings.INSTALLED_CONTENT + ' .panel-body').html(html);
   }
 
@@ -145,6 +147,8 @@ $(document).ready(function(){
   // when the selected file is changed, enable the button if there's a selected file
   $('body').on('change', '#' + RESTORE_SETTINGS_FILE_ID, function() {
     $('#' + RESTORE_SETTINGS_UPLOAD_ID).attr('disabled', $(this).val().length == 0);
+    var files = $(this).prop('files');
+    $('#restore-settings-file-name').text(files && files.length ? files[0].name : "No file chosen");
   });
 
   // when the upload button is clicked, send the file to the DS
@@ -154,13 +158,13 @@ $(document).ready(function(){
     e.preventDefault();
 
     swalAreYouSure(
-      "Your domain content will be replaced by the uploaded content archive or entity file",
-      "Restore content",
+      "Everything in your world now is replaced by what's in the file. Visitors are disconnected for a moment while the world restarts.",
+      "Replace the content",
       function() {
         var files = $('#' + RESTORE_SETTINGS_FILE_ID).prop('files');
         var file = files[0];
 
-        showUploadProgress("Uploading " + file.name);
+        showUploadProgress("Sending " + file.name);
         uploadNextChunk(file);
       }
     );
@@ -183,30 +187,31 @@ $(document).ready(function(){
   function setupContentArchives() {
     // construct the HTML needed for the content archives panel
     var html = "<div id='" + CONTENT_ARCHIVES_NORMAL_ID + "'><div class='form-group'>";
-    html += "<label class='control-label'>Automatic Content Archives</label>";
-    html += "<span class='help-block'>Your domain server makes regular archives of the content in your domain. In the list below, you can see and download all of your backups of domain content and content settings."
-    html += "<a href='/settings/#automatic_content_archives' id='" + AUTO_ARCHIVES_SETTINGS_LINK_ID + "'>Click here to manage automatic content archive intervals.</a></span>";
+    html += "<label class='control-label'>Made automatically</label>";
+    html += "<span class='help-block'>Your server backs up your world's content and settings on a schedule, keeping the latest of "
+      + "each kind. Use the menu on a backup to go back to it, or to download it. ";
+    html += "<a href='/settings/#automatic_content_archives' id='" + AUTO_ARCHIVES_SETTINGS_LINK_ID + "'>Change how often backups are made</a></span>";
     html += "</div>";
     html += "<table class='table sortable' id='" + AUTOMATIC_ARCHIVES_TABLE_ID + "'>";
 
-    var backups_table_head = "<thead><tr class='gray-tr'><th>Archive Name</th><th data-defaultsort='desc'>Archive Date</th>"
-      + "<th data-defaultsort='disabled'></th><th class='" + ACTION_MENU_CLASS + "' data-defaultsort='disabled'>Actions</th>"
+    var backups_table_head = "<thead><tr class='gray-tr'><th>Backup</th><th data-defaultsort='desc'>Made</th>"
+      + "<th data-defaultsort='disabled'></th><th class='" + ACTION_MENU_CLASS + "' data-defaultsort='disabled'></th>"
       + "</tr></thead>";
 
     html += backups_table_head;
     html += "<tbody id='" + AUTOMATIC_ARCHIVES_TBODY_ID + "'></tbody></table>";
     html += "<div class='form-group'>";
-    html += "<label class='control-label'>Manual Content Archives</label>";
-    html += "<span class='help-block'>You can generate and download an archive of your domain content right now. You can also download, delete and restore any archive listed.</span>";
-    html += "<button type='button' id='" + GENERATE_ARCHIVE_BUTTON_ID + "' class='btn btn-primary'>Generate New Archive</button>";
+    html += "<label class='control-label'>Made by you</label>";
+    html += "<span class='help-block'>Back up your world now, before a big change, say. Your own backups are kept until you delete them.</span>";
+    html += "<button type='button' id='" + GENERATE_ARCHIVE_BUTTON_ID + "' class='btn btn-primary'>"
+      + "<span class='glyphicon glyphicon-floppy-disk'></span> Back up now</button>";
     html += "</div>";
     html += "<table class='table sortable' id='" + MANUAL_ARCHIVES_TABLE_ID + "'>";
     html += backups_table_head;
     html += "<tbody id='" + MANUAL_ARCHIVES_TBODY_ID + "'></tbody></table></div>";
 
     html += "<div class='form-group' id='" + CONTENT_ARCHIVES_ERROR_ID + "' style='display:none;'>"
-      + "<span class='help-block'>There was a problem loading your list of automatic and manual content archives. "
-      + "Please reload the page to try again.</span></div>";
+      + "<span class='help-block'>Your list of backups couldn't be loaded. Reload the page to try again.</span></div>";
 
     // put the base HTML in the content archives panel
     $('#' + Settings.CONTENT_ARCHIVES_PANEL_ID + ' .panel-body').html(html);
@@ -222,7 +227,7 @@ $(document).ready(function(){
     ev.preventDefault();
     var backupID = $(this).data('backup-id');
 
-    showSpinnerAlert("Preparing backup...");
+    showSpinnerAlert("Getting the backup ready…");
     function checkBackupStatus() {
       $.ajax({
         url: "/api/backups/" + backupID,
@@ -235,7 +240,7 @@ $(document).ready(function(){
             } else {
               showErrorMessage(
                 "Error",
-                "There was an error preparing your backup. Please refresh the page and try again."
+                "The backup couldn't be got ready to download. Reload the page and try again."
               );
             }
           } else {
@@ -245,7 +250,7 @@ $(document).ready(function(){
         error: function() {
           showErrorMessage(
             "Error",
-            "There was an error preparing your backup."
+            "The backup couldn't be got ready to download."
           );
         },
       });
@@ -272,7 +277,7 @@ $(document).ready(function(){
         restoreErrorShown = true;
         swal({
           title: "Error",
-          text: "There was a problem restoring domain content.\n"
+          text: "The content couldn't be put back in your world.\n"
           + data.status.recoveryError,
           type: "error",
           showCancelButton: false,
@@ -303,7 +308,7 @@ $(document).ready(function(){
           + "</td><td class='backup-status'></td><td class='" + ACTION_MENU_CLASS + "'>"
           + "<div class='dropdown'><div class='dropdown-toggle' data-toggle='dropdown' aria-expanded='false'><span class='glyphicon glyphicon-option-vertical'></span></div>"
           + "<ul class='dropdown-menu dropdown-menu-right'>"
-          + "<li><a class='" + BACKUP_RESTORE_LINK_CLASS + "' href='#'>Restore from here</a></li><li class='divider'></li>"
+          + "<li><a class='" + BACKUP_RESTORE_LINK_CLASS + "' href='#'>Go back to this backup</a></li><li class='divider'></li>"
           + "<li><a class='" + BACKUP_DOWNLOAD_LINK_CLASS + "' data-backup-id='" + backup.id + "' href='#'>Download</a></li><li class='divider'></li>"
           + "<li><a class='" + BACKUP_DELETE_LINK_CLASS + "' href='#' target='_blank'>Delete</a></li></ul></div></td>";
       }
@@ -325,7 +330,7 @@ $(document).ready(function(){
         // update the row status column depending on if it is available or recovering
         if (!backup.isAvailable) {
           // add a progress bar to the status row for availability
-          $backupRow.find('td.backup-status').html(progressBarHTML('availability', 'Archiving'));
+          $backupRow.find('td.backup-status').html(progressBarHTML('availability', 'Backing up'));
 
           // set the value of the progress bar based on availability progress
           updateProgressBars($backupRow.find('.progress-bar'), backup.availabilityProgress * 100);
@@ -334,7 +339,8 @@ $(document).ready(function(){
           $backupRow.find('td.backup-status').html(progressBarHTML('recovery', 'Restoring'));
         } else if (backup.isCorrupted) {
           // add text for corrupted status to row
-          $backupRow.find('td.backup-status').html('<span>Corrupted</span>');
+          $backupRow.find('td.backup-status').html("<span class='dr-backup-damaged' title=\"This backup can't be used: it may be "
+            + "empty, or something went wrong while it was made\"><span class='glyphicon glyphicon-warning-sign'></span> Can't be used</span>");
         } else {
           // no special status for this row, use an empty status column
           $backupRow.find('td.backup-status').html('');
@@ -380,6 +386,9 @@ $(document).ready(function(){
       $('#' + INSTALLED_CONTENT_CREATED_ID).text(data.installed_content.creation_time ? moment(data.installed_content.creation_time).format('lll') : "");
       $('#' + INSTALLED_CONTENT_INSTALLED_ID).text(data.installed_content.install_time ? moment(data.installed_content.install_time).format('lll') : "");
       $('#' + INSTALLED_CONTENT_INSTALLED_BY_ID).text(data.installed_content.installed_by);
+      var installed = !!(data.installed_content.name || data.installed_content.filename);
+      $('#installed-content-facts').toggle(installed);
+      $('#installed-content-none').toggle(!installed);
 
       // update the progress bars for current restore status
       if (data.status.isRecovering) {
@@ -429,11 +438,12 @@ $(document).ready(function(){
 
     // make sure the user knows what is about to happen
     swalAreYouSure(
-      "Your domain content will be replaced by the content archive " + backupName,
-      "Restore content",
+      "Everything in your world now is replaced by the backup " + backupName
+        + ". Visitors are disconnected for a moment while the world restarts.",
+      "Go back to it",
       function() {
         // show a spinner while we send off our request
-        showSpinnerAlert("Starting restore of " +  backupName);
+        showSpinnerAlert("Going back to " +  backupName);
 
         // setup an AJAX POST to request content restore
         $.post('/api/backups/recover/' + backupID).done(function(data, textStatus, jqXHR) {
@@ -446,8 +456,8 @@ $(document).ready(function(){
         }).fail(function(jqXHR, textStatus, errorThrown) {
           showErrorMessage(
             "Error",
-            "There was a problem restoring domain content.\n"
-            + "If the problem persists, the content archive may be corrupted."
+            "The backup couldn't be put back in your world.\n"
+            + "If this keeps happening, the backup may be damaged."
           );
         });
       }
@@ -467,11 +477,11 @@ $(document).ready(function(){
 
     // make sure the user knows what is about to happen
     swalAreYouSure(
-      "The content archive " + backupName + " will be deleted and will no longer be available for restore or download from this page.",
-      "Delete content archive",
+      "The backup " + backupName + " is deleted, and you won't be able to go back to it or download it.",
+      "Delete the backup",
       function() {
         // show a spinner while we send off our request
-        showSpinnerAlert("Deleting content archive " +  backupName);
+        showSpinnerAlert("Deleting " +  backupName);
 
         // setup an AJAX DELETE to request content archive delete
         $.ajax({
@@ -482,7 +492,7 @@ $(document).ready(function(){
         }).fail(function(jqXHR, textStatus, errorThrown) {
           showErrorMessage(
             "Error",
-            "There was an unexpected error deleting the content archive"
+            "The backup couldn't be deleted."
           );
         }).always(function(){
           // reload the list of content archives in case we deleted a backup
@@ -503,8 +513,8 @@ $(document).ready(function(){
       var settingsLink = $(this).attr('href');
 
       swalAreYouSure(
-        "You have pending changes to content settings that have not been saved. They will be lost if you leave the page to manage automatic content archive intervals.",
-        "Proceed without Saving",
+        "You've changed some settings on this page and not saved them. They're lost if you go to the backup schedule now.",
+        "Go without saving",
         function() {
           // user wants to drop their changes, switch pages
           window.location =  settingsLink;
@@ -519,26 +529,26 @@ $(document).ready(function(){
 
     // show a sweet alert to ask the user to provide a name for their content archive
     swal({
-      title: "Generate a content archive",
+      title: "Back up your world",
       type: "input",
-      text: "This will capture the state of all the content in your domain right now, which you can save as a backup and restore from later.",
-      confirmButtonText: "Generate Archive",
+      text: "Saves everything in your world as it is right now, so you can go back to it or download it later. Give the backup a name you'll recognise.",
+      confirmButtonText: "Back up now",
       showCancelButton: true,
       closeOnConfirm: false,
-      inputPlaceholder: 'Archive Name'
+      inputPlaceholder: 'Before the castle rebuild'
     }, function(inputValue){
       if (inputValue === false) {
         return false;
       }
 
       if (inputValue === "") {
-        swal.showInputError("Please give the content archive a name.")
+        swal.showInputError("Give the backup a name.")
         return false;
       }
 
       var MANUAL_ARCHIVE_NAME_REGEX = /^[a-zA-Z0-9\-_ ]+$/;
       if (!MANUAL_ARCHIVE_NAME_REGEX.test(inputValue)) {
-        swal.showInputError("Valid characters include A-z, 0-9, ' ', '_', and '-'.");
+        swal.showInputError("Use letters, numbers, spaces, - and _ only.");
         return false;
       }
 
@@ -557,7 +567,7 @@ $(document).ready(function(){
       }).fail(function(jqXHR, textStatus, errorThrown) {
         showErrorMessage(
           "Error",
-          "There was an unexpected error creating the manual content archive"
+          "The backup couldn't be started."
         )
       });
     });

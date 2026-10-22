@@ -5,7 +5,14 @@ var viewHelpers = {
     if (setting.hidden) {
         return "";
     }
-    form_group = "<div class='form-group " +
+    // a heading before the setting, where a long section groups its settings ("section": the heading, and
+    // "section_help": a line under it)
+    var section_heading = "";
+    if (setting.section) {
+      section_heading = "<h4 class='dr-setting-section'>" + setting.section +
+        (setting.section_help ? "<small>" + setting.section_help + "</small>" : "") + "</h4>";
+    }
+    form_group = section_heading + "<div class='form-group " +
         (isAdvanced ? Settings.ADVANCED_CLASS : "") + " " +
         (setting.deprecated ? Settings.DEPRECATED_CLASS : "" ) + "' " +
         "data-keypath='" + keypath + "'>";
@@ -26,7 +33,10 @@ var viewHelpers = {
       return " class='" + (setting.type !== 'checkbox' ? 'form-control' : '')
         + " " + Settings.TRIGGER_CHANGE_CLASS + " " + extra_classes + "' data-short-name='"
         + setting.name + "' name='" + keypath + "' "
-        + "id='" + (!_.isUndefined(setting.html_id) ? setting.html_id : keypath) + "'";
+        + "id='" + (!_.isUndefined(setting.html_id) ? setting.html_id : keypath) + "'"
+        // no browser fills these in from what it remembers for this page (its login): a filled-in field counts as
+        // changed, and was saved
+        + (setting.type === 'password' ? " autocomplete='new-password'" : " autocomplete='off'");
     }
 
     if (setting.type === 'checkbox') {
@@ -124,6 +134,17 @@ function reloadSettings(callback) {
     });
 
     $('#panels').html(Settings.panelsTemplate(data));
+
+    // what the page is, at its top
+    if (Settings.content_settings) {
+      $('#dr-page-title').text("World content");
+      $('#dr-page-intro').text("What's in your world: backups of it, a way to replace it, where visitors arrive, " +
+        "the scripts that always run, and how sound carries. Press Save at the top when you've changed something.");
+    } else {
+      $('#dr-page-title').text("Settings");
+      $('#dr-page-intro').text("How your world server runs. Change what you need, then press Save at the top. " +
+        "Sections marked For experts can usually be left as they are.");
+    }
 
     Settings.data = data;
     Settings.initialValues = form2js('settings-form', ".", false, cleanupFormValues, true);
@@ -426,7 +447,7 @@ function validateInputs() {
   return inputsValid;
 }
 
-var SETTINGS_ERROR_MESSAGE = "There was a problem saving domain settings. Please try again!";
+var SETTINGS_ERROR_MESSAGE = "Your settings couldn't be saved. Please try again.";
 
 function saveSettings() {
 
@@ -473,6 +494,11 @@ function makeTable(setting, keypath, setting_value) {
 
   var html = "";
 
+  // a table's caption is its title, so it goes before the help about it
+  if (setting.caption) {
+    html += "<label class='control-label dr-table-title'>" + setting.caption + "</label>";
+  }
+
   if (setting.help) {
     html += "<span class='help-block'>" + setting.help + "</span>"
   }
@@ -484,10 +510,6 @@ function makeTable(setting, keypath, setting_value) {
                  "data-short-name='" + setting.name + "' name='" + keypath + "' " +
                  "id='" + (!_.isUndefined(setting.html_id) ? setting.html_id : keypath) + "' " +
                  "data-setting-type='" + (isArray ? 'array' : 'hash') + "'>";
-
-  if (setting.caption) {
-    html += "<caption>" + setting.caption + "</caption>"
-  }
 
   // Column groups
   if (setting.groups) {
@@ -742,7 +764,7 @@ function getDescriptionForKey(key) {
 }
 
 var SAVE_BUTTON_LABEL_SAVE = "Save";
-var SAVE_BUTTON_LABEL_RESTART = "Save and restart";
+var SAVE_BUTTON_LABEL_RESTART = "Save and restart";  // some settings only take effect when the server restarts
 var reasonsForRestart = [];
 var numChangesBySection = {};
 

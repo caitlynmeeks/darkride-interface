@@ -1,30 +1,46 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Darkride world server</title>
+    <meta charset="utf-8">
+    <title>Set up your Darkride world</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+      // the light or dark look, before anything is drawn: the choice from the top bar, or (Auto) the computer's own
+      (function() {
+        var mode = null;
+        try {
+          mode = localStorage.getItem("darkride.theme");
+        } catch (e) {
+        }
+        var light = mode === "light" ||
+          (mode !== "dark" && !!window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.setAttribute("data-theme", light ? "light" : "dark");
+      })();
+    </script>
 
     <link href="/css/bootstrap.min.css" rel="stylesheet" media="screen">
     <link href="/css/style.css" rel="stylesheet" media="screen">
     <link href="/wizard/css/style.css" rel="stylesheet" media="screen">
     <link href="/css/sweetalert.css" rel="stylesheet" media="screen">
     <link href="/css/bootstrap-switch.min.css" rel="stylesheet" media="screen">
+    <link href="/css/darkride.css" rel="stylesheet" media="screen">
     <link rel="icon" type="image/x-icon" href="/favicon.png">
 
     <script src='/js/sweetalert.min.js'></script>
   </head>
-  <body>
-    <nav class="navbar navbar-default navbar-fixed-top" role="navigation">
-      <div class="container-fluid">
-        <!-- Collect the nav links, forms, and other content for toggling -->
-        <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
-          <a class="navbar-brand step-info" href="#">Setup wizard</a>
+  <body class="dr-app dr-wizard">
+    <header class="dr-topbar">
+      <span class="dr-brand">
+        <img src="/favicon.png" alt="" />
+        <span class="dr-brand-text">Darkride <span class="dr-brand-sub step-info">Set up your world</span></span>
+      </span>
+      <div class="dr-topbar-actions">
+        <button type="button" class="btn btn-default dr-theme-toggle" id="dr-theme-toggle" title="Light or dark look">
+          <span class="glyphicon glyphicon-adjust"></span><span class="hidden-xs dr-theme-toggle-text"> Auto</span>
+        </button>
+        <button id="skip-wizard-button" type="button" class="btn btn-default" style="display:none;">Skip setup</button>
+      </div>
+    </header>
 
-          <div class="navbar-form navbar-right">
-            <button id="skip-wizard-button" type="button" class="btn btn-default" style="display:none;">Skip wizard</button>
-          </div>
-        </div>
-      </div><!-- /.container-fluid -->
-    </nav>
-
+    <main class="dr-main">
     <div class="container">

@@ -5,8 +5,7 @@ var Metaverse = {
 var currentStepNumber;
 
 $(document).ready(function(){
-  Strings.ADD_PLACE_NOT_CONNECTED_MESSAGE = "You must have an access token to query your Darkride places.<br><br>" +
-    "Please go back and connect your account.";
+  Strings.ADD_PLACE_NOT_CONNECTED_MESSAGE = "Connect this server to Darkride first: go back a step and press Connect to Darkride.";
 
   //$('#connect-account-btn').attr('href', URLs.METAVERSE_URL + "/user/tokens/new?for_domain_server=true");
   $('#connect-account-btn').attr('href', URLs.METAVERSE_URL + "/user/worlds");
@@ -15,14 +14,14 @@ $(document).ready(function(){
 
   $('.perms-link').on('click', function() {
     var modal_body = '<div>';
-    modal_body += '<b>None</b> - No one will have permissions. Only you and the users your have given administrator privileges to will have permissions.</br></br>';
-    modal_body += '<b>Friends</b> - People who are your friends on Darkride.</br></br>';
-    modal_body += '<b>Users signed in to Darkride</b> - People currently signed in to Darkride.</br></br>';
-    modal_body += '<b>Everyone</b> - Anyone who uses Darkride.';
+    modal_body += '<b>Only administrators</b>: nobody else. Just you and the people you made administrators.</br></br>';
+    modal_body += '<b>My friends</b>: your friends on Darkride.</br></br>';
+    modal_body += '<b>Anyone signed in to Darkride</b>: anyone with a Darkride account.</br></br>';
+    modal_body += '<b>Everyone</b>: anyone at all, signed in or not.';
     modal_body += '</div>';
 
     dialog = bootbox.dialog({
-      title: "User definition",
+      title: "Who's who",
       message: modal_body,
       closeButton: true
     });
@@ -115,7 +114,7 @@ $(document).ready(function(){
       swal({
         title: '',
         type: 'error',
-        text: "There was a problem loading the domain settings.\nPlease refresh the page to try again.",
+        text: Strings.LOADING_SETTINGS_ERROR,
       });
     }
   });
@@ -142,8 +141,8 @@ function setupWizardSteps() {
       $(this).children(".step-title").text("Step " + (i + 1) + " of " + (steps.length - 1));
     });
 
-    $('#permissions-description').html('You <span id="username-display"></span>have been assigned administrator privileges to this domain.');
-    $('#admin-description').html('Add more Darkride usernames');
+    $('#permissions-description').html('<b>You</b> <span id="username-display"></span>are an administrator of this world: you can do anything here.');
+    $('#admin-description').html('Other administrators');
   } else {
     $('.cloud-only').remove();
     $('#save-permissions').text("Finish");
@@ -165,7 +164,7 @@ function setupWizardSteps() {
 function updatePlaceNameLink(address) {
   if (address) {
     var url = URLs.PLACE_URL + '/' + address;
-    $('#place-name-link').html('Your domain is reachable at: <a target="_blank" href="' + url + '">' + address + '</a>');
+    $('#place-name-link').html('Your world is at <a target="_blank" href="' + url + '">' + address + '</a>');
     $('#share-field a').attr('href', url).text(url);
   }
 }
@@ -486,17 +485,17 @@ function saveUsernamePassword() {
   var verify_password = $("#verify_http_password").val();
 
   if (username.length == 0) {
-    bootbox.alert({ "message": "You must set a username!", "title": "Username Error" });
+    bootbox.alert({ "message": "Choose a username.", "title": "A username is needed" });
     return;
   }
 
   if (password.length == 0) {
-    bootbox.alert({ "message": "You must set a password!", "title": "Password Error" });
+    bootbox.alert({ "message": "Choose a password.", "title": "A password is needed" });
     return;
   }
 
   if (password != verify_password) {
-    bootbox.alert({ "message": "Passwords must match!", "title": "Password Error" });
+    bootbox.alert({ "message": "The two passwords aren't the same. Type them again.", "title": "The passwords don't match" });
     return;
   }
 

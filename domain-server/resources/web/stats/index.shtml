@@ -1,15 +1,40 @@
 <!--#include virtual="header.html"-->
-<div class="col-xs-12 table-lead" id="stats-lead"><h3>Stats</h3><div class="lead-line"></div></div>
-<div class="col-xs-12">
-  <p class="help"><em>Click on any of the numerical values in the tables below to view a line graph of the incoming values.</em></p>
+<a class="dr-back-link" href="/"><span class="glyphicon glyphicon-chevron-left"></span> Overview</a>
+
+<div class="dr-detail-head" id="stats-lead">
+  <span class="dr-dot dr-dot-waiting" id="stats-dot"></span>
+  <div class="dr-detail-head-text">
+    <h1 class="dr-page-title" id="stats-title">Details</h1>
+    <p class="dr-page-intro" id="stats-about">Loading&hellip;</p>
+  </div>
+  <div class="dr-detail-head-actions">
+    <button type="button" class="btn btn-default" id="stats-restart" style="display: none;">
+      <span class="glyphicon glyphicon-refresh"></span> Restart
+    </button>
+  </div>
 </div>
-<div class="col-xs-12" id="stats-container"></div>
+
+<dl class="dr-facts dr-detail-facts" id="stats-facts"></dl>
+
+<div class="alert alert-warning" id="stats-stale" style="display: none;">
+  This service isn't answering. It may be restarting: these numbers are from the last time it did.
+</div>
+
+<h2 class="dr-section-title">At a glance</h2>
+<div class="dr-status-cards" id="stats-highlights"></div>
+
+<div id="stats-connections"></div>
+
+<h2 class="dr-section-title">All the numbers</h2>
+<p class="help-block dr-section-help">
+  Everything this service reports, refreshed every second. Click a number to watch it on a graph.
+</p>
+<div id="stats-container"></div>
+
 <!--#include virtual="footer.html"-->
 <script src='/js/query-string.js'></script>
-<script src='js/stats.js'></script>
-<script src='js/json.human.js'></script>
-<script src='js/highcharts-custom.js'></script>
 <script src='/js/underscore-min.js'></script>
-<script src='/js/underscore-keypath.min.js'></script>
 <script src='/js/bootbox.min.js'></script>
+<script src='js/highcharts-custom.js'></script>
+<script src='js/stats.js'></script>
 <!--#include virtual="page-end.html"-->

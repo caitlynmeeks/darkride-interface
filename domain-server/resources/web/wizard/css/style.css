@@ -1,162 +1,193 @@
-label {
-  font-style: normal;
-  font-weight: normal;
-  line-height: 24px;
-  font-size: 16px;
+/* the setup wizard, in the Darkride world server's colours (see /css/darkride.css) */
 
-  color: #373A3C;
+.dr-wizard-card {
+  max-width: 720px;
+  margin: 10px auto 40px auto;
+  padding: 30px 34px;
+  background: var(--dr-surface);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius);
 }
 
 .step-title {
-  margin-bottom: 20px;
-  line-height: 26px;
-  font-size: 24px;
+  margin: 0 0 6px 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--dr-cyan);
+}
 
-  color: #373A3C;
+.dr-wizard-heading {
+  margin: 0 0 12px 0;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--dr-text);
 }
 
 .step-description {
-  line-height: 24px;
-  font-size: 16px;
-
-  color: #818A91;
+  display: block;
+  margin: 0 0 18px 0;
+  line-height: 1.6;
+  font-size: 15px;
+  color: var(--dr-text-muted);
 }
 
 .step-info {
-  font-style: normal;
-  font-weight: normal;
-  line-height: 24px;
-  font-size: 16px;
-
-  color: #373A3C;
+  line-height: 1.6;
+  font-size: 15px;
+  color: var(--dr-text);
 }
 
-.wizard-link {
-  font-size: 16px;
-  font-weight: normal;
-  color: #2F80ED;
-}
-
-#admin-row {
-  margin-top: 20px;
-  margin-bottom: 20px;
-}
-
-#connect-question {
-  margin-top: 10px;
+.dr-wizard-steps {
+  margin: 0 0 24px 0;
+  padding-left: 22px;
+  line-height: 1.9;
+  color: var(--dr-text);
 }
 
 #connect-account-btn {
-  margin-top: 30px;
-  margin-bottom: 205px;
+  margin-bottom: 8px;
 }
 
-#place-name-group {
-  margin-top: 42px;
-  margin-bottom: 140px;
-  display: inline-block;
+.dr-wizard-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--dr-border);
 }
 
-#place-name-link {
-  line-height: 38px;
-  font-size: 32px;
-
-  display: inline-block;
-
-  color: #373A3C;
+.dr-wizard-buttons .help-block {
+  margin: 0;
+  flex: 1 1 auto;
 }
 
-#place-name-edit {
-  text-align: right;
+.dr-wizard-buttons .btn {
+  min-width: 120px;
 }
 
-#change-place-name {
-  line-height: 24px;
-  font-size: 18px;
+#admin-row {
+  margin: 20px 0 24px 0;
 }
 
-#rez-options-row {
-  margin-bottom: 60px;
+#admin-row label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 6px;
 }
 
-#verify-password-row {
-  margin-bottom: 33px;
+.dr-choice-group {
+  margin: 0 0 20px 0;
 }
 
-.btn.btn-square {
-  border-radius: 0;
+.dr-choice-group legend {
+  border: none;
+  margin-bottom: 8px;
+  font-size: 15px;
 }
 
-.header {
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  margin-left: -720px; /* Half of the width */
-  min-width: 1440px;
-  z-index: -1;
+.dr-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 8px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--dr-border);
+  border-radius: 8px;
+  background: var(--dr-bg);
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.dr-choice:hover {
+  border-color: var(--dr-cyan);
+}
+
+.dr-choice input {
+  margin-top: 4px;
+  accent-color: var(--dr-cyan);
+}
+
+.dr-choice small {
+  color: var(--dr-text-muted);
+}
+
+.dr-choice input:disabled + span {
+  opacity: 0.45;
+}
+
+.dr-choice:has(input:disabled) {
+  cursor: default;
+}
+
+.dr-choice:has(input:disabled):hover {
+  border-color: var(--dr-border);
+}
+
+.dr-wizard-banner {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  margin-bottom: 18px;
 }
 
 .title {
-  font-family: 'Cairo';
-  color: white;
-  margin-top: 260px;
+  margin: 0 0 6px 0;
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--dr-text);
 }
 
 #main-description {
-  margin-top: 32px;
-  margin-bottom: 35px;
+  margin: 0 0 24px 0;
+  color: var(--dr-text-muted);
 }
 
 #share-box {
-  background-color: rgb(240, 240, 240);
-  padding: 20px 20px;
-  margin-top: 15px;
-  margin-bottom: 70px;
-  white-space: nowrap;
-}
-
-#share-box > span {
-  vertical-align: middle;
-  display: table-cell;
-  height: 100%;
-}
-
-#share-box button {
-  border-color: rgb(225, 225, 225);
-  font-size: 18px;
-}
-
-#share-box img {
-  padding-right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 26px 0;
+  padding: 14px 16px;
+  background: var(--dr-bg);
+  border: 1px solid var(--dr-border);
+  border-radius: 8px;
 }
 
 #share-text {
-  font-size: 22px;
-  padding-right: 15px;
+  flex: none;
+  color: var(--dr-text-muted);
 }
 
 #share-field {
-  background-color: rgb(255, 255, 255);
-  padding: 0 10px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #share-link {
-  font-size: 28px;
-}
-
-#congrats-list > div > div {
-  margin-bottom: 30px;
-}
-
-#congrats-list ul {
-  padding-left: 16px;
+  font-size: 17px;
+  color: var(--dr-cyan);
 }
 
 #congrats-list {
-  margin-bottom: 60px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
 }
 
-#open-settings {
-  border-color: black;
+#congrats-list ul {
+  padding-left: 18px;
+  margin: 6px 0 0 0;
+}
+
+#congrats-list li {
+  color: var(--dr-text-muted);
 }

@@ -30,6 +30,39 @@ function settingsGroupAnchor(base, html_id) {
 $(document).ready(function(){
   var url = location.protocol + '//' + location.host+location.pathname;
 
+  // the light or dark look, from the top bar: Auto (the computer's own setting), Light or Dark
+  function showThemeChoice() {
+    var mode = DarkrideTheme.mode();
+    $('.dr-theme-toggle-text').text(" " + DarkrideTheme.NAMES[mode]);
+    $('#dr-theme-toggle').attr('title', "Look: " + DarkrideTheme.NAMES[mode] +
+      (mode === "auto" ? " (as this computer is set)" : "") + ". Click to change.");
+  }
+  showThemeChoice();
+  $('body').on('click', '#dr-theme-toggle', function() {
+    DarkrideTheme.cycle();
+    showThemeChoice();
+    $(this).blur();
+  });
+  if (window.matchMedia) {
+    var systemLook = window.matchMedia("(prefers-color-scheme: light)");
+    var followSystem = function() {
+      DarkrideTheme.apply();
+    };
+    if (systemLook.addEventListener) {
+      systemLook.addEventListener("change", followSystem);
+    } else if (systemLook.addListener) {
+      systemLook.addListener(followSystem);
+    }
+  }
+
+  // on a narrow screen the sidebar slides in from the menu button, and goes again on a tap outside it or on a link
+  $('body').on('click', '#dr-menu-toggle', function() {
+    $('body').toggleClass('dr-menu-open');
+  });
+  $('body').on('click', '#dr-sidebar-backdrop, .dr-sidebar a', function() {
+    $('body').removeClass('dr-menu-open');
+  });
+
   // Will only work if string in href matches with location
   $('ul.nav a[href="'+ url +'"]').parent().addClass('active');
 
@@ -40,7 +73,7 @@ $(document).ready(function(){
 
   $('body').on('click', '#restart-server', function(e) {
     swalAreYouSure(
-      "This will restart your domain server, causing your domain to be briefly offline.",
+      "The world server will restart, and your world will be offline for a few seconds while it does.",
       "Restart",
       function() {
         swal.close();
@@ -58,15 +91,18 @@ $(document).ready(function(){
   Settings.extraContentGroupsAtIndex = {
     0: {
       html_id: Settings.INSTALLED_CONTENT,
-      label: 'Installed Content'
+      label: 'Installed content',
+      description: 'The content you last put in your world from a file.'
     },
     1: {
       html_id: Settings.CONTENT_ARCHIVES_PANEL_ID,
-      label: 'Content Archives'
+      label: 'Backups',
+      description: "Copies of your world's content, made by the server on a schedule or by you, to download or go back to."
     },
     2: {
       html_id: Settings.UPLOAD_CONTENT_BACKUP_PANEL_ID,
-      label: 'Upload Content'
+      label: 'Replace the content',
+      description: "Put a backup or a file of objects into your world, in place of what's there."
     }
   };
 
@@ -82,7 +118,8 @@ $(document).ready(function(){
   Settings.extraDomainGroupsAtEnd = [
     {
       html_id: 'settings_backup',
-      label: 'Settings Backup / Restore'
+      label: 'Back up or restore settings',
+      description: 'Save all of these settings to a file, or load them back from one.'
     }
   ]
 

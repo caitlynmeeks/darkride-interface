@@ -1256,6 +1256,11 @@ bool DomainServerSettingsManager::handleAuthenticatedHTTPRequest(HTTPConnection 
                                                                                     contentSettingsInclusion,
                                                                                     IncludeDefaultSettings);
 
+            // whether the settings pages ask for a password: they never see the password, so they're told
+            if (url.path() == SETTINGS_PATH_JSON) {
+                rootObject["http_password_set"] = !valueForKeyPath("security.http_password").toString().isEmpty();
+            }
+
             connection->respond(HTTPConnection::StatusCode200, QJsonDocument(rootObject).toJson(), "application/json");
 
             return true;

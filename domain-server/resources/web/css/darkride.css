@@ -1,0 +1,1592 @@
+/*
+ *  darkride.css
+ *  domain-server/resources/web/css
+ *
+ *  Created on 2026-10-19.
+ *
+ *  The world server's pages in Darkride's look: the navy tones, cyan and violet of the client's in-world theme
+ *  (tivoli-scripts/frontend/src/styles.scss, the same as vr.darkride.ai), over Bootstrap 3, its switches,
+ *  sweetalert and bootbox. Loaded after them, so it overrides them.
+ *
+ *  Distributed under the Apache License, Version 2.0.
+ *  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+ */
+
+:root {
+  --dr-bg-darker: #171b2d;   /* top bar, sidebar */
+  --dr-bg: #1c2136;          /* the page */
+  --dr-surface: #242a44;     /* cards, menus, dialogs */
+  --dr-surface-raised: #2b3252;
+  --dr-selection: #333a5a;   /* hover, selected */
+  --dr-border: #343c60;
+  --dr-input: #171b2d;
+  --dr-text: #f4f6f8;
+  --dr-text-muted: #9aa1bd;
+  --dr-text-faint: #6f7698;
+  --dr-night: #091023;
+  --dr-cyan: #00afff;
+  --dr-cyan-light: #4dc7ff;
+  --dr-cyan-dark: #008fd9;
+  --dr-violet: #a548ff;
+  --dr-violet-light: #d2a4ff;
+  --dr-red: #ff5555;
+  --dr-red-dark: #e94a4a;
+  --dr-green: #50fa7b;
+  --dr-amber: #ffb86c;
+  --dr-radius: 10px;
+  --dr-radius-small: 6px;
+  --dr-topbar-height: 60px;
+  --dr-sidebar-width: 250px;
+  --dr-font: "Roboto", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --dr-border-strong: #485181;              /* a button's border on hover */
+  --dr-border-soft: rgba(52, 60, 96, 0.6);  /* between rows of numbers */
+  --dr-tint-sunken: rgba(23, 27, 45, 0.55); /* the folded-away settings, a table's input row */
+  --dr-tint-stripe: rgba(51, 58, 90, 0.35); /* every other table row */
+  --dr-shadow: rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+/* The light look, for those who'd rather: the same layout and accents on pale surfaces, with the accents darkened
+   enough to read on white. The page's <head> sets data-theme from the choice in the top bar (Auto follows the
+   computer's own light or dark setting). */
+:root[data-theme="light"] {
+  --dr-bg-darker: #ffffff;
+  --dr-bg: #f3f5fa;
+  --dr-surface: #ffffff;
+  --dr-surface-raised: #eef1f7;
+  --dr-selection: #e3e8f4;
+  --dr-border: #d9deea;
+  --dr-input: #ffffff;
+  --dr-text: #1c2136;
+  --dr-text-muted: #5b6382;
+  --dr-text-faint: #8a91ab;
+  --dr-cyan: #0098e0;
+  --dr-cyan-light: #0080c0;
+  --dr-cyan-dark: #006fa8;
+  --dr-violet: #8f3aea;
+  --dr-violet-light: #7b2fd1;
+  --dr-red: #d93636;
+  --dr-red-dark: #b92b2b;
+  --dr-green: #16a34a;
+  --dr-amber: #b45309;
+  --dr-border-strong: #b9c1d6;
+  --dr-border-soft: #e6e9f2;
+  --dr-tint-sunken: #f6f8fc;
+  --dr-tint-stripe: #f6f8fc;
+  --dr-shadow: rgba(28, 33, 54, 0.12);
+  color-scheme: light;
+}
+
+/* ---------- the page ---------- */
+
+html, body.dr-app {
+  background: var(--dr-bg);
+}
+
+body.dr-app {
+  color: var(--dr-text);
+  font-family: var(--dr-font);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+  padding: 0;
+}
+
+.dr-app a {
+  color: var(--dr-cyan-light);
+}
+
+.dr-app a:hover, .dr-app a:focus {
+  color: var(--dr-violet-light);
+  text-decoration: none;
+}
+
+.dr-app h1, .dr-app h2, .dr-app h3, .dr-app h4, .dr-app h5 {
+  color: var(--dr-text);
+  font-family: var(--dr-font);
+}
+
+.dr-app hr {
+  border-top-color: var(--dr-border);
+}
+
+.dr-app code, .dr-app kbd, .dr-app pre {
+  background: var(--dr-input);
+  color: var(--dr-violet-light);
+  border: 1px solid var(--dr-border);
+  border-radius: 4px;
+}
+
+.dr-app ::selection {
+  background: var(--dr-cyan-dark);
+  color: #fff;
+}
+
+/* anchors land below the top bar */
+.dr-app :target:before,
+.dr-app .anchor {
+  display: block;
+  height: calc(var(--dr-topbar-height) + 16px);
+  margin-top: calc(-1 * (var(--dr-topbar-height) + 16px));
+  visibility: hidden;
+}
+
+/* ---------- top bar ---------- */
+
+.dr-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--dr-topbar-height);
+  z-index: 1030;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  background: var(--dr-bg-darker);
+  border-bottom: 1px solid var(--dr-border);
+  box-shadow: 0 2px 12px var(--dr-shadow);
+}
+
+.dr-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dr-text) !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+}
+
+.dr-brand img {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+}
+
+.dr-brand-text {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  background: linear-gradient(90deg, var(--dr-cyan-light), var(--dr-violet-light));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.dr-brand-sub {
+  font-size: 13px;
+  font-weight: 400;
+  margin-left: 6px;
+  color: var(--dr-text-muted);
+  -webkit-text-fill-color: var(--dr-text-muted);
+}
+
+.dr-topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#visit-hmd-icon {
+  height: 16px;
+  margin-right: 4px;
+  filter: invert(1);
+  vertical-align: -3px;
+}
+
+.dr-menu-toggle {
+  display: none;
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius-small);
+  color: var(--dr-text);
+  padding: 6px 10px;
+  font-size: 16px;
+}
+
+.dr-menu-toggle .badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+}
+
+/* ---------- sidebar ---------- */
+
+.dr-sidebar {
+  position: fixed;
+  top: var(--dr-topbar-height);
+  bottom: 0;
+  left: 0;
+  width: var(--dr-sidebar-width);
+  z-index: 1020;
+  display: flex;
+  flex-direction: column;
+  background: var(--dr-bg-darker);
+  border-right: 1px solid var(--dr-border);
+  overflow-y: auto;
+  padding: 14px 10px;
+}
+
+.dr-nav > li > a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--dr-radius-small);
+  color: var(--dr-text) !important;
+  font-size: 15px;
+}
+
+.dr-nav > li > a .glyphicon {
+  color: var(--dr-text-muted);
+  width: 18px;
+  text-align: center;
+}
+
+.dr-nav > li > a:hover,
+.dr-nav > li > a:focus {
+  background: var(--dr-selection) !important;
+}
+
+.dr-nav > li.active > a,
+.dr-nav > li.active > a:hover {
+  background: linear-gradient(90deg, rgba(0, 175, 255, 0.18), rgba(165, 72, 255, 0.12)) !important;
+  box-shadow: inset 3px 0 0 var(--dr-cyan);
+}
+
+.dr-nav > li.active > a .glyphicon {
+  color: var(--dr-cyan-light);
+}
+
+.dr-nav .badge {
+  margin-left: auto;
+}
+
+/* a page's sections, shown under the page you're on */
+.dr-subnav {
+  list-style: none;
+  margin: 4px 0 8px 0;
+  padding: 0 0 0 30px;
+  display: none;
+}
+
+.dr-nav > li.active > .dr-subnav {
+  display: block;
+}
+
+.dr-subnav > li.divider {
+  display: none;
+}
+
+.dr-subnav > li > a {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: var(--dr-radius-small);
+  color: var(--dr-text-muted) !important;
+  font-size: 13px;
+}
+
+.dr-subnav > li > a:hover {
+  background: var(--dr-selection);
+  color: var(--dr-text) !important;
+}
+
+.dr-subnav > li > a .badge {
+  margin-left: auto;
+}
+
+.dr-sidebar-footer {
+  margin-top: auto;
+  padding: 14px 12px 4px 12px;
+  font-size: 12px;
+  border-top: 1px solid var(--dr-border);
+}
+
+.dr-sidebar-footer a {
+  color: var(--dr-text-faint) !important;
+}
+
+.dr-sidebar-backdrop {
+  display: none;
+}
+
+/* ---------- main area ---------- */
+
+.dr-main {
+  margin-left: var(--dr-sidebar-width);
+  padding: calc(var(--dr-topbar-height) + 24px) 28px 60px 28px;
+  min-height: 100vh;
+}
+
+.dr-main > .container-fluid {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+/* the pages written for Bootstrap's 10-of-12 centred column use all of the main area */
+.dr-main .col-md-10.col-md-offset-1 {
+  width: 100%;
+  margin-left: 0;
+  float: none;
+  padding: 0;
+}
+
+.dr-main .row {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.dr-main .col-xs-12 {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.dr-page-title {
+  margin: 0 0 6px 0;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.dr-page-intro {
+  color: var(--dr-text-muted);
+  font-size: 15px;
+  margin-bottom: 22px;
+  max-width: 780px;
+}
+
+/* the setup wizard has no sidebar */
+.dr-wizard .dr-main {
+  margin-left: 0;
+}
+
+.dr-wizard .dr-main > .container {
+  max-width: 860px;
+}
+
+@media (max-width: 900px) {
+  .dr-menu-toggle {
+    display: inline-block;
+  }
+
+  .dr-sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 4px 0 18px rgba(0, 0, 0, 0.5);
+  }
+
+  body.dr-menu-open .dr-sidebar {
+    transform: translateX(0);
+  }
+
+  body.dr-menu-open .dr-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1010;
+    background: rgba(9, 16, 35, 0.6);
+  }
+
+  .dr-main {
+    margin-left: 0;
+    padding: calc(var(--dr-topbar-height) + 16px) 14px 60px 14px;
+  }
+
+  .dr-brand-sub {
+    display: none;
+  }
+}
+
+/* ---------- cards (Bootstrap's panels) ---------- */
+
+.dr-app .panel {
+  background: var(--dr-surface);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius);
+  box-shadow: 0 4px 18px var(--dr-shadow);
+  margin-bottom: 22px;
+  overflow: visible;
+}
+
+.dr-app .panel-default > .panel-heading,
+.dr-app .panel > .panel-heading {
+  background: transparent;
+  color: var(--dr-text);
+  border-bottom: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius) var(--dr-radius) 0 0;
+  padding: 16px 20px 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dr-app .panel-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--dr-text);
+}
+
+.dr-app .panel-heading .badge {
+  background: var(--dr-violet);
+}
+
+.dr-app .panel-heading .panel-description {
+  flex-basis: 100%;
+  margin: 2px 0 0 0;
+  color: var(--dr-text-muted);
+  font-size: 13.5px;
+  font-weight: 400;
+}
+
+.dr-app .panel-heading .dr-tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  color: var(--dr-text-muted);
+  border: 1px solid var(--dr-border);
+}
+
+.dr-app .panel-body {
+  padding: 18px 20px 20px 20px;
+}
+
+.dr-app .panel-footer {
+  background: transparent;
+  border-top: 1px solid var(--dr-border);
+  border-radius: 0 0 var(--dr-radius) var(--dr-radius);
+  padding: 14px 20px;
+}
+
+/* a section whose settings are all for experts starts folded away */
+.dr-app .panel.dr-expert-only .panel-body {
+  padding-top: 12px;
+}
+
+.dr-expert-note {
+  color: var(--dr-text-muted);
+  font-size: 13px;
+  margin: 0 0 10px 0;
+}
+
+/* ---------- settings ---------- */
+
+.dr-app .form-group {
+  margin-bottom: 20px;
+}
+
+.dr-app label,
+.dr-app .control-label {
+  color: var(--dr-text);
+  font-weight: 500;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.dr-app .help-block {
+  color: var(--dr-text-muted);
+  font-size: 13px;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+/* a heading inside a long section, from a setting's "section" */
+.dr-setting-section {
+  margin: 28px 0 14px 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--dr-border);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dr-cyan-light);
+}
+
+.dr-setting-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.dr-setting-section small {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--dr-text-muted);
+}
+
+.dr-app .form-control {
+  background: var(--dr-input);
+  color: var(--dr-text);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius-small);
+  height: 38px;
+  box-shadow: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.dr-app textarea.form-control {
+  height: auto;
+}
+
+.dr-app .form-control:focus {
+  border-color: var(--dr-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 175, 255, 0.2);
+}
+
+.dr-app .form-control::placeholder {
+  color: var(--dr-text-faint);
+}
+
+.dr-app .form-control[disabled],
+.dr-app .form-control[readonly] {
+  background: var(--dr-bg);
+  color: var(--dr-text-muted);
+  opacity: 1;
+}
+
+.dr-app select.form-control {
+  appearance: auto;
+}
+
+.dr-app select.form-control option {
+  background: var(--dr-surface);
+  color: var(--dr-text);
+}
+
+.dr-app .input-group-addon {
+  background: var(--dr-surface-raised);
+  color: var(--dr-text-muted);
+  border-color: var(--dr-border);
+}
+
+.dr-app input[type="file"] {
+  color: var(--dr-text-muted);
+}
+
+.dr-app input[type="checkbox"] {
+  accent-color: var(--dr-cyan);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* the toggle beside its explanation */
+.dr-app .toggle-checkbox-container {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.dr-app .toggle-checkbox-container .checkbox-help {
+  margin-top: 6px;
+}
+
+/* the expert settings fold */
+.dr-app .panel-body > .btn[data-toggle="collapse"] {
+  margin-top: 4px;
+}
+
+.dr-app .advanced-settings-section {
+  margin-top: 18px;
+  padding: 18px 18px 2px 18px;
+  background: var(--dr-tint-sunken);
+  border: 1px dashed var(--dr-border);
+  border-radius: var(--dr-radius-small);
+}
+
+/* ---------- buttons ---------- */
+
+.dr-app .btn {
+  border-radius: var(--dr-radius-small);
+  font-weight: 500;
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+.dr-app .btn:focus,
+.dr-app .btn:active:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 175, 255, 0.25);
+}
+
+.dr-app .btn-default {
+  background: var(--dr-surface-raised);
+  color: var(--dr-text);
+  border-color: var(--dr-border);
+}
+
+.dr-app .btn-default:hover,
+.dr-app .btn-default:focus,
+.dr-app .btn-default.active,
+.dr-app .open > .dropdown-toggle.btn-default {
+  background: var(--dr-selection);
+  color: var(--dr-text);
+  border-color: var(--dr-border-strong);
+}
+
+.dr-app .btn-primary,
+.dr-app .btn-info {
+  background: var(--dr-cyan);
+  color: var(--dr-night);
+  border-color: var(--dr-cyan);
+}
+
+.dr-app .btn-primary:hover,
+.dr-app .btn-primary:focus,
+.dr-app .btn-info:hover,
+.dr-app .btn-info:focus {
+  background: var(--dr-cyan-light);
+  border-color: var(--dr-cyan-light);
+  color: var(--dr-night);
+}
+
+/* Save: the one to press when there's something to save */
+.dr-app .btn-success {
+  background: linear-gradient(90deg, var(--dr-cyan), var(--dr-violet));
+  color: #fff;
+  border: 0;
+  padding: 8px 18px;
+}
+
+.dr-app .btn-success:hover,
+.dr-app .btn-success:focus {
+  background: linear-gradient(90deg, var(--dr-cyan-light), #b363ff);
+  color: #fff;
+}
+
+.dr-app .btn-success[disabled],
+.dr-app .btn-success.disabled {
+  background: var(--dr-surface-raised);
+  color: var(--dr-text-faint);
+  opacity: 1;
+}
+
+.dr-app .btn-danger {
+  background: transparent;
+  color: var(--dr-red);
+  border-color: rgba(255, 85, 85, 0.55);
+}
+
+.dr-app .btn-danger:hover,
+.dr-app .btn-danger:focus {
+  background: var(--dr-red);
+  color: var(--dr-night);
+  border-color: var(--dr-red);
+}
+
+.dr-app .btn-warning {
+  background: var(--dr-amber);
+  color: var(--dr-night);
+  border-color: var(--dr-amber);
+}
+
+.dr-app .btn-link {
+  color: var(--dr-cyan-light);
+}
+
+.dr-app .btn[disabled] {
+  cursor: not-allowed;
+}
+
+/* ---------- tables ---------- */
+
+.dr-app .table {
+  color: var(--dr-text);
+  background: transparent;
+  margin-bottom: 10px;
+}
+
+.dr-app .table > thead > tr > th,
+.dr-app .table > tbody > tr > th,
+.dr-app .table > tbody > tr > td,
+.dr-app .table > thead > tr > td {
+  border-color: var(--dr-border);
+  vertical-align: middle;
+  padding: 9px 10px;
+}
+
+.dr-app .table > thead > tr > th,
+.dr-app .table tr.headers > td,
+.dr-app .table tr.headers > th {
+  background: var(--dr-surface-raised);
+  color: var(--dr-text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.dr-app .table tr.headers strong {
+  font-weight: 600;
+}
+
+.dr-app .table-bordered {
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius-small);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+.dr-app .table-bordered > tbody > tr > td,
+.dr-app .table-bordered > thead > tr > th,
+.dr-app .table-bordered > tbody > tr > th {
+  border-width: 0 1px 1px 0;
+}
+
+.dr-app .table-striped > tbody > tr:nth-of-type(odd),
+.dr-app .table-hover > tbody > tr:hover {
+  background: var(--dr-tint-stripe);
+}
+
+.dr-app .table .value-category:not(.inputs) {
+  background: var(--dr-surface-raised);
+}
+
+.dr-app .table .form-control {
+  height: 32px;
+}
+
+.dr-app .table tr.inputs td {
+  background: var(--dr-tint-sunken);
+}
+
+.dr-app .table caption {
+  color: var(--dr-text);
+  font-weight: 600;
+  padding: 0 0 8px 0;
+}
+
+.dr-app tr.new-row {
+  color: var(--dr-green);
+  background: rgba(80, 250, 123, 0.08);
+}
+
+.dr-app tr.invalid-input {
+  background: rgba(255, 85, 85, 0.12);
+}
+
+.dr-app td a.glyphicon,
+.dr-app td .glyphicon {
+  color: var(--dr-text-muted);
+}
+
+.dr-app td .glyphicon-plus,
+.dr-app td .add-row,
+.dr-app td .add-category {
+  color: var(--dr-cyan-light) !important;
+}
+
+.dr-app td .glyphicon-remove {
+  font-size: 15px;
+}
+
+.dr-app td .glyphicon-remove:hover {
+  color: var(--dr-red) !important;
+}
+
+.dr-app span.port {
+  color: var(--dr-text-faint);
+}
+
+/* the wide permission tables scroll sideways on a narrow screen rather than squashing */
+.dr-app .panel-body .form-group {
+  overflow-x: auto;
+}
+
+/* ---------- small bits ---------- */
+
+.dr-app .badge {
+  background: var(--dr-violet);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dr-app .badge:empty {
+  display: none;
+}
+
+.dr-app .label-default {
+  background: var(--dr-selection);
+}
+
+.dr-app .label-success {
+  background: rgba(80, 250, 123, 0.2);
+  color: var(--dr-green);
+}
+
+.dr-app .label-danger {
+  background: rgba(255, 85, 85, 0.2);
+  color: var(--dr-red);
+}
+
+.dr-app .alert {
+  border-radius: var(--dr-radius-small);
+  border: 1px solid var(--dr-border);
+  background: var(--dr-surface-raised);
+  color: var(--dr-text);
+}
+
+.dr-app .alert-info {
+  border-color: rgba(0, 175, 255, 0.45);
+  background: rgba(0, 175, 255, 0.1);
+}
+
+.dr-app .alert-success {
+  border-color: rgba(80, 250, 123, 0.45);
+  background: rgba(80, 250, 123, 0.08);
+}
+
+.dr-app .alert-warning {
+  border-color: rgba(255, 184, 108, 0.5);
+  background: rgba(255, 184, 108, 0.1);
+}
+
+.dr-app .alert-danger {
+  border-color: rgba(255, 85, 85, 0.5);
+  background: rgba(255, 85, 85, 0.1);
+}
+
+.dr-app .close {
+  color: var(--dr-text);
+  text-shadow: none;
+  opacity: 0.6;
+}
+
+.dr-app .well {
+  background: var(--dr-surface);
+  border-color: var(--dr-border);
+  box-shadow: none;
+}
+
+.dr-app .dropdown-menu {
+  background: var(--dr-surface);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius-small);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.dr-app .dropdown-menu > li > a {
+  color: var(--dr-text);
+  padding: 7px 16px;
+}
+
+.dr-app .dropdown-menu > li > a:hover,
+.dr-app .dropdown-menu > li > a:focus {
+  background: var(--dr-selection);
+  color: var(--dr-text);
+}
+
+.dr-app .dropdown-menu .divider {
+  background: var(--dr-border);
+}
+
+.dr-app .tooltip-inner {
+  background: var(--dr-night);
+  color: var(--dr-text);
+  border: 1px solid var(--dr-border);
+  max-width: 320px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.dr-app .tooltip.top .tooltip-arrow {
+  border-top-color: var(--dr-night);
+}
+
+.dr-app .tooltip.bottom .tooltip-arrow {
+  border-bottom-color: var(--dr-night);
+}
+
+.dr-app .popover {
+  background: var(--dr-surface);
+  border-color: var(--dr-border);
+  color: var(--dr-text);
+}
+
+.dr-app .glyphicon-question-sign,
+.dr-app .glyphicon-info-sign {
+  color: var(--dr-text-muted);
+}
+
+/* ---------- switches ---------- */
+
+.dr-app .bootstrap-switch {
+  border-color: var(--dr-border);
+  border-radius: 20px;
+  background: var(--dr-input);
+  flex-shrink: 0;
+}
+
+.dr-app .bootstrap-switch .bootstrap-switch-handle-on.bootstrap-switch-primary {
+  background: var(--dr-cyan);
+  color: var(--dr-night);
+  font-weight: 600;
+}
+
+.dr-app .bootstrap-switch .bootstrap-switch-handle-off.bootstrap-switch-default {
+  background: var(--dr-selection);
+  color: var(--dr-text-muted);
+  font-weight: 600;
+}
+
+.dr-app .bootstrap-switch .bootstrap-switch-label {
+  background: var(--dr-text);
+}
+
+.dr-app .bootstrap-switch.bootstrap-switch-focused {
+  border-color: var(--dr-cyan);
+  box-shadow: 0 0 0 3px rgba(0, 175, 255, 0.2);
+}
+
+/* ---------- dialogs: Bootstrap's modals (bootbox) and sweetalert ---------- */
+
+.dr-app .modal-content {
+  background: var(--dr-surface);
+  color: var(--dr-text);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+
+.dr-app .modal-header,
+.dr-app .modal-footer {
+  border-color: var(--dr-border);
+}
+
+.dr-app .modal-title {
+  font-weight: 600;
+}
+
+.dr-app .modal-backdrop.in {
+  background: var(--dr-night);
+  opacity: 0.75;
+}
+
+.sweet-overlay {
+  background: rgba(9, 16, 35, 0.75) !important;
+}
+
+.sweet-alert {
+  background: var(--dr-surface) !important;
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius) !important;
+  font-family: var(--dr-font) !important;
+}
+
+.sweet-alert h2 {
+  color: var(--dr-text) !important;
+  font-size: 22px !important;
+  font-weight: 600 !important;
+}
+
+.sweet-alert p {
+  color: var(--dr-text-muted) !important;
+  font-size: 15px !important;
+}
+
+.sweet-alert button {
+  border-radius: var(--dr-radius-small) !important;
+  font-size: 15px !important;
+  padding: 9px 22px !important;
+  box-shadow: none !important;
+}
+
+.sweet-alert button.confirm {
+  background: var(--dr-cyan) !important;
+  color: var(--dr-night) !important;
+}
+
+.sweet-alert button.cancel {
+  background: var(--dr-surface-raised) !important;
+  color: var(--dr-text) !important;
+  border: 1px solid var(--dr-border) !important;
+}
+
+.sweet-alert input {
+  background: var(--dr-input) !important;
+  color: var(--dr-text) !important;
+  border-color: var(--dr-border) !important;
+}
+
+.sweet-alert .sa-icon.sa-success::before,
+.sweet-alert .sa-icon.sa-success::after,
+.sweet-alert .sa-icon.sa-success .sa-fix {
+  background: var(--dr-surface) !important;
+}
+
+/* ---------- the admin password ---------- */
+
+.dr-password-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.dr-password-state .dr-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dr-password-state .dr-state-on {
+  color: var(--dr-green);
+  background: rgba(80, 250, 123, 0.1);
+  border: 1px solid rgba(80, 250, 123, 0.35);
+}
+
+.dr-password-state .dr-state-off {
+  color: var(--dr-amber);
+  background: rgba(255, 184, 108, 0.1);
+  border: 1px solid rgba(255, 184, 108, 0.4);
+}
+
+.dr-password-dialog .form-group {
+  margin-bottom: 14px;
+}
+
+.dr-password-dialog .dr-password-error {
+  color: var(--dr-red);
+  font-size: 13px;
+  min-height: 18px;
+}
+
+/* ---------- the overview ---------- */
+
+.dr-status-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.dr-status-card {
+  background: var(--dr-surface);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius);
+  padding: 16px 18px;
+}
+
+.dr-status-card .dr-status-label {
+  color: var(--dr-text-muted);
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.dr-status-card .dr-status-value {
+  font-size: 26px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.dr-status-card .dr-status-hint {
+  color: var(--dr-text-faint);
+  font-size: 12.5px;
+}
+
+.dr-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--dr-text-faint);
+}
+
+.dr-dot-on {
+  background: var(--dr-green);
+  box-shadow: 0 0 8px rgba(80, 250, 123, 0.7);
+}
+
+.dr-dot-waiting {
+  background: var(--dr-amber);
+}
+
+/* the spinner sweetalert shows while it works */
+.dr-app .spinner > div,
+.sweet-alert .spinner > div {
+  background-color: var(--dr-cyan) !important;
+}
+
+/* the overview's lists of servers and people */
+.dr-service-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dr-service {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--dr-border);
+}
+
+.dr-service:last-child {
+  border-bottom: none;
+}
+
+.dr-service .dr-dot {
+  flex: none;
+  margin: 0;
+}
+
+.dr-service-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dr-service-name {
+  font-weight: 600;
+}
+
+.dr-service-about {
+  color: var(--dr-text-muted);
+  font-size: 13px;
+}
+
+.dr-service-state {
+  flex: none;
+  color: var(--dr-text-muted);
+  font-size: 13px;
+  min-width: 170px;
+}
+
+.dr-service-actions {
+  flex: none;
+  min-width: 150px;
+  text-align: right;
+}
+
+.dr-empty {
+  color: var(--dr-text-muted);
+  padding: 8px 4px;
+}
+
+#dr-details {
+  margin-top: 8px;
+}
+
+@media (max-width: 700px) {
+  .dr-service {
+    flex-wrap: wrap;
+  }
+
+  .dr-service-state, .dr-service-actions {
+    min-width: 0;
+    text-align: left;
+  }
+}
+
+/* the content page: picking a file, what's installed, and backups that can't be used */
+.dr-file-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.dr-file-pick input[type=file] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.dr-file-pick label.btn {
+  margin: 0;
+  font-weight: 500;
+}
+
+.dr-file-name {
+  color: var(--dr-text-muted);
+  margin-right: 8px;
+}
+
+.dr-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin: 0;
+}
+
+.dr-facts dt {
+  color: var(--dr-text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.dr-facts dd {
+  margin: 2px 0 0 0;
+  word-break: break-word;
+}
+
+/* a backup that can't be used is greyed, with a warning in its row, rather than all red */
+.dr-app tr.danger,
+.dr-app .table > tbody > tr.danger > td {
+  background: transparent;
+  color: var(--dr-text-muted);
+}
+
+.dr-app #content_archives table {
+  border-color: var(--dr-border);
+}
+
+/* the connect button sizes to its words, not the whole width */
+.dr-app a.dr-connect-button {
+  display: inline-block !important;
+  width: auto;
+  height: auto;
+  padding: 9px 22px;
+  margin-bottom: 4px;
+}
+
+.dr-backup-damaged {
+  color: var(--dr-amber);
+  font-size: 13px;
+}
+
+/* a table's title, before its help */
+.dr-app .dr-table-title {
+  display: block;
+  margin-top: 6px;
+}
+
+/* the first column of the permission tables names who a row is for: keep it on one line */
+.dr-app table[data-short-name$="permissions"] tr > td:first-child,
+.dr-app table[data-short-name$="forbiddens"] tr > td:first-child {
+  white-space: nowrap;
+  min-width: 110px;
+}
+
+/* a setting's name sits on its own line above it, whatever follows */
+.dr-app .form-group > label.control-label {
+  display: block;
+}
+
+/* sweetalert's buttons side by side, Cancel first */
+.sweet-alert .sa-button-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.sweet-alert .sa-button-container button,
+.sweet-alert .sa-confirm-button-container {
+  margin: 0 !important;
+}
+
+/* a reminder across the top of the overview (no sign-in on these pages) */
+.dr-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 16px 20px;
+  border-radius: var(--dr-radius);
+  border: 1px solid rgba(255, 184, 108, 0.45);
+  background: linear-gradient(90deg, rgba(255, 184, 108, 0.14), rgba(165, 72, 255, 0.08));
+}
+
+.dr-banner-icon {
+  flex: none;
+  font-size: 22px;
+  color: var(--dr-amber);
+}
+
+.dr-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dr-banner-text strong {
+  font-size: 15.5px;
+}
+
+.dr-banner-text p {
+  margin: 3px 0 0 0;
+  color: var(--dr-text-muted);
+}
+
+.dr-banner-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 700px) {
+  .dr-banner {
+    flex-wrap: wrap;
+  }
+
+  .dr-banner-actions {
+    width: 100%;
+  }
+}
+
+/* ---------- a service's details (the stats page) ---------- */
+
+.dr-back-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: var(--dr-text-muted);
+  font-size: 13.5px;
+}
+
+.dr-back-link:hover {
+  color: var(--dr-cyan);
+  text-decoration: none;
+}
+
+.dr-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.dr-detail-head > .dr-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 12px 0 0 0;
+}
+
+.dr-detail-head-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dr-detail-head-text .dr-page-intro {
+  margin-bottom: 14px;
+}
+
+.dr-detail-head-actions {
+  flex: none;
+  padding-top: 4px;
+}
+
+.dr-detail-facts {
+  margin: 0 0 22px 0;
+  padding: 16px 20px;
+  background: var(--dr-surface);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius);
+}
+
+.dr-section-title {
+  margin: 8px 0 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.dr-section-help {
+  margin: -6px 0 12px 0;
+}
+
+.dr-status-card .dr-status-value .dr-stat-value {
+  color: inherit;
+}
+
+/* a number that opens a graph */
+.dr-app .graphable-stat {
+  color: var(--dr-cyan-light);
+  cursor: pointer;
+  border-bottom: 1px dotted rgba(0, 175, 255, 0.45);
+}
+
+.dr-app .graphable-stat:hover {
+  color: var(--dr-cyan);
+  border-bottom-style: solid;
+}
+
+.dr-status-card .graphable-stat {
+  border-bottom: none;
+}
+
+/* the sections of numbers */
+.dr-stat-section {
+  margin-bottom: 12px;
+  background: var(--dr-surface);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius);
+}
+
+.dr-stat-section > summary,
+.dr-stat-group > summary,
+.dr-connection > details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.dr-stat-section > summary::-webkit-details-marker,
+.dr-stat-group > summary::-webkit-details-marker,
+.dr-connection > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dr-stat-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+}
+
+.dr-stat-section > summary::before,
+.dr-stat-group > summary::before,
+.dr-connection > details > summary::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 5px 0 5px 7px;
+  border-color: transparent transparent transparent var(--dr-text-muted);
+  transition: transform 0.15s;
+}
+
+.dr-stat-section[open] > summary::before,
+.dr-stat-group[open] > summary::before,
+.dr-connection > details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.dr-stat-section-title {
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.dr-stat-count {
+  color: var(--dr-text-muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.dr-stat-section-body {
+  padding: 0 20px 16px 20px;
+  border-top: 1px solid var(--dr-border);
+}
+
+.dr-stat-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0 28px;
+  margin: 0;
+}
+
+.dr-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--dr-border-soft);
+}
+
+.dr-stat-row dt {
+  font-weight: 400;
+  color: var(--dr-text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dr-stat-row dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.dr-stat-subgroup h4 {
+  margin: 18px 0 2px 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--dr-cyan);
+}
+
+.dr-stat-subgroup .dr-stat-subgroup {
+  padding-left: 14px;
+  border-left: 2px solid var(--dr-border);
+}
+
+.dr-stat-group {
+  margin-top: 12px;
+}
+
+.dr-stat-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  color: var(--dr-text);
+}
+
+/* the connections, each opening to its numbers */
+.dr-connection {
+  border-bottom: 1px solid var(--dr-border);
+}
+
+.dr-connection:last-child {
+  border-bottom: none;
+}
+
+.dr-connection > details > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 4px;
+}
+
+.dr-connection .dr-dot {
+  margin: 0;
+}
+
+.dr-connection-name {
+  flex: 1 1 auto;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.dr-connection-numbers {
+  display: flex;
+  gap: 18px;
+  color: var(--dr-text-muted);
+  font-size: 13px;
+}
+
+.dr-connection-body {
+  padding: 0 4px 14px 25px;
+}
+
+/* the graph of a number */
+.highchart-modal .modal-dialog {
+  width: min(860px, calc(100vw - 32px));
+}
+
+#highchart-container {
+  height: 340px;
+}
