@@ -181,7 +181,9 @@ public:
     static ObjectMotionState* motionStateOf(const JPH::Body& body) { return PhysicsWorld::motionStateOf(body); }
 
 private:
-    void removeDynamicsForObject(ObjectMotionState* motionState);
+    // removes the dynamics on the object's body (as owner or other body) from the engine, and returns them
+    std::vector<EntityDynamicPointer> removeDynamicsForObject(ObjectMotionState* motionState);
+    void restoreDynamics();
     void stepOnce(float dt);
     void feedFrameTransforms();
     void dropEmptyWorlds();
@@ -206,6 +208,8 @@ private:
     QHash<QUuid, EntityDynamicPointer> _objectDynamics;
     QHash<QUuid, PhysicsWorld*> _dynamicWorlds; // the world a constraint was added to
     std::map<std::pair<PhysicsWorld*, uint32_t>, QSet<QUuid>> _objectDynamicsByBody;
+    // dynamics taken off a body that was rebuilt, which couldn't go back on at once; retried every transaction
+    QHash<QUuid, EntityDynamicPointer> _dynamicsToRestore;
     VectorOfMotionStates _changedMotionStates;
     VectorOfMotionStates _deactivatedMotionStates;
     QString _statsFilename;

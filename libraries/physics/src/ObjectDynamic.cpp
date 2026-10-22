@@ -276,6 +276,18 @@ JPH::Body* ObjectDynamic::getOtherBody(EntityItemID otherEntityID) {
     return otherMotionState ? otherMotionState->getBody() : nullptr;
 }
 
+bool ObjectDynamic::otherIsInWorld(const PhysicsWorld* world) {
+    QUuid otherEntityID;
+    withReadLock([&]{
+        otherEntityID = _otherID;
+    });
+    if (otherEntityID.isNull()) {
+        return true;
+    }
+    ObjectMotionState* otherMotionState = getOtherMotionState(otherEntityID);
+    return otherMotionState && otherMotionState->getBody() && otherMotionState->getWorld() == world;
+}
+
 std::vector<JPH::BodyID> ObjectDynamic::getBodyIDs() {
     std::vector<JPH::BodyID> result;
     JPH::Body* body = getBody();

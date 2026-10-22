@@ -56,6 +56,10 @@ public:
     // the bodies this dynamic touches, for ownership bookkeeping in the engine
     virtual std::vector<JPH::BodyID> getBodyIDs();
 
+    // whether the other entity's body is in this world, or there's no other entity: a constraint's two bodies must
+    // be in one world, as Jolt can't join bodies across physics systems
+    bool otherIsInWorld(const PhysicsWorld* world);
+
 protected:
     quint64 localTimeToServerTime(quint64 timeValue) const;
     quint64 serverTimeToLocalTime(quint64 timeValue) const;
