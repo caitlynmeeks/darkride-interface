@@ -504,6 +504,13 @@ void ScriptEngine::waitTillDoneRunning() {
         auto startedWaiting = usecTimestampNow();
         static const auto MAX_SHUTDOWN_WAIT = 10 * USECS_PER_SECOND;
         while (workerThread->isRunning()) {
+            // Once run() has returned, the script is done, but its thread's event loop only quits when this engine
+            // is destroyed: end it now, rather than wait out the timeout below, which made quitting take a second
+            // for every running script
+            if (!isRunning()) {
+                workerThread->quit();
+            }
+
             auto elapsedUsecs = usecTimestampNow() - startedWaiting;
             if (elapsedUsecs > MAX_SHUTDOWN_WAIT) {
                 qCWarning(scriptengine) << "Script Engine did not stop within" << (MAX_SHUTDOWN_WAIT / USECS_PER_SECOND)

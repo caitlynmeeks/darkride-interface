@@ -158,17 +158,14 @@ void ScriptEngines::shutdownScripting() {
     QMutexLocker locker(&_allScriptsMutex);
     qCDebug(scriptengine) << "Stopping all scripts.... currently known scripts:" << _allKnownScriptEngines.size();
 
-    QMutableSetIterator<ScriptEnginePointer> i(_allKnownScriptEngines);
-    while (i.hasNext()) {
-        ScriptEnginePointer scriptEngine = i.next();
-        QString scriptName = scriptEngine->getFilename();
-
+    // Every script is asked to stop first, so they all wind down at once, rather than each waiting for the one before
+    QList<ScriptEnginePointer> stoppedEngines;
+    for (const auto& scriptEngine : _allKnownScriptEngines) {
         // NOTE: typically all script engines are running. But there's at least one known exception to this, the
         // "entities sandbox" which is only used to evaluate entities scripts to test their validity before using
         // them. We don't need to stop scripts that aren't running.
-        // TODO: Scripts could be shut down faster if we spread them across a threadpool.
         if (scriptEngine->isRunning()) {
-            qCDebug(scriptengine) << "about to shutdown script:" << scriptName;
+            qCDebug(scriptengine) << "about to shutdown script:" << scriptEngine->getFilename();
 
             // We disconnect any script engine signals from the application because we don't want to do any
             // extra stopScript/loadScript processing that the Application normally does when scripts start
@@ -177,17 +174,23 @@ void ScriptEngines::shutdownScripting() {
 
             // Gracefully stop the engine's scripting thread
             scriptEngine->stop();
-
-            // We need to wait for the engine to be done running before we proceed, because we don't
-            // want any of the scripts final "scriptEnding()" or pending "update()" methods from accessing
-            // any application state after we leave this stopAllScripts() method
-            qCDebug(scriptengine) << "waiting on script:" << scriptName;
-            scriptEngine->waitTillDoneRunning();
-            qCDebug(scriptengine) << "done waiting on script:" << scriptName;
+            stoppedEngines.append(scriptEngine);
         }
-        // Once the script is stopped, we can remove it from our set
-        i.remove();
     }
+
+    // We need to wait for each engine we stopped to be done running before we proceed, because we don't want any of
+    // the scripts final "scriptEnding()" or pending "update()" methods from accessing any application state after we
+    // leave this stopAllScripts() method. Every one of them is waited on, not just those still running: a script that
+    // finished while we waited on an earlier one still has its thread to quit and join, which takes no time.
+    for (const auto& scriptEngine : stoppedEngines) {
+        QString scriptName = scriptEngine->getFilename();
+        qCDebug(scriptengine) << "waiting on script:" << scriptName;
+        scriptEngine->waitTillDoneRunning();
+        qCDebug(scriptengine) << "done waiting on script:" << scriptName;
+    }
+
+    // Once the scripts are stopped, we can remove them from our set
+    _allKnownScriptEngines.clear();
     qCDebug(scriptengine) << "DONE Stopping all scripts....";
 }
 
