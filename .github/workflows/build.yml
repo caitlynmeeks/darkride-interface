@@ -1,0 +1,156 @@
+# Builds Darkride for every pull request, and for every push to main, on GitHub's runners. It publishes nothing and
+# uses no secrets: a pull request from anyone's fork runs here with a read-only token.
+#
+#   a pull request          builds what it would change, so a red check means it doesn't build
+#   a push to main          the same, and it saves the caches that pull requests start from
+#   Actions > Build > Run   the same for any branch, by hand
+#
+# Windows builds the client and the servers the way BUILD_WINDOWS.md tells someone new to: Visual Studio 2026 with
+# the C++ workload's default v143 tools, Qt 5.15.2 from aqtinstall, and the vs2026 presets. A pull request that
+# changes only Markdown skips the build, and the check still passes.
+#
+# vcpkg builds every dependency the first time, which takes a few hours on a runner. Its packages and Qt are cached
+# from main's builds, so a pull request then only compiles Darkride itself. Pull requests don't save caches: they
+# would crowd main's out of the 10 GB GitHub gives each repository.
+
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# a newer push to the same pull request replaces a build that's still running; builds of main all finish
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.files.outputs.code }}
+    steps:
+      - name: Anything but Markdown?
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --jq '.[].filename')
+          echo "$files"
+          if echo "$files" | grep -qv '\.md$'; then code=true; else code=false; fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" = true ] || echo "Only Markdown changed: nothing to build." >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 330
+    env:
+      # short paths: vcpkg's folders go deep, and long paths aren't enabled on the runner
+      TIVOLI_VCPKG_BASE: C:\dv
+      VCPKG_DEFAULT_BINARY_CACHE: C:\dvcache
+      QT_CMAKE_PREFIX_PATH: C:/Qt/5.15.2/msvc2019_64/lib/cmake
+      BUILD_DIR: C:\b
+      CACHE_SAVE: ${{ github.event_name != 'pull_request' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The C++ workload installs the v143 build tools (14.4x) by default, and Qt 5.15's headers need them.
+      # Added here only if the runner image left them out.
+      - name: Compilers
+        shell: pwsh
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+          $vs = & "$installer\vswhere.exe" -latest -property installationPath
+          "Visual Studio: $vs"
+          Get-ChildItem "$vs\VC\Tools\MSVC" | ForEach-Object Name
+          if (-not (Test-Path "$vs\VC\Tools\MSVC\14.4*")) {
+            "::warning::The image has no v143 (14.4x) build tools; adding them as the C++ workload's default does"
+            Start-Process -Wait -FilePath "$installer\setup.exe" -ArgumentList @(
+              "modify", "--installPath", "`"$vs`"", "--add", "Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64",
+              "--quiet", "--norestart", "--nocache")
+            Get-ChildItem "$vs\VC\Tools\MSVC" | ForEach-Object Name
+          }
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          Get-PSDrive C, D | Format-Table Name, @{n="Free GB"; e={[int]($_.Free / 1GB)}}
+
+      - name: Restore Qt
+        id: qt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\Qt
+          key: qt-5.15.2-msvc2019_64-webengine-script-webgl
+
+      - name: Install Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          python -m pip install aqtinstall
+          python -m aqt install-qt windows desktop 5.15.2 win64_msvc2019_64 -m qtwebengine qtscript qtwebglplugin -O C:\Qt
+
+      # saved straight away, so a build that fails later still keeps it
+      - name: Save Qt
+        if: env.CACHE_SAVE == 'true' && steps.qt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\Qt
+          key: qt-5.15.2-msvc2019_64-webengine-script-webgl
+
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: C:\dvcache
+          key: vcpkg-windows-${{ hashFiles('cmake/ports/**', 'hifi_vcpkg.py') }}
+          restore-keys: vcpkg-windows-
+
+      # vcpkg builds (or restores) the dependencies here, as part of configuring. The preset's own build folder is
+      # in the checkout, on D:; -B keeps it short, on C:.
+      - name: Configure
+        shell: pwsh
+        run: cmake --preset vs2026 -B $env:BUILD_DIR
+
+      - name: Save vcpkg packages
+        if: always() && env.CACHE_SAVE == 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\dvcache
+          key: vcpkg-windows-${{ hashFiles('cmake/ports/**', 'hifi_vcpkg.py') }}
+
+      # On its own, and briefly: it has stalled silently inside a build until the job's time ran out. Unbuffered, with
+      # every thread's stack printed every five minutes, so a stall shows where it is.
+      - name: Generate shaders
+        shell: pwsh
+        timeout-minutes: 30
+        env:
+          PYTHONUNBUFFERED: 1
+          SHADERGEN_STACK_DUMP: 300
+        run: cmake --build $env:BUILD_DIR --config RelWithDebInfo --target shadergen -- /v:minimal /nologo
+
+      # what the vs2026-servers preset builds. /m:2: each project already compiles several files at once (/MP), and
+      # the runner has 16 GB
+      - name: Build
+        shell: pwsh
+        timeout-minutes: 300
+        run: cmake --build $env:BUILD_DIR --config RelWithDebInfo --target interface domain-server assignment-client -- /m:2 /v:minimal /nologo
+
+      - name: Keep vcpkg's logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-logs-windows
+          path: C:\dv\*\buildtrees\**\*.log
+          retention-days: 7
+          if-no-files-found: ignore
