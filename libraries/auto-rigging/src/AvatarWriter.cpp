@@ -24,6 +24,7 @@
 #include <QTextStream>
 #include <QVector>
 
+#include <BlendshapeConstants.h>
 #include <FBX.h>
 #include <FBXWriter.h>
 #include <GLMHelpers.h>
@@ -619,6 +620,7 @@ WrittenAvatar autorig::writeAvatar(const hfm::Model& model, const Body& body, co
     // the meshes, in centimetres, each with its materials and its skin
     std::vector<qint64> meshIds;
     int pieceCount = 0;
+    int blendshapeCount = 0;
     for (const Body::Piece& piece : body.pieces) {
         const hfm::Mesh& mesh = model.meshes[piece.mesh];
         const glm::mat3 normalTransform = glm::mat3(body.adjustment * piece.transform);
@@ -763,6 +765,51 @@ WrittenAvatar autorig::writeAvatar(const hfm::Model& model, const Body& body, co
             connect(clusterId, skinId);
             connect(jointIds[j], clusterId);
         }
+
+        // its face shapes and other blendshapes, as the model was read (BLENDSHAPE_NAMES' order), each under Darkride's
+        // name for it, which the reader takes as it is: a Shape for each, through a channel, to the mesh's BlendShape
+        const glm::mat4 meshToBody = body.adjustment * piece.transform;
+        const glm::mat3 offsetTransform = glm::mat3(meshToBody) * CENTIMETRES_PER_METRE;
+        const glm::mat3 normalRotation = glm::mat3_cast(glmExtractRotation(meshToBody));
+        qint64 blendShapeId = 0;
+        for (int b = 0; b < (int)mesh.blendshapes.size() && b < (int)Blendshapes::BlendshapeCount; b++) {
+            const hfm::Blendshape& blendshape = mesh.blendshapes[b];
+            QVector<qint32> indexes;
+            QVector<double> offsets;
+            QVector<double> normalOffsets;  // the reader needs one for every index
+            for (int k = 0; k < blendshape.indices.size() && k < blendshape.vertices.size(); k++) {
+                const int v = blendshape.indices[k];
+                if (v < 0 || v >= (int)piece.vertexCount) {
+                    continue;
+                }
+                const glm::vec3 offset = offsetTransform * blendshape.vertices[k];
+                const glm::vec3 normal = k < blendshape.normals.size() ? normalRotation * blendshape.normals[k] : glm::vec3(0.0f);
+                indexes << v;
+                offsets << offset.x << offset.y << offset.z;
+                normalOffsets << normal.x << normal.y << normal.z;
+            }
+            if (indexes.isEmpty()) {
+                continue;
+            }
+            if (blendShapeId == 0) {
+                blendShapeId = newId();
+                add(makeNode("Deformer", { blendShapeId, objectName("Morpher " + meshName, "Deformer"), QByteArray("BlendShape") },
+                             { makeNode("Version", { 100 }) }));
+                connect(blendShapeId, geometryId);
+            }
+            const QString name = BLENDSHAPE_NAMES[b];
+            const qint64 channelId = newId();
+            const qint64 shapeId = newId();
+            add(makeNode("Deformer", { channelId, objectName(name, "SubDeformer"), QByteArray("BlendShapeChannel") },
+                         { makeNode("Version", { 100 }), makeNode("DeformPercent", { 0.0 }),
+                           makeNode("FullWeights", { doubles({ 100.0 }) }) }));
+            add(makeNode("Geometry", { shapeId, objectName(name, "Geometry"), QByteArray("Shape") },
+                         { makeNode("Version", { 100 }), makeNode("Indexes", { ints(indexes) }),
+                           makeNode("Vertices", { doubles(offsets) }), makeNode("Normals", { doubles(normalOffsets) }) }));
+            connect(channelId, blendShapeId);
+            connect(shapeId, channelId);
+            blendshapeCount++;
+        }
         pieceCount++;
     }
 
@@ -818,14 +865,14 @@ WrittenAvatar autorig::writeAvatar(const hfm::Model& model, const Body& body, co
         return written;
     }
 
-    written.notes << QString("wrote %1: %2 joints, %3 meshes, %4 materials, %5 textures, %6 KB")
+    written.notes << QString("wrote %1: %2 joints, %3 meshes, %4 materials, %5 textures, %6 blendshapes, %7 KB")
                          .arg(QFileInfo(written.fbxPath).fileName()).arg(jointCount).arg(meshIds.size())
-                         .arg(materialIds.size()).arg(counts["Texture"]).arg(data.size() / 1024);
+                         .arg(materialIds.size()).arg(counts["Texture"]).arg(blendshapeCount).arg(data.size() / 1024);
     written.ok = true;
     return written;
 }
 
-bool autorig::writeFst(const QString& fstPath, const QString& name, const QString& modelFilename) {
+bool autorig::writeFst(const QString& fstPath, const QString& name, const QString& modelFilename, float scale) {
     QFile fst(fstPath);
     if (!fst.open(QIODevice::WriteOnly | QIODevice::Text)) {
         return false;
@@ -833,7 +880,7 @@ bool autorig::writeFst(const QString& fstPath, const QString& name, const QStrin
     QTextStream text(&fst);
     text << "name = " << name << "\n"
          << "type = body+head\n"
-         << "scale = 1\n"
+         << "scale = " << QString::number(scale, 'g', 6) << "\n"
          << "filename = " << modelFilename << "\n"
          << "joint = jointRoot = Hips\n"
          << "joint = jointLean = Spine\n"

@@ -105,13 +105,17 @@ FlowCollider::FlowCollider(int jointIndex, const FlowCollisionSettings& settings
     _isTouch = isTouch;
 }
 
-bool FlowCollider::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius) const {
+bool FlowCollider::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius, bool tipOnly) const {
     glm::vec3 onBone, onShape;
     if (_type == FlowCollisionType::CollisionCapsule) {
         closestPointsBetweenSegments(segmentStart, point, _position, _endPosition, onBone, onShape);
+        if (tipOnly) {
+            onBone = point;
+            onShape = closestPointOnSegment(_position, _endPosition, point);
+        }
     } else {
         onShape = _position;
-        onBone = closestPointOnSegment(segmentStart, point, _position);
+        onBone = tipOnly ? point : closestPointOnSegment(segmentStart, point, _position);
     }
     glm::vec3 away = onBone - onShape;
     float distance = glm::length(away);
@@ -158,10 +162,10 @@ void FlowCollisionSystem::resetCollisions() {
     _selfCollisions.clear();
 }
 
-bool FlowCollisionSystem::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius) const {
+bool FlowCollisionSystem::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius, bool tipOnly) const {
     bool pushed = false;
     for (const auto& collider : _allCollisions) {
-        pushed = collider.pushOut(segmentStart, point, pointRadius) || pushed;
+        pushed = collider.pushOut(segmentStart, point, pointRadius, tipOnly) || pushed;
     }
     return pushed;
 }
@@ -357,7 +361,7 @@ void FlowThread::step(float dt, const glm::vec3& rootPosition, const glm::quat& 
             next = parent._currentPosition + direction * length;
 
             // and out of the body and the hands
-            node._colliding = collisionSystem.getActive() && collisionSystem.pushOut(parent._currentPosition, next, settings._radius * scale);
+            node._colliding = collisionSystem.getActive() && collisionSystem.pushOut(parent._currentPosition, next, settings._radius * scale, settings._tipCollision);
             if (node._colliding) {
                 direction = next - parent._currentPosition;
                 distance = glm::length(direction);
@@ -455,6 +459,19 @@ void Flow::calculateConstraints(const std::shared_ptr<AnimSkeleton>& skeleton,
         getJointPositionInWorldFrame(absolutePoses, jointData.second.getParentIndex(), parentPosition, glm::vec3(0.0f), _entityRotation);
 
         jointData.second.setInitialData(jointPosition, jointTranslation, jointRotation, parentPosition);
+    }
+    // A joint on top of its parent (Seed-san's hair_F_end) has no length to keep or direction to turn by, and its
+    // constraint divides by its length: it stays animated, and its children start threads of their own
+    const float SHORTEST_JOINT = 0.0001f;
+    for (auto itr = _flowJointData.begin(); itr != _flowJointData.end();) {
+        glm::vec3 jointPosition, parentPosition;
+        getJointPositionInWorldFrame(absolutePoses, itr->first, jointPosition, _entityPosition, _entityRotation);
+        getJointPositionInWorldFrame(absolutePoses, itr->second.getParentIndex(), parentPosition, _entityPosition, _entityRotation);
+        if (glm::length(jointPosition - parentPosition) < SHORTEST_JOINT) {
+            itr = _flowJointData.erase(itr);
+        } else {
+            itr++;
+        }
     }
 
     std::vector<int> roots;

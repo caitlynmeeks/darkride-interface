@@ -6677,6 +6677,9 @@ void MyAvatar::useFlow(bool isActive, bool isCollidable, const QVariantMap& phys
                 if (settings.contains("lift")) {
                     physicsSettings._lift = settings["lift"].toFloat();
                 }
+                if (settings.contains("tipCollision")) {
+                    physicsSettings._tipCollision = settings["tipCollision"].toBool();
+                }
                 flow.setPhysicsSettingsForGroup(groupName, physicsSettings);
             }
         }
@@ -6693,6 +6696,11 @@ void MyAvatar::useFlow(bool isActive, bool isCollidable, const QVariantMap& phys
                 }
                 if (settings.contains("offset")) {
                     collisionsSettings._offset = vec3FromVariant(settings["offset"]);
+                    // in the joint's own axes, before any automatic humanoid offset
+                    auto skeleton = _skeletonModel->getRig().getAnimSkeleton();
+                    if (skeleton && jointIndex >= 0 && jointIndex < skeleton->getNumJoints()) {
+                        collisionsSettings._offset = skeleton->getShapeOffset(jointIndex).rot() * collisionsSettings._offset;
+                    }
                 }
                 if (settings.contains("type") && settings["type"].toString().toLower() == "capsule") {
                     // a capsule runs from this joint to the "end" joint (its first child when none is named)
@@ -6819,6 +6827,7 @@ QVariantMap MyAvatar::getFlowData() {
             settingsObject.insert("stiffness", groupSettings._stiffness);
             settingsObject.insert("maxAngle", groupSettings._maxAngle);
             settingsObject.insert("lift", groupSettings._lift);
+            settingsObject.insert("tipCollision", groupSettings._tipCollision);
             settingsObject.insert("jointIndices", groupJointsMap[groupName]);
             physicsData.insert(groupName, settingsObject);
         }

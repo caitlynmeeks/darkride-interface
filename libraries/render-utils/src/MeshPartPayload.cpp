@@ -352,8 +352,9 @@ void ModelMeshPartPayload::updateClusterBuffer(const std::vector<glm::mat4>& clu
     }
     _clusterBufferType = ClusterBufferType::Matrices;
 
-    // Once computed the cluster matrices, update the buffer(s)
-    if (clusterMatrices.size() > 1) {
+    // Once computed the cluster matrices, update the buffer(s); a mesh skinned to one joint has one (a VRM's head
+    // pieces), and without it the shader read no buffer and drew the piece off the neck
+    if (!clusterMatrices.empty()) {
         if (!_clusterBuffer) {
             _clusterBuffer = std::make_shared<gpu::Buffer>(clusterMatrices.size() * sizeof(glm::mat4),
                                                            (const gpu::Byte*)clusterMatrices.data());
@@ -370,8 +371,8 @@ void ModelMeshPartPayload::updateClusterBuffer(const std::vector<Model::Transfor
     }
     _clusterBufferType = ClusterBufferType::DualQuaternions;
 
-    // Once computed the cluster matrices, update the buffer(s)
-    if (clusterDualQuaternions.size() > 1) {
+    // Once computed the cluster matrices, update the buffer(s), for a mesh skinned to one joint too
+    if (!clusterDualQuaternions.empty()) {
         if (!_clusterBuffer) {
             _clusterBuffer =
                 std::make_shared<gpu::Buffer>(clusterDualQuaternions.size() * sizeof(Model::TransformDualQuaternion),

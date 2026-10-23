@@ -41,6 +41,8 @@
             <$declareEvalGlobalLightingAlphaBlended()$>
         <@else@>
             <$declareEvalSkyboxGlobalColor(_SCRIBE_NULL, HIFI_USE_FORWARD)$>
+            <@include ToonLight.slh@>
+            <$declareEvalToonGlobalColor(_SCRIBE_NULL)$>
         <@endif@>
         <@include gpu/Transform.slh@>
         <$declareStandardCameraTransform()$>
@@ -221,6 +223,12 @@ void main(void) {
         }
     <@endif@>
 
+    <@if not HIFI_USE_LIGHTMAP@>
+        // toon shading's shade colour: its colour times the albedo map's, as MToon's shade map is the albedo map in
+        // VRoid's avatars (and most others)
+        vec3 toonShadeColor = getMaterialToonShadeColor() * _color.rgb *
+                              mix(vec3(1.0), albedoTex.rgb, float((matKey & ALBEDO_MAP_BIT) != 0));
+    <@endif@>
     <@if HIFI_USE_FORWARD@>
         TransformCamera cam = getTransformCamera();
         vec3 fresnel = getFresnelF0(metallic, albedo);
@@ -252,18 +260,34 @@ void main(void) {
         <@endif@>
         <@if not HIFI_USE_TRANSLUCENT@>
             <@if not HIFI_USE_LIGHTMAP@>
-                _fragColor0 = vec4(evalSkyboxGlobalColor(
-                    cam._viewInverse,
-                    shadowAttenuation,
-                    occlusion,
-                    _positionES.xyz,
-                    albedo,
-                    fresnel,
-                    metallic,
-                    emissive,
-                    surfaceWS,
-                    localLighting.rgb),
-                    opacity);
+                if ((matKey & TOON_VAL_BIT) != 0) {
+                    // toon shading lights itself, then takes the local lights and the emissive as the others do
+                    _fragColor0 = vec4(evalToonGlobalColor(
+                        cam._viewInverse,
+                        shadowAttenuation,
+                        occlusion,
+                        _positionES.xyz,
+                        fragNormalWS,
+                        albedo,
+                        toonShadeColor,
+                        getMaterialToonShadingShift(),
+                        getMaterialToonShadingToony(),
+                        getMaterialToonGiEqualization()) + localLighting.rgb + emissive * isEmissiveEnabled(),
+                        opacity);
+                } else {
+                    _fragColor0 = vec4(evalSkyboxGlobalColor(
+                        cam._viewInverse,
+                        shadowAttenuation,
+                        occlusion,
+                        _positionES.xyz,
+                        albedo,
+                        fresnel,
+                        metallic,
+                        emissive,
+                        surfaceWS,
+                        localLighting.rgb),
+                        opacity);
+                }
             <@else@>
                 if (lightmapFull) {
                     // the bake of old is the whole diffuse lighting; the local lights and the emissive over it
@@ -335,6 +359,20 @@ void main(void) {
     <@else@>
         <@if not HIFI_USE_TRANSLUCENT@>
             <@if not HIFI_USE_LIGHTMAP@>
+              if ((matKey & TOON_VAL_BIT) != 0) {
+                packDeferredFragmentToon(
+                    fragNormalWS,
+                    opacity,
+                    albedo,
+                    toonShadeColor,
+                    getMaterialToonShadingShift(),
+                    getMaterialToonShadingToony(),
+                    emissive
+                <@if HIFI_USE_FADE@>
+                        + fadeEmissive
+                <@endif@>
+                    );
+              } else {
                 packDeferredFragment(
                     fragNormalWS,
                     opacity,
@@ -348,6 +386,7 @@ void main(void) {
                     ,
                     occlusion,
                     scattering);
+              }
             <@else@>
                 if ((matKey & LIGHTMAP_FULL_BIT) != 0) {
                     packDeferredFragmentLightmap(

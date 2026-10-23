@@ -25,6 +25,8 @@
 
 #include "AnimationLogging.h"
 #include <hfm/ModelFormatRegistry.h>
+#include <GLMHelpers.h>
+#include <HumanoidJointMap.h>
 
 int animationPointerMetaTypeId = qRegisterMetaType<AnimationPointer>();
 
@@ -52,6 +54,22 @@ AnimationReader::AnimationReader(const QUrl& url, const QByteArray& data) :
     _url(url),
     _data(data) {
     DependencyManager::get<StatTracker>()->incrementStat("PendingProcessing");
+}
+
+// An animation of a humanoid whose joints don't have Darkride's names takes them, as a model of the same skeleton does
+// when it's loaded (PrepareJointsTask), so the two still match
+static void nameHumanoidJoints(HFMModel& hfmModel) {
+    if (hasMainHumanoidJoints(hfmModel.getJointNames())) {
+        return;
+    }
+    std::vector<HumanoidJointInfo> joints;
+    for (const HFMJoint& joint : hfmModel.joints) {
+        joints.push_back({ joint.name, joint.parentIndex, joint.isSkeletonJoint, extractTranslation(joint.globalTransform) });
+    }
+    QHash<int, QString> names = mapHumanoidJoints(joints);
+    for (auto itr = names.begin(); itr != names.end(); itr++) {
+        hfmModel.joints[itr.key()].name = itr.value();
+    }
 }
 
 void AnimationReader::run() {
@@ -103,6 +121,9 @@ void AnimationReader::run() {
             auto serializer = DependencyManager::get<ModelFormatRegistry>()->getSerializerForMediaType(_data, _url, "");
             if (serializer) {
                 hfmModel = serializer->read(_data, QVariantHash(), _url.path());
+                if (hfmModel) {
+                    nameHumanoidJoints(*hfmModel);
+                }
             } else {
                 QString errorStr("unsupported format " + _url.toString());
                 emit onError(299, errorStr);

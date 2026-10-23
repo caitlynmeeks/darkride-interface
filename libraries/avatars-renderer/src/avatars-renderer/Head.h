@@ -134,6 +134,7 @@ protected:
     // private methods
     void calculateMouthShapes(float timeRatio);
     void applyEyelidOffset(glm::quat headOrientation);
+    void applyEyeLookExpressions(glm::quat headOrientation);
 };
 
 #endif // hifi_Head_h

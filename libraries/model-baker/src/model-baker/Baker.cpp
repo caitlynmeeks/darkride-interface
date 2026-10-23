@@ -195,7 +195,11 @@ namespace baker {
             hfmModelOut->joints = input.get2();
             hfmModelOut->jointRotationOffsets = input.get3();
             hfmModelOut->jointIndices = input.get4();
-            hfmModelOut->flowData = input.get5();
+            // an FST's flow data, else what the model brought (a VRM's spring bones)
+            const FlowData& fstFlowData = input.get5();
+            if (fstFlowData.shouldInitFlow() || fstFlowData.shouldInitCollisions()) {
+                hfmModelOut->flowData = fstFlowData;
+            }
             hfmModelOut->shapeVertices = input.get6();
             hfmModelOut->shapes = input.get7();
             hfmModelOut->meshExtents = input.get8();

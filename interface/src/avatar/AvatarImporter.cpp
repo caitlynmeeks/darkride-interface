@@ -10,7 +10,6 @@
 
 #include "AvatarImporter.h"
 
-#include <map>
 #include <memory>
 #include <vector>
 
@@ -38,16 +37,19 @@
 #include <AssimpSerializer.h>
 #include <AutoRig.h>
 #include <AvatarWriter.h>
+#include <FstBake.h>
 #include <FBXSerializer.h>
 #include <GLMHelpers.h>
 #include <GLTFSerializer.h>
+#include <HumanoidJointMap.h>
 #include <MainWindow.h>
 #include <NetworkAccessManager.h>
 #include <OBJSerializer.h>
 #include <PathUtils.h>
 #include <StandardSkeleton.h>
-#include <UnityPackage.h>
 #include <UnityAvatar.h>
+#include <UnityPackage.h>
+#include <VRMReader.h>
 
 #include "Application.h"
 #include "AvatarManager.h"
@@ -59,8 +61,9 @@ namespace {
 
 const float USUAL_HEIGHT = 1.70f;
 
-// The joints a rig needs before Darkride's animations can drive it.
-const char* const NEEDED_JOINTS[] = { "Hips", "Spine", "Spine1", "Neck", "Head",
+// The joints a rig needs before Darkride's animations can drive it. Not Spine1: Second Life's and some VRM skeletons
+// have two spine joints, and the animations drive them well enough.
+const char* const NEEDED_JOINTS[] = { "Hips", "Spine", "Neck", "Head",
                                       "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand",
                                       "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot" };
 
@@ -73,6 +76,10 @@ struct Import {
     autorig::Body body;
     RigKind rig { RigKind::None };
     QString why;  // for RigKind::Other: what keeps the animations from driving it
+    VRMInfo vrm;
+    // For keeping its own rig: what Darkride works out when it wears the model, for its .fst
+    QStringList fstLines;
+    QStringList found;  // what they say, for the question
 };
 using ImportPointer = std::shared_ptr<Import>;
 
@@ -98,39 +105,44 @@ HFMModel::Pointer readModel(const QString& path) {
     return AssimpSerializer().read(data, mapping, url);
 }
 
-// None: no skin. Standard: the needed joints, each with Mixamo's axes (its Y axis along its bone), so Darkride's
-// animations drive it as it is. Other: a skeleton of its own that the animations would drive wrongly (AnimClip.cpp
-// copies each joint's absolute rotation onto the avatar).
-RigKind classify(const HFMModel& model, QString& why) {
+// None: no skin. Standard: the needed joints, by their names or by the names Darkride gives them when it's worn (a
+// VRM's humanoid bones, else HumanoidJointMap), so Darkride's animations drive it; joints whose axes aren't Mixamo's
+// get offsets when it's worn (HumanoidRotationOffsets). Other: a skeleton in which the needed joints can't be found.
+RigKind classify(const HFMModel& model, const VRMInfo& vrm, QString& why) {
     if (model.skinDeformers.empty()) {
         return RigKind::None;
     }
-    std::map<QString, int> byName;
-    for (int j = 0; j < (int)model.joints.size(); j++) {
-        byName.emplace(model.joints[j].name.section(':', -1).toLower(), j);
+    QStringList names = model.getJointNames();
+    for (QString& name : names) {
+        name = vrm.jointNames.value(name, name);
     }
-    const autorig::StandardSkeleton& standard = autorig::StandardSkeleton::get();
+    if (!hasMainHumanoidJoints(names)) {
+        std::vector<HumanoidJointInfo> joints;
+        for (int i = 0; i < (int)model.joints.size(); i++) {
+            const HFMJoint& joint = model.joints[i];
+            joints.push_back({ names[i], joint.parentIndex, joint.isSkeletonJoint, extractTranslation(joint.globalTransform) });
+        }
+        const QHash<int, QString> humanoidNames = mapHumanoidJoints(joints);
+        for (auto itr = humanoidNames.begin(); itr != humanoidNames.end(); itr++) {
+            names[itr.key()] = itr.value();
+        }
+    }
     for (const char* name : NEEDED_JOINTS) {
-        auto found = byName.find(QString(name).toLower());
-        if (found == byName.end()) {
-            why = QString("it has no %1 joint").arg(name);
-            return RigKind::Other;
-        }
-        const int child = standard.boneChild(standard.indexOf(name));
-        auto childFound = child >= 0 ? byName.find(QString(standard.joint(child).name).toLower()) : byName.end();
-        if (childFound == byName.end()) {
-            continue;
-        }
-        const glm::mat4& joint = model.joints[found->second].globalTransform;
-        const glm::vec3 bone = extractTranslation(model.joints[childFound->second].globalTransform) - extractTranslation(joint);
-        const glm::vec3 axis = glm::mat3(joint) * glm::vec3(0.0f, 1.0f, 0.0f);
-        if (glm::length(bone) > 0.0f && glm::length(axis) > 0.0f &&
-            glm::dot(glm::normalize(axis), glm::normalize(bone)) < 0.9f) {
-            why = QString("its %1 joint is not turned the way Darkride's animations expect").arg(name);
+        if (!names.contains(name)) {
+            why = QString("Darkride can't tell which of its joints is the %1").arg(name);
             return RigKind::Other;
         }
     }
     return RigKind::Standard;
+}
+
+// A VRM's maker and terms, to show with the questions about it
+QString credit(const VRMInfo& vrm, const QString& name) {
+    if (!vrm.isVRM()) {
+        return QString();
+    }
+    return QString("\n\n%1 is by %2. Its licence: %3.").arg(vrm.title.isEmpty() ? name : vrm.title,
+        vrm.authors.isEmpty() ? QString("an unnamed author") : vrm.authors, vrm.licence);
 }
 
 QString avatarName(const QString& path) {
@@ -576,6 +588,7 @@ void shareAvatar(const QString& fstPath, const QString& name) {
     share->fstName = QFileInfo(fstPath).fileName();
     share->remoteFolder = "/avatars/" + name + "-" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss");
     QString modelPath;
+    VRMInfo vrm;
     const QString fstText = QString::fromUtf8(fst.readAll());
     for (const QString& line : fstText.split('\n')) {
         const QString key = line.section('=', 0, 0).trimmed();
@@ -601,6 +614,7 @@ void shareAvatar(const QString& fstPath, const QString& name) {
             return;
         }
         const QByteArray bytes = model.readAll();
+        vrm = readVRM(bytes);
         const QFileInfo modelInfo(modelPath);
         share->files.append(modelInfo.absoluteFilePath());
         share->modelIsLocal = true;
@@ -612,6 +626,18 @@ void shareAvatar(const QString& fstPath, const QString& name) {
                 share->files.append(file.absoluteFilePath());
             }
         }
+    }
+    // Everyone can see what's in My Files and download it, so only what the user may share goes there
+    const QString details = "Only put an avatar there if you made it or its licence lets you share it." + credit(vrm, name);
+    QString text = "Everyone in Darkride will see it and can download it.";
+    if (vrm.isVRM() && (vrm.onlyAuthorMayWear || !vrm.redistributionAllowed)) {
+        text = QString("Its licence says %1: unless you made it, keep it on this computer.")
+                   .arg(vrm.onlyAuthorMayWear && !vrm.redistributionAllowed ? "only its author may wear it or share it"
+                        : vrm.onlyAuthorMayWear ? "only its author may wear it" : "it may not be shared");
+    }
+    if (ask("Put " + name + " in My Files?", text,
+            { { "I May Share It", popup::Role::Default }, { "Cancel", popup::Role::Cancel } }, details) != 0) {
+        return;
     }
     qCDebug(interfaceapp) << "Import Avatar: putting" << name << "in My Files," << share->files.size()
                           << "files and the .fst, into" << share->remoteFolder;
@@ -667,7 +693,10 @@ void autoRig(const ImportPointer& import, float scale) {
     });
 }
 
-void checkHeightThenRig(const ImportPointer& import) {
+// The scale to wear it at: 1, unless it's implausibly tall or short, as a file whose units are wrong (the 100Avatars Devil's
+// FBX says centimetres but is 12 of them tall), when they're asked. False if they cancel.
+bool askScale(const ImportPointer& import, float& scale) {
+    scale = 1.0f;
     const float height = import->body.maximum.y - import->body.minimum.y;
     if (height > 2.4f || height < 0.6f) {
         const int answer = ask(QString("%1 is %2 m tall").arg(import->name).arg(height, 0, 'f', 2),
@@ -676,12 +705,18 @@ void checkHeightThenRig(const ImportPointer& import) {
                                  { QString("Keep %1 m").arg(height, 0, 'f', 2), popup::Role::Plain },
                                  { "Cancel", popup::Role::Cancel } });
         if (answer == 0) {
-            autoRig(import, USUAL_HEIGHT / height);
-        } else if (answer == 1) {
-            autoRig(import, 1.0f);
+            scale = USUAL_HEIGHT / height;
+        } else if (answer != 1) {
+            return false;
         }
-    } else {
-        autoRig(import, 1.0f);
+    }
+    return true;
+}
+
+void checkHeightThenRig(const ImportPointer& import) {
+    float scale;
+    if (askScale(import, scale)) {
+        autoRig(import, scale);
     }
 }
 
@@ -692,16 +727,30 @@ void decide(const ImportPointer& import) {
     }
     switch (import->rig) {
         case RigKind::Standard: {
+            // what Darkride worked out, and a VRM's maker and terms, in the details
+            const QString details = (import->found.isEmpty() ? QString()
+                : "Keeping it, Darkride saves what it worked out in the avatar's settings: " + import->found.join(", ") + ".") +
+                credit(import->vrm, import->name);
             const int answer = ask(import->name + " already has Darkride's skeleton",
                                    "Keep its own rig, or replace it with an automatic one. The file itself doesn't change.",
                                    { { "Keep Rig", popup::Role::Default },
                                      { "Replace Rig", popup::Role::Plain },
-                                     { "Cancel", popup::Role::Cancel } });
-            if (answer == 0) {
+                                     { "Cancel", popup::Role::Cancel } },
+                                   details.trimmed());
+            float scale;
+            if (answer == 0 && askScale(import, scale)) {
                 const QString folder = avatarFolder(import->name);
                 QDir().mkpath(folder);
                 const QString fstPath = QDir(folder).filePath(import->name + ".fst");
-                if (autorig::writeFst(fstPath, import->name, QUrl::fromLocalFile(import->path).toString())) {
+                bool written = autorig::writeFst(fstPath, import->name, QUrl::fromLocalFile(import->path).toString(), scale);
+                if (written && !import->fstLines.isEmpty()) {
+                    QFile fst(fstPath);
+                    written = fst.open(QIODevice::Append | QIODevice::Text) &&
+                              fst.write((import->fstLines.join("\n") + "\n").toUtf8()) > 0;
+                    qCDebug(interfaceapp) << "Import Avatar:" << import->name << "fst written with" << import->fstLines.size()
+                                          << "lines of what Darkride worked out:" << import->found;
+                }
+                if (written) {
                     wear(fstPath, import->name);
                 } else {
                     warn("Couldn't write " + QFileInfo(fstPath).fileName(), fstPath);
@@ -714,13 +763,15 @@ void decide(const ImportPointer& import) {
         case RigKind::Other:
             if (ask(import->name + "'s skeleton won't move right",
                     sentence("because " + import->why) + " Darkride can replace its rig; the file itself doesn't change.",
-                    { { "Replace Rig", popup::Role::Default }, { "Cancel", popup::Role::Cancel } }) == 0) {
+                    { { "Replace Rig", popup::Role::Default }, { "Cancel", popup::Role::Cancel } },
+                    credit(import->vrm, import->name).trimmed()) == 0) {
                 checkHeightThenRig(import);
             }
             break;
         case RigKind::None:
             if (ask(import->name + " has no skeleton yet", "Darkride can rig it with its standard skeleton.",
-                    { { "Auto Rig", popup::Role::Default }, { "Cancel", popup::Role::Cancel } }) == 0) {
+                    { { "Auto Rig", popup::Role::Default }, { "Cancel", popup::Role::Cancel } },
+                    credit(import->vrm, import->name).trimmed()) == 0) {
                 checkHeightThenRig(import);
             }
             break;
@@ -828,14 +879,36 @@ void AvatarImporter::importFile(const QString& path) {
     import->path = path;
     import->name = name;
     QtConcurrent::run([import]() {
+        const QString suffix = QFileInfo(import->path).suffix().toLower();
+        const bool isGltf = suffix == "vrm" || suffix == "glb" || suffix == "gltf";
+        QByteArray data;
+        if (isGltf) {
+            QFile file(import->path);
+            if (file.open(QIODevice::ReadOnly)) {
+                data = file.readAll();
+                import->vrm = readVRM(data);
+            }
+        }
         import->model = readModel(import->path);
+        // as the client reads it when it's worn: glTF by the Assimp loader, which knows a VRM's bones, face and springs
+        HFMModel::Pointer wornModel = import->model;
+        if (isGltf && suffix != "vrm" && !data.isEmpty()) {
+            HFMModel::Pointer assimpModel = AssimpSerializer().read(data, QVariantHash(), QUrl::fromLocalFile(import->path));
+            if (assimpModel) {
+                wornModel = assimpModel;
+            }
+        }
+        if (wornModel) {
+            const QStringList morphTargetNames = isGltf ? autorig::gltfMorphTargetNames(data) : QStringList(wornModel->blendshapeChannelNames);
+            autorig::bakeFst(*wornModel, import->vrm, morphTargetNames, import->fstLines, import->found);
+        }
         if (import->model) {
             import->body = autorig::gatherBody(*import->model);
             const QString eyelids = autorig::openEyelids(import->body, *import->model);
             if (!eyelids.isEmpty()) {
                 qCDebug(interfaceapp) << "Import Avatar:" << eyelids;
             }
-            import->rig = classify(*import->model, import->why);
+            import->rig = classify(wornModel ? *wornModel : *import->model, import->vrm, import->why);
         }
         qCDebug(interfaceapp) << "Import Avatar: read" << import->path << (import->model ? "" : "(not readable)");
         QMetaObject::invokeMethod(qApp, [import]() {

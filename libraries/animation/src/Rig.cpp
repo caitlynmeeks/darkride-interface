@@ -625,7 +625,7 @@ void Rig::initJointStates(const HFMModel& hfmModel, const glm::mat4& modelOffset
     _rigToGeometryTransform = glm::inverse(_geometryToRigTransform);
     setModelOffset(modelOffset);
 
-    _animSkeleton = std::make_shared<AnimSkeleton>(hfmModel);
+    _animSkeleton = std::make_shared<AnimSkeleton>(hfmModel, _humanoidRotationOffsets);
     _rotationConstraints.setup(*_animSkeleton, _animSkeleton->getRotationConstraints());
 
     _internalPoseSet._relativePoses.clear();
@@ -651,6 +651,7 @@ void Rig::initJointStates(const HFMModel& hfmModel, const glm::mat4& modelOffset
     _numOverrides = 0;
 
     buildAbsoluteRigPoses(_animSkeleton->getRelativeDefaultPoses(), _absoluteDefaultPoses);
+    initNodeConstraints(hfmModel);
 
     _rootJointIndex = indexOfJoint("Hips");
     _leftEyeJointIndex = indexOfJoint("LeftEye");
@@ -670,7 +671,7 @@ void Rig::reset(const HFMModel& hfmModel) {
     _geometryOffset = AnimPose(hfmModel.offset);
     _invGeometryOffset = _geometryOffset.inverse();
 
-    _animSkeleton = std::make_shared<AnimSkeleton>(hfmModel);
+    _animSkeleton = std::make_shared<AnimSkeleton>(hfmModel, _humanoidRotationOffsets);
     _rotationConstraints.setup(*_animSkeleton, _animSkeleton->getRotationConstraints());
 
     _internalPoseSet._relativePoses.clear();
@@ -698,6 +699,7 @@ void Rig::reset(const HFMModel& hfmModel) {
     _numOverrides = 0;
 
     buildAbsoluteRigPoses(_animSkeleton->getRelativeDefaultPoses(), _absoluteDefaultPoses);
+    initNodeConstraints(hfmModel);
 
     _rootJointIndex = indexOfJoint("Hips");;
     _leftEyeJointIndex = indexOfJoint("LeftEye");
@@ -1807,6 +1809,7 @@ void Rig::updateAnimations(float deltaTime, const glm::mat4& rootTransform, cons
     }
 
     buildAbsoluteRigPoses(_internalPoseSet._relativePoses, _internalPoseSet._absolutePoses);    
+    applyNodeConstraints(_internalPoseSet._relativePoses, _internalPoseSet._absolutePoses);
     _internalFlow.update(deltaTime, _internalPoseSet._relativePoses, _internalPoseSet._absolutePoses, _internalPoseSet._overrideFlags);
     _springBones.update(deltaTime, _internalPoseSet._relativePoses, _internalPoseSet._absolutePoses, _internalPoseSet._overrideFlags);
 
@@ -1816,6 +1819,7 @@ void Rig::updateAnimations(float deltaTime, const glm::mat4& rootTransform, cons
         _internalFlow.copyJointRotations(_internalPoseSet._relativePoses, _networkPoseSet._relativePoses);
         _springBones.copyJointRotations(_internalPoseSet._relativePoses, _networkPoseSet._relativePoses);
         buildAbsoluteRigPoses(_networkPoseSet._relativePoses, _networkPoseSet._absolutePoses);
+        applyNodeConstraints(_networkPoseSet._relativePoses, _networkPoseSet._absolutePoses);
     }
 
     // copy internal poses to external poses
@@ -1823,6 +1827,87 @@ void Rig::updateAnimations(float deltaTime, const glm::mat4& rootTransform, cons
         QWriteLocker writeLock(&_externalPoseSetLock);
         
         _externalPoseSet = _internalPoseSet;
+    }
+}
+
+glm::quat Rig::modelAxesRotation(const AnimPoseVec& absolutePoses, int joint) const {
+    return absolutePoses[joint].rot() * _animSkeleton->getShapeOffset(joint).rot();
+}
+
+glm::quat Rig::modelAxesLocalRotation(const AnimPoseVec& absolutePoses, int joint) const {
+    const int parent = _animSkeleton->getParentIndex(joint);
+    const glm::quat parentRotation = parent >= 0 ? modelAxesRotation(absolutePoses, parent) : glm::quat();
+    return glm::inverse(parentRotation) * modelAxesRotation(absolutePoses, joint);
+}
+
+void Rig::initNodeConstraints(const HFMModel& hfmModel) {
+    _eyeLookScale = hfmModel.eyeLookScale;
+    _eyeLookMaxAngle = hfmModel.eyeLookMaxAngle;
+    _eyeLookExpressionScale = hfmModel.eyeLookExpressionScale;
+    _nodeConstraints.clear();
+    for (const hfm::NodeConstraint& constraint : hfmModel.nodeConstraints) {
+        NodeConstraint nodeConstraint;
+        nodeConstraint.type = constraint.type;
+        nodeConstraint.joint = indexOfJoint(constraint.joint);
+        nodeConstraint.source = indexOfJoint(constraint.source);
+        nodeConstraint.axis = constraint.axis;
+        nodeConstraint.weight = constraint.weight;
+        if (nodeConstraint.joint < 0 || nodeConstraint.source < 0 || nodeConstraint.joint == nodeConstraint.source ||
+            _animSkeleton->getParentIndex(nodeConstraint.joint) < 0) {
+            continue;
+        }
+        nodeConstraint.sourceRestLocal = modelAxesLocalRotation(_absoluteDefaultPoses, nodeConstraint.source);
+        nodeConstraint.jointRestLocal = modelAxesLocalRotation(_absoluteDefaultPoses, nodeConstraint.joint);
+        nodeConstraint.sourceToJoint = glm::inverse(modelAxesRotation(_absoluteDefaultPoses, nodeConstraint.source)) *
+                                       modelAxesRotation(_absoluteDefaultPoses, nodeConstraint.joint);
+        _nodeConstraints.push_back(nodeConstraint);
+    }
+    // parents first, so a constraint on a constrained joint's child sees it turned
+    std::stable_sort(_nodeConstraints.begin(), _nodeConstraints.end(), [this](const NodeConstraint& a, const NodeConstraint& b) {
+        return _animSkeleton->getChainDepth(a.joint) < _animSkeleton->getChainDepth(b.joint);
+    });
+    if (!_nodeConstraints.empty()) {
+        qCDebug(animation) << "Rig:" << _nodeConstraints.size() << "node constraints";
+    }
+}
+
+// As VRMC_node_constraint says: a Rotation turns the joint from its rest by the source's turn from its rest, a Roll by
+// that turn's twist about the axis, both as much as the weight; an Aim turns the joint's axis from where it points at
+// rest to point at the source
+void Rig::applyNodeConstraints(AnimPoseVec& relativePoses, AnimPoseVec& absolutePoses) const {
+    for (const NodeConstraint& constraint : _nodeConstraints) {
+        if (constraint.joint >= (int)relativePoses.size() || constraint.source >= (int)relativePoses.size()) {
+            continue;
+        }
+        const int parent = _animSkeleton->getParentIndex(constraint.joint);
+        const glm::quat parentRotation = modelAxesRotation(absolutePoses, parent);
+        glm::quat jointRotation;
+        if (constraint.type == hfm::NodeConstraint::Type::Aim) {
+            const glm::quat restRotation = parentRotation * constraint.jointRestLocal;
+            const glm::vec3 from = restRotation * constraint.axis;
+            const glm::vec3 to = absolutePoses[constraint.source].trans() - absolutePoses[constraint.joint].trans();
+            if (glm::length(to) < EPSILON || glm::length(from) < EPSILON) {
+                continue;
+            }
+            const glm::quat aim = rotationBetween(from, to);
+            jointRotation = safeMix(glm::quat(), aim, constraint.weight) * restRotation;
+        } else {
+            glm::quat turn = glm::inverse(constraint.sourceRestLocal) * modelAxesLocalRotation(absolutePoses, constraint.source);
+            if (constraint.type == hfm::NodeConstraint::Type::Roll) {
+                // the turn's twist about the axis
+                const glm::vec3 axis = glm::normalize(constraint.axis);
+                const glm::vec3 along = glm::dot(glm::vec3(turn.x, turn.y, turn.z), axis) * axis;
+                glm::quat twist(turn.w, along.x, along.y, along.z);
+                const float length = glm::length(twist);
+                turn = length > EPSILON ? twist / length : glm::quat();
+            }
+            const glm::quat turnInJoint = glm::inverse(constraint.sourceToJoint) * turn * constraint.sourceToJoint;
+            jointRotation = parentRotation * constraint.jointRestLocal * safeMix(glm::quat(), turnInJoint, constraint.weight);
+        }
+        // back into the rig's joint axes, relative to the parent
+        const glm::quat rigRotation = jointRotation * glm::inverse(_animSkeleton->getShapeOffset(constraint.joint).rot());
+        relativePoses[constraint.joint].rot() = glm::inverse(absolutePoses[parent].rot()) * rigRotation;
+        buildAbsoluteRigPoses(relativePoses, absolutePoses);
     }
 }
 
@@ -1890,7 +1975,7 @@ glm::vec3 Rig::deflectHandFromTorso(const glm::vec3& handPosition, const HFMJoin
     if (hipsJoint >= 0) {
         AnimPose hipsPose;
         if (getAbsoluteJointPoseInRigFrame(hipsJoint, hipsPose)) {
-            if (findPointKDopDisplacement(position, hipsPose, hipsShapeInfo, displacement)) {
+            if (findPointKDopDisplacement(position, hipsPose * _animSkeleton->getShapeOffset(hipsJoint), hipsShapeInfo, displacement)) {
                 position += displacement;
             }
         }
@@ -1900,7 +1985,7 @@ glm::vec3 Rig::deflectHandFromTorso(const glm::vec3& handPosition, const HFMJoin
     if (spineJoint >= 0) {
         AnimPose spinePose;
         if (getAbsoluteJointPoseInRigFrame(spineJoint, spinePose)) {
-            if (findPointKDopDisplacement(position, spinePose, spineShapeInfo, displacement)) {
+            if (findPointKDopDisplacement(position, spinePose * _animSkeleton->getShapeOffset(spineJoint), spineShapeInfo, displacement)) {
                 position += displacement;
             }
         }
@@ -1910,7 +1995,7 @@ glm::vec3 Rig::deflectHandFromTorso(const glm::vec3& handPosition, const HFMJoin
     if (spine1Joint >= 0) {
         AnimPose spine1Pose;
         if (getAbsoluteJointPoseInRigFrame(spine1Joint, spine1Pose)) {
-            if (findPointKDopDisplacement(position, spine1Pose, spine1ShapeInfo, displacement)) {
+            if (findPointKDopDisplacement(position, spine1Pose * _animSkeleton->getShapeOffset(spine1Joint), spine1ShapeInfo, displacement)) {
                 position += displacement;
             }
         }
@@ -1920,7 +2005,7 @@ glm::vec3 Rig::deflectHandFromTorso(const glm::vec3& handPosition, const HFMJoin
     if (spine2Joint >= 0) {
         AnimPose spine2Pose;
         if (getAbsoluteJointPoseInRigFrame(spine2Joint, spine2Pose)) {
-            if (findPointKDopDisplacement(position, spine2Pose, spine2ShapeInfo, displacement)) {
+            if (findPointKDopDisplacement(position, spine2Pose * _animSkeleton->getShapeOffset(spine2Joint), spine2ShapeInfo, displacement)) {
                 position += displacement;
             }
         }
@@ -2238,15 +2323,26 @@ void Rig::updateEyeJoint(int index, const glm::vec3& modelTranslation, const glm
 
         glm::quat deltaQuat = desiredQuat * glm::inverse(headFrame);
 
-        // limit swing rotation of the deltaQuat by a 25 degree cone.
+        // Turn the eye the gaze's way as far as the model's eyes turn: a share of the gaze's turn (all of it, unless a
+        // VRM says), within a cone (25 degrees, unless a VRM says; VRoid's flat irises roll into the head past ~10).
         // TODO: use swing twist decomposition constraint instead, for off axis rotation clamping.
-        const float MAX_ANGLE = 25.0f * RADIANS_PER_DEGREE;
-        if (fabsf(glm::angle(deltaQuat)) > MAX_ANGLE) {
-            deltaQuat = glm::angleAxis(glm::clamp(glm::angle(deltaQuat), -MAX_ANGLE, MAX_ANGLE), glm::axis(deltaQuat));
+        if (deltaQuat.w < 0.0f) {
+            deltaQuat = -deltaQuat;
+        }
+        const float gazeAngle = glm::angle(deltaQuat);
+        const float eyeAngle = glm::min(gazeAngle * _eyeLookScale, _eyeLookMaxAngle);
+        if (gazeAngle > EPSILON && eyeAngle != gazeAngle) {
+            deltaQuat = glm::angleAxis(eyeAngle, glm::axis(deltaQuat));
         }
 
-        // directly set absolutePose rotation
-        _internalPoseSet._absolutePoses[index].rot() = humanoid ? deltaQuat * headFrame * eyeRest : deltaQuat * headQuat;
+        // directly set absolutePose rotation: the eye as it rests, turned. With humanoid retargeting, from its default
+        // pose in the head's; otherwise from its rest in the head, which needn't be the head's own (the Twist Sample
+        // VRM's eyes rest pitched 10 degrees from it, which, lost, rolled them into the head)
+        glm::quat eyeInHead;
+        if (!humanoid && headIndex >= 0 && index < (int)_absoluteDefaultPoses.size()) {
+            eyeInHead = glm::inverse(_absoluteDefaultPoses[headIndex].rot()) * _absoluteDefaultPoses[index].rot();
+        }
+        _internalPoseSet._absolutePoses[index].rot() = humanoid ? deltaQuat * headFrame * eyeRest : deltaQuat * headQuat * eyeInHead;
 
         // Update eye joint's children.
         auto children = index == _leftEyeJointIndex ? _leftEyeJointChildren : _rightEyeJointChildren;
@@ -2823,7 +2919,7 @@ void Rig::computeAvatarBoundingCapsule(
     int index = indexOfJoint("Head");
     while (index != -1) {
         const HFMJointShapeInfo& shapeInfo = hfmModel.joints.at(index).shapeInfo;
-        AnimPose pose = _animSkeleton->getAbsoluteDefaultPose(index);
+        AnimPose pose = _animSkeleton->getAbsoluteDefaultPose(index) * _animSkeleton->getShapeOffset(index);
         if (shapeInfo.points.size() > 0) {
             for (auto& point : shapeInfo.points) {
                 totalExtents.addPoint((pose * point));

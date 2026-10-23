@@ -54,7 +54,9 @@ struct Material {
 LAYOUT_STD140(binding=GRAPHICS_BUFFER_MATERIAL) uniform materialBuffer {
     Material _mat;
     TexMapArray _texMapArray;
-    vec4 _occlusionStrengthSpare3;      // x: how much the occlusion map darkens, 0 not at all to 1 fully
+    vec4 _occlusionStrengthToon;        // x: how much the occlusion map darkens, 0 not at all to 1 fully; toon shading's
+                                        // y: shift, z: toony, w: GI equalization (Material::setToon)
+    vec4 _toonShadeColor;               // rgb: toon shading's shade colour
 };
 
 Material getMaterial() {
@@ -64,8 +66,12 @@ TexMapArray getTexMapArray() {
     return _texMapArray;
 }
 float getMaterialOcclusionStrength() {
-    return _occlusionStrengthSpare3.x;
+    return _occlusionStrengthToon.x;
 }
+vec3 getMaterialToonShadeColor() { return _toonShadeColor.rgb; }
+float getMaterialToonShadingShift() { return _occlusionStrengthToon.y; }
+float getMaterialToonShadingToony() { return _occlusionStrengthToon.z; }
+float getMaterialToonGiEqualization() { return _occlusionStrengthToon.w; }
 
 vec3 getMaterialEmissive(Material m) { return m._emissiveOpacity.rgb; }
 float getMaterialOpacity(Material m) { return m._emissiveOpacity.a; }
@@ -106,5 +112,6 @@ const BITFIELD LIGHTMAP_DIRECTION_MAP_BIT    = 0x00080000;
 const BITFIELD ROUGHNESS_FROM_SMOOTHNESS_BIT = 0x00100000;
 const BITFIELD OCCLUSION_TEXCOORD0_BIT       = 0x00200000;
 const BITFIELD LIGHTMAP_FULL_BIT             = 0x00400000;
+const BITFIELD TOON_VAL_BIT                  = 0x00800000;
 
 <@endif@>

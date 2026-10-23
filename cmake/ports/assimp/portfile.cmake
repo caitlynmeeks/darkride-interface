@@ -17,6 +17,10 @@ vcpkg_replace_string(${SOURCE_PATH}/code/CMakeLists.txt "TARGET_COMPILE_OPTIONS(
 # The same for MSVC's /WX: newer compilers warn in the bundled poly2tri (C4834, a discarded [[nodiscard]] value).
 vcpkg_replace_string(${SOURCE_PATH}/code/CMakeLists.txt "TARGET_COMPILE_OPTIONS(assimp PRIVATE /WX)" "")
 vcpkg_replace_string(${SOURCE_PATH}/CMakeLists.txt "/bigobj /W4 /WX" "/bigobj /W4")
+# A glTF sparse accessor's index type was read, then overwritten by a 16-bit default (fixed upstream since): 32-bit
+# indices then put every other value on the wrong vertex, scrambling sparse morph targets (VRoid and VirtualCast VRMs).
+vcpkg_replace_string(${SOURCE_PATH}/code/AssetLib/glTF2/glTF2Asset.inl
+    "sparse->indicesType = MemberOrDefault(*sparseValue, \"componentType\", ComponentType_UNSIGNED_SHORT);" "")
 
 set(VCPKG_C_FLAGS "${VCPKG_C_FLAGS} -D_CRT_SECURE_NO_WARNINGS")
 set(VCPKG_CXX_FLAGS "${VCPKG_CXX_FLAGS} -D_CRT_SECURE_NO_WARNINGS")

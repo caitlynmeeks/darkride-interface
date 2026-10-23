@@ -1,7 +1,7 @@
 {
   "name": "assimp",
   "version-string": "3c79b12e02d31a500e5f899d89d4d6f39e6ec178",
-  "port-version": 3,
+  "port-version": 4,
   "description": "The Open Asset import library",
   "homepage": "https://github.com/assimp/assimp",
   "dependencies": [

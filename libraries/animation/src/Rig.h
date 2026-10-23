@@ -141,6 +141,12 @@ public:
 
     void initJointStates(const HFMModel& hfmModel, const glm::mat4& modelOffset);
     void reset(const HFMModel& hfmModel);
+    // An avatar's rig: joints whose axes aren't Mixamo's get offsets that make them so (AnimSkeleton). Set before the above.
+    void setHumanoidRotationOffsets(bool humanoidRotationOffsets) { _humanoidRotationOffsets = humanoidRotationOffsets; }
+    // how far the model's eyes turn for the gaze's turn (hfm::Model::eyeLookScale)
+    float getEyeLookScale() const { return _eyeLookScale; }
+    // how much of its eye-look expressions per radian of gaze, where its eyes look by expression (hfm::Model's)
+    float getEyeLookExpressionScale() const { return _eyeLookExpressionScale; }
     bool jointStatesEmpty() const;
     int getJointStateCount() const;
     int indexOfJoint(const QString& jointName) const;
@@ -496,6 +502,28 @@ protected:
     int _rigId;
     bool _headEnabled { false };
     bool _computeNetworkAnimation { false };
+    bool _humanoidRotationOffsets { false };
+
+    // A model's node constraints (hfm::NodeConstraint) by joint index, with the rest rotations they turn from, in the
+    // model's own joint axes (those before any humanoid rotation offset), as its constraints were made in them
+    struct NodeConstraint {
+        hfm::NodeConstraint::Type type { hfm::NodeConstraint::Type::Rotation };
+        int joint { -1 };
+        int source { -1 };
+        glm::vec3 axis;
+        float weight { 1.0f };
+        glm::quat sourceRestLocal;
+        glm::quat jointRestLocal;
+        glm::quat sourceToJoint;  // the joint's rest axes in the source's
+    };
+    std::vector<NodeConstraint> _nodeConstraints;
+    float _eyeLookScale { 1.0f };  // the model's (hfm::Model::eyeLookScale and eyeLookMaxAngle)
+    float _eyeLookMaxAngle { 25.0f * RADIANS_PER_DEGREE };
+    float _eyeLookExpressionScale { 0.0f };
+    void initNodeConstraints(const HFMModel& hfmModel);
+    void applyNodeConstraints(AnimPoseVec& relativePoses, AnimPoseVec& absolutePoses) const;
+    glm::quat modelAxesRotation(const AnimPoseVec& absolutePoses, int joint) const;
+    glm::quat modelAxesLocalRotation(const AnimPoseVec& absolutePoses, int joint) const;
     bool _sendNetworkNode { false };
 
     AnimContext _lastContext;

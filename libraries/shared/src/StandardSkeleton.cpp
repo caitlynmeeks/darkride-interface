@@ -1,6 +1,6 @@
 //
 //  StandardSkeleton.cpp
-//  libraries/auto-rigging/src
+//  libraries/shared/src
 //
 //  Created on 2026-10-12 for Darkride's avatar rigger (AUTO-RIGGING.md in the project root).
 //

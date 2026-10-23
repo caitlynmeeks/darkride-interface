@@ -13,15 +13,21 @@
 #include <glm/gtx/transform.hpp>
 
 #include <GLMHelpers.h>
+#include <HumanoidRotationOffsets.h>
 
 #include "AnimationLogging.h"
 
-AnimSkeleton::AnimSkeleton(const HFMModel& hfmModel) {
+AnimSkeleton::AnimSkeleton(const HFMModel& hfmModel, bool humanoidRotationOffsets) {
 
     _geometryOffset = hfmModel.offset;
     _humanoid = hfmModel.humanoid;
 
-    buildSkeletonFromJoints(hfmModel.joints, hfmModel.jointRotationOffsets);
+    // not for a model its FST turns, whose joints' axes aren't the way up it's shown, nor for one whose FST retargets
+    // its animations through humanoid frames ("retarget = humanoid", Humanoid.h), which takes care of the axes itself
+    const float SMALLEST_TURN = 0.001f;
+    humanoidRotationOffsets = humanoidRotationOffsets && !_humanoid.retarget &&
+                              fabsf(glmExtractRotation(hfmModel.offset).w) > 1.0f - SMALLEST_TURN;
+    buildSkeletonFromJoints(hfmModel.joints, hfmModel.jointRotationOffsets, humanoidRotationOffsets);
 
     // we make a copy of the inverseBindMatrices in order to prevent mutating the model bind pose
     // when we are dealing with a joint offset in the model
@@ -40,8 +46,8 @@ AnimSkeleton::AnimSkeleton(const HFMModel& hfmModel) {
 
             // if we have a joint offset in the fst file then multiply its inverse by the
             // model cluster inverse bind matrix
-            if (hfmModel.jointRotationOffsets.contains(cluster.jointIndex)) {
-                AnimPose localOffset(hfmModel.jointRotationOffsets[cluster.jointIndex], glm::vec3());
+            if (_jointOffsets.contains(cluster.jointIndex)) {
+                AnimPose localOffset(_jointOffsets[cluster.jointIndex], glm::vec3());
                 localCluster.inverseBindMatrix = (glm::mat4)localOffset.inverse() * cluster.inverseBindMatrix;
                 localCluster.inverseBindTransform.evalFromRawMatrix(localCluster.inverseBindMatrix);
             }
@@ -197,7 +203,8 @@ void AnimSkeleton::mirrorAbsolutePoses(AnimPoseVec& poses) const {
     }
 }
 
-void AnimSkeleton::buildSkeletonFromJoints(const std::vector<HFMJoint>& joints, const QMap<int, glm::quat> jointOffsets) {
+void AnimSkeleton::buildSkeletonFromJoints(const std::vector<HFMJoint>& joints, const QMap<int, glm::quat> jointOffsets,
+                                           bool humanoidRotationOffsets) {
 
     _joints = joints;
 
@@ -238,9 +245,26 @@ void AnimSkeleton::buildSkeletonFromJoints(const std::vector<HFMJoint>& joints, 
         }
     }
 
+    _jointOffsets = jointOffsets;
+    _shapeOffsets.assign(_jointsSize, AnimPose::identity);
+    if (humanoidRotationOffsets && jointOffsets.isEmpty()) {
+        std::vector<HumanoidRestJoint> restJoints;
+        restJoints.reserve(_jointsSize);
+        for (int i = 0; i < _jointsSize; i++) {
+            restJoints.push_back({ _joints[i].name, _parentIndices[i], _absoluteDefaultPoses[i].trans(), _absoluteDefaultPoses[i].rot() });
+        }
+        _jointOffsets = computeHumanoidRotationOffsets(restJoints);
+        for (auto itr = _jointOffsets.begin(); itr != _jointOffsets.end(); itr++) {
+            _shapeOffsets[itr.key()] = AnimPose(glm::inverse(itr.value()), glm::vec3());
+        }
+        if (!_jointOffsets.isEmpty()) {
+            qCDebug(animation) << "Joint axes made Mixamo's automatically for" << _jointOffsets.size() << "joints";
+        }
+    }
+
     for (int k = 0; k < _jointsSize; k++) {
-        if (jointOffsets.contains(k)) {
-            AnimPose localOffset(jointOffsets[k], glm::vec3());
+        if (_jointOffsets.contains(k)) {
+            AnimPose localOffset(_jointOffsets[k], glm::vec3());
             _absoluteDefaultPoses[k] = _absoluteDefaultPoses[k] * localOffset;
         }
     }

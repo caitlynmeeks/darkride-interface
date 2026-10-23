@@ -16,6 +16,8 @@
 #include <QJsonObject>
 
 #include <glm/gtx/transform.hpp>
+#include <GLMHelpers.h>
+#include <HumanoidJointMap.h>
 
 #include "ModelBakerLogging.h"
 
@@ -60,6 +62,38 @@ QMap<QString, glm::quat> getJointRotationOffsets(const hifi::VariantHash& mappin
         }
     }
     return jointRotationOffsets;
+}
+
+// For a humanoid whose joints, even after the FST's jointMap, don't have all of Darkride's main names: Darkride's names
+// for joints worked out from its skeleton, by joint index, for the names it doesn't have yet
+QHash<int, QString> getHumanoidJointNames(const std::vector<hfm::Joint>& joints, const QMap<QString, QString>& jointNameMapping) {
+    QHash<int, QString> result;
+    QStringList jointNames;
+    for (const hfm::Joint& joint : joints) {
+        QString mappedName = jointNameMapping.key(joint.name);
+        jointNames << (mappedName.isEmpty() ? joint.name : mappedName);
+    }
+    if (hasMainHumanoidJoints(jointNames)) {
+        return result;
+    }
+    std::vector<HumanoidJointInfo> humanoidJoints;
+    for (const hfm::Joint& joint : joints) {
+        humanoidJoints.push_back({ joint.name, joint.parentIndex, joint.isSkeletonJoint, extractTranslation(joint.globalTransform) });
+    }
+    QHash<int, QString> humanoidNames = mapHumanoidJoints(humanoidJoints);
+    QStringList added;
+    for (auto itr = humanoidNames.begin(); itr != humanoidNames.end(); itr++) {
+        const QString& jointName = joints[itr.key()].name;
+        if (!jointNames.contains(itr.value()) && jointNameMapping.key(jointName).isEmpty()) {
+            result.insert(itr.key(), itr.value());
+            added << itr.value() + " = " + jointName;
+        }
+    }
+    if (!added.isEmpty()) {
+        added.sort();
+        qCDebug(model_baker) << "Joints named automatically:" << added.join(", ");
+    }
+    return result;
 }
 
 // "jointDefaultPose = <joint> = {"translation": [x, y, z], "rotation": [x, y, z, w], "scale": [x, y, z]}" sets a joint's
@@ -143,6 +177,7 @@ void PrepareJointsTask::run(const baker::BakeContextPointer& context, const Inpu
 
         // Get joint renames
         QMap<QString, QString> jointNameMapping = getJointNameMapping(mapping);
+        QHash<int, QString> humanoidJointNames = getHumanoidJointNames(jointsIn, jointNameMapping);
         // Apply joint metadata from FST file mappings
         for (const hfm::Joint& jointIn : jointsIn) {
             jointsOut.push_back(jointIn);
@@ -155,6 +190,7 @@ void PrepareJointsTask::run(const baker::BakeContextPointer& context, const Inpu
                 if (jointNameMapping.contains(jointNameMapKey)) {
                     jointOut.name = jointNameMapKey;
                 }
+                jointOut.name = humanoidJointNames.value((int)jointsOut.size() - 1, jointOut.name);
             }
             jointNames.push_back(jointOut.name);
         }
@@ -186,8 +222,9 @@ void PrepareJointsTask::run(const baker::BakeContextPointer& context, const Inpu
                 QString jointNameMapKey = jointNameMapping.key(jointOut.name);
                 if (jointNameMapping.contains(jointNameMapKey)) {
                     jointOut.name = jointNameMapKey;
-                    jointNames[i] = jointNameMapKey;
                 }
+                jointOut.name = humanoidJointNames.value((int)i, jointOut.name);
+                jointNames[i] = jointOut.name;
             }
         }
 

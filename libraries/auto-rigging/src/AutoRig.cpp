@@ -21,7 +21,7 @@
 #include <hfm/HFM.h>
 
 #include "SkinWeights.h"
-#include "StandardSkeleton.h"
+#include <StandardSkeleton.h>
 #include "VoxelBody.h"
 
 using namespace autorig;

@@ -10,7 +10,7 @@
 
 #include "SkinWeights.h"
 
-#include "StandardSkeleton.h"
+#include <StandardSkeleton.h>
 
 #include <algorithm>
 #include <atomic>

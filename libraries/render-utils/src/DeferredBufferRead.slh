@@ -47,6 +47,10 @@ struct DeferredFragment {
     int mode;
     float scattering;
     float depthVal;
+    // toon shading's (FRAG_MODE_TOON): the shade colour, shading shift and toony; the albedo is the lit colour
+    vec3 toonShadeColor;
+    float toonShadingShift;
+    float toonShadingToony;
 };
 
 <@if not GETFRESNEL0@>
@@ -78,7 +82,18 @@ DeferredFragment unpackDeferredFragmentNoPosition(vec2 texcoord) {
     frag.albedo = diffuseVal.xyz;
     unpackModeMetallic(diffuseVal.w, frag.mode, frag.metallic);
 
-    frag.obscurance = min(specularVal.w, frag.obscurance);
+    frag.toonShadeColor = vec3(0.0);
+    frag.toonShadingShift = 0.0;
+    frag.toonShadingToony = 0.0;
+    if (frag.mode == FRAG_MODE_TOON) {
+        // other lights see a matte surface
+        frag.toonShadeColor = specularVal.xyz;
+        frag.toonShadingShift = specularVal.w * 2.0 - 1.0;
+        frag.toonShadingToony = frag.roughness;
+        frag.roughness = 1.0;
+    } else {
+        frag.obscurance = min(specularVal.w, frag.obscurance);
+    }
     frag.scattering = float(frag.mode == FRAG_MODE_SCATTERING) * specularVal.x;
     frag.fresnel = getFresnelF0(frag.metallic, diffuseVal.xyz);
 
@@ -103,6 +118,12 @@ DeferredFragment unpackDeferredFragmentNoPositionNoAmbient(vec2 texcoord) {
     frag.albedo = diffuseVal.xyz;
     frag.scattering = 0.0;
     unpackModeMetallic(diffuseVal.w, frag.mode, frag.metallic);
+    frag.toonShadeColor = vec3(0.0);
+    frag.toonShadingShift = 0.0;
+    frag.toonShadingToony = 0.0;
+    if (frag.mode == FRAG_MODE_TOON) {
+        frag.roughness = 1.0;
+    }
 
     //frag.emissive = specularVal.xyz;
     frag.obscurance = 1.0;

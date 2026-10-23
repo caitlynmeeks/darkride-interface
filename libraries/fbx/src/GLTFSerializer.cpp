@@ -1535,9 +1535,10 @@ bool GLTFSerializer::buildGeometry(HFMModel& hfmModel, const hifi::VariantHash& 
                                 WeightedIndex(i, blendshapeMapping.at(1).toFloat()));
                         }
                     } else {
-                        // Use blendshape from model.
-                        if (gltfMesh.extras.targetNames.contains(blendshapeName)) {
-                            blendshapeIndices.insert(blendshapeName, WeightedIndex(i, 1.0f));
+                        // Use blendshape from model: its own name, or another the model may use for it, such as ARKit's
+                        BlendshapeSource source = findBlendshapeSource(i, QStringList(gltfMesh.extras.targetNames.toList()));
+                        if (!source.name.isEmpty()) {
+                            blendshapeIndices.insert(source.name, WeightedIndex(i, source.weight));
                         }
                     }
                 }

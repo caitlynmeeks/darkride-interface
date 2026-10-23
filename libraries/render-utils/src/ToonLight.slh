@@ -1,0 +1,59 @@
+<!
+//  ToonLight.slh
+//  libraries/render-utils/src
+//
+//  Created on 2026-10-19 for Darkride's avatar support.
+//
+//  Distributed under the Apache License, Version 2.0.
+//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+!>
+<@if not TOON_LIGHT_SLH@>
+<@def TOON_LIGHT_SLH@>
+
+// Toon shading, as a VRM's MToon 1.0 (VRMC_materials_mtoon) lights it: the key light's dot with the normal, plus the
+// shading shift, stepped from -1 + toony to 1 - toony and darkened by the shadow, mixes from the shade colour to the lit
+// one; the ambient light lights the lit colour, evened out towards the average of up's and down's by the GI
+// equalization, so a toon face isn't modelled by the sky; the light at most 1, and the result at most the lit colour.
+// Its rim lighting, matcap and outline aren't done.
+// Needs GlobalLight.slh's declarations, and evalLightingAmbient declared with reflection probes, and with scattering if
+// supportScattering.
+<@func declareEvalToonGlobalColor(supportScattering)@>
+
+vec3 evalToonAmbient(LightAmbient lightAmbient, vec3 normal, vec3 eyeDir, vec3 color, float obscurance, vec3 positionWS) {
+    SurfaceData surface = initSurfaceData(1.0, normal, eyeDir);
+    vec3 diffuse;
+    vec3 specular;
+    evalLightingAmbient(diffuse, specular, lightAmbient, surface, 0.0, vec3(0.0), color, obscurance
+<@if supportScattering@>
+        , 0.0, vec4(0.0), vec4(0.0)
+<@endif@>
+        , positionWS);
+    return diffuse;
+}
+
+vec3 evalToonGlobalColor(mat4 invViewMat, float shadowAttenuation, float obscurance, vec3 positionES, vec3 normalWS,
+                         vec3 litColor, vec3 shadeColor, float shadingShift, float shadingToony, float giEqualization) {
+    <$prepareGlobalLight(positionES, normalWS)$>
+
+    float shading = dot(fragNormalWS, -lightDirection) + shadingShift;
+    float stepFrom = -1.0 + shadingToony;
+    float stepTo = 1.0 - shadingToony;
+    shading = clamp((shading - stepFrom) / max(stepTo - stepFrom, 0.0001), 0.0, 1.0);
+    shading *= shadowAttenuation;
+    // the light's colour, at most 1: toon avatars are made to look as they're drawn under a light of 1, and a bright
+    // world's key light (several times that) burnt them white
+    vec3 lightColor = lightIrradiance / max(1.0, max(lightIrradiance.r, max(lightIrradiance.g, lightIrradiance.b)));
+    color += mix(shadeColor, litColor, shading) * lightColor * isDirectionalEnabled() * isDiffuseEnabled();
+
+    vec3 ambient = evalToonAmbient(lightAmbient, fragNormalWS, fragEyeDirWS, litColor, obscurance, fragPositionWS);
+    vec3 ambientEven = 0.5 * (evalToonAmbient(lightAmbient, vec3(0.0, 1.0, 0.0), fragEyeDirWS, litColor, obscurance, fragPositionWS) +
+                              evalToonAmbient(lightAmbient, vec3(0.0, -1.0, 0.0), fragEyeDirWS, litColor, obscurance, fragPositionWS));
+    color += mix(ambient, ambientEven, giEqualization);
+
+    // and never brighter than its lit colour, however much ambient light there is
+    return min(color, litColor);
+}
+
+<@endfunc@>
+
+<@endif@>

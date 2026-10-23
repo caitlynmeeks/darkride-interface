@@ -36,6 +36,9 @@
 
 #include <AutoRig.h>
 #include <AvatarWriter.h>
+#include <FstBake.h>
+#include <VRMReader.h>
+#include <BlendshapeConstants.h>
 #include <StandardSkeleton.h>
 
 #include "RigCheck.h"
@@ -170,6 +173,16 @@ static void inspectModel(const HFMModel& model) {
                 extents.maximum.y, extents.maximum.z);
         for (const QString& line : partsOf[(uint32_t)m]) {
             fprintf(stdout, "    %s\n", qPrintable(line));
+        }
+        // the blendshapes it has, by Darkride's names, with how many vertices each moves
+        QStringList blendshapes;
+        for (int b = 0; b < (int)mesh.blendshapes.size() && b < (int)Blendshapes::BlendshapeCount; b++) {
+            if (!mesh.blendshapes[b].indices.isEmpty()) {
+                blendshapes << QString("%1 %2").arg(BLENDSHAPE_NAMES[b]).arg(mesh.blendshapes[b].indices.size());
+            }
+        }
+        if (!blendshapes.isEmpty()) {
+            fprintf(stdout, "    %d blendshapes: %s\n", blendshapes.size(), qPrintable(blendshapes.join(", ")));
         }
         // how far each UV layer spreads: a layer collapsed to a point (an unused lightmap channel) draws one texel
         for (int layer = 0; layer < 2; layer++) {
@@ -311,6 +324,7 @@ AutoRigApp::AutoRigApp(int argc, char* argv[]) : QCoreApplication(argc, argv) {
     const QCommandLineOption jointsOnlyOption("joints-only", "place the joints and skip the skin weights");
     const QCommandLineOption dumpOption("dump", "print an FBX file's node tree and stop", "file");
     const QCommandLineOption inspectOption("inspect", "print a model's meshes, materials and textures and stop", "file");
+    const QCommandLineOption bakeOption("bake", "print the .fst lines Import Avatar writes when it keeps a model's rig, and stop", "file");
     const QCommandLineOption uvSheetsOption("uv-sheets", "with --inspect: draw each material's UV triangles over its texture into PNGs here",
                                             "folder");
     const QCommandLineOption depthOption("depth", "with --dump: how deep (default 3)", "levels");
@@ -341,6 +355,7 @@ AutoRigApp::AutoRigApp(int argc, char* argv[]) : QCoreApplication(argc, argv) {
     parser.addOption(jointsOnlyOption);
     parser.addOption(dumpOption);
     parser.addOption(inspectOption);
+    parser.addOption(bakeOption);
     parser.addOption(uvSheetsOption);
     parser.addOption(depthOption);
     parser.addOption(childrenOption);
@@ -349,6 +364,31 @@ AutoRigApp::AutoRigApp(int argc, char* argv[]) : QCoreApplication(argc, argv) {
     parser.addOption(weightingOption);
     parser.addOption(sharpnessOption);
     parser.addOption(blendOption);
+    if (parser.parse(QCoreApplication::arguments()) && parser.isSet(bakeOption)) {
+        // read as the client reads a model it wears: glTF and VRM by the Assimp loader
+        const QString path = parser.value(bakeOption);
+        const QString suffix = QFileInfo(path).suffix().toLower();
+        const bool isGltf = suffix == "vrm" || suffix == "glb" || suffix == "gltf";
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            fprintf(stderr, "could not read %s\n", qPrintable(path));
+            _returnCode = 2;
+            return;
+        }
+        const QByteArray data = file.readAll();
+        HFMModel::Pointer model = isGltf ? AssimpSerializer().read(data, QVariantHash(), QUrl::fromLocalFile(path)) : readModel(path);
+        if (!model) {
+            fprintf(stderr, "could not read %s\n", qPrintable(path));
+            _returnCode = 2;
+            return;
+        }
+        const VRMInfo vrm = isGltf ? readVRM(data) : VRMInfo();
+        const QStringList morphTargetNames = isGltf ? autorig::gltfMorphTargetNames(data) : QStringList(model->blendshapeChannelNames);
+        QStringList lines, found;
+        autorig::bakeFst(*model, vrm, morphTargetNames, lines, found);
+        fprintf(stdout, "# found: %s\n%s\n", qPrintable(found.join(", ")), qPrintable(lines.join("\n")));
+        return;
+    }
     if (parser.parse(QCoreApplication::arguments()) && parser.isSet(inspectOption)) {
         HFMModel::Pointer model = readModel(parser.value(inspectOption));
         if (!model) {

@@ -453,6 +453,7 @@ HFMModel* FBXSerializer::extractHFMModel(const hifi::VariantHash& mapping, const
         }
     }
     QMultiHash<QString, WeightedIndex> blendshapeChannelIndices;
+    QVector<QPair<QString, QString>> blendshapeChannels; // every channel's ID and name, for the fallback below
     // The model's own blend shapes (hfm::Model::ownBlendshapeNames), when the .fst asks for them.
     const hifi::VariantHash ownBlendshapeDefaults = mapping.value("blendshapeDefault").toHash();
     const bool keepOwnBlendshapes = !ownBlendshapeDefaults.isEmpty() ||
@@ -1095,6 +1096,7 @@ HFMModel* FBXSerializer::extractHFMModel(const hifi::VariantHash& mapping, const
                         }
                         QString id = getID(object.properties);
                         hfmModel.blendshapeChannelNames << name;
+                        blendshapeChannels.append({ id, QString(name) });
                         if (keepOwnBlendshapes && !blendshapeIndices.contains(name)) {
                             // the model's own blend shape, by its whole name, in a slot after the standard ones
                             auto slot = ownBlendshapeSlots.find(wholeName);
@@ -1241,6 +1243,33 @@ HFMModel* FBXSerializer::extractHFMModel(const hifi::VariantHash& mapping, const
         if (hifiGlobalNodeID.isEmpty()) {
             auto light = lights.begin();
             _lightmapLevel = (*light).second.intensity;
+        }
+    }
+
+    // A blendshape with no FST mapping and no channel of its own name takes another name the model may use for it,
+    // such as ARKit's (see findBlendshapeSource)
+    if (!blendshapeChannels.isEmpty()) {
+        QStringList channelNames;
+        for (const auto& channel : blendshapeChannels) {
+            channelNames << channel.second;
+        }
+        QSet<int> found;
+        for (const WeightedIndex& index : blendshapeChannelIndices) {
+            found.insert(index.first);
+        }
+        for (int i = 0; i < (int)Blendshapes::BlendshapeCount; i++) {
+            if (found.contains(i) || blendshapeMappings.contains(BLENDSHAPE_NAMES[i])) {
+                continue;
+            }
+            BlendshapeSource source = findBlendshapeSource(i, channelNames);
+            if (source.name.isEmpty()) {
+                continue;
+            }
+            for (const auto& channel : blendshapeChannels) {
+                if (channel.second == source.name) {
+                    blendshapeChannelIndices.insert(channel.first, WeightedIndex(i, source.weight));
+                }
+            }
         }
     }
 

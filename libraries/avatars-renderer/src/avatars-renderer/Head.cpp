@@ -206,6 +206,7 @@ void Head::simulate(float deltaTime) {
         // eyes relative to the head.  This is to try to help prevent sleepy eyes/crazy eyes.
         applyEyelidOffset(getOrientation());
     }
+    applyEyeLookExpressions(getOrientation());
 
     if (gaze.lidsClosed != 0.0f) {
         // the style's resting lids, half shut (sleepy) or held wide (excited), under the blinks and the adjustment:
@@ -294,6 +295,13 @@ void Head::applyEyelidOffset(glm::quat headOrientation) {
     glm::vec3 lookAt = glm::normalize(lookAtVector);
     glm::vec3 headUp = headOrientation * Vectors::UNIT_Y;
     float eyePitch = (PI / 2.0f) - acos(glm::dot(lookAt, headUp));
+    // the lids follow the iris, which on some models (VRMs) turns only a share of the gaze's turn
+    if (_owningAvatar) {
+        auto skeletonModel = static_cast<Avatar*>(_owningAvatar)->getSkeletonModel();
+        if (skeletonModel) {
+            eyePitch *= glm::min(skeletonModel->getRig().getEyeLookScale(), 1.0f);
+        }
+    }
     float eyelidOffset = glm::clamp(abs(eyePitch * EYE_PITCH_TO_COEFFICIENT), 0.0f, MAX_EYELID_OFFSET);
 
     float blinkUpCoefficient = -eyelidOffset;
@@ -320,6 +328,36 @@ void Head::applyEyelidOffset(glm::quat headOrientation) {
             _transientBlendshapeCoefficients[(int)Blendshapes::BrowsU_L + i] = browsDownCoefficient;
         }
     }
+}
+
+void Head::applyEyeLookExpressions(glm::quat headOrientation) {
+    // Eyes that look by expression rather than by turning (a VRM's lookUp and the rest: Seed-san): each the gaze's turn
+    // that way, from the head's forward, times the model's scale
+    float scale = 0.0f;
+    if (_owningAvatar) {
+        auto skeletonModel = static_cast<Avatar*>(_owningAvatar)->getSkeletonModel();
+        if (skeletonModel) {
+            scale = skeletonModel->getRig().getEyeLookExpressionScale();
+        }
+    }
+    if (scale <= 0.0f) {
+        return;
+    }
+    glm::vec3 lookAtVector = getLookAtPosition() - _eyePosition;
+    float up = 0.0f, right = 0.0f;
+    if (glm::length2(lookAtVector) > 0.0f) {
+        const glm::vec3 lookAt = glm::normalize(lookAtVector);
+        up = asinf(glm::clamp(glm::dot(lookAt, headOrientation * Vectors::UNIT_Y), -1.0f, 1.0f));
+        right = atan2f(glm::dot(lookAt, headOrientation * Vectors::UNIT_X), glm::dot(lookAt, headOrientation * Vectors::FRONT));
+    }
+    const float upWeight = glm::clamp(up * scale, 0.0f, 1.0f);
+    const float downWeight = glm::clamp(-up * scale, 0.0f, 1.0f);
+    const float rightWeight = glm::clamp(right * scale, 0.0f, 1.0f);
+    const float leftWeight = glm::clamp(-right * scale, 0.0f, 1.0f);
+    _transientBlendshapeCoefficients[(int)Blendshapes::EyeUp_L] = _transientBlendshapeCoefficients[(int)Blendshapes::EyeUp_R] = upWeight;
+    _transientBlendshapeCoefficients[(int)Blendshapes::EyeDown_L] = _transientBlendshapeCoefficients[(int)Blendshapes::EyeDown_R] = downWeight;
+    _transientBlendshapeCoefficients[(int)Blendshapes::EyeOut_L] = _transientBlendshapeCoefficients[(int)Blendshapes::EyeIn_R] = leftWeight;
+    _transientBlendshapeCoefficients[(int)Blendshapes::EyeIn_L] = _transientBlendshapeCoefficients[(int)Blendshapes::EyeOut_R] = rightWeight;
 }
 
 void Head::relax(float deltaTime) {

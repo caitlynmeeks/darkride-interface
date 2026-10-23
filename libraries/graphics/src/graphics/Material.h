@@ -69,6 +69,8 @@ public:
                                         // dimmed by the sun's shadow. Without it the lightmap holds the baked light
                                         // only and replaces the ambient diffuse term, the sun and the local lights
                                         // running as usual (Unity's Baked Indirect; LIGHTMAPS.md). Goes with the map
+        TOON_VAL_BIT,                   // toon shaded, as a VRM's MToon: lit where the light falls, the shade colour where
+                                        // it doesn't, with a soft or sharp step between (Material::setToon)
 
         NUM_FLAGS,
     };
@@ -188,6 +190,9 @@ public:
 
     void setUnlit(bool value) { _flags.set(UNLIT_VAL_BIT, value); }
     bool isUnlit() const { return _flags[UNLIT_VAL_BIT]; }
+
+    void setToon(bool value) { _flags.set(TOON_VAL_BIT, value); }
+    bool isToon() const { return _flags[TOON_VAL_BIT]; }
 
     void setEmissiveMap(bool value) { _flags.set(EMISSIVE_MAP_BIT, value); }
     bool isEmissiveMap() const { return _flags[EMISSIVE_MAP_BIT]; }
@@ -427,6 +432,16 @@ public:
     void setUnlit(bool value);
     bool isUnlit() const { return _key.isUnlit(); }
 
+    // Toon shading, as MToon 1.0 (https://github.com/vrm-c/vrm-specification, VRMC_materials_mtoon): where the light
+    // falls, by the normal's dot with it plus the shift, stepped from -1 + toony to 1 - toony, the albedo; where it
+    // doesn't, the shade colour (times the albedo map); lit by the ambient light evened out by the GI equalization
+    void setToon(const glm::vec3& shadeColor, float shadingShift, float shadingToony, float giEqualization, bool isSRGB = true);
+    bool isToon() const { return _key.isToon(); }
+    glm::vec3 getToonShadeColor(bool SRGB = true) const { return (SRGB ? ColorUtils::tosRGBVec3(_toonShadeColor) : _toonShadeColor); }
+    float getToonShadingShift() const { return _toonShadingShift; }
+    float getToonShadingToony() const { return _toonShadingToony; }
+    float getToonGiEqualization() const { return _toonGiEqualization; }
+
     static const float DEFAULT_ALBEDO;
     void setAlbedo(const glm::vec3& albedo, bool isSRGB = true);
     glm::vec3 getAlbedo(bool SRGB = true) const { return (SRGB ? ColorUtils::tosRGBVec3(_albedo) : _albedo); }
@@ -519,6 +534,10 @@ private:
     float _scattering { DEFAULT_SCATTERING };
     float _opacityCutoff { DEFAULT_OPACITY_CUTOFF };
     float _occlusionStrength { DEFAULT_OCCLUSION_STRENGTH };
+    glm::vec3 _toonShadeColor { 0.0f };
+    float _toonShadingShift { 0.0f };
+    float _toonShadingToony { 0.9f };
+    float _toonGiEqualization { 0.9f };
     std::array<glm::mat4, NUM_TEXCOORD_TRANSFORMS> _texcoordTransforms;
     glm::vec2 _lightmapParams { 0.0, 1.0 };
     glm::vec2 _materialParams { 0.0, 1.0 };
@@ -601,7 +620,11 @@ public:
         glm::vec2 _materialParams { 0.0, 1.0 };
 
         float _occlusionStrength { Material::DEFAULT_OCCLUSION_STRENGTH };
-        glm::vec3 _spare { 0.0f };
+        float _toonShadingShift { 0.0f };
+        float _toonShadingToony { 0.9f };
+        float _toonGiEqualization { 0.9f };
+
+        glm::vec4 _toonShadeColor { 0.0f };  // rgb (linear); a spare
 
         Schema() {
             for (auto& transform : _texcoordTransforms) {

@@ -11,6 +11,8 @@
 
 #include "AssimpSerializer.h"
 
+#include <algorithm>
+
 #include <BlendshapeConstants.h>
 #include <ResourceManager.h>
 #include <PathUtils.h>
@@ -52,6 +54,8 @@ MediaType AssimpSerializer::getMediaType() const {
         mediaType.extensions.push_back(ext.toStdString());
         // mediaType.webMediaTypes.push_back("");
     }
+    // VRM avatars are glTF binaries (VRMReader)
+    mediaType.extensions.push_back("vrm");
 
     return mediaType;
 }
@@ -211,7 +215,7 @@ void AssimpSerializer::processMaterials() {
         materialPtr->_material = std::make_shared<graphics::Material>();
         auto modelMaterial = materialPtr->_material;
 
-        bool isGltf = ext == "gltf" || ext == "glb";
+        bool isGltf = ext == "gltf" || ext == "glb" || ext == "vrm";
         if (isGltf) {
             materialPtr->isPBSMaterial = true;
         }
@@ -277,6 +281,24 @@ void AssimpSerializer::processMaterials() {
         }
 
         // TODO: scattering!
+
+        // a VRM's toon shading; MToon materials say they're unlit too, for loaders without it
+        if (vrm.isVRM()) {
+            const QString name = mMaterial->GetName().C_Str();
+            // by name, as Assimp may add or drop materials; else by number
+            auto byName = vrm.toonMaterialsByName.constFind(name);
+            auto byIndex = vrm.toonMaterials.constFind((int)materialIndex);
+            const VRMToonMaterial* toonMaterial = byName != vrm.toonMaterialsByName.constEnd() ? &byName.value()
+                : (byIndex != vrm.toonMaterials.constEnd() ? &byIndex.value() : nullptr);
+            if (toonMaterial) {
+                modelMaterial->setUnlit(false);
+                if (mMaterial->Get(AI_MATKEY_GLTF_PBRMETALLICROUGHNESS_BASE_COLOR_FACTOR, baseColor) == AI_SUCCESS) {
+                    modelMaterial->setAlbedo(glm::vec3(baseColor.r, baseColor.g, baseColor.b), false);
+                }
+                modelMaterial->setToon(toonMaterial->shadeColor, toonMaterial->shadingShift, toonMaterial->shadingToony,
+                                       toonMaterial->giEqualization, false);
+            }
+        }
 
         // textures
 
@@ -422,6 +444,11 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
         if (mMesh->mNumAnimMeshes > 0) {
             bool isBlendshapeChannelNamesEmpty = hfmModel->blendshapeChannelNames.size() == 0;
 
+            QStringList morphTargetNames;
+            for (size_t i = 0; i < mMesh->mNumAnimMeshes; i++) {
+                morphTargetNames << QString(mMesh->mAnimMeshes[i]->mName.C_Str());
+            }
+
             for (size_t i = 0; i < (int)Blendshapes::BlendshapeCount; i++) {
                 const QString fromName = BLENDSHAPE_NAMES[i];
                 
@@ -432,48 +459,79 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
                 meshPtr->blendshapes.push_back(hfm::Blendshape());
                 hfm::Blendshape* blendshapePtr = &meshPtr->blendshapes.back();
 
-                QString toName;
-                float weight = 1.0f;
-
+                QVector<BlendshapeSource> sources;
                 if (blendshapeMappings.contains(fromName)) {
-                    auto mapping = blendshapeMappings[fromName].toList();
-                    if (mapping.count() >= 2) {
-                        toName = mapping.at(0).toString();
-                        weight = mapping.at(1).toFloat();
+                    // every line for it, as a VRM expression baked into an FST may blend several
+                    for (const QVariant& value : blendshapeMappings.values(fromName)) {
+                        auto mapping = value.toList();
+                        if (mapping.count() >= 2) {
+                            sources.append({ mapping.at(0).toString(), mapping.at(1).toFloat() });
+                        }
                     }
+                } else if (vrm.blendshapes.contains((int)i)) {
+                    // a VRM's expression, which may blend several morph targets
+                    sources = vrm.blendshapes.value((int)i);
                 } else {
-                    toName = fromName;
+                    // its own name, or another the model may use for it, such as ARKit's
+                    BlendshapeSource source = findBlendshapeSource((int)i, morphTargetNames);
+                    if (!source.name.isEmpty()) {
+                        sources.append(source);
+                    }
                 }
-
-                if (weight == 0.0f && fromName == toName) {
+                if (sources.isEmpty()) {
                     continue;
                 }
 
-                aiAnimMesh* animMesh = getBlendshapeByName(toName, mMesh);
-                if (animMesh == nullptr) {
-                    continue;
+                // the sum of the sources' offsets from the mesh
+                const size_t vertexCount = mMesh->mNumVertices;
+                std::vector<glm::vec3> vertices(vertexCount), normals(vertexCount), tangents(vertexCount);
+                bool hasNormals = false;
+                bool hasTangents = false;
+                for (const BlendshapeSource& source : sources) {
+                    if (source.weight == 0.0f && fromName == source.name) {
+                        continue;
+                    }
+                    aiAnimMesh* animMesh = source.name.isEmpty() ? nullptr : getBlendshapeByName(source.name, mMesh);
+                    if (animMesh == nullptr && source.index >= 0 && source.index < (int)mMesh->mNumAnimMeshes &&
+                            !source.meshName.isEmpty()) {
+                        // by its number, in the glTF mesh this one came from: Assimp names a mesh's primitives
+                        // "<mesh>-0", "<mesh>-1"...
+                        const QString name = mMesh->mName.C_Str();
+                        if (name == source.meshName || name.startsWith(source.meshName + "-")) {
+                            animMesh = mMesh->mAnimMeshes[source.index];
+                        }
+                    }
+                    if (animMesh == nullptr) {
+                        continue;
+                    }
+                    const bool sourceHasNormals = animMesh->HasNormals() && mMesh->HasNormals();
+                    const bool sourceHasTangents = animMesh->HasTangentsAndBitangents() && mMesh->HasTangentsAndBitangents();
+                    hasNormals = hasNormals || sourceHasNormals;
+                    hasTangents = hasTangents || sourceHasTangents;
+                    for (size_t vertexIndex = 0; vertexIndex < animMesh->mNumVertices && vertexIndex < vertexCount; vertexIndex++) {
+                        vertices[vertexIndex] += (asVec3(animMesh->mVertices[vertexIndex]) - asVec3(mMesh->mVertices[vertexIndex])) * source.weight;
+                        if (sourceHasNormals) {
+                            normals[vertexIndex] += (asVec3(animMesh->mNormals[vertexIndex]) - asVec3(mMesh->mNormals[vertexIndex])) * source.weight;
+                        }
+                        if (sourceHasTangents) {
+                            tangents[vertexIndex] += (asVec3(animMesh->mTangents[vertexIndex]) - asVec3(mMesh->mTangents[vertexIndex])) * source.weight;
+                        }
+                    }
                 }
-                
-                for (size_t vertexIndex = 0; vertexIndex < animMesh->mNumVertices; vertexIndex++) {
-                    auto v = (asVec3(animMesh->mVertices[vertexIndex]) - asVec3(mMesh->mVertices[vertexIndex])) * weight;
 
-                    auto n = animMesh->HasNormals() ?
-                        (asVec3(animMesh->mNormals[vertexIndex]) - asVec3(mMesh->mNormals[vertexIndex])) * weight :
-                        vec3(0.0f);
-
-                    auto t = animMesh->HasTangentsAndBitangents() ?
-                        (asVec3(animMesh->mTangents[vertexIndex]) - asVec3(mMesh->mTangents[vertexIndex])) * weight :
-                        vec3(0.0f);
-                    
+                for (size_t vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) {
+                    const auto& v = vertices[vertexIndex];
+                    const auto& n = normals[vertexIndex];
+                    const auto& t = tangents[vertexIndex];
                     if (isEmptyVec3(v) && isEmptyVec3(n) && isEmptyVec3(t)) {
                         continue;
                     }
 
                     blendshapePtr->indices.push_back(vertexIndex);
-                    
+
                     blendshapePtr->vertices.push_back(v);
-                    if (animMesh->HasNormals()) blendshapePtr->normals.push_back(n);
-                    if (animMesh->HasTangentsAndBitangents()) blendshapePtr->tangents.push_back(t);
+                    if (hasNormals) blendshapePtr->normals.push_back(n);
+                    if (hasTangents) blendshapePtr->tangents.push_back(t);
                 }
             }
         }
@@ -501,11 +559,6 @@ void AssimpSerializer::processBones() {
     };
     if (!hasBones) return;
 
-    // multiple skin deformers will affect other models unfortunately
-    uint32_t skinDeformerIndex = hfmModel->skinDeformers.size(); 
-    hfmModel->skinDeformers.emplace_back();
-    hfm::SkinDeformer* skinDeformer = &hfmModel->skinDeformers.back();
-
     for (size_t meshIndex = 0; meshIndex < scene->mNumMeshes; meshIndex++) {
         aiMesh* mMesh = scene->mMeshes[meshIndex];
         if (mMesh->mNumBones == 0) continue;
@@ -514,7 +567,16 @@ void AssimpSerializer::processBones() {
         meshPtr->clusterWeightsPerVertex = 4;
         hfmModel->hasSkeletonJoints = true;
 
-        // should put skin deformer here
+        // A skin for each mesh, its clusters numbered from 0: the skinning shader takes 128 clusters a mesh
+        // (Skinning.slh), and one skin for the whole model gave the later meshes of a VRM numbers past that, which drew
+        // its hair and skirt as spikes
+        uint32_t skinDeformerIndex = hfmModel->skinDeformers.size();
+        hfmModel->skinDeformers.emplace_back();
+        hfm::SkinDeformer* skinDeformer = &hfmModel->skinDeformers.back();
+        if (mMesh->mNumBones > 128) {
+            qCWarning(modelformat) << "AssimpSerializer: mesh" << mMesh->mName.C_Str() << "has" << mMesh->mNumBones
+                                   << "bones; the skinning shader takes 128";
+        }
 
         QList<hfm::Shape*> shapes = getHfmShapesByMeshIndex(meshIndex);
         for (auto shape : shapes) {
@@ -566,13 +628,23 @@ void AssimpSerializer::processBones() {
 
         for (size_t vertexIndex = 0; vertexIndex < mMesh->mNumVertices; vertexIndex++) {
             auto cluster = clusterMap[vertexIndex];
+            // the four strongest, summing to one: some exporters' weights don't (older VRoid's give an eye highlight
+            // Head 1 and LeftEye 1, which drew it at twice its height)
+            std::sort(cluster.begin(), cluster.end(), [](const std::pair<size_t, float>& a, const std::pair<size_t, float>& b) {
+                return a.second > b.second;
+            });
             int clusterSize = cluster.size() > 4 ? 4 : cluster.size();
             int clusterEmptySize = 4 - clusterSize;
-            
+            float weightSum = 0.0f;
+            for (int i = 0; i < clusterSize; i++) {
+                weightSum += cluster[i].second;
+            }
+            const float weightScale = weightSum > 0.0f ? 1.0f / weightSum : 1.0f;
+
             for (int i = 0; i < clusterSize; i++) {
                 meshPtr->clusterIndices.push_back(cluster[i].first);
                 meshPtr->clusterWeights.push_back(
-                    std::round(cluster[i].second * 65535.0f)
+                    std::round(cluster[i].second * weightScale * 65535.0f)
                 );
             }
             for (int i = 0; i < clusterEmptySize; i++) {
@@ -738,6 +810,36 @@ void AssimpSerializer::processScene(const hifi::VariantHash& mapping) {
     processBones();
 
     processAnimations();
+
+    // a VRM's humanoid bones get Darkride's names, and its spring bones Flow's, with Flow's data for them
+    if (vrm.isVRM()) {
+        int named = 0;
+        int springs = 0;
+        for (auto& joint : hfmModel->joints) {
+            auto name = vrm.jointNames.find(joint.name);
+            auto flowName = vrm.flowJointNames.find(joint.name);
+            if (name != vrm.jointNames.end()) {
+                hfmModel->jointIndices.insert(name.value(), hfmModel->jointIndices.take(joint.name));
+                joint.name = name.value();
+                named++;
+            } else if (flowName != vrm.flowJointNames.end()) {
+                hfmModel->jointIndices.insert(flowName.value(), hfmModel->jointIndices.take(joint.name));
+                joint.name = flowName.value();
+                springs++;
+            }
+        }
+        hfmModel->flowData._physicsConfig = vrm.flowPhysics;
+        hfmModel->flowData._collisionsConfig = vrm.flowCollisions;
+        hfmModel->nodeConstraints = vrm.nodeConstraints;
+        hfmModel->eyeLookScale = vrm.eyeLookScale;
+        hfmModel->eyeLookMaxAngle = glm::radians(vrm.eyeLookMaxAngle);
+        hfmModel->eyeLookExpressionScale = vrm.eyeLookExpressionScale / RADIANS_PER_DEGREE;
+        qCDebug(modelformat) << "VRM" << (vrm.version == 0 ? "0.x" : "1.0") << url.fileName() << "-" << vrm.title << "by"
+                            << vrm.authors << "-" << vrm.licence << "-" << named << "humanoid joints,"
+                            << vrm.blendshapes.size() << "blendshapes from its expressions," << springs << "spring joints in"
+                            << vrm.flowPhysics.size() << "groups," << vrm.flowCollisions.size() << "colliders,"
+                            << (int)vrm.nodeConstraints.size() << "node constraints";
+    }
 }
 
 // Assimp drops glTF "extras" (e.g., Blender custom properties), so read the nodes' and materials' extras from the file's
@@ -802,6 +904,7 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
 
     // what follows the last dot, as the format registry chose this reader by: Blender's Tree.001.glb is a "glb"
     ext = QFileInfo(url.path()).suffix();
+    vrm = readVRM(data);
 
     // qCDebug(modelformat) << "AssimpSerializer::read url"<<url<<ext;
 
@@ -830,10 +933,20 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
     // https://arbook.icg.tugraz.at/schmalstieg/Schmalstieg_351.pdf
     importer.SetPropertyInteger(AI_CONFIG_PP_ICL_PTCACHE_SIZE, 64);
 
+    // Not for a skinned glTF (or VRM): where primitives share their vertex buffers, as VRoid's do, Assimp gives each
+    // primitive's mesh the whole buffer, and joining identical vertices then mixed up their bone weights. three-vrm-girl's
+    // hair vertices came out weighted Head 1 and LeftHandRing3 1, and followed her hand as it moved. Each mesh keeps the
+    // buffer's unused vertices instead, which only the memory notices. A glTF without skins has no weights to mix up, and
+    // is joined as before.
+    const QString lowerExt = ext.toLower();
+    const bool isGltf = lowerExt == "gltf" || lowerExt == "glb" || lowerExt == "vrm";
+    const bool sharesVertexBuffers = isGltf && (vrm.isVRM() || data.contains("\"skins\""));
+    const unsigned int joinIdenticalVertices = sharesVertexBuffers ? 0 : aiProcess_JoinIdenticalVertices;
+
     scene = importer.ReadFileFromMemory(
         data.constData(), data.size(),
         // aiProcess_CalcTangentSpace |
-        aiProcess_JoinIdenticalVertices | 
+        joinIdenticalVertices |
         aiProcess_Triangulate |
         aiProcess_RemoveComponent |
         aiProcess_GenNormals | 
@@ -846,7 +959,8 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
         aiProcess_OptimizeMeshes | // joins meshes together
         // aiProcess_OptimizeGraph |
         aiProcess_FlipUVs,
-        ext.toLocal8Bit()
+        // Assimp knows a VRM by what it is, a glTF binary
+        (ext.toLower() == "vrm" ? QString("glb") : ext).toLocal8Bit()
     );
     
     if (!scene) {

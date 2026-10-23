@@ -23,7 +23,9 @@ public:
     using Pointer = std::shared_ptr<AnimSkeleton>;
     using ConstPointer = std::shared_ptr<const AnimSkeleton>;
 
-    explicit AnimSkeleton(const HFMModel& hfmModel);
+    // An avatar's skeleton (humanoidRotationOffsets) gives joints whose axes aren't Mixamo's, and that its FST doesn't
+    // offset, the offsets that make them so (computeHumanoidRotationOffsets); a model entity's or an animation's doesn't.
+    explicit AnimSkeleton(const HFMModel& hfmModel, bool humanoidRotationOffsets = false);
     explicit AnimSkeleton(const std::vector<HFMJoint>& joints, const QMap<int, glm::quat> jointOffsets);
 
     int nameToJointIndex(const QString& jointName) const;
@@ -77,8 +79,13 @@ public:
     const QVariantList& getRotationConstraints() const { return _humanoid.rotationConstraints; }
     const HFMCluster getClusterBindMatricesOriginalValues(int skinDeformerIndex, int clusterIndex) const { return _clusterBindMatrixOriginalValues[skinDeformerIndex][clusterIndex]; }
 
+    // A joint's shape (HFMJointShapeInfo) is in its axes before any humanoid rotation offset: the pose to put after the
+    // joint's for it
+    const AnimPose& getShapeOffset(int jointIndex) const { return _shapeOffsets[jointIndex]; }
+
 protected:
-    void buildSkeletonFromJoints(const std::vector<HFMJoint>& joints, const QMap<int, glm::quat> jointOffsets);
+    void buildSkeletonFromJoints(const std::vector<HFMJoint>& joints, const QMap<int, glm::quat> jointOffsets,
+                                 bool humanoidRotationOffsets = false);
 
     std::vector<HFMJoint> _joints;
     std::vector<int> _parentIndices;
@@ -93,6 +100,8 @@ protected:
     QHash<QString, int> _jointIndicesByName;
     std::vector<std::vector<HFMCluster>> _clusterBindMatrixOriginalValues;
     glm::mat4 _geometryOffset;
+    QMap<int, glm::quat> _jointOffsets;
+    AnimPoseVec _shapeOffsets;
     hfm::HumanoidSettings _humanoid;
 
     // no copies

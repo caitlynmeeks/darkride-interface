@@ -36,6 +36,9 @@ SkeletonModel::SkeletonModel(Avatar* owningAvatar, QObject* parent) :
     // SkeletonModels, and by extention Avatars, use Dual Quaternion skinning.
     _useDualQuaternionSkinning = true;
 
+    // and take Mixamo's joint axes, which animations need, when their own are different
+    _rig.setHumanoidRotationOffsets(true);
+
     // Avatars all cast shadow
     setCanCastShadow(true);
 
