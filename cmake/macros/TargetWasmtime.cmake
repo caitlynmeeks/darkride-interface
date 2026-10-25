@@ -3,9 +3,9 @@
 #  cmake/macros
 #
 #  wasmtime (Apache-2.0 with the LLVM exception, https://wasmtime.dev), the WebAssembly runtime, taken as the
-#  prebuilt C API of a pinned release: a static library and its headers, one archive per platform. It is
-#  deliberately not a vcpkg port: adding a port changes the vcpkg hash and rebuilds every dependency beside the
-#  shared install the other checkouts use.
+#  prebuilt C API of a pinned release: a static library (on Windows its DLL) and its headers, one archive per
+#  platform. It is deliberately not a vcpkg port: adding a port changes the vcpkg hash and rebuilds every dependency
+#  beside the shared install the other checkouts use.
 #
 #  The archive is taken from $TIVOLI_DOWNLOADS/<archive> or ../downloads/<archive> beside this checkout when
 #  either exists, and from GitHub otherwise. Its SHA-256 is checked in every case.
@@ -59,15 +59,19 @@ macro(TARGET_WASMTIME)
         )
         FetchContent_MakeAvailable(wasmtime)
 
-        add_library(wasmtime::wasmtime STATIC IMPORTED)
-        set_target_properties(wasmtime::wasmtime PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${wasmtime_SOURCE_DIR}/include")
         if (WIN32)
+            # the DLL on Windows: the static library carries its own copy of Rust's standard library, as chat's
+            # library does (TargetDarkrideChat.cmake), and MSVC's linker refuses the two in one program
+            # (LNK2005, rust_eh_personality). fixup_bundle copies wasmtime.dll beside each program after its build.
+            add_library(wasmtime::wasmtime SHARED IMPORTED)
             set_target_properties(wasmtime::wasmtime PROPERTIES
-                IMPORTED_LOCATION "${wasmtime_SOURCE_DIR}/lib/wasmtime.lib"
-                # the static library's symbols are not dllimport
-                INTERFACE_COMPILE_DEFINITIONS "WASM_API_EXTERN=;WASI_API_EXTERN="
-                INTERFACE_LINK_LIBRARIES "ws2_32;advapi32;userenv;ntdll;shell32;ole32;bcrypt")
+                INTERFACE_INCLUDE_DIRECTORIES "${wasmtime_SOURCE_DIR}/include"
+                IMPORTED_LOCATION "${wasmtime_SOURCE_DIR}/lib/wasmtime.dll"
+                IMPORTED_IMPLIB "${wasmtime_SOURCE_DIR}/lib/wasmtime.dll.lib")
+            add_paths_to_fixup_libs("${wasmtime_SOURCE_DIR}/lib")
         else()
+            add_library(wasmtime::wasmtime STATIC IMPORTED)
+            set_target_properties(wasmtime::wasmtime PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${wasmtime_SOURCE_DIR}/include")
             set_target_properties(wasmtime::wasmtime PROPERTIES IMPORTED_LOCATION "${wasmtime_SOURCE_DIR}/lib/libwasmtime.a")
             if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 set_target_properties(wasmtime::wasmtime PROPERTIES INTERFACE_LINK_LIBRARIES "pthread;dl;m")
