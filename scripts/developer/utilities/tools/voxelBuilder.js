@@ -112,7 +112,7 @@
     var HINTS = [
         { text: "LMB place",
           color: { red: 90, green: 230, blue: 130 } },
-        { text: "SHIFT LMB erase",
+        { text: "RMB click erase",
           color: { red: 255, green: 105, blue: 95 } },
         { text: "click a colour",
           color: { red: 255, green: 210, blue: 80 } },
@@ -139,6 +139,7 @@
         hudHeight: 0,
         placed: 0,
         warned: false,
+        rightPress: null,
         history: []
     };
 
@@ -470,18 +471,86 @@
     }
 
     /**
+     * Delete the tagged voxel under the mouse.
+     *
+     * @param {object} event - The mouse event to pick with.
+     * @returns {void}
+     */
+    function eraseAt(event) {
+        var hit = pick(event);
+        if (hit.intersects) {
+            eraseHit(hit);
+        }
+    }
+
+    /**
      * Delete the voxel under the mouse, leaving everything else alone.
      *
      * @param {object} event - The Shift + left mouse press event.
      * @returns {void}
      */
     function eraseVoxel(event) {
-        if (!canEdit()) {
+        if (canEdit()) {
+            eraseAt(event);
+        }
+    }
+
+    /**
+     * Return whether two quaternions are effectively the same orientation.
+     *
+     * @param {object} first - The first quaternion.
+     * @param {object} second - The second quaternion.
+     * @returns {boolean} True when the dot product is near one.
+     */
+    function sameOrientation(first, second) {
+        var dot = first.x * second.x + first.y * second.y +
+                  first.z * second.z + first.w * second.w;
+        return Math.abs(dot) > 0.9995;
+    }
+
+    /**
+     * Remember the camera orientation when the right button goes down.
+     *
+     * @param {object} event - The right mouse press event.
+     * @returns {void}
+     */
+    function rememberRightPress(event) {
+        state.rightPress = {
+            orientation: Camera.orientation,
+            x: event.x,
+            y: event.y
+        };
+    }
+
+    /**
+     * Return whether a right press and release was a click, not a look.
+     *
+     * @param {object} event - The right mouse release event.
+     * @param {object} press - The remembered press details.
+     * @returns {boolean} True for a click that did not turn or move.
+     */
+    function isRightClick(event, press) {
+        if (!sameOrientation(press.orientation, Camera.orientation)) {
+            return false;
+        }
+        return Math.abs(event.x - press.x) <= 4 &&
+               Math.abs(event.y - press.y) <= 4;
+    }
+
+    /**
+     * Erase on a right click that did not turn the camera.
+     *
+     * @param {object} event - The right mouse release event.
+     * @returns {void}
+     */
+    function onMouseRelease(event) {
+        if (!event.isRightButton || !state.rightPress) {
             return;
         }
-        var hit = pick(event);
-        if (hit.intersects) {
-            eraseHit(hit);
+        var press = state.rightPress;
+        state.rightPress = null;
+        if (canEdit() && isRightClick(event, press)) {
+            eraseAt(event);
         }
     }
 
@@ -1008,6 +1077,7 @@
         }
         removeHud();
         Controller.mousePressEvent.disconnect(onMouse);
+        Controller.mouseReleaseEvent.disconnect(onMouseRelease);
         Controller.keyPressEvent.disconnect(onKey);
     }
 
@@ -1041,6 +1111,20 @@
     }
 
     /**
+     * Handle a world press by remembering a right press or placing with left.
+     *
+     * @param {object} event - The mouse press event.
+     * @returns {void}
+     */
+    function onWorldPress(event) {
+        if (event.isRightButton) {
+            rememberRightPress(event);
+            return;
+        }
+        onWorldMouse(event);
+    }
+
+    /**
      * Route a mouse press to the HUD or to the world.
      *
      * @param {object} event - The mouse press event.
@@ -1051,7 +1135,7 @@
             onHudMouse(event);
             return;
         }
-        onWorldMouse(event);
+        onWorldPress(event);
     }
 
     // Shift-key actions for the ground, undo and HUD.
@@ -1111,6 +1195,7 @@
         state.groundID = findGround();
         createHud();
         Controller.mousePressEvent.connect(onMouse);
+        Controller.mouseReleaseEvent.connect(onMouseRelease);
         Controller.keyPressEvent.connect(onKey);
         state.interval = Script.setInterval(layoutHud, 1000);
         Script.scriptEnding.connect(cleanup);
