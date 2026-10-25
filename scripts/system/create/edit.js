@@ -161,21 +161,14 @@
 	var EntityShapeVisualizer = Script.require(
 		"./modules/entityShapeVisualizer.js"
 	);
-	var entityShapeVisualizer = null;
-	try {
-		var _ev = new EntityShapeVisualizer(["Zone"]);
-		if (_ev && _ev.cleanup) {
-			try { _ev.cleanup(); } catch (e) {}
-		}
-	} catch (e) {}
-	entityShapeVisualizer = null;
+	var entityShapeVisualizer = new EntityShapeVisualizer(["Zone"]);
 
 	var entityListTool = new EntityListTool(shouldUseEditTabletApp);
 
 	selectionManager.addEventListener(function () {
 		selectionDisplay.updateHandles();
 		entityIconOverlayManager.updatePositions();
-		// entityShapeVisualizer disabled to prevent local white helper overlays
+		entityShapeVisualizer.setEntities(selectionManager.selections);
 	});
 
 	var DEGREES_TO_RADIANS = Math.PI / 180.0;

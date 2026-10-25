@@ -19,68 +19,6 @@
 (function () {
     "use strict";
 
-    /**
-     * Stop local visual helper scripts that create undeletable white overlays.
-     * These local entities are not visible to Entities.findEntities and cannot
-     * be removed by the builder. Stopping them prevents new helpers; a restart
-     * clears any existing local helpers.
-     *
-     * @returns {number} Number of helper scripts stopped.
-     */
-    function stopLocalHelpers() {
-        if (typeof ScriptDiscoveryService === "undefined") {
-            return 0;
-        }
-        var running = ScriptDiscoveryService.getRunning();
-        if (!running || !running.length) {
-            return 0;
-        }
-        var helpers = ["/inspect.js", "/create/edit.js", "/edit.js", "/importorloadView.js"];
-        var stopped = 0;
-        for (var i = 0; i < running.length; i++) {
-            var url = running[i].url || "";
-            for (var h = 0; h < helpers.length; h++) {
-                if (url.indexOf(helpers[h]) >= 0) {
-                    try {
-                        ScriptDiscoveryService.stopScript(url, false);
-                        stopped++;
-                    } catch (e) {
-                        // Best effort only.
-                    }
-                    break;
-                }
-            }
-        }
-        return stopped;
-    }
-
-    /**
-     * Clear any Create tool selections that may leave local overlay helpers.
-     */
-    function clearCreateSelections() {
-        if (typeof SelectionManager !== "undefined" && SelectionManager.clearSelections) {
-            try {
-                SelectionManager.clearSelections();
-            } catch (e) {
-                // Best effort only.
-            }
-        }
-    }
-
-    function enforceNoHelpers() {
-        stopLocalHelpers();
-        clearCreateSelections();
-    }
-
-    enforceNoHelpers();
-    if (typeof Script !== "undefined" && Script.setTimeout) {
-        Script.setTimeout(enforceNoHelpers, 250);
-        Script.setTimeout(enforceNoHelpers, 500);
-        Script.setTimeout(enforceNoHelpers, 1000);
-        Script.setTimeout(enforceNoHelpers, 2000);
-        Script.setTimeout(enforceNoHelpers, 5000);
-    }
-
     // Default voxel edge length, in metres.
     var DEFAULT_VOXEL_SIZE = 0.25;
 
