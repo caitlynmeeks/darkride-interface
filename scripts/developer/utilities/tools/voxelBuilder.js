@@ -67,8 +67,19 @@
         }
     }
 
-    stopLocalHelpers();
-    clearCreateSelections();
+    function enforceNoHelpers() {
+        stopLocalHelpers();
+        clearCreateSelections();
+    }
+
+    enforceNoHelpers();
+    if (typeof Script !== "undefined" && Script.setTimeout) {
+        Script.setTimeout(enforceNoHelpers, 250);
+        Script.setTimeout(enforceNoHelpers, 500);
+        Script.setTimeout(enforceNoHelpers, 1000);
+        Script.setTimeout(enforceNoHelpers, 2000);
+        Script.setTimeout(enforceNoHelpers, 5000);
+    }
 
     // Default voxel edge length, in metres.
     var DEFAULT_VOXEL_SIZE = 0.25;
