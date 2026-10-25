@@ -1460,28 +1460,133 @@
     }
 
     /**
-     * Re-apply the saved colours to every voxel and ground after a reload.
+     * Return whether a colour is white or near white.
      *
+     * @param {object} color - The entity colour.
+     * @returns {boolean} True when every channel is above 220.
+     */
+    function isWhiteColour(color) {
+        if (!color) { return false; }
+        return color.red > 220 && color.green > 220 && color.blue > 220;
+    }
+
+    /**
+     * Return whether a voxel overlaps any voxel already kept this pass.
+     *
+     * @param {object} props - The candidate voxel properties.
+     * @param {object[]} kept - The properties of voxels already kept.
+     * @returns {boolean} True when the candidate overlaps a kept voxel.
+     */
+    function overlapsKept(props, kept) {
+        for (var i = 0; i < kept.length; i++) {
+            if (boxesOverlap(props.position, props.dimensions,
+                             kept[i].position, kept[i].dimensions)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Put non-white voxels first so an overlap keeps the coloured copy.
+     *
+     * @param {object[]} entries - The voxel records to sort.
      * @returns {void}
      */
-    function refreshVoxelColors() {
+    function sortVoxels(entries) {
+        entries.sort(function (left, right) {
+            return Number(isWhiteColour(left.props.color)) -
+                   Number(isWhiteColour(right.props.color));
+        });
+    }
+
+    /**
+     * Collect the client's visible voxels and their properties.
+     *
+     * @returns {object[]} One record per voxel.
+     */
+    function voxelEntries() {
         var ids = Entities.findEntities({ x: 0, y: 0, z: 0 }, GROUND_SIZE);
-        var props = Entities.getMultipleEntityProperties(ids, ["name", "color"]);
+        var props = Entities.getMultipleEntityProperties(
+            ids, ["name", "color", "position", "dimensions", "entityHostType"]);
+        var entries = [];
         for (var i = 0; i < ids.length; i++) {
-            if (props[i].name === "Voxel" || props[i].name === GROUND_NAME) {
-                Entities.editEntity(ids[i], { color: props[i].color });
+            if (props[i].name === "Voxel") {
+                entries.push({ id: ids[i], props: props[i] });
             }
+        }
+        sortVoxels(entries);
+        return entries;
+    }
+
+    /**
+     * Return whether a voxel is a local white ghost or overlaps a kept voxel.
+     *
+     * @param {object} entry - The voxel ID and properties.
+     * @param {object[]} kept - The properties of voxels already kept.
+     * @returns {boolean} True when the voxel should be deleted.
+     */
+    function isBadVoxel(entry, kept) {
+        if (entry.props.entityHostType !== "domain" &&
+            isWhiteColour(entry.props.color)) {
+            return true;
+        }
+        return overlapsKept(entry.props, kept);
+    }
+
+    /**
+     * Delete one bad voxel or keep it and re-apply its saved colour.
+     *
+     * @param {object} entry - The voxel ID and properties.
+     * @param {object[]} kept - The properties of voxels already kept.
+     * @returns {number} One when the voxel was deleted, zero otherwise.
+     */
+    function repairVoxel(entry, kept) {
+        if (isBadVoxel(entry, kept)) {
+            Entities.deleteEntity(entry.id);
+            return 1;
+        }
+        kept.push(entry.props);
+        Entities.editEntity(entry.id, { color: entry.props.color });
+        return 0;
+    }
+
+    /**
+     * Report how many overlapping voxels a repair pass removed.
+     *
+     * @param {number} removed - The number of deleted voxels.
+     * @returns {void}
+     */
+    function reportRepair(removed) {
+        if (removed > 0) {
+            announce("Removed " + removed + " overlapping voxels");
         }
     }
 
     /**
-     * Schedule colour refreshes after the world has loaded.
+     * Remove white and overlapping voxels and refresh every saved colour.
      *
      * @returns {void}
      */
-    function scheduleColorRefresh() {
-        Script.setTimeout(refreshVoxelColors, 1500);
-        Script.setTimeout(refreshVoxelColors, 5000);
+    function repairVoxels() {
+        var entries = voxelEntries();
+        var kept = [];
+        var removed = 0;
+        for (var i = 0; i < entries.length; i++) {
+            removed += repairVoxel(entries[i], kept);
+        }
+        reportRepair(removed);
+    }
+
+    /**
+     * Schedule repair passes after the world has loaded.
+     *
+     * @returns {void}
+     */
+    function scheduleRepair() {
+        Script.setTimeout(repairVoxels, 3000);
+        Script.setTimeout(repairVoxels, 10000);
+        Script.setTimeout(repairVoxels, 20000);
     }
 
     /**
@@ -1492,7 +1597,7 @@
     function main() {
         state.groundID = findGround();
         settleGround();
-        scheduleColorRefresh();
+        scheduleRepair();
         createHud();
         wireInput();
         state.interval = Script.setInterval(layoutHud, 1000);
