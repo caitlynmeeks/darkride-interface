@@ -53,7 +53,7 @@
     var HISTORY_LIMIT = 200;
 
     // Height of the HUD bar in pixels.
-    var HUD_HEIGHT = 104;
+    var HUD_HEIGHT = 100;
 
     // Background colour of the HUD bar.
     var HUD_BAR = { red: 12, green: 14, blue: 22 };
@@ -77,10 +77,13 @@
     var HUD_LEFT = 20;
 
     // Top of the hint row relative to the bar, in pixels.
-    var HUD_HINT_Y = 74;
+    var HUD_HINT_Y = 40;
+
+    // Height of one compact hint line in pixels.
+    var HUD_HINT_LINE_H = 14;
 
     // Top of the swatch and button row relative to the bar, in pixels.
-    var HUD_ROW_Y = 40;
+    var HUD_ROW_Y = 74;
 
     // Height of one swatch or button in pixels.
     var HUD_ROW_H = 18;
@@ -108,19 +111,17 @@
         { name: "black", red: 18, green: 18, blue: 20 }
     ];
 
-    // Control hints shown along the bottom of the HUD bar.
-    var HINTS = [
-        { text: "LMB place",
-          color: { red: 90, green: 230, blue: 130 } },
-        { text: "RMB click erase",
-          color: { red: 255, green: 105, blue: 95 } },
-        { text: "click a colour",
-          color: { red: 255, green: 210, blue: 80 } },
-        { text: "SHIFT G ground",
-          color: { red: 190, green: 130, blue: 255 } },
-        { text: "SHIFT U undo",
-          color: { red: 255, green: 160, blue: 70 } }
+    // Compact control hints shown in two lines above the swatches.
+    var HINT_LINES = [
+        "LMB place   RMB erase   click a colour",
+        "SHIFT G ground   SHIFT U undo"
     ];
+
+    // Colour used for both compact hint lines.
+    var HUD_HINT_COLOR = { red: 200, green: 205, blue: 215 };
+
+    // Width of the compact hint block, kept clear of the first button.
+    var HUD_HINT_WIDTH = 230;
 
     // Current colour, size, build, ground, HUD and undo state.
     var state = {
@@ -787,15 +788,16 @@
     }
 
     /**
-     * Create the five coloured control hints.
+     * Create the two compact control hint lines.
      *
      * @returns {void}
      */
     function createHints() {
-        for (var i = 0; i < HINTS.length; i++) {
-            addLabel({ x: HUD_LEFT + i * 150, y: hudY(HUD_HINT_Y),
-                       width: 146, height: 22 },
-                     HINTS[i].text, HINTS[i].color, 14);
+        for (var i = 0; i < HINT_LINES.length; i++) {
+            addLabel({ x: HUD_LEFT,
+                       y: hudY(HUD_HINT_Y + i * HUD_HINT_LINE_H),
+                       width: HUD_HINT_WIDTH, height: HUD_HINT_LINE_H },
+                     HINT_LINES[i], HUD_HINT_COLOR, 11);
         }
     }
 
