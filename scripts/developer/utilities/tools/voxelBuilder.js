@@ -25,6 +25,9 @@
     // Half-size voxel edge length for furniture, in metres.
     var HALF_VOXEL_SIZE = 0.125;
 
+    // Small separation used when testing whether two voxel boxes overlap.
+    var OVERLAP_EPSILON = 0.0001;
+
     // Maximum number of voxels this session will place.
     var VOXEL_LIMIT = 4000;
 
@@ -75,6 +78,9 @@
 
     // Colour of the paused status text.
     var HUD_PAUSED_COLOR = { red: 150, green: 154, blue: 164 };
+
+    // Colour of the erase-mode status text.
+    var HUD_ERASE_COLOR = { red: 255, green: 145, blue: 135 };
 
     // Left edge of the HUD content in pixels.
     var HUD_LEFT = 20;
@@ -145,7 +151,6 @@
         { name: "blue", red: 55, green: 110, blue: 225 },
         { name: "purple", red: 140, green: 85, blue: 220 },
         { name: "pink", red: 230, green: 90, blue: 170 },
-        { name: "white", red: 230, green: 230, blue: 230 },
         { name: "black", red: 18, green: 18, blue: 20 },
         { name: "brown", red: 120, green: 72, blue: 40 },
         { name: "tan", red: 210, green: 180, blue: 140 },
@@ -183,6 +188,7 @@
         erasing: false,
         groundID: null,
         groundMaterialID: null,
+        voxelMaterials: {},
         hudIDs: [],
         statusID: null,
         swatchIDs: [],
@@ -377,6 +383,101 @@
     }
 
     /**
+     * Return the unlit material data for one voxel colour.
+     *
+     * @param {object} color - The voxel colour.
+     * @returns {string} The material JSON.
+     */
+    function voxelMaterialData(color) {
+        var safe = color || PALETTE[0];
+        var data = { materialVersion: 1, materials: {
+            albedo: [safe.red / 255, safe.green / 255, safe.blue / 255],
+            roughness: 1.0, metallic: 0.0, unlit: true
+        } };
+        return JSON.stringify(data);
+    }
+
+    /**
+     * Return the local matte material properties for one voxel.
+     *
+     * @param {string} voxelID - The voxel entity ID.
+     * @param {object} color - The voxel colour.
+     * @returns {object} The Material entity properties.
+     */
+    function voxelMaterialProperties(voxelID, color) {
+        return { type: "Material", parentID: voxelID, priority: 1,
+                 materialURL: "materialData", materialData: voxelMaterialData(color),
+                 materialMappingMode: "uv", collisionless: true,
+                 ignorePickIntersection: true };
+    }
+
+    /**
+     * Add the local matte material to a voxel when it is missing.
+     *
+     * @param {string} voxelID - The voxel entity ID.
+     * @param {object} color - The voxel colour.
+     * @returns {void}
+     */
+    function addVoxelMaterial(voxelID, color) {
+        if (!voxelID || state.voxelMaterials[voxelID]) { return; }
+        state.voxelMaterials[voxelID] = Entities.addEntity(voxelMaterialProperties(voxelID, color), "local");
+    }
+
+    /**
+     * Delete the matte material attached to one voxel.
+     *
+     * @param {string} voxelID - The voxel entity ID.
+     * @returns {void}
+     */
+    function removeVoxelMaterial(voxelID) {
+        var materialID = state.voxelMaterials[voxelID];
+        if (materialID) {
+            Entities.deleteEntity(materialID);
+            delete state.voxelMaterials[voxelID];
+        }
+    }
+
+    /**
+     * Add matte materials to every existing voxel.
+     *
+     * @returns {void}
+     */
+    function ensureVoxelMaterials() {
+        var ids = Entities.findEntities({ x: 0, y: 0, z: 0 }, GROUND_SIZE);
+        var props = Entities.getMultipleEntityProperties(ids, ["name", "color"]);
+        for (var i = 0; i < ids.length; i++) {
+            if (props[i].name === "Voxel") {
+                addVoxelMaterial(ids[i], props[i].color);
+            }
+        }
+    }
+
+    /**
+     * Delete every local voxel material.
+     *
+     * @returns {void}
+     */
+    function removeAllVoxelMaterials() {
+        for (var voxelID in state.voxelMaterials) {
+            var materialID = state.voxelMaterials[voxelID];
+            if (materialID) {
+                Entities.deleteEntity(materialID);
+            }
+        }
+        state.voxelMaterials = {};
+    }
+
+    /**
+     * Ensure the ground and every voxel have their local matte materials.
+     *
+     * @returns {void}
+     */
+    function ensureMaterials() {
+        ensureGroundMaterial();
+        ensureVoxelMaterials();
+    }
+
+    /**
      * Return the properties of the black five-mile ground cube.
      *
      * @returns {object} The entity properties.
@@ -527,19 +628,79 @@
     }
 
     /**
-     * Add one voxel at a picked face and update the count.
+     * Return whether two axis-aligned boxes overlap.
+     *
+     * @param {object} aPos - Centre of the first box.
+     * @param {object} aSize - Dimensions of the first box.
+     * @param {object} bPos - Centre of the second box.
+     * @param {object} bSize - Dimensions of the second box.
+     * @returns {boolean} True when the boxes overlap.
+     */
+    function boxesOverlap(aPos, aSize, bPos, bSize) {
+        return Math.abs(aPos.x - bPos.x) < (aSize.x + bSize.x) / 2 - OVERLAP_EPSILON &&
+               Math.abs(aPos.y - bPos.y) < (aSize.y + bSize.y) / 2 - OVERLAP_EPSILON &&
+               Math.abs(aPos.z - bPos.z) < (aSize.z + bSize.z) / 2 - OVERLAP_EPSILON;
+    }
+
+    /**
+     * Return whether a new voxel would overlap an existing tagged voxel.
+     *
+     * @param {object} position - The new voxel centre.
+     * @param {number} size - The new voxel edge length.
+     * @returns {boolean} True when the cell is already filled.
+     */
+    function isOccupied(position, size) {
+        var ids = Entities.findEntities(position, DEFAULT_VOXEL_SIZE * 2);
+        var props = Entities.getMultipleEntityProperties(ids, ["position", "dimensions", "userData"]);
+        var boxSize = { x: size, y: size, z: size };
+        for (var i = 0; i < props.length; i++) {
+            if (taggedRole(props[i].userData) !== "voxel") { continue; }
+            if (boxesOverlap(position, boxSize, props[i].position, props[i].dimensions)) { return true; }
+        }
+        return false;
+    }
+
+    /**
+     * Add one voxel at a picked face if its cell is empty.
      *
      * @param {object} hit - A findRayIntersection result.
      * @returns {void}
      */
     function placeAt(hit) {
-        var properties = voxelProperties(placeCentre(hit),
-                                         PALETTE[state.color]);
+        var position = placeCentre(hit);
+        if (isOccupied(position, currentSize())) {
+            announce("That space is already filled");
+            return;
+        }
+        addVoxel(position);
+    }
+
+    /**
+     * Add one voxel and update the placement count.
+     *
+     * @param {object} position - The snapped voxel centre.
+     * @returns {void}
+     */
+    function addVoxel(position) {
+        var properties = voxelProperties(position, paletteColour());
         var entityID = Entities.addEntity(properties);
         if (!entityID) {
             announce("Could not place voxel");
             return;
         }
+        keepVoxel(entityID, properties.color);
+    }
+
+    /**
+     * Reinforce a new voxel's colour and add it to the history.
+     *
+     * @param {string} entityID - The new voxel entity ID.
+     * @param {object} color - The voxel colour.
+     * @returns {void}
+     */
+    function keepVoxel(entityID, color) {
+        Entities.editEntity(entityID, { color: color });
+        addVoxelMaterial(entityID, color);
         rememberVoxel(entityID);
         state.placed += 1;
         warnLimit();
@@ -571,7 +732,7 @@
      */
     function isVoxel(entityID) {
         var properties = Entities.getEntityProperties(entityID, ["userData"]);
-        return taggedRole(properties.userData) === "voxel";
+        return properties && taggedRole(properties.userData) === "voxel";
     }
 
     /**
@@ -584,10 +745,7 @@
         if (!isVoxel(hit.entityID)) {
             return;
         }
-        Entities.deleteEntity(hit.entityID);
-        if (state.placed > 0) {
-            state.placed -= 1;
-        }
+        deleteVoxel(hit.entityID);
     }
 
     /**
@@ -675,33 +833,76 @@
     }
 
     /**
+     * Remove deleted entities from the undo history and return the next one.
+     *
+     * @returns {string|null} The last voxel that still exists, or null.
+     */
+    function takeLastVoxel() {
+        while (state.history.length > 0) {
+            var entityID = state.history.pop();
+            if (isVoxel(entityID)) {
+                return entityID;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Delete a voxel, its matte material and its placement count.
+     *
+     * @param {string} entityID - The voxel entity ID.
+     * @returns {void}
+     */
+    function deleteVoxel(entityID) {
+        removeVoxelMaterial(entityID);
+        Entities.deleteEntity(entityID);
+        if (state.placed > 0) {
+            state.placed -= 1;
+        }
+    }
+
+    /**
      * Delete the most recently placed voxel.
      *
      * @returns {void}
      */
     function undo() {
-        var entityID = state.history.pop();
+        var entityID = takeLastVoxel();
         if (!entityID) {
             announce("Nothing to undo");
             return;
         }
-        Entities.deleteEntity(entityID);
-        if (state.placed > 0) {
-            state.placed -= 1;
-        }
+        deleteVoxel(entityID);
         announce("Last voxel removed");
     }
 
     /**
      * Select a palette colour by index and refresh the HUD.
      *
-     * @param {number} index - Palette index from 0 to 9.
+     * @param {number} index - Palette index.
      * @returns {void}
      */
     function setColor(index) {
+        if (!isFinite(index) || index < 0 || index >= PALETTE.length) {
+            index = 0;
+        }
         state.color = index;
         updateStatus();
         updateSwatches();
+    }
+
+    /**
+     * Return the selected palette colour, resetting an invalid index to red.
+     *
+     * @returns {object} A valid palette entry.
+     */
+    function paletteColour() {
+        var colour = PALETTE[state.color];
+        if (!colour) {
+            state.color = 0;
+            return PALETTE[0];
+        }
+        return colour;
     }
 
     /**
@@ -740,8 +941,12 @@
      */
     function toggleBuilding() {
         state.building = !state.building;
+        if (state.building) {
+            state.erasing = false;
+        }
         updateStatus();
         updateBuildButton();
+        updateEraseButton();
         updateBarLook();
     }
 
@@ -752,7 +957,11 @@
      */
     function toggleErase() {
         state.erasing = !state.erasing;
+        state.building = !state.erasing;
+        updateStatus();
+        updateBuildButton();
         updateEraseButton();
+        updateBarLook();
         announce(state.erasing ? "Erase mode on" : "Erase mode off");
     }
 
@@ -769,7 +978,7 @@
             text: state.erasing ? "ERASE ON" : "ERASE OFF"
         });
         Overlays.editOverlay(state.eraseButton.panel, {
-            borderColor: state.erasing ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+            borderColor: state.erasing ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
             borderWidth: state.erasing ? 2 : 1
         });
     }
@@ -780,11 +989,13 @@
      * @returns {string} The size and colour, or PAUSED.
      */
     function statusText() {
+        if (state.erasing) {
+            return "ERASE";
+        }
         if (!state.building) {
             return "PAUSED";
         }
-        return currentSize() + " m   " +
-               PALETTE[state.color].name.toUpperCase();
+        return currentSize() + " m   " + paletteColour().name.toUpperCase();
     }
 
     /**
@@ -1041,12 +1252,13 @@
         }
         Overlays.editOverlay(state.statusID, {
             text: statusText(),
-            color: state.building ? PALETTE[state.color] : HUD_PAUSED_COLOR
+            color: state.erasing ? HUD_ERASE_COLOR :
+                   state.building ? HUD_STATUS_COLOR : HUD_PAUSED_COLOR
         });
     }
 
     /**
-     * Highlight the selected swatch with a white outline.
+     * Highlight the selected swatch with a yellow outline.
      *
      * @returns {void}
      */
@@ -1054,7 +1266,7 @@
         for (var i = 0; i < state.swatchIDs.length; i++) {
             var selected = i === state.color;
             Overlays.editOverlay(state.swatchIDs[i], {
-                borderColor: selected ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+                borderColor: selected ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
                 borderWidth: selected ? 2 : 1
             });
         }
@@ -1070,7 +1282,7 @@
             return;
         }
         Overlays.editOverlay(state.sizeButton.panel, {
-            borderColor: state.half ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+            borderColor: state.half ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
             borderWidth: state.half ? 2 : 1
         });
     }
@@ -1088,7 +1300,7 @@
             text: state.building ? "BUILD ON" : "BUILD OFF"
         });
         Overlays.editOverlay(state.buildButton.panel, {
-            borderColor: state.building ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+            borderColor: state.building ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
             borderWidth: state.building ? 2 : 1
         });
     }
@@ -1102,12 +1314,13 @@
         if (state.hudIDs.length < 1) {
             return;
         }
+        var active = state.building || state.erasing;
         Overlays.editOverlay(state.hudIDs[0], {
-            alpha: state.building ? 0.92 : 0.45
+            alpha: active ? 0.92 : 0.45
         });
         for (var i = 0; i < state.swatchIDs.length; i++) {
             Overlays.editOverlay(state.swatchIDs[i], {
-                alpha: state.building ? 1.0 : 0.35
+                alpha: active ? 1.0 : 0.35
             });
         }
     }
@@ -1274,6 +1487,7 @@
         }
         removeHud();
         removeGroundMaterial();
+        removeAllVoxelMaterials();
         disconnectInput();
     }
 
@@ -1401,7 +1615,7 @@
     function main() {
         state.groundID = findGround();
         settleGround();
-        ensureGroundMaterial();
+        ensureMaterials();
         createHud();
         wireInput();
         state.interval = Script.setInterval(layoutHud, 1000);
