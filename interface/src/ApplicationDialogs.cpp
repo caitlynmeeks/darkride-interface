@@ -25,6 +25,7 @@
 #include <QtQml/QQmlContext>
 #include <QtWidgets/QMessageBox>
 #include <AddressManager.h>
+#include <MainWindow.h>
 #include <NetworkAccessManager.h>
 #include <OffscreenUi.h>
 #include <PathUtils.h>
@@ -39,8 +40,8 @@
 #endif
 #include "ui/DialogsManager.h"
 #if defined(Q_OS_WIN)
+#include <Windows.h>   // first: VersionHelpers.h needs its types
 #include <VersionHelpers.h>
-#include <Windows.h>
 #endif
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>
