@@ -53,7 +53,7 @@
     var HISTORY_LIMIT = 200;
 
     // Height of the HUD bar in pixels.
-    var HUD_HEIGHT = 92;
+    var HUD_HEIGHT = 100;
 
     // Background colour of the HUD bar.
     var HUD_BAR = { red: 12, green: 14, blue: 22 };
@@ -80,7 +80,7 @@
     var HUD_HINT_Y = 40;
 
     // Top of the swatch and button row relative to the bar, in pixels.
-    var HUD_ROW_Y = 66;
+    var HUD_ROW_Y = 74;
 
     // Height of one swatch or button in pixels.
     var HUD_ROW_H = 18;
