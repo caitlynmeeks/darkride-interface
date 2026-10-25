@@ -116,7 +116,6 @@ private:
         void calibrateOrUncalibrate(const controller::InputCalibrationData& inputCalibration);
         void calibrate(const controller::InputCalibrationData& inputCalibration);
         void uncalibrate();
-        void sendUserActivityData(QString activity);
         void configureCalibrationSettings(const QJsonObject configurationSettings);
         QJsonObject configurationSettings();
         controller::Pose addOffsetToPuckPose(const controller::InputCalibrationData& inputCalibration, int joint) const;
