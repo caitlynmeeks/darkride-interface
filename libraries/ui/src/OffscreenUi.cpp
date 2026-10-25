@@ -155,8 +155,10 @@ QObject* OffscreenUi::getFlags() {
 }
 
 void OffscreenUi::removeModalDialog(QObject* modal) {
-    if (modal) {
-        _modalDialogListeners.removeOne(modal);
+    // only a listener this keeps (an asynchronous dialog's, made with new): a blocking dialog's listener is its
+    // caller's own, on the caller's stack (waitForInputDialogResult, fileDialog, assetDialog), and is not this one's to
+    // delete
+    if (modal && _modalDialogListeners.removeOne(modal)) {
         modal->deleteLater();
     }
 }
