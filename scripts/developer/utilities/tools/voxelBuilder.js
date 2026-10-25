@@ -37,11 +37,11 @@
     // Name of the single ground entity.
     var GROUND_NAME = "Voxel Ground";
 
-    // User data marker that identifies a voxel by this tool.
-    var VOXEL_TAG = "voxelBuilder.voxel";
+    // JSON user data that identifies a voxel by this tool.
+    var VOXEL_TAG = JSON.stringify({ voxelBuilder: "voxel" });
 
-    // User data marker that identifies the ground by this tool.
-    var GROUND_TAG = "voxelBuilder.ground";
+    // JSON user data that identifies the ground by this tool.
+    var GROUND_TAG = JSON.stringify({ voxelBuilder: "ground" });
 
     // Dimensions of the single black ground cube.
     var GROUND_DIMENSIONS = { x: GROUND_SIZE, y: 1.0, z: GROUND_SIZE };
@@ -237,26 +237,33 @@
     }
 
     /**
-     * Return the name of an entity.
+     * Return the tool role stored in a userData JSON string.
      *
-     * @param {string} entityID - The entity ID.
-     * @returns {string} The entity name, or an empty string.
+     * @param {string} userData - The entity's userData string.
+     * @returns {string|null} "voxel", "ground", or null if not tagged.
      */
-    function entityName(entityID) {
-        var properties = Entities.getEntityProperties(entityID, ["name"]);
-        return properties.name || "";
+    function taggedRole(userData) {
+        if (!userData) {
+            return null;
+        }
+        try {
+            var data = JSON.parse(userData);
+            return data.voxelBuilder || null;
+        } catch (error) {
+            return null;
+        }
     }
 
     /**
-     * Find the single black ground cube by name.
+     * Find the single black ground cube by its userData tag.
      *
      * @returns {string|null} The ground entity ID, or null if it is missing.
      */
     function findGround() {
         var ids = Entities.findEntities({ x: 0, y: 0, z: 0 }, GROUND_SIZE);
-        var names = Entities.getMultipleEntityProperties(ids, "name");
-        for (var i = 0; i < names.length; i++) {
-            if (names[i].name === GROUND_NAME) {
+        var data = Entities.getMultipleEntityProperties(ids, "userData");
+        for (var i = 0; i < data.length; i++) {
+            if (taggedRole(data[i].userData) === "ground") {
                 return ids[i];
             }
         }
@@ -443,7 +450,7 @@
      */
     function isVoxel(entityID) {
         var properties = Entities.getEntityProperties(entityID, ["userData"]);
-        return properties.userData === VOXEL_TAG;
+        return taggedRole(properties.userData) === "voxel";
     }
 
     /**
