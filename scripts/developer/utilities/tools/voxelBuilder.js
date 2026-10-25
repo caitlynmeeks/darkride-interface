@@ -46,6 +46,9 @@
     // Dimensions of the single black ground cube.
     var GROUND_DIMENSIONS = { x: GROUND_SIZE, y: 1.0, z: GROUND_SIZE };
 
+    // Distance the ground is dropped below the voxel bottoms to avoid coplanar z-fighting.
+    var GROUND_DROP = 0.01;
+
     // Colour of the single black ground cube.
     var GROUND_COLOR = { red: 8, green: 8, blue: 10 };
 
@@ -53,7 +56,7 @@
     var HISTORY_LIMIT = 200;
 
     // Height of the HUD bar in pixels.
-    var HUD_HEIGHT = 100;
+    var HUD_HEIGHT = 114;
 
     // Background colour of the HUD bar.
     var HUD_BAR = { red: 12, green: 14, blue: 22 };
@@ -76,14 +79,20 @@
     // Left edge of the HUD content in pixels.
     var HUD_LEFT = 20;
 
-    // Top of the hint row relative to the bar, in pixels.
-    var HUD_HINT_Y = 40;
+    // Number of palette swatches in each row.
+    var HUD_SWATCH_COLUMNS = 12;
 
-    // Height of one compact hint line in pixels.
-    var HUD_HINT_LINE_H = 14;
+    // Top of the first palette row relative to the bar, in pixels.
+    var HUD_SWATCH_Y = 40;
 
-    // Top of the swatch and button row relative to the bar, in pixels.
-    var HUD_ROW_Y = 74;
+    // Vertical step between palette rows in pixels.
+    var HUD_SWATCH_ROW_STEP = 24;
+
+    // Top of the bottom control row, aligned with the last palette row.
+    var HUD_ROW_Y = 88;
+
+    // Top of the upper button row, aligned with the second palette row.
+    var HUD_BUTTON_ROW_A = HUD_SWATCH_Y + HUD_SWATCH_ROW_STEP;
 
     // Height of one swatch or button in pixels.
     var HUD_ROW_H = 18;
@@ -93,6 +102,35 @@
 
     // Horizontal step between swatches in pixels.
     var HUD_SWATCH_STEP = 24;
+
+    // Left edge of the button group, after the palette grid.
+    var HUD_BUTTON_X = HUD_LEFT + HUD_SWATCH_COLUMNS * HUD_SWATCH_STEP;
+
+    // Width of every control button in pixels.
+    var HUD_BUTTON_W = 90;
+
+    // Horizontal step between control buttons in pixels.
+    var HUD_BUTTON_STEP = 100;
+
+    // Dark control colours that keep the white labels readable.
+    var BUTTON_COLORS = {
+        ground: { red: 20, green: 90, blue: 110 },
+        undo: { red: 120, green: 45, blue: 95 },
+        half: { red: 45, green: 105, blue: 65 },
+        build: { red: 80, green: 60, blue: 135 },
+        erase: { red: 140, green: 45, blue: 40 }
+    };
+
+    // Unlit dark material that removes white specular patches from the ground.
+    var GROUND_MATERIAL_DATA = JSON.stringify({
+        materialVersion: 1,
+        materials: {
+            albedo: [0.03, 0.03, 0.04],
+            roughness: 1.0,
+            metallic: 0.0,
+            unlit: true
+        }
+    });
 
     // Outline colour of an unselected swatch.
     var HUD_SWATCH_BORDER = { red: 40, green: 44, blue: 54 };
@@ -108,20 +146,34 @@
         { name: "purple", red: 140, green: 85, blue: 220 },
         { name: "pink", red: 230, green: 90, blue: 170 },
         { name: "white", red: 230, green: 230, blue: 230 },
-        { name: "black", red: 18, green: 18, blue: 20 }
+        { name: "black", red: 18, green: 18, blue: 20 },
+        { name: "brown", red: 120, green: 72, blue: 40 },
+        { name: "tan", red: 210, green: 180, blue: 140 },
+        { name: "gold", red: 212, green: 175, blue: 55 },
+        { name: "lime", red: 140, green: 200, blue: 60 },
+        { name: "olive", red: 110, green: 120, blue: 50 },
+        { name: "teal", red: 0, green: 128, blue: 128 },
+        { name: "navy", red: 30, green: 50, blue: 110 },
+        { name: "sky", red: 120, green: 190, blue: 235 },
+        { name: "maroon", red: 110, green: 35, blue: 45 },
+        { name: "gray", red: 128, green: 128, blue: 128 },
+        { name: "light gray", red: 190, green: 190, blue: 190 },
+        { name: "dark gray", red: 60, green: 60, blue: 65 },
+        { name: "beige", red: 225, green: 210, blue: 180 },
+        { name: "cream", red: 245, green: 240, blue: 220 },
+        { name: "salmon", red: 235, green: 130, blue: 120 },
+        { name: "coral", red: 240, green: 100, blue: 80 },
+        { name: "magenta", red: 200, green: 40, blue: 160 },
+        { name: "violet", red: 95, green: 70, blue: 180 },
+        { name: "turquoise", red: 60, green: 200, blue: 180 },
+        { name: "slate", red: 70, green: 85, blue: 105 },
+        { name: "forest", red: 35, green: 100, blue: 55 },
+        { name: "moss", red: 90, green: 130, blue: 70 },
+        { name: "sand", red: 195, green: 170, blue: 120 },
+        { name: "copper", red: 180, green: 100, blue: 60 },
+        { name: "rose", red: 220, green: 150, blue: 170 },
+        { name: "indigo", red: 75, green: 55, blue: 140 }
     ];
-
-    // Compact control hints shown in two lines above the swatches.
-    var HINT_LINES = [
-        "LMB place   RMB erase   click a colour",
-        "SHIFT G ground   SHIFT U undo"
-    ];
-
-    // Colour used for both compact hint lines.
-    var HUD_HINT_COLOR = { red: 200, green: 205, blue: 215 };
-
-    // Width of the compact hint block, kept clear of the first button.
-    var HUD_HINT_WIDTH = 230;
 
     // Current colour, size, build, ground, HUD and undo state.
     var state = {
@@ -130,6 +182,7 @@
         building: true,
         erasing: false,
         groundID: null,
+        groundMaterialID: null,
         hudIDs: [],
         statusID: null,
         swatchIDs: [],
@@ -275,13 +328,62 @@
     }
 
     /**
+     * Drop an existing ground so its top sits just below the voxel bottoms.
+     *
+     * @returns {void}
+     */
+    function settleGround() {
+        if (!state.groundID) { return; }
+        var props = Entities.getEntityProperties(state.groundID, ["position", "dimensions"]);
+        var top = props.position.y + props.dimensions.y / 2;
+        if (Math.abs(top) > GROUND_DROP / 2) { return; }
+        Entities.editEntity(state.groundID, {
+            position: { x: props.position.x, y: props.position.y - GROUND_DROP, z: props.position.z }
+        });
+    }
+
+    /**
+     * Return the local matte material properties for the ground.
+     *
+     * @returns {object} The Material entity properties.
+     */
+    function groundMaterialProperties() {
+        return { type: "Material", parentID: state.groundID, priority: 1,
+                 materialURL: "materialData", materialData: GROUND_MATERIAL_DATA,
+                 materialMappingMode: "uv", collisionless: true,
+                 ignorePickIntersection: true };
+    }
+
+    /**
+     * Add the local matte material to the ground when it is missing.
+     *
+     * @returns {void}
+     */
+    function ensureGroundMaterial() {
+        if (!state.groundID || state.groundMaterialID) { return; }
+        state.groundMaterialID = Entities.addEntity(groundMaterialProperties(), "local");
+    }
+
+    /**
+     * Delete the local ground material and forget its ID.
+     *
+     * @returns {void}
+     */
+    function removeGroundMaterial() {
+        if (state.groundMaterialID) {
+            Entities.deleteEntity(state.groundMaterialID);
+        }
+        state.groundMaterialID = null;
+    }
+
+    /**
      * Return the properties of the black five-mile ground cube.
      *
      * @returns {object} The entity properties.
      */
     function groundProperties() {
         var props = { type: "Box", shape: "Cube", name: GROUND_NAME };
-        props.position = { x: 0, y: -0.5, z: 0 };
+        props.position = { x: 0, y: -0.5 - GROUND_DROP, z: 0 };
         props.dimensions = GROUND_DIMENSIONS;
         props.color = GROUND_COLOR;
         props.userData = GROUND_TAG;
@@ -300,6 +402,7 @@
             return null;
         }
         state.groundID = Entities.addEntity(groundProperties());
+        ensureGroundMaterial();
         announce("Black five-mile ground created");
         return state.groundID;
     }
@@ -310,6 +413,7 @@
      * @returns {void}
      */
     function removeGround() {
+        removeGroundMaterial();
         Entities.deleteEntity(state.groundID);
         state.groundID = null;
         announce("Ground removed");
@@ -788,32 +892,28 @@
     }
 
     /**
-     * Create the two compact control hint lines.
+     * Return the bounds of one palette swatch.
      *
-     * @returns {void}
+     * @param {number} index - The palette index.
+     * @returns {object} The overlay bounds.
      */
-    function createHints() {
-        for (var i = 0; i < HINT_LINES.length; i++) {
-            addLabel({ x: HUD_LEFT,
-                       y: hudY(HUD_HINT_Y + i * HUD_HINT_LINE_H),
-                       width: HUD_HINT_WIDTH, height: HUD_HINT_LINE_H },
-                     HINT_LINES[i], HUD_HINT_COLOR, 11);
-        }
+    function swatchBounds(index) {
+        var column = index % HUD_SWATCH_COLUMNS;
+        var row = Math.floor(index / HUD_SWATCH_COLUMNS);
+        var x = HUD_LEFT + column * HUD_SWATCH_STEP;
+        var y = HUD_SWATCH_Y + row * HUD_SWATCH_ROW_STEP;
+        return { x: x, y: hudY(y), width: HUD_SWATCH, height: HUD_SWATCH };
     }
 
     /**
-     * Create the ten clickable palette swatches.
+     * Create the clickable palette swatches in their rows.
      *
      * @returns {void}
      */
     function createSwatches() {
         state.swatchIDs = [];
         for (var i = 0; i < PALETTE.length; i++) {
-            var id = addPanel(
-                { x: HUD_LEFT + i * HUD_SWATCH_STEP, y: hudY(HUD_ROW_Y),
-                  width: HUD_SWATCH, height: HUD_SWATCH },
-                PALETTE[i], 1.0, 3);
-            state.swatchIDs.push(id);
+            state.swatchIDs.push(addPanel(swatchBounds(i), PALETTE[i], 1.0, 3));
         }
     }
 
@@ -821,16 +921,17 @@
      * Add one clickable HUD button with a label.
      *
      * @param {number} x - Left edge in pixels.
+     * @param {number} y - Top edge in pixels.
      * @param {number} width - Button width in pixels.
      * @param {string} text - Button text.
      * @param {object} color - Button colour.
      * @param {function} action - Function to run when clicked.
      * @returns {object} The button record.
      */
-    function addButton(x, width, text, color, action) {
-        var panel = addPanel({ x: x, y: hudY(HUD_ROW_Y), width: width,
+    function addButton(x, y, width, text, color, action) {
+        var panel = addPanel({ x: x, y: hudY(y), width: width,
                                height: HUD_ROW_H }, color, 1.0, 4);
-        var label = addLabel({ x: x + 5, y: hudY(HUD_ROW_Y + 2),
+        var label = addLabel({ x: x + 5, y: hudY(y + 2),
                                width: width - 10, height: HUD_ROW_H - 4 },
                              text, HUD_TITLE_COLOR, 11);
         var button = { panel: panel, label: label, action: action };
@@ -844,11 +945,13 @@
      * @returns {void}
      */
     function createToolButtons() {
-        addButton(256, 88, "GROUND", HUD_ACCENT_A, toggleGround);
-        addButton(354, 70, "UNDO", HUD_ACCENT_B, undo);
-        state.sizeButton = addButton(434, 70, "HALF",
-                                     { red: 72, green: 154, blue: 92 },
-                                     toggleSize);
+        addButton(HUD_BUTTON_X, HUD_BUTTON_ROW_A, HUD_BUTTON_W,
+                  "GROUND", BUTTON_COLORS.ground, toggleGround);
+        addButton(HUD_BUTTON_X + HUD_BUTTON_STEP, HUD_BUTTON_ROW_A, HUD_BUTTON_W,
+                  "UNDO", BUTTON_COLORS.undo, undo);
+        state.sizeButton = addButton(HUD_BUTTON_X + 2 * HUD_BUTTON_STEP,
+                                     HUD_BUTTON_ROW_A, HUD_BUTTON_W,
+                                     "HALF", BUTTON_COLORS.half, toggleSize);
     }
 
     /**
@@ -857,12 +960,10 @@
      * @returns {void}
      */
     function createModeButtons() {
-        state.buildButton = addButton(514, 90, "BUILD ON",
-                                      { red: 110, green: 78, blue: 176 },
-                                      toggleBuilding);
-        state.eraseButton = addButton(614, 80, "ERASE OFF",
-                                      { red: 205, green: 55, blue: 45 },
-                                      toggleErase);
+        state.buildButton = addButton(HUD_BUTTON_X + HUD_BUTTON_STEP / 2, HUD_ROW_Y,
+                                      HUD_BUTTON_W, "BUILD ON", BUTTON_COLORS.build, toggleBuilding);
+        state.eraseButton = addButton(HUD_BUTTON_X + HUD_BUTTON_STEP * 1.5, HUD_ROW_Y,
+                                      HUD_BUTTON_W, "ERASE OFF", BUTTON_COLORS.erase, toggleErase);
     }
 
     /**
@@ -894,22 +995,39 @@
     }
 
     /**
-     * Create the full HUD bar, header, hints, swatches and buttons.
+     * Record the window height and the top of the HUD bar.
+     *
+     * @returns {void}
+     */
+    function measureHud() {
+        state.hudHeight = Window.innerHeight;
+        state.hudTop = state.hudHeight - HUD_HEIGHT;
+    }
+
+    /**
+     * Refresh the live HUD text, swatch outlines and bar tint.
+     *
+     * @returns {void}
+     */
+    function refreshHud() {
+        updateStatus();
+        updateSwatches();
+        updateBarLook();
+    }
+
+    /**
+     * Create the full HUD bar, header, swatches and buttons.
      *
      * @returns {void}
      */
     function createHud() {
+        measureHud();
         var width = Window.innerWidth;
-        state.hudHeight = Window.innerHeight;
-        state.hudTop = state.hudHeight - HUD_HEIGHT;
         createBars(width);
         createHeader(width);
-        createHints();
         createSwatches();
         createButtons();
-        updateStatus();
-        updateSwatches();
-        updateBarLook();
+        refreshHud();
     }
 
     /**
@@ -1133,6 +1251,17 @@
     }
 
     /**
+     * Disconnect the mouse and key handlers from the builder.
+     *
+     * @returns {void}
+     */
+    function disconnectInput() {
+        Controller.mousePressEvent.disconnect(onMouse);
+        Controller.mouseReleaseEvent.disconnect(onMouseRelease);
+        Controller.keyPressEvent.disconnect(onKey);
+    }
+
+    /**
      * Disconnect input, stop the timer and remove the HUD when the script
      * stops.
      *
@@ -1144,9 +1273,8 @@
             state.interval = null;
         }
         removeHud();
-        Controller.mousePressEvent.disconnect(onMouse);
-        Controller.mouseReleaseEvent.disconnect(onMouseRelease);
-        Controller.keyPressEvent.disconnect(onKey);
+        removeGroundMaterial();
+        disconnectInput();
     }
 
     /**
@@ -1255,16 +1383,27 @@
     }
 
     /**
-     * Find an existing ground, wire input and build the HUD.
+     * Connect the mouse and key handlers to the builder.
+     *
+     * @returns {void}
+     */
+    function wireInput() {
+        Controller.mousePressEvent.connect(onMouse);
+        Controller.mouseReleaseEvent.connect(onMouseRelease);
+        Controller.keyPressEvent.connect(onKey);
+    }
+
+    /**
+     * Find an existing ground, settle it, wire input and build the HUD.
      *
      * @returns {void}
      */
     function main() {
         state.groundID = findGround();
+        settleGround();
+        ensureGroundMaterial();
         createHud();
-        Controller.mousePressEvent.connect(onMouse);
-        Controller.mouseReleaseEvent.connect(onMouseRelease);
-        Controller.keyPressEvent.connect(onKey);
+        wireInput();
         state.interval = Script.setInterval(layoutHud, 1000);
         Script.scriptEnding.connect(cleanup);
         announce("Voxel builder ready");
