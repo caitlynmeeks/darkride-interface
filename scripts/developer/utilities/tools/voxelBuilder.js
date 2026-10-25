@@ -127,17 +127,6 @@
         erase: { red: 140, green: 45, blue: 40 }
     };
 
-    // Unlit dark material that removes white specular patches from the ground.
-    var GROUND_MATERIAL_DATA = JSON.stringify({
-        materialVersion: 1,
-        materials: {
-            albedo: [0.03, 0.03, 0.04],
-            roughness: 1.0,
-            metallic: 0.0,
-            unlit: true
-        }
-    });
-
     // Outline colour of an unselected swatch.
     var HUD_SWATCH_BORDER = { red: 40, green: 44, blue: 54 };
 
@@ -187,8 +176,6 @@
         building: true,
         erasing: false,
         groundID: null,
-        groundMaterialID: null,
-        voxelMaterials: {},
         hudIDs: [],
         statusID: null,
         swatchIDs: [],
@@ -349,135 +336,6 @@
     }
 
     /**
-     * Return the local matte material properties for the ground.
-     *
-     * @returns {object} The Material entity properties.
-     */
-    function groundMaterialProperties() {
-        return { type: "Material", parentID: state.groundID, priority: 1,
-                 materialURL: "materialData", materialData: GROUND_MATERIAL_DATA,
-                 materialMappingMode: "uv", collisionless: true,
-                 ignorePickIntersection: true };
-    }
-
-    /**
-     * Add the local matte material to the ground when it is missing.
-     *
-     * @returns {void}
-     */
-    function ensureGroundMaterial() {
-        if (!state.groundID || state.groundMaterialID) { return; }
-        state.groundMaterialID = Entities.addEntity(groundMaterialProperties(), "local");
-    }
-
-    /**
-     * Delete the local ground material and forget its ID.
-     *
-     * @returns {void}
-     */
-    function removeGroundMaterial() {
-        if (state.groundMaterialID) {
-            Entities.deleteEntity(state.groundMaterialID);
-        }
-        state.groundMaterialID = null;
-    }
-
-    /**
-     * Return the unlit material data for one voxel colour.
-     *
-     * @param {object} color - The voxel colour.
-     * @returns {string} The material JSON.
-     */
-    function voxelMaterialData(color) {
-        var safe = color || PALETTE[0];
-        var data = { materialVersion: 1, materials: {
-            albedo: [safe.red / 255, safe.green / 255, safe.blue / 255],
-            roughness: 1.0, metallic: 0.0, unlit: true
-        } };
-        return JSON.stringify(data);
-    }
-
-    /**
-     * Return the local matte material properties for one voxel.
-     *
-     * @param {string} voxelID - The voxel entity ID.
-     * @param {object} color - The voxel colour.
-     * @returns {object} The Material entity properties.
-     */
-    function voxelMaterialProperties(voxelID, color) {
-        return { type: "Material", parentID: voxelID, priority: 1,
-                 materialURL: "materialData", materialData: voxelMaterialData(color),
-                 materialMappingMode: "uv", collisionless: true,
-                 ignorePickIntersection: true };
-    }
-
-    /**
-     * Add the local matte material to a voxel when it is missing.
-     *
-     * @param {string} voxelID - The voxel entity ID.
-     * @param {object} color - The voxel colour.
-     * @returns {void}
-     */
-    function addVoxelMaterial(voxelID, color) {
-        if (!voxelID || state.voxelMaterials[voxelID]) { return; }
-        state.voxelMaterials[voxelID] = Entities.addEntity(voxelMaterialProperties(voxelID, color), "local");
-    }
-
-    /**
-     * Delete the matte material attached to one voxel.
-     *
-     * @param {string} voxelID - The voxel entity ID.
-     * @returns {void}
-     */
-    function removeVoxelMaterial(voxelID) {
-        var materialID = state.voxelMaterials[voxelID];
-        if (materialID) {
-            Entities.deleteEntity(materialID);
-            delete state.voxelMaterials[voxelID];
-        }
-    }
-
-    /**
-     * Add matte materials to every existing voxel.
-     *
-     * @returns {void}
-     */
-    function ensureVoxelMaterials() {
-        var ids = Entities.findEntities({ x: 0, y: 0, z: 0 }, GROUND_SIZE);
-        var props = Entities.getMultipleEntityProperties(ids, ["name", "color"]);
-        for (var i = 0; i < ids.length; i++) {
-            if (props[i].name === "Voxel") {
-                addVoxelMaterial(ids[i], props[i].color);
-            }
-        }
-    }
-
-    /**
-     * Delete every local voxel material.
-     *
-     * @returns {void}
-     */
-    function removeAllVoxelMaterials() {
-        for (var voxelID in state.voxelMaterials) {
-            var materialID = state.voxelMaterials[voxelID];
-            if (materialID) {
-                Entities.deleteEntity(materialID);
-            }
-        }
-        state.voxelMaterials = {};
-    }
-
-    /**
-     * Ensure the ground and every voxel have their local matte materials.
-     *
-     * @returns {void}
-     */
-    function ensureMaterials() {
-        ensureGroundMaterial();
-        ensureVoxelMaterials();
-    }
-
-    /**
      * Return the properties of the black five-mile ground cube.
      *
      * @returns {object} The entity properties.
@@ -503,7 +361,6 @@
             return null;
         }
         state.groundID = Entities.addEntity(groundProperties());
-        ensureGroundMaterial();
         announce("Black five-mile ground created");
         return state.groundID;
     }
@@ -514,7 +371,6 @@
      * @returns {void}
      */
     function removeGround() {
-        removeGroundMaterial();
         Entities.deleteEntity(state.groundID);
         state.groundID = null;
         announce("Ground removed");
@@ -700,7 +556,6 @@
      */
     function keepVoxel(entityID, color) {
         Entities.editEntity(entityID, { color: color });
-        addVoxelMaterial(entityID, color);
         rememberVoxel(entityID);
         state.placed += 1;
         warnLimit();
@@ -848,13 +703,12 @@
     }
 
     /**
-     * Delete a voxel, its matte material and its placement count.
+     * Delete a voxel and its placement count.
      *
      * @param {string} entityID - The voxel entity ID.
      * @returns {void}
      */
     function deleteVoxel(entityID) {
-        removeVoxelMaterial(entityID);
         Entities.deleteEntity(entityID);
         if (state.placed > 0) {
             state.placed -= 1;
@@ -1486,8 +1340,6 @@
             state.interval = null;
         }
         removeHud();
-        removeGroundMaterial();
-        removeAllVoxelMaterials();
         disconnectInput();
     }
 
@@ -1608,6 +1460,31 @@
     }
 
     /**
+     * Re-apply the saved colours to every voxel and ground after a reload.
+     *
+     * @returns {void}
+     */
+    function refreshVoxelColors() {
+        var ids = Entities.findEntities({ x: 0, y: 0, z: 0 }, GROUND_SIZE);
+        var props = Entities.getMultipleEntityProperties(ids, ["name", "color"]);
+        for (var i = 0; i < ids.length; i++) {
+            if (props[i].name === "Voxel" || props[i].name === GROUND_NAME) {
+                Entities.editEntity(ids[i], { color: props[i].color });
+            }
+        }
+    }
+
+    /**
+     * Schedule colour refreshes after the world has loaded.
+     *
+     * @returns {void}
+     */
+    function scheduleColorRefresh() {
+        Script.setTimeout(refreshVoxelColors, 1500);
+        Script.setTimeout(refreshVoxelColors, 5000);
+    }
+
+    /**
      * Find an existing ground, settle it, wire input and build the HUD.
      *
      * @returns {void}
@@ -1615,7 +1492,7 @@
     function main() {
         state.groundID = findGround();
         settleGround();
-        ensureMaterials();
+        scheduleColorRefresh();
         createHud();
         wireInput();
         state.interval = Script.setInterval(layoutHud, 1000);
