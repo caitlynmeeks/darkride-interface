@@ -127,6 +127,7 @@
         color: 0,
         half: false,
         building: true,
+        erasing: false,
         groundID: null,
         hudIDs: [],
         statusID: null,
@@ -134,6 +135,7 @@
         buttons: [],
         sizeButton: null,
         buildButton: null,
+        eraseButton: null,
         interval: null,
         hudTop: 0,
         hudHeight: 0,
@@ -379,6 +381,19 @@
     }
 
     /**
+     * Return whether the builder may erase right now.
+     *
+     * @returns {boolean} True when rezzing is allowed, even when paused.
+     */
+    function canErase() {
+        if (!Entities.canRez()) {
+            announce("You cannot build in this world");
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Return whether the builder may add another voxel.
      *
      * @returns {boolean} True when editing is allowed and under the cap.
@@ -490,7 +505,7 @@
      * @returns {void}
      */
     function eraseVoxel(event) {
-        if (canEdit()) {
+        if (canErase()) {
             eraseAt(event);
         }
     }
@@ -549,7 +564,7 @@
         }
         var press = state.rightPress;
         state.rightPress = null;
-        if (canEdit() && isRightClick(event, press)) {
+        if (canErase() && isRightClick(event, press)) {
             eraseAt(event);
         }
     }
@@ -623,6 +638,35 @@
         updateStatus();
         updateBuildButton();
         updateBarLook();
+    }
+
+    /**
+     * Toggle erase mode so left clicks delete voxels.
+     *
+     * @returns {void}
+     */
+    function toggleErase() {
+        state.erasing = !state.erasing;
+        updateEraseButton();
+        announce(state.erasing ? "Erase mode on" : "Erase mode off");
+    }
+
+    /**
+     * Show the erase state on its button.
+     *
+     * @returns {void}
+     */
+    function updateEraseButton() {
+        if (!state.eraseButton) {
+            return;
+        }
+        Overlays.editOverlay(state.eraseButton.label, {
+            text: state.erasing ? "ERASE ON" : "ERASE OFF"
+        });
+        Overlays.editOverlay(state.eraseButton.panel, {
+            borderColor: state.erasing ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+            borderWidth: state.erasing ? 2 : 1
+        });
     }
 
     /**
@@ -793,21 +837,43 @@
     }
 
     /**
-     * Create the ground, undo, half-size and build buttons.
+     * Create the ground, undo and half-size buttons.
      *
      * @returns {void}
      */
-    function createButtons() {
+    function createToolButtons() {
         addButton(256, 88, "GROUND", HUD_ACCENT_A, toggleGround);
         addButton(354, 70, "UNDO", HUD_ACCENT_B, undo);
         state.sizeButton = addButton(434, 70, "HALF",
                                      { red: 72, green: 154, blue: 92 },
                                      toggleSize);
+    }
+
+    /**
+     * Create the build and erase mode buttons.
+     *
+     * @returns {void}
+     */
+    function createModeButtons() {
         state.buildButton = addButton(514, 90, "BUILD ON",
                                       { red: 110, green: 78, blue: 176 },
                                       toggleBuilding);
+        state.eraseButton = addButton(614, 80, "ERASE OFF",
+                                      { red: 205, green: 55, blue: 45 },
+                                      toggleErase);
+    }
+
+    /**
+     * Create the HUD buttons and apply their initial state.
+     *
+     * @returns {void}
+     */
+    function createButtons() {
+        createToolButtons();
+        createModeButtons();
         updateSizeButton();
         updateBuildButton();
+        updateEraseButton();
     }
 
     /**
@@ -1103,7 +1169,7 @@
         if (!event.isLeftButton) {
             return;
         }
-        if (event.isShifted) {
+        if (event.isShifted || state.erasing) {
             eraseVoxel(event);
             return;
         }
