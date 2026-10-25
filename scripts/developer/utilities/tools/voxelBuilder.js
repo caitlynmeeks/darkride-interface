@@ -230,7 +230,14 @@
      */
     function pick(event) {
         var ray = Camera.computePickRay(event.x, event.y);
-        return Entities.findRayIntersection(ray, true, [], [], true);
+        var hit = Entities.findRayIntersection(ray, true, [], [], true);
+        if (!hit || !hit.intersects) {
+            hit = Entities.findRayIntersection(ray, true);
+        }
+        if (!hit || !hit.intersects) {
+            hit = Entities.findRayIntersection(ray, false);
+        }
+        return hit;
     }
 
     /**
@@ -601,29 +608,46 @@
         return properties.name === "Voxel";
     }
 
+    function isGroundEntity(entityID, props) {
+        if (!entityID) { return false; }
+        if (entityID === state.groundID) { return true; }
+        if (props && (props.name === GROUND_NAME || taggedRole(props.userData) === "ground")) {
+            return true;
+        }
+        return false;
+    }
+
     /**
-     * Delete a picked voxel if it belongs to this tool.
+     * Delete a picked voxel if it belongs to this tool or any non-ground block.
      *
      * @param {object} hit - A findRayIntersection result.
      * @returns {void}
      */
     function eraseHit(hit) {
-        if (!isVoxel(hit.entityID)) {
+        var props = Entities.getEntityProperties(hit.entityID, ["name", "type", "userData"]);
+        if (isGroundEntity(hit.entityID, props)) {
+            announce("Aim at a voxel, not the ground");
             return;
         }
-        deleteVoxel(hit.entityID);
+        Entities.deleteEntity(hit.entityID);
+        if (state.placed > 0) {
+            state.placed -= 1;
+        }
+        announce("Erased " + (props && props.name ? props.name : "voxel"));
     }
 
     /**
-     * Delete the tagged voxel under the mouse.
+     * Delete the voxel under the mouse.
      *
      * @param {object} event - The mouse event to pick with.
      * @returns {void}
      */
     function eraseAt(event) {
         var hit = pick(event);
-        if (hit.intersects) {
+        if (hit && hit.intersects) {
             eraseHit(hit);
+        } else {
+            announce("Nothing under cursor to erase");
         }
     }
 
@@ -649,7 +673,7 @@
     function sameOrientation(first, second) {
         var dot = first.x * second.x + first.y * second.y +
                   first.z * second.z + first.w * second.w;
-        return Math.abs(dot) > 0.9995;
+        return Math.abs(dot) > 0.995;
     }
 
     /**
@@ -677,8 +701,8 @@
         if (!sameOrientation(press.orientation, Camera.orientation)) {
             return false;
         }
-        return Math.abs(event.x - press.x) <= 4 &&
-               Math.abs(event.y - press.y) <= 4;
+        return Math.abs(event.x - press.x) <= 12 &&
+               Math.abs(event.y - press.y) <= 12;
     }
 
     /**
