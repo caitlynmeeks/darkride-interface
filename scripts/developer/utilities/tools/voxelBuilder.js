@@ -1552,6 +1552,45 @@
     }
 
     /**
+     * Return whether an entity is a local white entity.
+     *
+     * @param {object} props - The entity properties.
+     * @returns {boolean} True when the entity is local and white.
+     */
+    function isLocalWhite(props) {
+        return props.entityHostType === "local" && isWhiteColour(props.color);
+    }
+
+    /**
+     * Delete one local white entity.
+     *
+     * @param {string} id - The entity ID.
+     * @param {object} props - The entity properties.
+     * @returns {number} One when deleted, zero otherwise.
+     */
+    function deleteLocalWhite(id, props) {
+        if (!isLocalWhite(props)) { return 0; }
+        Entities.deleteEntity(id);
+        return 1;
+    }
+
+    /**
+     * Delete every local white entity in the build area.
+     *
+     * @returns {number} The number of local white entities deleted.
+     */
+    function purgeLocalWhites() {
+        var ids = Entities.findEntities({ x: 0, y: 0, z: 0 }, GROUND_SIZE);
+        var props = Entities.getMultipleEntityProperties(
+            ids, ["color", "entityHostType"]);
+        var removed = 0;
+        for (var i = 0; i < ids.length; i++) {
+            removed += deleteLocalWhite(ids[i], props[i]);
+        }
+        return removed;
+    }
+
+    /**
      * Report how many overlapping voxels a repair pass removed.
      *
      * @param {number} removed - The number of deleted voxels.
@@ -1571,7 +1610,7 @@
     function repairVoxels() {
         var entries = voxelEntries();
         var kept = [];
-        var removed = 0;
+        var removed = purgeLocalWhites();
         for (var i = 0; i < entries.length; i++) {
             removed += repairVoxel(entries[i], kept);
         }
