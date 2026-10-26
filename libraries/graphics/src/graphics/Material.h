@@ -69,6 +69,9 @@ public:
                                         // dimmed by the sun's shadow. Without it the lightmap holds the baked light
                                         // only and replaces the ambient diffuse term, the sun and the local lights
                                         // running as usual (Unity's Baked Indirect; LIGHTMAPS.md). Goes with the map
+        KEEP_BACK_FACE_NORMAL_BIT,      // a back face is lit with the normal as it comes, not turned to face the viewer
+                                        // (Unity HDRP's double-sided normal mode None): foliage cards whose normals
+                                        // point out of the canopy light alike on both sides. Goes with the cull face mode
 
         NUM_FLAGS,
     };
@@ -250,6 +253,9 @@ public:
     void setLightmapFull(bool value) { _flags.set(LIGHTMAP_FULL_BIT, value); }
     bool isLightmapFull() const { return _flags[LIGHTMAP_FULL_BIT]; }
 
+    void setKeepBackFaceNormal(bool value) { _flags.set(KEEP_BACK_FACE_NORMAL_BIT, value); }
+    bool isKeepBackFaceNormal() const { return _flags[KEEP_BACK_FACE_NORMAL_BIT]; }
+
     void setMapChannel(MapChannel channel, bool value) { _flags.set(EMISSIVE_MAP_BIT + channel, value); }
     bool isMapChannel(MapChannel channel) const { return _flags[EMISSIVE_MAP_BIT + channel]; }
 
@@ -414,6 +420,11 @@ public:
     static const MaterialKey::CullFaceMode DEFAULT_CULL_FACE_MODE;
     void setCullFaceMode(MaterialKey::CullFaceMode cullFaceMode) { _cullFaceMode = cullFaceMode; }
     MaterialKey::CullFaceMode getCullFaceMode() const { return _cullFaceMode; }
+
+    // whether back faces keep the normal or flip it (MaterialKey::KEEP_BACK_FACE_NORMAL_BIT); a key bit that goes with
+    // the cull face mode. Material JSON and glTF material extras call it doubleSidedNormals: "flip" or "keep"
+    void setKeepBackFaceNormal(bool value) { _key.setKeepBackFaceNormal(value); }
+    bool isKeepBackFaceNormal() const { return _key.isKeepBackFaceNormal(); }
 
     // how the lightmap lights the surface (MaterialKey::LIGHTMAP_FULL_BIT); a key bit, so it travels with the map
     static const MaterialKey::LightmapMode DEFAULT_LIGHTMAP_MODE;

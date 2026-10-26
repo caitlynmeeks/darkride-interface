@@ -219,6 +219,11 @@ NetworkMaterialResource::ParsedMaterials NetworkMaterialResource::parseJSONMater
  *         <li><code>"CULL_BACK"</code> (the default) to cull the back faces of the geometry.</li>
  *     </ul>
  *     Set to <code>"fallthrough"</code> to fall through to the material below. <code>"hifi_pbr"</code> model only.
+ * @property {string} doubleSidedNormals="flip" - How the back faces of a double-sided surface are lit:
+ *     <code>"flip"</code> (the default, as glTF asks) turns the normal round to face the viewer;
+ *     <code>"keep"</code> lights them with the normal as it is, as Unity HDRP's double-sided normal mode None does, for
+ *     foliage cards whose normals point out of the canopy. Goes with <code>cullFaceMode</code>, falling through with it.
+ *     A glTF material takes it from its extras (a Blender material's custom property). <code>"hifi_pbr"</code> model only.
  * @property {string} roughnessMap - The URL of the roughness texture image. You can use this or <code>glossMap</code>, but not 
  *     both. 
  *     Set to <code>"fallthrough"</code> to fall through to the material below. <code>"hifi_pbr"</code> model only.
@@ -405,6 +410,12 @@ std::pair<std::string, std::shared_ptr<NetworkMaterial>> NetworkMaterialResource
                             material->setCullFaceMode(mode);
                         }
                     }
+                }
+            } else if (key == "doubleSidedNormals") {
+                // goes with the cull face mode, so it has no fallthrough of its own
+                auto value = materialJSON.value(key);
+                if (value.isString()) {
+                    material->setKeepBackFaceNormal(value.toString() == "keep");
                 }
             } else if (key == "scattering") {
                 auto value = materialJSON.value(key);

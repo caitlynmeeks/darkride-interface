@@ -213,7 +213,8 @@ void main(void) {
     <@else@>
             vec3 fragNormalWS = _normalWS;
     <@endif@>
-        fragNormalWS = evalSafeFrontOrBackFaceNormal(fragNormalWS, _positionWS.xyz);
+        fragNormalWS = evalSafeFrontOrBackFaceNormal(fragNormalWS, _positionWS.xyz,
+                                                     (matKey & KEEP_BACK_FACE_NORMAL_BIT) != 0);
     <@if HIFI_USE_LIGHTMAP@>
         // the baked light's direction shades the normal-mapped normal (LIGHTMAPS.md §3.4)
         if ((matKey & LIGHTMAP_DIRECTION_MAP_BIT) != 0) {
