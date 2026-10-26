@@ -230,14 +230,7 @@
      */
     function pick(event) {
         var ray = Camera.computePickRay(event.x, event.y);
-        var hit = Entities.findRayIntersection(ray, true, [], [], true);
-        if (!hit || !hit.intersects) {
-            hit = Entities.findRayIntersection(ray, true);
-        }
-        if (!hit || !hit.intersects) {
-            hit = Entities.findRayIntersection(ray, false);
-        }
-        return hit;
+        return Entities.findRayIntersection(ray, true, [], [], true);
     }
 
     /**
@@ -602,42 +595,26 @@
         if (!properties) {
             return false;
         }
-        if (taggedRole(properties.userData) === "voxel") {
-            return true;
-        }
-        return properties.name === "Voxel";
-    }
-
-    function isGroundEntity(entityID, props) {
-        if (!entityID) { return false; }
-        if (entityID === state.groundID) { return true; }
-        if (props && (props.name === GROUND_NAME || taggedRole(props.userData) === "ground")) {
-            return true;
-        }
-        return false;
+        return properties.name === "Voxel" && taggedRole(properties.userData) === "voxel";
     }
 
     /**
-     * Delete a picked voxel if it belongs to this tool or any non-ground block.
+     * Delete a picked voxel if it belongs to this tool.
      *
      * @param {object} hit - A findRayIntersection result.
      * @returns {void}
      */
     function eraseHit(hit) {
-        var props = Entities.getEntityProperties(hit.entityID, ["name", "type", "userData"]);
-        if (isGroundEntity(hit.entityID, props)) {
-            announce("Aim at a voxel, not the ground");
+        if (!isVoxel(hit.entityID)) {
+            announce("Aim at a voxel");
             return;
         }
-        Entities.deleteEntity(hit.entityID);
-        if (state.placed > 0) {
-            state.placed -= 1;
-        }
-        announce("Erased " + (props && props.name ? props.name : "voxel"));
+        deleteVoxel(hit.entityID);
+        announce("Erased voxel");
     }
 
     /**
-     * Delete the voxel under the mouse.
+     * Delete the tagged voxel under the mouse.
      *
      * @param {object} event - The mouse event to pick with.
      * @returns {void}
@@ -646,8 +623,6 @@
         var hit = pick(event);
         if (hit && hit.intersects) {
             eraseHit(hit);
-        } else {
-            announce("Nothing under cursor to erase");
         }
     }
 
