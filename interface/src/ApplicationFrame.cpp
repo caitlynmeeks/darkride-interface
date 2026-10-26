@@ -50,8 +50,11 @@
 #include <PickManager.h>
 #include <PointerManager.h>
 #if defined(Q_OS_WIN)
-#include <VersionHelpers.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <Windows.h>
+#include <VersionHelpers.h>
 #endif
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>

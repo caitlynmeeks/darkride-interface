@@ -33,6 +33,14 @@ using namespace render::entities;
 static const float SPHERE_ENTITY_SCALE = 0.5f;
 
 ShapeEntityRenderer::ShapeEntityRenderer(const EntityItemPointer& entity) : Parent(entity) {
+    auto shape = std::static_pointer_cast<ShapeEntityItem>(entity);
+    if (shape) {
+        _shape = shape->getShape();
+        _color = toGlm(shape->getColor());
+        _alpha = shape->getAlpha();
+        _material->setAlbedo(_color);
+        _material->setOpacity(_alpha);
+    }
     addMaterial(graphics::MaterialLayer(_material, 0), "0");
 }
 
@@ -152,6 +160,18 @@ bool ShapeEntityRenderer::needsRenderUpdateFromTypedEntity(const TypedEntityPoin
     // the zone-culling visibility is compared by needsRenderUpdate, not here: this says only whether the entity
     // itself has changed (EntityRenderer::entityHasChanged)
     if (_dimensions != entity->getScaledDimensions()) {
+        return true;
+    }
+
+    if (_shape != entity->getShape()) {
+        return true;
+    }
+
+    if (_color != toGlm(entity->getColor())) {
+        return true;
+    }
+
+    if (_alpha != entity->getAlpha()) {
         return true;
     }
 

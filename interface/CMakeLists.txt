@@ -59,7 +59,7 @@ find_package(Qt5LinguistToolsMacros)
 if (WIN32)
   set(CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} -bigobj")
   add_definitions(-D_USE_MATH_DEFINES) # apparently needed to get M_PI and other defines from cmath/math.h
-  add_definitions(-DWINDOWS_LEAN_AND_MEAN) # needed to make sure windows doesn't go to crazy with its defines
+  add_definitions(-DWIN32_LEAN_AND_MEAN) # needed to make sure windows doesn't go to crazy with its defines
 endif()
 
 # grab the implementation and header files from src dirs
@@ -222,6 +222,7 @@ endif()
 # LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/OPT:ICF' specification
 if (WIN32)
   set_property(TARGET ${TARGET_NAME} APPEND_STRING PROPERTY LINK_FLAGS_DEBUG "/OPT:NOREF /OPT:NOICF")
+  set_property(TARGET ${TARGET_NAME} APPEND_STRING PROPERTY LINK_FLAGS " /FORCE:MULTIPLE")
 endif()
 
 # link required hifi libraries

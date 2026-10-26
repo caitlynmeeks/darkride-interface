@@ -46,8 +46,11 @@
 #include "ui/DialogsManager.h"
 #include "ui/HMDToolsDialog.h"
 #if defined(Q_OS_WIN)
-#include <VersionHelpers.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <Windows.h>
+#include <VersionHelpers.h>
 #endif
 
 using namespace std;

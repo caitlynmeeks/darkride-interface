@@ -37,7 +37,6 @@
 #include <DeferredLightingEffect.h>
 #include <NumericalConstants.h>
 #include <ui-plugins/PluginContainer.h>
-#include <UserActivityLogger.h>
 #include <NumericalConstants.h>
 #include <Preferences.h>
 #include <SettingHandle.h>
@@ -1102,14 +1101,6 @@ void ViveControllerManager::InputDevice::handleTrackedObject(uint32_t deviceInde
 }
 
 void ViveControllerManager::InputDevice::sendUserActivityData(QString activity) {
-    QJsonObject jsonData = {
-        {"num_pucks", (int)_validTrackedObjects.size()},
-        {"configuration", configToString(_preferedConfig)},
-        {"head_puck", (_headConfig == HeadConfig::Puck) ? true : false},
-        {"hand_pucks", (_handConfig == HandConfig::Pucks) ? true : false}
-    };
-
-    UserActivityLogger::getInstance().logAction(activity, jsonData);
 }
 
 void ViveControllerManager::InputDevice::calibrateOrUncalibrate(const controller::InputCalibrationData& inputCalibration) {

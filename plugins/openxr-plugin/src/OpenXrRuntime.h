@@ -20,6 +20,7 @@
 
 #if defined(Q_OS_WIN)
 #include <Windows.h>
+#include <unknwn.h>
 #define XR_USE_PLATFORM_WIN32
 #endif
 #define XR_USE_GRAPHICS_API_OPENGL

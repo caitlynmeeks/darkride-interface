@@ -45,8 +45,8 @@
 #include <GPUIdent.h>
 
 #if defined(Q_OS_WIN)
-#include <VersionHelpers.h>
 #include <Windows.h>
+#include <VersionHelpers.h>
 
 // On Windows PC, NVidia Optimus laptop, we want to enable NVIDIA GPU
 // FIXME seems to be broken.
