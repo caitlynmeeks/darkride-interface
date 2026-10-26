@@ -324,7 +324,8 @@ void JSConsole::setScriptEngine(const ScriptEnginePointer& scriptEngine) {
         _scriptEngine.reset();
     }
 
-    // if scriptEngine is nullptr then create one and keep track of it using _ownScriptEngine
+    // if scriptEngine is nullptr then create one and keep track of it using _ownsScriptEngine
+    _ownsScriptEngine = scriptEngine.isNull();
     if (scriptEngine.isNull()) {
         _scriptEngine = DependencyManager::get<ScriptEngines>()->loadScript(_consoleFileName, false);
     } else {
@@ -338,6 +339,12 @@ void JSConsole::setScriptEngine(const ScriptEnginePointer& scriptEngine) {
 }
 
 void JSConsole::executeCommand(const QString& command) {
+    // a fresh engine after closing the console stopped the last one
+    if (!_scriptEngine) {
+        setScriptEngine();
+    }
+    _typedSinceStop = true;
+
     if (_commandHistory.isEmpty() || _commandHistory.constFirst() != command) {
         _commandHistory.prepend(command);
         if (_commandHistory.length() > MAX_HISTORY_SIZE) {
@@ -376,7 +383,8 @@ void JSConsole::commandFinished() {
         _ui->promptTextEdit->setFocus();
     }
 
-    bool error = (_scriptEngine->hasUncaughtException() || result.isError());
+    // no engine when the console was closed while the command ran
+    bool error = ((_scriptEngine && _scriptEngine->hasUncaughtException()) || result.isError());
     QString gutter = error ? GUTTER_ERROR : GUTTER_PREVIOUS_COMMAND;
     QString resultColor = error ? RESULT_ERROR_STYLE : RESULT_SUCCESS_STYLE;
     QString resultStr = "<span style='" + resultColor + "'>" + result.toString().toHtmlEscaped() + "</span>";
@@ -410,7 +418,26 @@ void JSConsole::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void JSConsole::showEvent(QShowEvent* event) {
+    if (_stoppedOnClose) {
+        _stoppedOnClose = false;
+        appendMessage("", "<span style='" + RESULT_INFO_STYLE + "'>Closing the console stopped everything typed above. "
+                      "Scripts started with Script.load keep running.</span>");
+    }
     _ui->promptTextEdit->setFocus();
+}
+
+void JSConsole::hideEvent(QHideEvent* event) {
+    QWidget::hideEvent(event);
+    // Closing the console stops what was typed into it, as closing a terminal window ends what runs there: its timers
+    // and connections. Scripts it started with Script.load run on in their own engines. Minimizing the window (a
+    // spontaneous hide) stops nothing.
+    if (!event->spontaneous() && _ownsScriptEngine && _typedSinceStop && _scriptEngine) {
+        disconnect(_scriptEngine.data(), nullptr, this, nullptr);
+        _scriptEngine->stop();
+        _scriptEngine.reset();
+        _typedSinceStop = false;
+        _stoppedOnClose = true;
+    }
 }
 
 bool JSConsole::eventFilter(QObject* sender, QEvent* event) {

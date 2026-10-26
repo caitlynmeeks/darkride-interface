@@ -44,6 +44,7 @@ protected:
     virtual bool eventFilter(QObject* sender, QEvent* event) override;
     virtual void mouseReleaseEvent(QMouseEvent* event) override;
     virtual void showEvent(QShowEvent* event) override;
+    virtual void hideEvent(QHideEvent* event) override;
 
 protected slots:
     void scrollToBottom();
@@ -75,6 +76,9 @@ private:
     QList<QString> _commandHistory;
     QString _rootCommand;
     ScriptEnginePointer _scriptEngine;
+    bool _ownsScriptEngine { false };  // made by the console for what is typed into it, not given to it
+    bool _typedSinceStop { false };
+    bool _stoppedOnClose { false };
     static const QString _consoleFileName;
     QJsonArray _apiDocs;
     QCompleter* _completer;
