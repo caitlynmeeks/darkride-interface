@@ -13,12 +13,12 @@
 //  Distributed under the MIT License.
 //
 
-#include "Application.h"
-#if defined(Q_OS_WIN)
-// before QQuickWindow, whose qopengl.h includes the whole of windows.h and with it the old winsock.h: AudioClient.h's
-// webrtc headers include winsock2.h, which can't come after it
+#ifdef _WIN32
+// before anything that brings in windows.h and with it the old winsock.h (QQuickWindow's qopengl.h does, and perhaps
+// what Application.h includes): AudioClient.h's webrtc headers include winsock2.h, which can't come after it
 #include <winsock2.h>
 #endif
+#include "Application.h"
 #include <thread>
 #include <glm/glm.hpp>
 #include <QtCore/QMimeData>
