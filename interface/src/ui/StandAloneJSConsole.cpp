@@ -34,6 +34,10 @@ void StandAloneJSConsole::toggleConsole()  {
         
         _jsConsole = dialog;
     }
+    // none yet while the sign-in dialog is up
+    if (!_jsConsole) {
+        return;
+    }
     _jsConsole->setVisible(!_jsConsole->isVisible());
 }
 
