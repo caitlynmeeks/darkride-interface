@@ -14,6 +14,7 @@
 
 #include <QFutureWatcher>
 #include <QObject>
+#include <QPointer>
 #include <QSharedPointer>
 #include <QCompleter>
 #include <QtCore/QJsonArray>
@@ -78,6 +79,12 @@ private:
     QJsonArray _apiDocs;
     QCompleter* _completer;
     QString _completerModule {""};
+
+    // the newest line, which counts the same message again instead of adding a line
+    QString _lastGutter;
+    QString _lastMessage;
+    int _lastRepeats { 0 };
+    QPointer<QLabel> _lastRepeatsLabel;
 };
 
 

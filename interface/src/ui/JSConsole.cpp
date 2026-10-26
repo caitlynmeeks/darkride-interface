@@ -28,6 +28,9 @@
 
 const int NO_CURRENT_HISTORY_COMMAND = -1;
 const int MAX_HISTORY_SIZE = 1024;
+// The oldest lines go past this many. Each line is a few widgets (~50 KB), and a script failing in a timer sends tens of
+// thousands an hour: kept, they took gigabytes, and opening the console again froze the app for seconds.
+const int MAX_LOG_LINES = 500;
 const QString HISTORY_FILENAME = "JSConsole.history.json";
 
 const QString COMMAND_STYLE = "color: #266a9b;";
@@ -574,6 +577,15 @@ void JSConsole::scrollToBottom() {
 }
 
 void JSConsole::appendMessage(const QString& gutter, const QString& message) {
+    // the same message again counts up on its line: a script failing in a timer repeats its error many times a second
+    if (_lastRepeatsLabel && gutter == _lastGutter && message == _lastMessage) {
+        _lastRepeats++;
+        _lastRepeatsLabel->setText("<span style='" + RESULT_SUCCESS_STYLE + "'>&times;" + QString::number(_lastRepeats) +
+                                   "</span>");
+        _lastRepeatsLabel->show();
+        return;
+    }
+
     QWidget* logLine = new QWidget(_ui->logArea);
     QHBoxLayout* layout = new QHBoxLayout(logLine);
     layout->setMargin(0);
@@ -592,16 +604,34 @@ void JSConsole::appendMessage(const QString& gutter, const QString& message) {
     gutterLabel->setText(gutter);
     messageLabel->setText(message);
 
+    QLabel* repeatsLabel = new QLabel(logLine);
+    repeatsLabel->setStyleSheet("font-size: 14px; font-family: Inconsolata, Lucida Console, Andale Mono, Monaco;");
+    repeatsLabel->hide();
+
     layout->addWidget(gutterLabel);
     layout->addWidget(messageLabel);
+    layout->addWidget(repeatsLabel);
     logLine->setLayout(layout);
 
     layout->setAlignment(gutterLabel, Qt::AlignTop);
+    layout->setAlignment(repeatsLabel, Qt::AlignTop);
 
     layout->setStretch(0, 0);
     layout->setStretch(1, 1);
+    layout->setStretch(2, 0);
 
-    _ui->logArea->layout()->addWidget(logLine);
+    QLayout* logLayout = _ui->logArea->layout();
+    logLayout->addWidget(logLine);
+    _lastGutter = gutter;
+    _lastMessage = message;
+    _lastRepeats = 1;
+    _lastRepeatsLabel = repeatsLabel;
+
+    while (logLayout->count() > MAX_LOG_LINES) {
+        QLayoutItem* item = logLayout->takeAt(0);
+        delete item->widget();
+        delete item;
+    }
 
     _ui->logArea->updateGeometry();
     scrollToBottom();
