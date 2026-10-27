@@ -24,6 +24,8 @@
 #define hifi_EntityTreeRenderer_h
 
 #include <atomic>
+#include <map>
+#include <mutex>
 
 #include <QtCore/QSet>
 #include <QtCore/QStack>
@@ -223,6 +225,22 @@ public:
     static void setRemoveMaterialFromAvatarOperator(std::function<bool(const QUuid&, graphics::MaterialPointer, const std::string&)> removeMaterialFromAvatarOperator) { _removeMaterialFromAvatarOperator = removeMaterialFromAvatarOperator; }
     static bool addMaterialToAvatar(const QUuid& avatarID, graphics::MaterialLayer material, const std::string& parentMaterialName);
     static bool removeMaterialFromAvatar(const QUuid& avatarID, graphics::MaterialPointer material, const std::string& parentMaterialName);
+
+    // MATERIALS BY TAG: a Material entity with no parent whose userData names a tag, { "applyTo": { "tag": "isTree" } },
+    // applies to every Model entity that carries the tag, on the parts its parentMaterialName names, rather than to a
+    // parent (MaterialEntityRenderer). A model carries a tag set to true in the extras of any of its glTF objects (a
+    // Blender custom property) or in its entity's userData. Each ModelEntityRenderer keeps those that match
+    // (applyTaggedMaterials); a change here marks every model changed, so each looks again
+    struct TaggedMaterial {
+        QString tag;
+        graphics::MaterialLayer layer;
+        std::string parts;
+    };
+    using TaggedMaterials = std::map<QUuid, TaggedMaterial>;
+    static void setTaggedMaterial(const QUuid& materialEntityID, const TaggedMaterial& material);
+    static void removeTaggedMaterial(const QUuid& materialEntityID);
+    // the tagged materials and their version, which changes with every change to them
+    static TaggedMaterials getTaggedMaterials(uint32_t& version);
 
     // FROZEN (vehicle path): see the note at the top of this file.
     int getPrevNumEntityUpdates() const { return _prevNumEntityUpdates; }
@@ -444,6 +462,13 @@ private:
     static std::function<bool(const QUuid&, graphics::MaterialPointer, const std::string&)> _removeMaterialFromEntityOperator;
     static std::function<bool(const QUuid&, graphics::MaterialLayer, const std::string&)> _addMaterialToAvatarOperator;
     static std::function<bool(const QUuid&, graphics::MaterialPointer, const std::string&)> _removeMaterialFromAvatarOperator;
+
+    static std::mutex _taggedMaterialsLock;
+    static TaggedMaterials _taggedMaterials;
+    static std::atomic<uint32_t> _taggedMaterialsVersion;
+    uint32_t _seenTaggedMaterialsVersion { 0 };
+    // when the tagged materials have changed, every model renderer updates (on the main thread, before the changes)
+    void recheckTaggedMaterials();
 
 };
 

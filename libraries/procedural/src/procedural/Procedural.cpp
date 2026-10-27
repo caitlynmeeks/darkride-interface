@@ -21,6 +21,7 @@
 #include <GLMHelpers.h>
 #include <NetworkingConstants.h>
 #include <shaders/Shaders.h>
+#include <graphics/ShaderConstants.h>
 
 #include "ShaderConstants.h"
 #include "Logging.h"
@@ -274,8 +275,10 @@ void Procedural::prepare(gpu::Batch& batch,
                          const glm::vec3& size,
                          const glm::quat& orientation,
                          const uint64_t& created,
-                         const ProceduralProgramKey key) {
+                         const ProceduralProgramKey key,
+                         const gpu::BufferPointer& inputsBuffer) {
     std::lock_guard<std::mutex> lock(_mutex);
+    _currentInputsBuffer = inputsBuffer ? inputsBuffer : _standardInputsBuffer;
     _entityDimensions = size;
     _entityPosition = position;
     _entityOrientation = glm::mat3_cast(orientation);
@@ -369,6 +372,13 @@ void Procedural::prepare(gpu::Batch& batch,
                     reflection->textures["iChannel" + std::to_string(i)] = procedural::slot::texture::Channel0 + i;
                 }
                 reflection->uniformBuffers["standardInputsBuffer"] = procedural::slot::buffer::Inputs;
+                // the material beneath (simple_procedural.slf's getUnderlying* functions)
+                reflection->uniformBuffers["underlyingMaterialBuffer"] = graphics::slot::buffer::Material;
+                reflection->textures["underlyingAlbedoMap"] = graphics::slot::texture::MaterialAlbedo;
+                reflection->textures["underlyingNormalMap"] = graphics::slot::texture::MaterialNormal;
+                reflection->textures["underlyingRoughnessMap"] = procedural::slot::texture::UnderlyingRoughness;
+                reflection->textures["underlyingMetallicMap"] = procedural::slot::texture::UnderlyingMetallic;
+                reflection->textures["underlyingOcclusionMap"] = procedural::slot::texture::UnderlyingOcclusion;
             }
         }
 
@@ -539,9 +549,13 @@ void Procedural::setupUniforms() {
             }
         }
 
-        _standardInputsBuffer->setSubData(0, _standardInputs);
-        batch.setUniformBuffer(procedural::slot::buffer::Inputs, _standardInputsBuffer, 0, sizeof(StandardInputs));
+        _currentInputsBuffer->setSubData(0, _standardInputs);
+        batch.setUniformBuffer(procedural::slot::buffer::Inputs, _currentInputsBuffer, 0, sizeof(StandardInputs));
     });
+}
+
+gpu::BufferPointer Procedural::makeInputsBuffer() {
+    return std::make_shared<gpu::Buffer>(sizeof(StandardInputs), nullptr);
 }
 
 glm::vec4 Procedural::getColor(const glm::vec4& entityColor) const {

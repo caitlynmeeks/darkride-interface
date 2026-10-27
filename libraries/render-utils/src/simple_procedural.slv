@@ -31,10 +31,12 @@ layout(location=RENDER_UTILS_ATTR_POSITION_MS) out vec4 _positionMS;
 layout(location=RENDER_UTILS_ATTR_POSITION_ES) out vec4 _positionES;
 layout(location=RENDER_UTILS_ATTR_NORMAL_MS) out vec3 _normalMS;
 layout(location=RENDER_UTILS_ATTR_NORMAL_WS) out vec3 _normalWS;
+layout(location=RENDER_UTILS_ATTR_TANGENT_WS) out vec3 _tangentWS;
 layout(location=RENDER_UTILS_ATTR_COLOR) out vec4 _color;
 layout(location=RENDER_UTILS_ATTR_TEXCOORD01) out vec4 _texCoord01;
 
 <@include procedural/ProceduralCommon.slh@>
+<@include ProceduralUnderlyingMaterial.slh@>
 
 #line 1001
 //PROCEDURAL_BLOCK_BEGIN
@@ -86,4 +88,5 @@ void main(void) {
     TransformObject obj = getTransformObject();
     <$transformModelToEyeAndClipPos(cam, obj, positionMS, _positionES, gl_Position)$>
     <$transformModelToWorldDir(cam, obj, normalMS, _normalWS)$>
+    <$transformModelToWorldDir(cam, obj, tangentMS, _tangentWS)$>
 }

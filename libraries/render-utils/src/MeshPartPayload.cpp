@@ -23,6 +23,7 @@
 
 #include "render-utils/ShaderConstants.h"
 #include <procedural/Procedural.h>
+#include <procedural/ShaderConstants.h>
 #include "DeferredLightingEffect.h"
 
 #include "RenderPipelines.h"
@@ -102,10 +103,34 @@ void MeshPartPayload::updateTransformAndBound(const Transform& transform) {
 
 void MeshPartPayload::addMaterial(graphics::MaterialLayer material) {
     _drawMaterials.push(material);
+    if (!material.material || !material.material->isProcedural()) {
+        _underlyingMaterials.push(material);
+    }
 }
 
 void MeshPartPayload::removeMaterial(graphics::MaterialPointer material) {
     _drawMaterials.remove(material);
+    _underlyingMaterials.remove(material);
+}
+
+void MeshPartPayload::bindUnderlyingMaterial(gpu::Batch& batch) {
+    if (_underlyingMaterials.shouldUpdate()) {
+        RenderPipelines::updateMultiMaterial(_underlyingMaterials);
+    }
+    batch.setUniformBuffer(graphics::slot::buffer::Material, _underlyingMaterials.getSchemaBuffer());
+    auto textures = _underlyingMaterials.getTextureTable()->getTextures();
+    batch.setResourceTexture(graphics::slot::texture::MaterialAlbedo, textures[graphics::slot::texture::MaterialAlbedo]);
+    batch.setResourceTexture(graphics::slot::texture::MaterialNormal, textures[graphics::slot::texture::MaterialNormal]);
+    batch.setResourceTexture(procedural::slot::texture::UnderlyingRoughness, textures[graphics::slot::texture::MaterialRoughness]);
+    batch.setResourceTexture(procedural::slot::texture::UnderlyingMetallic, textures[graphics::slot::texture::MaterialMetallic]);
+    batch.setResourceTexture(procedural::slot::texture::UnderlyingOcclusion, textures[graphics::slot::texture::MaterialOcclusion]);
+}
+
+gpu::BufferPointer MeshPartPayload::getProceduralInputs() {
+    if (!_proceduralInputs) {
+        _proceduralInputs = Procedural::makeInputsBuffer();
+    }
+    return _proceduralInputs;
 }
 
 void MeshPartPayload::updateKey(const render::ItemKey& key) {
@@ -239,8 +264,10 @@ void MeshPartPayload::render(RenderArgs* args) {
                 args->_details._materialSwitches++;
             }
         } else {
+            bindUnderlyingMaterial(batch);
             procedural->prepare(batch, _worldFromLocalTransform.getTranslation(), _worldFromLocalTransform.getScale(),
-                                _worldFromLocalTransform.getRotation(), _created, programKey);
+                                _worldFromLocalTransform.getRotation(), _created, programKey,
+                                getProceduralInputs());
             if (forward) {
                 DependencyManager::get<DeferredLightingEffect>()->setupForwardLightingBatch(args, batch);
             }
@@ -686,8 +713,10 @@ void ModelMeshPartPayload::render(RenderArgs* args) {
                 args->_details._materialSwitches++;
             }
         } else {
+            bindUnderlyingMaterial(batch);
             procedural->prepare(batch, _worldFromLocalTransform.getTranslation(), _worldFromLocalTransform.getScale(),
-                                _worldFromLocalTransform.getRotation(), _created, programKey);
+                                _worldFromLocalTransform.getRotation(), _created, programKey,
+                                getProceduralInputs());
             if (forward) {
                 DependencyManager::get<DeferredLightingEffect>()->setupForwardLightingBatch(args, batch);
             }

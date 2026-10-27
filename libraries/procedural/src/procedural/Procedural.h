@@ -36,10 +36,17 @@ const size_t MAX_PROCEDURAL_TEXTURE_CHANNELS{ 4 };
  * @typedef {object} ProceduralData
  * @property {number} version=1 - The version of the procedural shader.
  * @property {string} vertexShaderURL - A link to a vertex shader.  Currently, only GLSL shaders are supported.  The shader must implement a different method depending on the version.
- *     If a procedural material contains a vertex shader, the bounding box of the material entity is used to cull the object to which the material is applied.
+ *     If a procedural material contains a vertex shader, the bounding box of the material entity is used to cull the object to which the material is applied
+ *     (a Material entity applied by tag leaves each model its own).
  * @property {string} fragmentShaderURL - A link to a fragment shader.  Currently, only GLSL shaders are supported.  The shader must implement a different method depending on the version.
  *     <code>shaderUrl</code> is an alias.
  * @property {string[]} channels=[] - An array of input texture URLs.  Currently, up to 4 are supported.
+ *     <p>On a model, the fragment shader can also read the material beneath it (the model's own, or the layers below):
+ *     <code>getUnderlyingAlbedo(uv)</code> (colour and opacity), <code>getUnderlyingNormal(uv)</code> (world space, with
+ *     its normal map), <code>isUnderlyingMasked()</code>, <code>getUnderlyingOpacityCutoff()</code>,
+ *     <code>getUnderlyingRoughness(uv)</code>, <code>getUnderlyingMetallic(uv)</code>, <code>getUnderlyingOcclusion(uv)</code>
+ *     (an ORM texture gives all three) and <code>getUnderlyingEmissive()</code> (its factor),
+ *     with <code>uv</code> the mesh's first texture coordinates, <code>_texCoord0</code>.</p>
  * @property {ProceduralUniforms} uniforms={} - A {@link ProceduralUniforms} object containing all the custom uniforms to be passed to the shader.
  */
 
@@ -112,12 +119,18 @@ public:
     // this variant's program failed to compile on this GPU: known from the frame after its first prepare (the backend
     // compiles when it first draws with it, and draws nothing then)
     bool compilationFailed(const ProceduralProgramKey& key) const;
+    // inputsBuffer, when given, takes this draw's standard inputs (iWorldPosition, iWorldScale, iWorldOrientation...)
+    // instead of the procedural's own buffer: a buffer's content is uploaded once a frame, so one procedural drawn at
+    // many places (a Material entity applied to every model with a tag) needs a buffer per place, or every draw gets
+    // the last one's
     void prepare(gpu::Batch& batch,
                  const glm::vec3& position,
                  const glm::vec3& size,
                  const glm::quat& orientation,
                  const uint64_t& created,
-                 const ProceduralProgramKey key = ProceduralProgramKey());
+                 const ProceduralProgramKey key = ProceduralProgramKey(),
+                 const gpu::BufferPointer& inputsBuffer = nullptr);
+    static gpu::BufferPointer makeInputsBuffer();
 
     glm::vec4 getColor(const glm::vec4& entityColor) const;
     uint64_t getFadeStartTime() const { return _fadeStartTime; }
@@ -197,6 +210,7 @@ protected:
 
     StandardInputs _standardInputs;
     gpu::BufferPointer _standardInputsBuffer;
+    gpu::BufferPointer _currentInputsBuffer;   // the draw's (see prepare), or _standardInputsBuffer
 
     // Entity metadata
     glm::vec3 _entityDimensions;
@@ -245,8 +259,9 @@ public:
                  const glm::vec3& size,
                  const glm::quat& orientation,
                  const uint64_t& created,
-                 const ProceduralProgramKey key = ProceduralProgramKey()) {
-        _procedural.prepare(batch, position, size, orientation, created, key);
+                 const ProceduralProgramKey key = ProceduralProgramKey(),
+                 const gpu::BufferPointer& inputsBuffer = nullptr) {
+        _procedural.prepare(batch, position, size, orientation, created, key, inputsBuffer);
     }
 
     void initializeProcedural();

@@ -27,6 +27,13 @@
 #define PROCEDURAL_TEXTURE_CHANNEL2 4
 #define PROCEDURAL_TEXTURE_CHANNEL3 5
 
+// the roughness, metallic and occlusion maps of the material beneath a procedural on a model part
+// (MeshPartPayload::bindUnderlyingMaterial): the material's own units (4, 2 and 5) are the channels', so these, which no
+// procedural program reads otherwise (the lightmap's two, and the fade mask's, which it has no variant for)
+#define PROCEDURAL_TEXTURE_UNDERLYING_ROUGHNESS 7
+#define PROCEDURAL_TEXTURE_UNDERLYING_METALLIC 8
+#define PROCEDURAL_TEXTURE_UNDERLYING_OCCLUSION 10
+
 // <!
 
 namespace procedural { namespace slot {
@@ -49,6 +56,9 @@ enum Texture {
     Channel1 = PROCEDURAL_TEXTURE_CHANNEL1,
     Channel2 = PROCEDURAL_TEXTURE_CHANNEL2,
     Channel3 = PROCEDURAL_TEXTURE_CHANNEL3,
+    UnderlyingRoughness = PROCEDURAL_TEXTURE_UNDERLYING_ROUGHNESS,
+    UnderlyingMetallic = PROCEDURAL_TEXTURE_UNDERLYING_METALLIC,
+    UnderlyingOcclusion = PROCEDURAL_TEXTURE_UNDERLYING_OCCLUSION,
 };
 } // namespace texture
 

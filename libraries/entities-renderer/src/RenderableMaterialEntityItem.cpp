@@ -14,6 +14,8 @@
 
 #include <procedural/Procedural.h>
 
+#include "EntityTreeRenderer.h"
+
 using namespace render;
 using namespace render::entities;
 
@@ -140,6 +142,15 @@ void MaterialEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPo
             QUuid parentID = entity->getParentID();
             if (parentID != _parentID) {
                 _parentID = parentID;
+                deleteNeeded = true;
+                addNeeded = true;
+            }
+        }
+        {
+            QString applyToTag = QJsonDocument::fromJson(entity->getUserData().toUtf8()).object()
+                .value("applyTo").toObject().value("tag").toString();
+            if (applyToTag != _applyToTag) {
+                _applyToTag = applyToTag;
                 deleteNeeded = true;
                 addNeeded = true;
             }
@@ -274,10 +285,14 @@ void MaterialEntityRenderer::doRender(RenderArgs* args) {
     Q_ASSERT(args->_batch);
     gpu::Batch& batch = *args->_batch;
 
-    // Don't render if our parent is set or our material is null
+    // Don't render if our parent is set (or the models with our tag stand for it) or our material is null
     QUuid parentID;
-    withReadLock([&] { parentID = _parentID; });
-    if (!parentID.isNull()) {
+    bool appliedByTag = false;
+    withReadLock([&] {
+        parentID = _parentID;
+        appliedByTag = !_applyToTag.isEmpty();
+    });
+    if (!parentID.isNull() || appliedByTag) {
         return;
     }
 
@@ -363,6 +378,13 @@ std::shared_ptr<NetworkMaterial> MaterialEntityRenderer::getMaterial() const {
 }
 
 void MaterialEntityRenderer::deleteMaterial(const QUuid& oldParentID, const QString& oldParentMaterialName) {
+    if (_appliedByTag) {
+        EntityTreeRenderer::removeTaggedMaterial(_entityID);
+        _appliedByTag = false;
+        _appliedMaterial = nullptr;
+        return;
+    }
+
     std::shared_ptr<NetworkMaterial> material = _appliedMaterial;
     if (!material || oldParentID.isNull()) {
         return;
@@ -409,6 +431,19 @@ void MaterialEntityRenderer::applyMaterial(const TypedEntityPointer& entity) {
 
     std::shared_ptr<NetworkMaterial> material = getMaterial();
     QUuid parentID = _parentID;
+    if (material && parentID.isNull() && !_applyToTag.isEmpty()) {
+        applyTextureTransform(material);
+        if (material->isProcedural()) {
+            // drawn at every model with the tag, each culled by its own bound (this entity's is somewhere else)
+            std::static_pointer_cast<graphics::ProceduralMaterial>(material)->setBoundOperator(nullptr);
+        }
+        _entityID = entity->getID();
+        EntityTreeRenderer::setTaggedMaterial(_entityID, { _applyToTag, graphics::MaterialLayer(material, _priority),
+                                                           _parentMaterialName.toStdString() });
+        _appliedMaterial = material;
+        _appliedByTag = true;
+        return;
+    }
     if (!material || parentID.isNull()) {
         _appliedMaterial = nullptr;
         return;

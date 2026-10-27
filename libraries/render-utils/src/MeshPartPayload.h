@@ -78,6 +78,8 @@ public:
     std::shared_ptr<const graphics::Mesh> _drawMesh;
 
     graphics::MultiMaterial _drawMaterials;
+    // the layers of _drawMaterials that are not procedural: what a procedural on top draws over (bindUnderlyingMaterial)
+    graphics::MultiMaterial _underlyingMaterials;
     graphics::Mesh::Part _drawPart;
 
     size_t getVerticesCount() const { return _drawMesh ? _drawMesh->getNumVertices() : 0; }
@@ -103,6 +105,13 @@ public:
     static int dumpFrame() { return _dumpFrame.load(std::memory_order_relaxed); }
 
 protected:
+    // for a procedural on top (simple_procedural.slf's getMaterial* functions): the schema and the albedo and normal maps
+    // of the layers beneath it, merged as they are without it. Only those two maps: its channels take units 2 to 5
+    void bindUnderlyingMaterial(gpu::Batch& batch);
+    // this part's own standard inputs for a procedural (Procedural::prepare): one material on many models places each
+    gpu::BufferPointer getProceduralInputs();
+    gpu::BufferPointer _proceduralInputs;
+
     render::ItemKey _itemKey{ render::ItemKey::Builder::opaqueShape().build() };
     bool _cullWithParent{ false };
     uint64_t _created;
