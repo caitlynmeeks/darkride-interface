@@ -25,6 +25,9 @@
     // Half-size voxel edge length for furniture, in metres.
     var HALF_VOXEL_SIZE = 0.125;
 
+    // Small separation used when testing whether two voxel boxes overlap.
+    var OVERLAP_EPSILON = 0.0001;
+
     // Maximum number of voxels this session will place.
     var VOXEL_LIMIT = 4000;
 
@@ -37,14 +40,17 @@
     // Name of the single ground entity.
     var GROUND_NAME = "Voxel Ground";
 
-    // User data marker that identifies a voxel by this tool.
-    var VOXEL_TAG = "voxelBuilder.voxel";
+    // JSON user data that identifies a voxel by this tool.
+    var VOXEL_TAG = JSON.stringify({ voxelBuilder: "voxel" });
 
-    // User data marker that identifies the ground by this tool.
-    var GROUND_TAG = "voxelBuilder.ground";
+    // JSON user data that identifies the ground by this tool.
+    var GROUND_TAG = JSON.stringify({ voxelBuilder: "ground" });
 
     // Dimensions of the single black ground cube.
     var GROUND_DIMENSIONS = { x: GROUND_SIZE, y: 1.0, z: GROUND_SIZE };
+
+    // Distance the ground is dropped below the voxel bottoms to avoid coplanar z-fighting.
+    var GROUND_DROP = 0.01;
 
     // Colour of the single black ground cube.
     var GROUND_COLOR = { red: 8, green: 8, blue: 10 };
@@ -53,7 +59,7 @@
     var HISTORY_LIMIT = 200;
 
     // Height of the HUD bar in pixels.
-    var HUD_HEIGHT = 92;
+    var HUD_HEIGHT = 114;
 
     // Background colour of the HUD bar.
     var HUD_BAR = { red: 12, green: 14, blue: 22 };
@@ -73,14 +79,26 @@
     // Colour of the paused status text.
     var HUD_PAUSED_COLOR = { red: 150, green: 154, blue: 164 };
 
+    // Colour of the erase-mode status text.
+    var HUD_ERASE_COLOR = { red: 255, green: 145, blue: 135 };
+
     // Left edge of the HUD content in pixels.
     var HUD_LEFT = 20;
 
-    // Top of the hint row relative to the bar, in pixels.
-    var HUD_HINT_Y = 40;
+    // Number of palette swatches in each row.
+    var HUD_SWATCH_COLUMNS = 12;
 
-    // Top of the swatch and button row relative to the bar, in pixels.
-    var HUD_ROW_Y = 66;
+    // Top of the first palette row relative to the bar, in pixels.
+    var HUD_SWATCH_Y = 40;
+
+    // Vertical step between palette rows in pixels.
+    var HUD_SWATCH_ROW_STEP = 24;
+
+    // Top of the bottom control row, aligned with the last palette row.
+    var HUD_ROW_Y = 88;
+
+    // Top of the upper button row, aligned with the second palette row.
+    var HUD_BUTTON_ROW_A = HUD_SWATCH_Y + HUD_SWATCH_ROW_STEP;
 
     // Height of one swatch or button in pixels.
     var HUD_ROW_H = 18;
@@ -90,6 +108,24 @@
 
     // Horizontal step between swatches in pixels.
     var HUD_SWATCH_STEP = 24;
+
+    // Left edge of the button group, after the palette grid.
+    var HUD_BUTTON_X = HUD_LEFT + HUD_SWATCH_COLUMNS * HUD_SWATCH_STEP;
+
+    // Width of every control button in pixels.
+    var HUD_BUTTON_W = 90;
+
+    // Horizontal step between control buttons in pixels.
+    var HUD_BUTTON_STEP = 100;
+
+    // Dark control colours that keep the white labels readable.
+    var BUTTON_COLORS = {
+        ground: { red: 20, green: 90, blue: 110 },
+        undo: { red: 120, green: 45, blue: 95 },
+        half: { red: 45, green: 105, blue: 65 },
+        build: { red: 80, green: 60, blue: 135 },
+        erase: { red: 140, green: 45, blue: 40 }
+    };
 
     // Outline colour of an unselected swatch.
     var HUD_SWATCH_BORDER = { red: 40, green: 44, blue: 54 };
@@ -104,22 +140,33 @@
         { name: "blue", red: 55, green: 110, blue: 225 },
         { name: "purple", red: 140, green: 85, blue: 220 },
         { name: "pink", red: 230, green: 90, blue: 170 },
-        { name: "white", red: 230, green: 230, blue: 230 },
-        { name: "black", red: 18, green: 18, blue: 20 }
-    ];
-
-    // Control hints shown along the bottom of the HUD bar.
-    var HINTS = [
-        { text: "LMB place",
-          color: { red: 90, green: 230, blue: 130 } },
-        { text: "SHIFT LMB erase",
-          color: { red: 255, green: 105, blue: 95 } },
-        { text: "click a colour",
-          color: { red: 255, green: 210, blue: 80 } },
-        { text: "SHIFT G ground",
-          color: { red: 190, green: 130, blue: 255 } },
-        { text: "SHIFT U undo",
-          color: { red: 255, green: 160, blue: 70 } }
+        { name: "black", red: 18, green: 18, blue: 20 },
+        { name: "brown", red: 120, green: 72, blue: 40 },
+        { name: "tan", red: 210, green: 180, blue: 140 },
+        { name: "gold", red: 212, green: 175, blue: 55 },
+        { name: "lime", red: 140, green: 200, blue: 60 },
+        { name: "olive", red: 110, green: 120, blue: 50 },
+        { name: "teal", red: 0, green: 128, blue: 128 },
+        { name: "navy", red: 30, green: 50, blue: 110 },
+        { name: "sky", red: 120, green: 190, blue: 235 },
+        { name: "maroon", red: 110, green: 35, blue: 45 },
+        { name: "gray", red: 128, green: 128, blue: 128 },
+        { name: "light gray", red: 190, green: 190, blue: 190 },
+        { name: "dark gray", red: 60, green: 60, blue: 65 },
+        { name: "beige", red: 225, green: 210, blue: 180 },
+        { name: "cream", red: 245, green: 240, blue: 220 },
+        { name: "salmon", red: 235, green: 130, blue: 120 },
+        { name: "coral", red: 240, green: 100, blue: 80 },
+        { name: "magenta", red: 200, green: 40, blue: 160 },
+        { name: "violet", red: 95, green: 70, blue: 180 },
+        { name: "turquoise", red: 60, green: 200, blue: 180 },
+        { name: "slate", red: 70, green: 85, blue: 105 },
+        { name: "forest", red: 35, green: 100, blue: 55 },
+        { name: "moss", red: 90, green: 130, blue: 70 },
+        { name: "sand", red: 195, green: 170, blue: 120 },
+        { name: "copper", red: 180, green: 100, blue: 60 },
+        { name: "rose", red: 220, green: 150, blue: 170 },
+        { name: "indigo", red: 75, green: 55, blue: 140 }
     ];
 
     // Current colour, size, build, ground, HUD and undo state.
@@ -127,6 +174,7 @@
         color: 0,
         half: false,
         building: true,
+        erasing: false,
         groundID: null,
         hudIDs: [],
         statusID: null,
@@ -134,6 +182,7 @@
         buttons: [],
         sizeButton: null,
         buildButton: null,
+        eraseButton: null,
         interval: null,
         hudTop: 0,
         hudHeight: 0,
@@ -237,30 +286,58 @@
     }
 
     /**
-     * Return the name of an entity.
+     * Return the tool role stored in a userData JSON string or plain legacy string.
      *
-     * @param {string} entityID - The entity ID.
-     * @returns {string} The entity name, or an empty string.
+     * @param {string} userData - The entity's userData string.
+     * @returns {string|null} "voxel", "ground", or null if not tagged.
      */
-    function entityName(entityID) {
-        var properties = Entities.getEntityProperties(entityID, ["name"]);
-        return properties.name || "";
+    function taggedRole(userData) {
+        if (!userData) {
+            return null;
+        }
+        if (userData === "voxelBuilder.voxel") {
+            return "voxel";
+        }
+        if (userData === "voxelBuilder.ground") {
+            return "ground";
+        }
+        try {
+            var data = JSON.parse(userData);
+            return data.voxelBuilder || null;
+        } catch (error) {
+            return null;
+        }
     }
 
     /**
-     * Find the single black ground cube by name.
+     * Find the single black ground cube by its userData tag.
      *
      * @returns {string|null} The ground entity ID, or null if it is missing.
      */
     function findGround() {
-        var ids = Entities.findEntities({ x: 0, y: 0, z: 0 }, GROUND_SIZE);
-        var names = Entities.getMultipleEntityProperties(ids, "name");
-        for (var i = 0; i < names.length; i++) {
-            if (names[i].name === GROUND_NAME) {
+        var ids = Entities.findEntitiesByName(GROUND_NAME, { x: 0, y: 0, z: 0 }, GROUND_SIZE, true);
+        for (var i = 0; i < ids.length; i++) {
+            var props = Entities.getEntityProperties(ids[i], ["userData"]);
+            if (props && taggedRole(props.userData) === "ground") {
                 return ids[i];
             }
         }
         return null;
+    }
+
+    /**
+     * Drop an existing ground so its top sits just below the voxel bottoms.
+     *
+     * @returns {void}
+     */
+    function settleGround() {
+        if (!state.groundID) { return; }
+        var props = Entities.getEntityProperties(state.groundID, ["position", "dimensions"]);
+        var top = props.position.y + props.dimensions.y / 2;
+        if (Math.abs(top) > GROUND_DROP / 2) { return; }
+        Entities.editEntity(state.groundID, {
+            position: { x: props.position.x, y: props.position.y - GROUND_DROP, z: props.position.z }
+        });
     }
 
     /**
@@ -270,7 +347,7 @@
      */
     function groundProperties() {
         var props = { type: "Box", shape: "Cube", name: GROUND_NAME };
-        props.position = { x: 0, y: -0.5, z: 0 };
+        props.position = { x: 0, y: -0.5 - GROUND_DROP, z: 0 };
         props.dimensions = GROUND_DIMENSIONS;
         props.color = GROUND_COLOR;
         props.userData = GROUND_TAG;
@@ -371,6 +448,22 @@
     }
 
     /**
+     * Return whether the builder may erase right now.
+     *
+     * @returns {boolean} True when building or erasing is on and rezzing is allowed.
+     */
+    function canErase() {
+        if (!state.building && !state.erasing) {
+            return false;
+        }
+        if (!Entities.canRez()) {
+            announce("You cannot build in this world");
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Return whether the builder may add another voxel.
      *
      * @returns {boolean} True when editing is allowed and under the cap.
@@ -399,14 +492,63 @@
     }
 
     /**
-     * Add one voxel at a picked face and update the count.
+     * Return whether two axis-aligned boxes overlap.
+     *
+     * @param {object} aPos - Centre of the first box.
+     * @param {object} aSize - Dimensions of the first box.
+     * @param {object} bPos - Centre of the second box.
+     * @param {object} bSize - Dimensions of the second box.
+     * @returns {boolean} True when the boxes overlap.
+     */
+    function boxesOverlap(aPos, aSize, bPos, bSize) {
+        return Math.abs(aPos.x - bPos.x) < (aSize.x + bSize.x) / 2 - OVERLAP_EPSILON &&
+               Math.abs(aPos.y - bPos.y) < (aSize.y + bSize.y) / 2 - OVERLAP_EPSILON &&
+               Math.abs(aPos.z - bPos.z) < (aSize.z + bSize.z) / 2 - OVERLAP_EPSILON;
+    }
+
+    /**
+     * Return whether a new voxel would overlap an existing tagged voxel.
+     *
+     * @param {object} position - The new voxel centre.
+     * @param {number} size - The new voxel edge length.
+     * @returns {boolean} True when the cell is already filled.
+     */
+    function isOccupied(position, size) {
+        var ids = Entities.findEntities(position, DEFAULT_VOXEL_SIZE * 2);
+        var boxSize = { x: size, y: size, z: size };
+        for (var i = 0; i < ids.length; i++) {
+            var props = Entities.getEntityProperties(ids[i], ["name", "position", "dimensions", "userData"]);
+            if (!props) { continue; }
+            var role = taggedRole(props.userData);
+            if (role !== "voxel" && props.name !== "Voxel") { continue; }
+            if (boxesOverlap(position, boxSize, props.position, props.dimensions)) { return true; }
+        }
+        return false;
+    }
+
+    /**
+     * Add one voxel at a picked face if its cell is empty.
      *
      * @param {object} hit - A findRayIntersection result.
      * @returns {void}
      */
     function placeAt(hit) {
-        var properties = voxelProperties(placeCentre(hit),
-                                         PALETTE[state.color]);
+        var position = placeCentre(hit);
+        if (isOccupied(position, currentSize())) {
+            announce("That space is already filled");
+            return;
+        }
+        addVoxel(position);
+    }
+
+    /**
+     * Add one voxel and update the placement count.
+     *
+     * @param {object} position - The snapped voxel centre.
+     * @returns {void}
+     */
+    function addVoxel(position) {
+        var properties = voxelProperties(position, paletteColour());
         var entityID = Entities.addEntity(properties);
         if (!entityID) {
             announce("Could not place voxel");
@@ -442,8 +584,11 @@
      * @returns {boolean} True for a tagged voxel, false for anything else.
      */
     function isVoxel(entityID) {
-        var properties = Entities.getEntityProperties(entityID, ["userData"]);
-        return properties.userData === VOXEL_TAG;
+        var properties = Entities.getEntityProperties(entityID, ["name", "userData"]);
+        if (!properties) {
+            return false;
+        }
+        return properties.name === "Voxel" && taggedRole(properties.userData) === "voxel";
     }
 
     /**
@@ -454,11 +599,23 @@
      */
     function eraseHit(hit) {
         if (!isVoxel(hit.entityID)) {
+            announce("Aim at a voxel");
             return;
         }
-        Entities.deleteEntity(hit.entityID);
-        if (state.placed > 0) {
-            state.placed -= 1;
+        deleteVoxel(hit.entityID);
+        announce("Erased voxel");
+    }
+
+    /**
+     * Delete the tagged voxel under the mouse.
+     *
+     * @param {object} event - The mouse event to pick with.
+     * @returns {void}
+     */
+    function eraseAt(event) {
+        var hit = pick(event);
+        if (hit && hit.intersects) {
+            eraseHit(hit);
         }
     }
 
@@ -469,12 +626,36 @@
      * @returns {void}
      */
     function eraseVoxel(event) {
-        if (!canEdit()) {
-            return;
+        if (canErase()) {
+            eraseAt(event);
         }
-        var hit = pick(event);
-        if (hit.intersects) {
-            eraseHit(hit);
+    }
+
+    /**
+     * Remove deleted entities from the undo history and return the next one.
+     *
+     * @returns {string|null} The last voxel that still exists, or null.
+     */
+    function takeLastVoxel() {
+        while (state.history.length > 0) {
+            var entityID = state.history.pop();
+            if (isVoxel(entityID)) {
+                return entityID;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Delete a voxel and its placement count.
+     *
+     * @param {string} entityID - The voxel entity ID.
+     * @returns {void}
+     */
+    function deleteVoxel(entityID) {
+        Entities.deleteEntity(entityID);
+        if (state.placed > 0) {
+            state.placed -= 1;
         }
     }
 
@@ -484,28 +665,42 @@
      * @returns {void}
      */
     function undo() {
-        var entityID = state.history.pop();
+        var entityID = takeLastVoxel();
         if (!entityID) {
             announce("Nothing to undo");
             return;
         }
-        Entities.deleteEntity(entityID);
-        if (state.placed > 0) {
-            state.placed -= 1;
-        }
+        deleteVoxel(entityID);
         announce("Last voxel removed");
     }
 
     /**
      * Select a palette colour by index and refresh the HUD.
      *
-     * @param {number} index - Palette index from 0 to 9.
+     * @param {number} index - Palette index.
      * @returns {void}
      */
     function setColor(index) {
+        if (!isFinite(index) || index < 0 || index >= PALETTE.length) {
+            index = 0;
+        }
         state.color = index;
         updateStatus();
         updateSwatches();
+    }
+
+    /**
+     * Return the selected palette colour, resetting an invalid index to red.
+     *
+     * @returns {object} A valid palette entry.
+     */
+    function paletteColour() {
+        var colour = PALETTE[state.color];
+        if (!colour) {
+            state.color = 0;
+            return PALETTE[0];
+        }
+        return colour;
     }
 
     /**
@@ -544,9 +739,46 @@
      */
     function toggleBuilding() {
         state.building = !state.building;
+        if (state.building) {
+            state.erasing = false;
+        }
         updateStatus();
         updateBuildButton();
+        updateEraseButton();
         updateBarLook();
+    }
+
+    /**
+     * Toggle erase mode so left clicks delete voxels.
+     *
+     * @returns {void}
+     */
+    function toggleErase() {
+        state.erasing = !state.erasing;
+        state.building = !state.erasing;
+        updateStatus();
+        updateBuildButton();
+        updateEraseButton();
+        updateBarLook();
+        announce(state.erasing ? "Erase mode on" : "Erase mode off");
+    }
+
+    /**
+     * Show the erase state on its button.
+     *
+     * @returns {void}
+     */
+    function updateEraseButton() {
+        if (!state.eraseButton) {
+            return;
+        }
+        Overlays.editOverlay(state.eraseButton.label, {
+            text: state.erasing ? "ERASE ON" : "ERASE OFF"
+        });
+        Overlays.editOverlay(state.eraseButton.panel, {
+            borderColor: state.erasing ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
+            borderWidth: state.erasing ? 2 : 1
+        });
     }
 
     /**
@@ -555,11 +787,13 @@
      * @returns {string} The size and colour, or PAUSED.
      */
     function statusText() {
+        if (state.erasing) {
+            return "ERASE";
+        }
         if (!state.building) {
             return "PAUSED";
         }
-        return currentSize() + " m   " +
-               PALETTE[state.color].name.toUpperCase();
+        return currentSize() + " m   " + paletteColour().name.toUpperCase();
     }
 
     /**
@@ -667,31 +901,28 @@
     }
 
     /**
-     * Create the five coloured control hints.
+     * Return the bounds of one palette swatch.
      *
-     * @returns {void}
+     * @param {number} index - The palette index.
+     * @returns {object} The overlay bounds.
      */
-    function createHints() {
-        for (var i = 0; i < HINTS.length; i++) {
-            addLabel({ x: HUD_LEFT + i * 150, y: hudY(HUD_HINT_Y),
-                       width: 146, height: 22 },
-                     HINTS[i].text, HINTS[i].color, 14);
-        }
+    function swatchBounds(index) {
+        var column = index % HUD_SWATCH_COLUMNS;
+        var row = Math.floor(index / HUD_SWATCH_COLUMNS);
+        var x = HUD_LEFT + column * HUD_SWATCH_STEP;
+        var y = HUD_SWATCH_Y + row * HUD_SWATCH_ROW_STEP;
+        return { x: x, y: hudY(y), width: HUD_SWATCH, height: HUD_SWATCH };
     }
 
     /**
-     * Create the ten clickable palette swatches.
+     * Create the clickable palette swatches in their rows.
      *
      * @returns {void}
      */
     function createSwatches() {
         state.swatchIDs = [];
         for (var i = 0; i < PALETTE.length; i++) {
-            var id = addPanel(
-                { x: HUD_LEFT + i * HUD_SWATCH_STEP, y: hudY(HUD_ROW_Y),
-                  width: HUD_SWATCH, height: HUD_SWATCH },
-                PALETTE[i], 1.0, 3);
-            state.swatchIDs.push(id);
+            state.swatchIDs.push(addPanel(swatchBounds(i), PALETTE[i], 1.0, 3));
         }
     }
 
@@ -699,16 +930,17 @@
      * Add one clickable HUD button with a label.
      *
      * @param {number} x - Left edge in pixels.
+     * @param {number} y - Top edge in pixels.
      * @param {number} width - Button width in pixels.
      * @param {string} text - Button text.
      * @param {object} color - Button colour.
      * @param {function} action - Function to run when clicked.
      * @returns {object} The button record.
      */
-    function addButton(x, width, text, color, action) {
-        var panel = addPanel({ x: x, y: hudY(HUD_ROW_Y), width: width,
+    function addButton(x, y, width, text, color, action) {
+        var panel = addPanel({ x: x, y: hudY(y), width: width,
                                height: HUD_ROW_H }, color, 1.0, 4);
-        var label = addLabel({ x: x + 5, y: hudY(HUD_ROW_Y + 2),
+        var label = addLabel({ x: x + 5, y: hudY(y + 2),
                                width: width - 10, height: HUD_ROW_H - 4 },
                              text, HUD_TITLE_COLOR, 11);
         var button = { panel: panel, label: label, action: action };
@@ -717,21 +949,43 @@
     }
 
     /**
-     * Create the ground, undo, half-size and build buttons.
+     * Create the ground, undo and half-size buttons.
+     *
+     * @returns {void}
+     */
+    function createToolButtons() {
+        addButton(HUD_BUTTON_X, HUD_BUTTON_ROW_A, HUD_BUTTON_W,
+                  "GROUND", BUTTON_COLORS.ground, toggleGround);
+        addButton(HUD_BUTTON_X + HUD_BUTTON_STEP, HUD_BUTTON_ROW_A, HUD_BUTTON_W,
+                  "UNDO", BUTTON_COLORS.undo, undo);
+        state.sizeButton = addButton(HUD_BUTTON_X + 2 * HUD_BUTTON_STEP,
+                                     HUD_BUTTON_ROW_A, HUD_BUTTON_W,
+                                     "HALF", BUTTON_COLORS.half, toggleSize);
+    }
+
+    /**
+     * Create the build and erase mode buttons.
+     *
+     * @returns {void}
+     */
+    function createModeButtons() {
+        state.buildButton = addButton(HUD_BUTTON_X + HUD_BUTTON_STEP / 2, HUD_ROW_Y,
+                                      HUD_BUTTON_W, "BUILD ON", BUTTON_COLORS.build, toggleBuilding);
+        state.eraseButton = addButton(HUD_BUTTON_X + HUD_BUTTON_STEP * 1.5, HUD_ROW_Y,
+                                      HUD_BUTTON_W, "ERASE OFF", BUTTON_COLORS.erase, toggleErase);
+    }
+
+    /**
+     * Create the HUD buttons and apply their initial state.
      *
      * @returns {void}
      */
     function createButtons() {
-        addButton(256, 88, "GROUND", HUD_ACCENT_A, toggleGround);
-        addButton(354, 70, "UNDO", HUD_ACCENT_B, undo);
-        state.sizeButton = addButton(434, 70, "HALF",
-                                     { red: 72, green: 154, blue: 92 },
-                                     toggleSize);
-        state.buildButton = addButton(514, 90, "BUILD ON",
-                                      { red: 110, green: 78, blue: 176 },
-                                      toggleBuilding);
+        createToolButtons();
+        createModeButtons();
         updateSizeButton();
         updateBuildButton();
+        updateEraseButton();
     }
 
     /**
@@ -750,22 +1004,39 @@
     }
 
     /**
-     * Create the full HUD bar, header, hints, swatches and buttons.
+     * Record the window height and the top of the HUD bar.
+     *
+     * @returns {void}
+     */
+    function measureHud() {
+        state.hudHeight = Window.innerHeight;
+        state.hudTop = state.hudHeight - HUD_HEIGHT;
+    }
+
+    /**
+     * Refresh the live HUD text, swatch outlines and bar tint.
+     *
+     * @returns {void}
+     */
+    function refreshHud() {
+        updateStatus();
+        updateSwatches();
+        updateBarLook();
+    }
+
+    /**
+     * Create the full HUD bar, header, swatches and buttons.
      *
      * @returns {void}
      */
     function createHud() {
+        measureHud();
         var width = Window.innerWidth;
-        state.hudHeight = Window.innerHeight;
-        state.hudTop = state.hudHeight - HUD_HEIGHT;
         createBars(width);
         createHeader(width);
-        createHints();
         createSwatches();
         createButtons();
-        updateStatus();
-        updateSwatches();
-        updateBarLook();
+        refreshHud();
     }
 
     /**
@@ -779,12 +1050,13 @@
         }
         Overlays.editOverlay(state.statusID, {
             text: statusText(),
-            color: state.building ? PALETTE[state.color] : HUD_PAUSED_COLOR
+            color: state.erasing ? HUD_ERASE_COLOR :
+                   state.building ? HUD_STATUS_COLOR : HUD_PAUSED_COLOR
         });
     }
 
     /**
-     * Highlight the selected swatch with a white outline.
+     * Highlight the selected swatch with a yellow outline.
      *
      * @returns {void}
      */
@@ -792,7 +1064,7 @@
         for (var i = 0; i < state.swatchIDs.length; i++) {
             var selected = i === state.color;
             Overlays.editOverlay(state.swatchIDs[i], {
-                borderColor: selected ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+                borderColor: selected ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
                 borderWidth: selected ? 2 : 1
             });
         }
@@ -808,7 +1080,7 @@
             return;
         }
         Overlays.editOverlay(state.sizeButton.panel, {
-            borderColor: state.half ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+            borderColor: state.half ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
             borderWidth: state.half ? 2 : 1
         });
     }
@@ -826,7 +1098,7 @@
             text: state.building ? "BUILD ON" : "BUILD OFF"
         });
         Overlays.editOverlay(state.buildButton.panel, {
-            borderColor: state.building ? HUD_TITLE_COLOR : HUD_SWATCH_BORDER,
+            borderColor: state.building ? HUD_STATUS_COLOR : HUD_SWATCH_BORDER,
             borderWidth: state.building ? 2 : 1
         });
     }
@@ -840,12 +1112,13 @@
         if (state.hudIDs.length < 1) {
             return;
         }
+        var active = state.building || state.erasing;
         Overlays.editOverlay(state.hudIDs[0], {
-            alpha: state.building ? 0.92 : 0.45
+            alpha: active ? 0.92 : 0.45
         });
         for (var i = 0; i < state.swatchIDs.length; i++) {
             Overlays.editOverlay(state.swatchIDs[i], {
-                alpha: state.building ? 1.0 : 0.35
+                alpha: active ? 1.0 : 0.35
             });
         }
     }
@@ -989,6 +1262,16 @@
     }
 
     /**
+     * Disconnect the mouse and key handlers from the builder.
+     *
+     * @returns {void}
+     */
+    function disconnectInput() {
+        Controller.mousePressEvent.disconnect(onMouse);
+        Controller.keyPressEvent.disconnect(onKey);
+    }
+
+    /**
      * Disconnect input, stop the timer and remove the HUD when the script
      * stops.
      *
@@ -1000,8 +1283,7 @@
             state.interval = null;
         }
         removeHud();
-        Controller.mousePressEvent.disconnect(onMouse);
-        Controller.keyPressEvent.disconnect(onKey);
+        disconnectInput();
     }
 
     /**
@@ -1026,7 +1308,7 @@
         if (!event.isLeftButton) {
             return;
         }
-        if (event.isShifted) {
+        if (event.isShifted || state.erasing) {
             eraseVoxel(event);
             return;
         }
@@ -1096,15 +1378,25 @@
     }
 
     /**
-     * Find an existing ground, wire input and build the HUD.
+     * Connect the mouse and key handlers to the builder.
+     *
+     * @returns {void}
+     */
+    function wireInput() {
+        Controller.mousePressEvent.connect(onMouse);
+        Controller.keyPressEvent.connect(onKey);
+    }
+
+    /**
+     * Find an existing ground, settle it, wire input and build the HUD.
      *
      * @returns {void}
      */
     function main() {
         state.groundID = findGround();
+        settleGround();
         createHud();
-        Controller.mousePressEvent.connect(onMouse);
-        Controller.keyPressEvent.connect(onKey);
+        wireInput();
         state.interval = Script.setInterval(layoutHud, 1000);
         Script.scriptEnding.connect(cleanup);
         announce("Voxel builder ready");
