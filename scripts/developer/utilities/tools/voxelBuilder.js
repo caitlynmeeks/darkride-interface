@@ -188,7 +188,6 @@
         hudHeight: 0,
         placed: 0,
         warned: false,
-        rightPress: null,
         history: []
     };
 
@@ -287,7 +286,7 @@
     }
 
     /**
-     * Return the tool role stored in a userData JSON string.
+     * Return the tool role stored in a userData JSON string or plain legacy string.
      *
      * @param {string} userData - The entity's userData string.
      * @returns {string|null} "voxel", "ground", or null if not tagged.
@@ -295,6 +294,12 @@
     function taggedRole(userData) {
         if (!userData) {
             return null;
+        }
+        if (userData === "voxelBuilder.voxel") {
+            return "voxel";
+        }
+        if (userData === "voxelBuilder.ground") {
+            return "ground";
         }
         try {
             var data = JSON.parse(userData);
@@ -317,7 +322,7 @@
                 return ids[i];
             }
         }
-        return ids.length > 0 ? ids[0] : null;
+        return null;
     }
 
     /**
@@ -408,10 +413,7 @@
         props.color = {
             red: colour.red, green: colour.green, blue: colour.blue
         };
-        props.userData = JSON.stringify({
-            voxelBuilder: "voxel",
-            color: { red: colour.red, green: colour.green, blue: colour.blue }
-        });
+        props.userData = VOXEL_TAG;
         props.collisionless = false;
         return props;
     }
@@ -448,9 +450,12 @@
     /**
      * Return whether the builder may erase right now.
      *
-     * @returns {boolean} True when rezzing is allowed, even when paused.
+     * @returns {boolean} True when building or erasing is on and rezzing is allowed.
      */
     function canErase() {
+        if (!state.building && !state.erasing) {
+            return false;
+        }
         if (!Entities.canRez()) {
             announce("You cannot build in this world");
             return false;
@@ -549,18 +554,6 @@
             announce("Could not place voxel");
             return;
         }
-        keepVoxel(entityID, properties.color);
-    }
-
-    /**
-     * Reinforce a new voxel's colour and add it to the history.
-     *
-     * @param {string} entityID - The new voxel entity ID.
-     * @param {object} color - The voxel colour.
-     * @returns {void}
-     */
-    function keepVoxel(entityID, color) {
-        Entities.editEntity(entityID, { color: color });
         rememberVoxel(entityID);
         state.placed += 1;
         warnLimit();
@@ -634,65 +627,6 @@
      */
     function eraseVoxel(event) {
         if (canErase()) {
-            eraseAt(event);
-        }
-    }
-
-    /**
-     * Return whether two quaternions are effectively the same orientation.
-     *
-     * @param {object} first - The first quaternion.
-     * @param {object} second - The second quaternion.
-     * @returns {boolean} True when the dot product is near one.
-     */
-    function sameOrientation(first, second) {
-        var dot = first.x * second.x + first.y * second.y +
-                  first.z * second.z + first.w * second.w;
-        return Math.abs(dot) > 0.995;
-    }
-
-    /**
-     * Remember the camera orientation when the right button goes down.
-     *
-     * @param {object} event - The right mouse press event.
-     * @returns {void}
-     */
-    function rememberRightPress(event) {
-        state.rightPress = {
-            orientation: Camera.orientation,
-            x: event.x,
-            y: event.y
-        };
-    }
-
-    /**
-     * Return whether a right press and release was a click, not a look.
-     *
-     * @param {object} event - The right mouse release event.
-     * @param {object} press - The remembered press details.
-     * @returns {boolean} True for a click that did not turn or move.
-     */
-    function isRightClick(event, press) {
-        if (!sameOrientation(press.orientation, Camera.orientation)) {
-            return false;
-        }
-        return Math.abs(event.x - press.x) <= 12 &&
-               Math.abs(event.y - press.y) <= 12;
-    }
-
-    /**
-     * Erase on a right click that did not turn the camera.
-     *
-     * @param {object} event - The right mouse release event.
-     * @returns {void}
-     */
-    function onMouseRelease(event) {
-        if (!event.isRightButton || !state.rightPress) {
-            return;
-        }
-        var press = state.rightPress;
-        state.rightPress = null;
-        if (canErase() && isRightClick(event, press)) {
             eraseAt(event);
         }
     }
@@ -1334,7 +1268,6 @@
      */
     function disconnectInput() {
         Controller.mousePressEvent.disconnect(onMouse);
-        Controller.mouseReleaseEvent.disconnect(onMouseRelease);
         Controller.keyPressEvent.disconnect(onKey);
     }
 
@@ -1383,20 +1316,6 @@
     }
 
     /**
-     * Handle a world press by remembering a right press or placing with left.
-     *
-     * @param {object} event - The mouse press event.
-     * @returns {void}
-     */
-    function onWorldPress(event) {
-        if (event.isRightButton) {
-            rememberRightPress(event);
-            return;
-        }
-        onWorldMouse(event);
-    }
-
-    /**
      * Route a mouse press to the HUD or to the world.
      *
      * @param {object} event - The mouse press event.
@@ -1407,7 +1326,7 @@
             onHudMouse(event);
             return;
         }
-        onWorldPress(event);
+        onWorldMouse(event);
     }
 
     // Shift-key actions for the ground, undo and HUD.
@@ -1465,7 +1384,6 @@
      */
     function wireInput() {
         Controller.mousePressEvent.connect(onMouse);
-        Controller.mouseReleaseEvent.connect(onMouseRelease);
         Controller.keyPressEvent.connect(onKey);
     }
 
