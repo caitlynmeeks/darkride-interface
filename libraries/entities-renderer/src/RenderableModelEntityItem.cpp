@@ -1810,9 +1810,10 @@ void ModelEntityRenderer::applyTaggedMaterials(const TypedEntityPointer& entity)
 
     QVariantMap userDataTags = QJsonDocument::fromJson(userData.toUtf8()).object().toVariantMap();
     const HFMModel& hfmModel = model->getHFMModel();
+    // the entity's userData decides where it names the tag, so one model can be opted in or out without a new export
     auto carries = [&](const QString& tag) {
-        if (userDataTags.value(tag).toBool()) {
-            return true;
+        if (userDataTags.contains(tag)) {
+            return userDataTags.value(tag).toBool();
         }
         for (const auto& joint : hfmModel.joints) {
             if (joint.extras.value(tag).toBool()) {

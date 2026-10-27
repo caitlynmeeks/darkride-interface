@@ -229,7 +229,8 @@ public:
     // MATERIALS BY TAG: a Material entity with no parent whose userData names a tag, { "applyTo": { "tag": "isTree" } },
     // applies to every Model entity that carries the tag, on the parts its parentMaterialName names, rather than to a
     // parent (MaterialEntityRenderer). A model carries a tag set to true in the extras of any of its glTF objects (a
-    // Blender custom property) or in its entity's userData. Each ModelEntityRenderer keeps those that match
+    // Blender custom property), unless its entity's userData names the tag, which then decides (true or false). Each
+    // ModelEntityRenderer keeps those that match
     // (applyTaggedMaterials); a change here marks every model changed, so each looks again
     struct TaggedMaterial {
         QString tag;
