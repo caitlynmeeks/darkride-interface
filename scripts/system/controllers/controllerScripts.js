@@ -9,7 +9,31 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 
-/* global Script, Menu */
+/* global Script, Menu, Controller, Picks */
+
+// Values that never change, read once for every controller script in this engine. On the WebAssembly engine each
+// property read is a call into the app, and Controller.Standard is a map of ~190 entries that the dispatcher and its
+// modules read ~16 times a tick, and squeezeHands.js 6 times a frame. (Controller.Hardware is left alone: it is
+// rebuilt when devices come and go.)
+(function () {
+    function keep(object, names) {
+        names.forEach(function (name) {
+            if (!(name in object)) {
+                return;
+            }
+            try {
+                Object.defineProperty(object, name,
+                    { value: object[name], writable: false, enumerable: true, configurable: true });
+            } catch (e) {
+                // not a replaceable property on this engine (QtScript): it is read each time, as before
+            }
+        });
+    }
+    keep(Controller, ["Standard"]);
+    keep(Picks, ["PICK_ENTITIES", "PICK_OVERLAYS", "PICK_AVATARS", "PICK_HUD", "PICK_INCLUDE_NONCOLLIDABLE",
+        "PICK_INCLUDE_INVISIBLE", "INTERSECTED_NONE", "INTERSECTED_ENTITY", "INTERSECTED_LOCAL_ENTITY",
+        "INTERSECTED_OVERLAY", "INTERSECTED_AVATAR", "INTERSECTED_HUD"]);
+}());
 
 var CONTOLLER_SCRIPTS = [
     "squeezeHands.js",
