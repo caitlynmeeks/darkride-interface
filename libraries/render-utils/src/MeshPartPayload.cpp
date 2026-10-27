@@ -252,7 +252,7 @@ void MeshPartPayload::render(RenderArgs* args) {
         glm::vec4 outColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
         outColor = procedural->getColor(outColor);
         const bool forward = DeferredLightingEffect::isForwardLit(args);
-        const ProceduralProgramKey programKey(outColor.a < 1.0f, false, false, forward);
+        const ProceduralProgramKey programKey(outColor.a < 1.0f, false, false, forward, _underlyingMaterials.getCullFaceMode());
         // a shadow pass wants depth alone (see ModelMeshPartPayload::render)
         const bool plainShadow = args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE && !procedural->hasVertexShader();
         if (plainShadow || !enableMaterialProceduralShaders || procedural->compilationFailed(programKey)) {
@@ -696,7 +696,8 @@ void ModelMeshPartPayload::render(RenderArgs* args) {
         glm::vec4 outColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
         outColor = procedural->getColor(outColor);
         const bool forward = DeferredLightingEffect::isForwardLit(args);
-        const ProceduralProgramKey programKey(outColor.a < 1.0f, _shapeKey.isDeformed(), _shapeKey.isDualQuatSkinned(), forward);
+        const ProceduralProgramKey programKey(outColor.a < 1.0f, _shapeKey.isDeformed(), _shapeKey.isDualQuatSkinned(), forward,
+                                              _underlyingMaterials.getCullFaceMode());
         // a shadow pass wants depth alone: a part whose shader only colours its pixels casts its mesh's shadow through
         // the standard shadow pipeline (one pipeline for all such parts, no shader setup a draw); a shader that moves
         // vertices keeps its own program there, so its shadow follows the moved shape. 20 Lightlings' three neon parts

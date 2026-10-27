@@ -48,6 +48,9 @@ const size_t MAX_PROCEDURAL_TEXTURE_CHANNELS{ 4 };
  *     (an ORM texture gives all three) and <code>getUnderlyingEmissive()</code> (its factor),
  *     with <code>uv</code> the mesh's first texture coordinates, <code>_texCoord0</code>.</p>
  * @property {ProceduralUniforms} uniforms={} - A {@link ProceduralUniforms} object containing all the custom uniforms to be passed to the shader.
+ * @property {string} cullFaceMode="CULL_NONE" - Which faces it draws: <code>"CULL_NONE"</code> (both, the default),
+ *     <code>"CULL_BACK"</code>, <code>"CULL_FRONT"</code>, or <code>"underlying"</code>: as the material beneath it on a
+ *     model (a glTF model's single-sided parts without their backs, its double-sided ones whole).
  */
 
 struct ProceduralData {
@@ -61,6 +64,10 @@ struct ProceduralData {
     QUrl vertexShaderUrl;
     QJsonObject uniforms;
     QJsonArray channels;
+    // which faces it draws: both (CULL_NONE, the default), CULL_BACK or CULL_FRONT, or as the material beneath it on a
+    // model part (cullFaceModeUnderlying: a glTF model's single-sided parts lose their backs, its double-sided keep them)
+    graphics::MaterialKey::CullFaceMode cullFaceMode { graphics::MaterialKey::CULL_NONE };
+    bool cullFaceModeUnderlying { false };
 };
 
 class ProceduralProgramKey {
@@ -71,6 +78,8 @@ public:
         IS_SKINNED,
         IS_SKINNED_DQ,
         IS_FORWARD,
+        IS_CULL_FRONT,
+        IS_CULL_BACK,
 
         NUM_FLAGS
     };
@@ -82,14 +91,25 @@ public:
     bool isSkinned() const { return _flags[IS_SKINNED]; }
     bool isSkinnedDQ() const { return _flags[IS_SKINNED_DQ]; }
     bool isForward() const { return _flags[IS_FORWARD]; }
+    graphics::MaterialKey::CullFaceMode getCullFaceMode() const {
+        return _flags[IS_CULL_BACK] ? graphics::MaterialKey::CULL_BACK
+             : _flags[IS_CULL_FRONT] ? graphics::MaterialKey::CULL_FRONT : graphics::MaterialKey::CULL_NONE;
+    }
+    void setCullFaceMode(graphics::MaterialKey::CullFaceMode mode) {
+        _flags.set(IS_CULL_FRONT, mode == graphics::MaterialKey::CULL_FRONT);
+        _flags.set(IS_CULL_BACK, mode == graphics::MaterialKey::CULL_BACK);
+    }
 
     // forward: the view lights in place (the forward path), so an opaque procedural draws the variant that lights itself;
-    // a transparent one lights itself in either path
-    ProceduralProgramKey(bool transparent = false, bool isSkinned = false, bool isSkinnedDQ = false, bool forward = false) {
+    // a transparent one lights itself in either path. underlyingCull: the cull face mode of the material beneath (a
+    // model part's), which a procedural asking for it draws with (ProceduralData::cullFaceModeUnderlying)
+    ProceduralProgramKey(bool transparent = false, bool isSkinned = false, bool isSkinnedDQ = false, bool forward = false,
+                         graphics::MaterialKey::CullFaceMode underlyingCull = graphics::MaterialKey::CULL_NONE) {
         _flags.set(IS_TRANSPARENT, transparent);
         _flags.set(IS_SKINNED, isSkinned);
         _flags.set(IS_SKINNED_DQ, isSkinnedDQ);
         _flags.set(IS_FORWARD, forward && !transparent);
+        setCullFaceMode(underlyingCull);
     }
 };
 namespace std {
@@ -220,6 +240,9 @@ protected:
 
 private:
     void setupUniforms();
+    // the key its pipeline is kept under: the faces it draws are its own choice, or the material beneath's that the
+    // caller gave
+    ProceduralProgramKey getDrawKey(const ProceduralProgramKey& key) const;
 
     mutable uint64_t _fadeStartTime{ 0 };
     mutable bool _hasStartedFade{ false };
