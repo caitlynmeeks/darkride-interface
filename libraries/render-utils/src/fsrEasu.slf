@@ -1,0 +1,196 @@
+<@include gpu/Config.slh@>
+<$VERSION_HEADER$>
+//  Generated on <$_SCRIBE_DATE$>
+//
+//  fsrEasu.frag
+//
+//  Created on 2026-10-27 for Darkride's upscaling.
+//
+//  Upscales the 3D view, drawn below the window's resolution (Render.viewportResolutionScale), to the window's size:
+//  the edge-adaptive spatial upsampling (EASU) of AMD FidelityFX Super Resolution 1, the 32-bit version of
+//  FsrEasuF() in ffx_fsr1.h, written out in plain GLSL 4.1 (no ffx_a.h). The source holds the tone-mapped picture
+//  as the square root of its linear colour (gamma 2.0, the perceptual space EASU wants); the output stays in it, for
+//  the sharpening pass (fsrRcas). The constants are FsrEasuCon()'s, worked out on the CPU (ToneMapAndResample).
+//
+//  Distributed under the MIT License.
+//  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
+//
+//  Ported from AMD FidelityFX FSR 1 (https://github.com/GPUOpen-Effects/FidelityFX-FSR), under its licence:
+//  Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+//  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+//  documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+//  the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+//  permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright
+//  notice and this permission notice shall be included in all copies or substantial portions of the Software.
+//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+//  THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+//  TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+//  SOFTWARE.
+//
+
+<@include render-utils/ShaderConstants.h@>
+
+struct FsrParams {
+    vec4 con0;
+    vec4 con1;
+    vec4 con2;
+    vec4 con3;
+    vec4 rcas;
+};
+
+LAYOUT(binding=RENDER_UTILS_BUFFER_FSR_PARAMS) uniform fsrParamsBuffer {
+    FsrParams fsr;
+};
+
+LAYOUT(binding=RENDER_UTILS_TEXTURE_FSR_SOURCE) uniform sampler2D fsrSource;
+
+layout(location=0) out vec4 outFragColor;
+
+// ffx_a.h's APrxLoRcpF1 and APrxLoRsqF1: a low-precision 1/a and 1/sqrt(a) from the float's bits
+float rcpLow(float a) {
+    return uintBitsToFloat(uint(0x7ef07ebb) - floatBitsToUint(a));
+}
+
+float rsqLow(float a) {
+    return uintBitsToFloat(uint(0x5f347d74) - (floatBitsToUint(a) >> uint(1)));
+}
+
+// FsrEasuTapF: one tap of the approximate Lanczos 2 kernel, rotated and stretched along the edge
+void easuTap(inout vec3 aC, inout float aW, vec2 off, vec2 dir, vec2 len, float lob, float clp, vec3 c) {
+    vec2 v;
+    v.x = (off.x * dir.x) + (off.y * dir.y);
+    v.y = (off.x * (-dir.y)) + (off.y * dir.x);
+    v *= len;
+    float d2 = v.x * v.x + v.y * v.y;
+    d2 = min(d2, clp);
+    float wB = (2.0 / 5.0) * d2 - 1.0;
+    float wA = lob * d2 - 1.0;
+    wB *= wB;
+    wA *= wA;
+    wB = (25.0 / 16.0) * wB - (25.0 / 16.0 - 1.0);
+    float w = wB * wA;
+    aC += c * w;
+    aW += w;
+}
+
+// FsrEasuSetF: the edge direction and length around one of the four nearest pixels, by its bilinear weight w
+//    a
+//  b c d
+//    e
+void easuSet(inout vec2 dir, inout float len, float w, float lA, float lB, float lC, float lD, float lE) {
+    float dc = lD - lC;
+    float cb = lC - lB;
+    float lenX = max(abs(dc), abs(cb));
+    lenX = rcpLow(lenX);
+    float dirX = lD - lB;
+    dir.x += dirX * w;
+    lenX = clamp(abs(dirX) * lenX, 0.0, 1.0);
+    lenX *= lenX;
+    len += lenX * w;
+    float ec = lE - lC;
+    float ca = lC - lA;
+    float lenY = max(abs(ec), abs(ca));
+    lenY = rcpLow(lenY);
+    float dirY = lE - lA;
+    dir.y += dirY * w;
+    lenY = clamp(abs(dirY) * lenY, 0.0, 1.0);
+    lenY *= lenY;
+    len += lenY * w;
+}
+
+void main(void) {
+    // the output pixel's position in the source, and its fraction past the 'f' pixel
+    vec2 pp = floor(gl_FragCoord.xy) * fsr.con0.xy + fsr.con0.zw;
+    vec2 fp = floor(pp);
+    pp -= fp;
+
+    // 12 taps, by four gathers:
+    //    b c
+    //  e f g h
+    //  i j k l
+    //    n o
+    vec2 p0 = fp * fsr.con1.xy + fsr.con1.zw;
+    vec2 p1 = p0 + fsr.con2.xy;
+    vec2 p2 = p0 + fsr.con2.zw;
+    vec2 p3 = p0 + fsr.con3.xy;
+    vec4 bczzR = textureGather(fsrSource, p0, 0);
+    vec4 bczzG = textureGather(fsrSource, p0, 1);
+    vec4 bczzB = textureGather(fsrSource, p0, 2);
+    vec4 ijfeR = textureGather(fsrSource, p1, 0);
+    vec4 ijfeG = textureGather(fsrSource, p1, 1);
+    vec4 ijfeB = textureGather(fsrSource, p1, 2);
+    vec4 klhgR = textureGather(fsrSource, p2, 0);
+    vec4 klhgG = textureGather(fsrSource, p2, 1);
+    vec4 klhgB = textureGather(fsrSource, p2, 2);
+    vec4 zzonR = textureGather(fsrSource, p3, 0);
+    vec4 zzonG = textureGather(fsrSource, p3, 1);
+    vec4 zzonB = textureGather(fsrSource, p3, 2);
+
+    // luma times 2
+    vec4 bczzL = bczzB * 0.5 + (bczzR * 0.5 + bczzG);
+    vec4 ijfeL = ijfeB * 0.5 + (ijfeR * 0.5 + ijfeG);
+    vec4 klhgL = klhgB * 0.5 + (klhgR * 0.5 + klhgG);
+    vec4 zzonL = zzonB * 0.5 + (zzonR * 0.5 + zzonG);
+    float bL = bczzL.x;
+    float cL = bczzL.y;
+    float iL = ijfeL.x;
+    float jL = ijfeL.y;
+    float fL = ijfeL.z;
+    float eL = ijfeL.w;
+    float kL = klhgL.x;
+    float lL = klhgL.y;
+    float hL = klhgL.z;
+    float gL = klhgL.w;
+    float oL = zzonL.z;
+    float nL = zzonL.w;
+
+    // the edge's direction and length, interpolated bilinearly between f, g, j and k
+    vec2 dir = vec2(0.0);
+    float len = 0.0;
+    easuSet(dir, len, (1.0 - pp.x) * (1.0 - pp.y), bL, eL, fL, gL, jL);
+    easuSet(dir, len, pp.x * (1.0 - pp.y), cL, fL, gL, hL, kL);
+    easuSet(dir, len, (1.0 - pp.x) * pp.y, fL, iL, jL, kL, nL);
+    easuSet(dir, len, pp.x * pp.y, gL, jL, kL, lL, oL);
+
+    // normalize the direction (no edge: along x), shape the length
+    vec2 dir2 = dir * dir;
+    float dirR = dir2.x + dir2.y;
+    bool zero = dirR < (1.0 / 32768.0);
+    dirR = zero ? 1.0 : rsqLow(dirR);
+    dir.x = zero ? 1.0 : dir.x;
+    dir *= vec2(dirR);
+    len = len * 0.5;
+    len *= len;
+    // the kernel stretched from 1 along x or y to sqrt(2) on a diagonal, and up to 2 across an edge
+    float stretch = (dir.x * dir.x + dir.y * dir.y) * rcpLow(max(abs(dir.x), abs(dir.y)));
+    vec2 len2 = vec2(1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
+    float lob = 0.5 + ((1.0 / 4.0 - 0.04) - 0.5) * len;
+    float clp = rcpLow(lob);
+
+    // the four nearest pixels' range, to stop ringing
+    vec3 fC = vec3(ijfeR.z, ijfeG.z, ijfeB.z);
+    vec3 gC = vec3(klhgR.w, klhgG.w, klhgB.w);
+    vec3 jC = vec3(ijfeR.y, ijfeG.y, ijfeB.y);
+    vec3 kC = vec3(klhgR.x, klhgG.x, klhgB.x);
+    vec3 min4 = min(min(fC, min(gC, jC)), kC);
+    vec3 max4 = max(max(fC, max(gC, jC)), kC);
+
+    vec3 aC = vec3(0.0);
+    float aW = 0.0;
+    easuTap(aC, aW, vec2(0.0, -1.0) - pp, dir, len2, lob, clp, vec3(bczzR.x, bczzG.x, bczzB.x)); // b
+    easuTap(aC, aW, vec2(1.0, -1.0) - pp, dir, len2, lob, clp, vec3(bczzR.y, bczzG.y, bczzB.y)); // c
+    easuTap(aC, aW, vec2(-1.0, 1.0) - pp, dir, len2, lob, clp, vec3(ijfeR.x, ijfeG.x, ijfeB.x)); // i
+    easuTap(aC, aW, vec2(0.0, 1.0) - pp, dir, len2, lob, clp, jC); // j
+    easuTap(aC, aW, vec2(0.0, 0.0) - pp, dir, len2, lob, clp, fC); // f
+    easuTap(aC, aW, vec2(-1.0, 0.0) - pp, dir, len2, lob, clp, vec3(ijfeR.w, ijfeG.w, ijfeB.w)); // e
+    easuTap(aC, aW, vec2(1.0, 1.0) - pp, dir, len2, lob, clp, kC); // k
+    easuTap(aC, aW, vec2(2.0, 1.0) - pp, dir, len2, lob, clp, vec3(klhgR.y, klhgG.y, klhgB.y)); // l
+    easuTap(aC, aW, vec2(2.0, 0.0) - pp, dir, len2, lob, clp, vec3(klhgR.z, klhgG.z, klhgB.z)); // h
+    easuTap(aC, aW, vec2(1.0, 0.0) - pp, dir, len2, lob, clp, gC); // g
+    easuTap(aC, aW, vec2(1.0, 2.0) - pp, dir, len2, lob, clp, vec3(zzonR.z, zzonG.z, zzonB.z)); // o
+    easuTap(aC, aW, vec2(0.0, 2.0) - pp, dir, len2, lob, clp, vec3(zzonR.w, zzonG.w, zzonB.w)); // n
+
+    vec3 pix = min(max4, max(min4, aC / aW));
+    outFragColor = vec4(pix, 1.0);
+}

@@ -78,7 +78,13 @@ void main(void) {
         // For debugging purposes, we may want to see what the colors look like before the automatic OpenGL 
         // conversion mentioned above, so we undo it here
         tonedColor = pow(srcColor, vec3(GAMMA_22));
-    } 
+    }
 
+<@if HIFI_USE_FSR@>
+    // for upscaling (fsrEasu): the square root of the linear colour (gamma 2.0) in a plain 8-bit buffer, the
+    // perceptual space FSR works in; fsrRcas squares it back for the sRGB framebuffer
+    outFragColor = vec4(sqrt(clamp(tonedColor, 0.0, 1.0)), 1.0);
+<@else@>
     outFragColor = vec4(tonedColor, 1.0);
+<@endif@>
 }

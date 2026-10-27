@@ -1,0 +1,83 @@
+<@include gpu/Config.slh@>
+<$VERSION_HEADER$>
+//  Generated on <$_SCRIBE_DATE$>
+//
+//  fsrRcas.frag
+//
+//  Created on 2026-10-27 for Darkride's upscaling.
+//
+//  Sharpens the upscaled 3D view (fsrEasu's output): the robust contrast-adaptive sharpening (RCAS) of AMD FidelityFX
+//  Super Resolution 1, the 32-bit version of FsrRcasF() in ffx_fsr1.h, written out in plain GLSL 4.1. The source is
+//  in gamma 2.0 (the square root of linear colour); the output is linear again, for the sRGB framebuffer.
+//  fsr.rcas.x is the sharpness, FsrRcasCon()'s exp2(-stops).
+//
+//  Distributed under the MIT License.
+//  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
+//
+//  Ported from AMD FidelityFX FSR 1 (https://github.com/GPUOpen-Effects/FidelityFX-FSR), under its licence:
+//  Copyright (c) 2021 Advanced Micro Devices, Inc. All rights reserved.
+//  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+//  documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+//  the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+//  permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright
+//  notice and this permission notice shall be included in all copies or substantial portions of the Software.
+//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+//  THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+//  TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+//  SOFTWARE.
+//
+
+<@include render-utils/ShaderConstants.h@>
+
+struct FsrParams {
+    vec4 con0;
+    vec4 con1;
+    vec4 con2;
+    vec4 con3;
+    vec4 rcas;
+};
+
+LAYOUT(binding=RENDER_UTILS_BUFFER_FSR_PARAMS) uniform fsrParamsBuffer {
+    FsrParams fsr;
+};
+
+LAYOUT(binding=RENDER_UTILS_TEXTURE_FSR_SOURCE) uniform sampler2D fsrSource;
+
+layout(location=0) out vec4 outFragColor;
+
+// the most sharpening before the result looks unnatural
+const float RCAS_LIMIT = 0.25 - (1.0 / 16.0);
+
+// ffx_a.h's APrxMedRcpF1: a medium-precision 1/a
+float rcpMedium(float a) {
+    float b = uintBitsToFloat(uint(0x7ef19fff) - floatBitsToUint(a));
+    return b * (-b * a + 2.0);
+}
+
+void main(void) {
+    //    b
+    //  d e f
+    //    h
+    ivec2 sp = ivec2(gl_FragCoord.xy);
+    ivec2 last = textureSize(fsrSource, 0) - ivec2(1);
+    vec3 b = texelFetch(fsrSource, clamp(sp + ivec2(0, -1), ivec2(0), last), 0).rgb;
+    vec3 d = texelFetch(fsrSource, clamp(sp + ivec2(-1, 0), ivec2(0), last), 0).rgb;
+    vec3 e = texelFetch(fsrSource, sp, 0).rgb;
+    vec3 f = texelFetch(fsrSource, clamp(sp + ivec2(1, 0), ivec2(0), last), 0).rgb;
+    vec3 h = texelFetch(fsrSource, clamp(sp + ivec2(0, 1), ivec2(0), last), 0).rgb;
+
+    // the ring's minimum and maximum
+    vec3 mn4 = min(min(b, min(d, f)), h);
+    vec3 mx4 = max(max(b, max(d, f)), h);
+    // the negative lobe that would just reach 0 or 1 in each channel, the least of them, limited and scaled (the
+    // divisors kept off zero: a black or a white ring would make 0 / 0, which FSR leaves to the GPU's max())
+    vec3 hitMin = min(mn4, e) / max(4.0 * mx4, vec3(1.0e-5));
+    vec3 hitMax = (1.0 - max(mx4, e)) / min(4.0 * mn4 - 4.0, vec3(-1.0e-5));
+    vec3 lobeRGB = max(-hitMin, hitMax);
+    float lobe = max(-RCAS_LIMIT, min(max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b)), 0.0)) * fsr.rcas.x;
+
+    float rcpL = rcpMedium(4.0 * lobe + 1.0);
+    vec3 pix = (lobe * b + lobe * d + lobe * h + lobe * f + e) * rcpL;
+    outFragColor = vec4(pix * pix, 1.0);
+}
