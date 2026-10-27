@@ -52,7 +52,7 @@ public:
 
     float exposure{ 0.0f };
     int curve{ (int)ToneCurve::Gamma22 };
-    // a main view drawn below the window's resolution (Render.viewportResolutionScale < 1) is upscaled with FSR 1
+    // a main view drawn below the window's resolution (Settings > View > Resolution scale under 1x) is upscaled with FSR 1
     // (fsrEasu, then fsrRcas) rather than stretched; false stretches it as before, for comparing
     bool upscaleFSR{ true };
     // RCAS's sharpening after the upscale, in stops below the most (0 = the most, 2 = a quarter of it); AMD's 0.2

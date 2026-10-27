@@ -122,8 +122,9 @@ void ToneMapAndResample::run(const RenderContextPointer& renderContext, const In
     glm::ivec4 destViewport{ 0, 0, bufferSize.x, bufferSize.y };
 
     // the main view drawn below the window's resolution (Render.viewportResolutionScale < 1): upscaled with FSR 1
-    // rather than stretched. Mirrors and secondary cameras keep the stretch.
-    if (_upscaleFSR && args->_renderMode == RenderArgs::RenderMode::DEFAULT_RENDER_MODE &&
+    // rather than stretched. Mirrors and secondary cameras keep the stretch, and so does VR (both eyes side by side in
+    // one picture) until it's been tried with a headset.
+    if (_upscaleFSR && args->_renderMode == RenderArgs::RenderMode::DEFAULT_RENDER_MODE && !args->isStereo() &&
         args->_viewport.z > 0 && args->_viewport.w > 0 &&
         args->_viewport.z < destViewport.z && args->_viewport.w < destViewport.w) {
         upscaleFSR(args, lightingBuffer, srcBufferSize, destinationFramebuffer, destViewport);
