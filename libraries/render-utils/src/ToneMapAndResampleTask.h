@@ -79,6 +79,9 @@ public:
     // NaN Pixels)
     static void setShowNaNPixels(bool show) { _showNaNPixels = show; }
 
+    // FSR in VR too (Developer > Render > Upscaling (FSR) in VR), for trying it in a headset; off, VR keeps the stretch
+    static void setUpscaleFSRInVR(bool on) { _upscaleFSRInVR = on; }
+
     // Inputs: lightingFramebuffer, destinationFramebuffer
     using Input = render::VaryingSet2<gpu::FramebufferPointer, gpu::FramebufferPointer>;
     using Output = gpu::FramebufferPointer;
@@ -95,6 +98,7 @@ protected:
     static gpu::PipelinePointer _fsrEasuPipeline;
     static gpu::PipelinePointer _fsrRcasPipeline;
     static std::atomic<bool> _showNaNPixels;
+    static std::atomic<bool> _upscaleFSRInVR;
 
     gpu::FramebufferPointer _destinationFrameBuffer;
 

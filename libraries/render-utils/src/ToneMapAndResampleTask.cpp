@@ -30,6 +30,7 @@ gpu::PipelinePointer ToneMapAndResample::_fsrToneMapPipeline;
 gpu::PipelinePointer ToneMapAndResample::_fsrEasuPipeline;
 gpu::PipelinePointer ToneMapAndResample::_fsrRcasPipeline;
 std::atomic<bool> ToneMapAndResample::_showNaNPixels { false };
+std::atomic<bool> ToneMapAndResample::_upscaleFSRInVR { false };
 
 ToneMapAndResample::ToneMapAndResample() {
     Parameters parameters;
@@ -123,8 +124,9 @@ void ToneMapAndResample::run(const RenderContextPointer& renderContext, const In
 
     // the main view drawn below the window's resolution (Render.viewportResolutionScale < 1): upscaled with FSR 1
     // rather than stretched. Mirrors and secondary cameras keep the stretch, and so does VR (both eyes side by side in
-    // one picture) until it's been tried with a headset.
-    if (_upscaleFSR && args->_renderMode == RenderArgs::RenderMode::DEFAULT_RENDER_MODE && !args->isStereo() &&
+    // one picture) until it's been tried with a headset, unless Developer > Render > Upscaling (FSR) in VR is on.
+    if (_upscaleFSR && args->_renderMode == RenderArgs::RenderMode::DEFAULT_RENDER_MODE &&
+        (!args->isStereo() || _upscaleFSRInVR) &&
         args->_viewport.z > 0 && args->_viewport.w > 0 &&
         args->_viewport.z < destViewport.z && args->_viewport.w < destViewport.w) {
         upscaleFSR(args, lightingBuffer, srcBufferSize, destinationFramebuffer, destViewport);

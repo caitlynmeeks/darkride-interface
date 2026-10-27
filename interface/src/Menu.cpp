@@ -850,6 +850,12 @@ Menu::Menu() {
     connect(action, &QAction::triggered, [action] {
         ToneMapAndResample::setShowNaNPixels(action->isChecked());
     });
+    // Developer > Render > Upscaling (FSR) in VR: a resolution scale under 1x upscales with FSR in a headset too, for
+    // trying it there; off (the default), VR keeps the plain stretch. Follows the item's state however it's set.
+    action = addCheckableActionToQMenuAndActionHash(renderOptionsMenu, MenuOption::UpscaleFSRInVR, 0, false);
+    connect(action, &QAction::toggled, [](bool checked) {
+        ToneMapAndResample::setUpscaleFSRInVR(checked);
+    });
 
     addCheckableActionToQMenuAndActionHash(renderOptionsMenu, MenuOption::WorldAxes);
     // addCheckableActionToQMenuAndActionHash(renderOptionsMenu, MenuOption::DefaultSkybox, Qt::Key_Asterisk, true);
