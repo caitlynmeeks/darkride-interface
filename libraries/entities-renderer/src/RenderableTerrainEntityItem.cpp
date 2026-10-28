@@ -785,6 +785,7 @@ void TerrainLayerSet::drawMapsDue(RenderArgs* args) {
         Sources sources;
     };
     std::vector<Due> due;
+    std::vector<gpu::TexturePointer> toMake;   // sources the backend has yet to make, bound so that it does
     {
         std::lock_guard<std::mutex> lock(_mapsMutex);
         // the colour array grows to the largest colour texture, within its bounds; its slices are then drawn again
@@ -803,11 +804,34 @@ void TerrainLayerSet::drawMapsDue(RenderArgs* args) {
             makeAlbedoArray(wanted);
         }
         // a slice is drawn when it has not been, when its sources change, and when more of a source has reached the
-        // GPU since (its residency stamp): a few draws per texture as its mips come in, smallest first
+        // GPU since (its residency stamp): a few draws per texture as its mips come in, smallest first. Not while a
+        // source has yet to reach the GPU at all (no stamp yet): the GL 4.5 backend (Windows, Linux) makes two new
+        // textures a frame and binds the others' fallbacks meanwhile (white, for a colour texture), and a slice drawn
+        // from a fallback was never drawn again, since only a texture the backend has made gets a new stamp and
+        // nothing else binds a layer's texture: Darkside's ground came out white on Windows (2026-10-28), its
+        // twenty maps all asked for in its first frame. Such a source is bound instead, so the backend makes it, and
+        // its slice is drawn once it has; the layer keeps its plain colour, or the slice what it had, until then.
+        // (The macOS GL 4.1 backend makes every texture as it is first bound.)
+        auto waiting = [](const Sources& sources) {
+            for (const auto& source : sources) {
+                if (source && source->getUsageType() == gpu::TextureUsageType::RESOURCE && source->getResidencyStamp() == 0) {
+                    return true;
+                }
+            }
+            return false;
+        };
         auto check = [&](Map map, Slices& slices, int slot, const Sources& sources) {
             Slice& slice = slices[slot];
             const Stamps stamps = stampsOf(sources);
             if (!slice.drawn || slice.sources != sources || slice.stamps != stamps) {
+                if (waiting(sources)) {
+                    for (const auto& source : sources) {
+                        if (source) {
+                            toMake.push_back(source);
+                        }
+                    }
+                    return;
+                }
                 slice.drawn = true;
                 slice.sources = sources;
                 slice.stamps = stamps;
@@ -825,15 +849,25 @@ void TerrainLayerSet::drawMapsDue(RenderArgs* args) {
             }
         }
     }
-    if (due.empty() || !args || !args->_context) {
+    if ((due.empty() && toMake.empty()) || !args || !args->_context) {
         return;
     }
-    _paramsDirty = true;   // the flags say which slices are drawn
+    if (!due.empty()) {
+        _paramsDirty = true;   // the flags say which slices are drawn
+    }
 
     auto white = DependencyManager::get<TextureCache>()->getWhiteTexture();
     // a batch of its own, appended to the frame now: at the start of the frame (DrawTerrainLayerMaps), before any
     // pass has bound its framebuffer, since the slice's stays bound when this batch ends
     gpu::doInBatch("TerrainLayerSet::drawMapsDue", args->_context, [&](gpu::Batch& batch) {
+        // binding a texture is what has the backend make it
+        for (const auto& texture : toMake) {
+            batch.setResourceTexture(0, texture);
+        }
+        if (due.empty()) {
+            batch.setResourceTexture(0, nullptr);
+            return;
+        }
         batch.enableStereo(false);
         batch.setPipeline(mapPipeline());
         bool drawn[3] = { false, false, false };
