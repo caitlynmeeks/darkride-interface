@@ -41,6 +41,8 @@ private:
     QTimer _timer;
     QString _fallbackFrom;      // "last" or "home" while the start-up world may still fall back; empty after
     QString _startUpWorld;      // the domain the start-up world's lookups led to (host:port, or an ICE id)
+    bool _listeningForStartUpWorld { false };
+    bool _hooked { false };     // init()'s connections made
 };
 
 #endif // hifi_ConnectionMonitor_h
