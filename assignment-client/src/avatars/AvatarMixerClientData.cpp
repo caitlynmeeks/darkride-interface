@@ -291,6 +291,7 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
 
                 if (packetTraitVersion > instanceVersionRef) {
                     if (traitSize == AvatarTraits::DELETED_TRAIT_SIZE) {
+                        _refusedCarriedEntities.erase(instanceID);
                         _avatar->processDeletedTraitInstance(traitType, instanceID);
                         // Mixer doesn't need deleted IDs.
                         _avatar->getAndClearRecentlyRemovedIDs();
@@ -305,13 +306,22 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
                             refusal = refusalForCarriedEntity(traitData);
                         }
                         if (!refusal.isEmpty()) {
-                            qCDebug(avatars) << "Avatar" << sendingNode.getUUID() << "carries entity" << instanceID << "with"
-                                << refusal << "; not passed on";
+                            static const size_t MAX_REFUSALS_REMEMBERED = 256;  // many ids only log again
+                            if (_refusedCarriedEntities.size() >= MAX_REFUSALS_REMEMBERED) {
+                                _refusedCarriedEntities.clear();
+                            }
+                            QString& lastRefusal = _refusedCarriedEntities[instanceID];
+                            if (lastRefusal != refusal) {
+                                qCDebug(avatars) << "Avatar" << sendingNode.getUUID() << "carries entity" << instanceID
+                                    << "with" << refusal << "; not passed on";
+                                lastRefusal = refusal;
+                            }
                             // nobody else sees it: taken away, as a deleted one, until a version that passes
                             _avatar->processDeletedTraitInstance(traitType, instanceID);
                             _avatar->getAndClearRecentlyRemovedIDs();
                             instanceVersionRef = -packetTraitVersion;
                         } else {
+                            _refusedCarriedEntities.erase(instanceID);
                             _avatar->processTraitInstance(traitType, instanceID, traitData);
                             instanceVersionRef = packetTraitVersion;
                         }
