@@ -13,7 +13,11 @@
 //  The local message channel "Darkride-Hop":
 //    in:  {"type": "start", "world": <name>, "author": <name or "">, "picture": <URL or "">} when a hop starts
 //         (Explore's Hop or Join, "new instance", the address bar, a friend's Join), and {"type": "cancel"} should it
-//         fail before the client leaves;
+//         fail before the client leaves. A new instance's hop starts while the metaverse is still starting its server
+//         ("starting": true, "id": <the start's id>), up to a few minutes on a fresh server: the screen says so and
+//         waits, without its time limit, until {"type": "started", "id"} as the hop goes (Explore makes it, unless the
+//         screen's Cancel was pressed by then), or {"type": "cancel", "id", "reason": <words for people>}, which it
+//         says on the screen for a moment before it opens Explore again;
 //    out: {"type": "screen", "up": <bool>, "world", "author", "picture", "status"} whenever any of it changes (for
 //         scripts; the same goes to Window.setLoadingScreen), and "up": false fades it out.
 //  The screen lifts once the client has left the old world (its physics or its connection gone), the new world is
@@ -39,8 +43,13 @@
     // half read as noise.
     var STATUS_ARRIVING = "Arriving…";
     var STATUS_WHOLE = "Loading the world…";
+    var STATUS_STARTING = "Starting the world… A new server can take a minute or two.";
     var MIN_SHOWN = 2000;         // ms: the screen stays at least this long, so an arrival never flashes it (Caity, 10-21)
     var TIME_LIMIT = 90;          // s: a way in that never arrives lifts the screen anyway
+    // s: a new instance's server that never comes. The metaverse answers within ~8 min (its front keeps the request
+    // open 10 min), so this is only a backstop
+    var STARTING_LIMIT = 660;
+    var FAILED_SHOWN = 3000;      // ms: why a new instance couldn't start, on the screen before it lifts
     // ms: the screen's buttons (Cancel, and Show me now while a world loads whole) fade in once it has been up this
     // long, so a quick arrival never shows them (Caity, 10-22: "a cancel loading button to go back and abort a load")
     var BUTTONS_AFTER = 3000;
@@ -107,13 +116,18 @@
     var timer = null;
     var card = {};            // the headset card's entities
 
-    function begin(kind, world, author, picture) {
+    // startId: a new instance's start, whose server the hop waits for (its first line already says so)
+    function begin(kind, world, author, picture, startId) {
         way = {
             kind: kind,
             world: world,
             author: author || "",
             picture: picture || "",
             started: Date.now(),
+            waitFrom: Date.now(),           // the time limit counts from here: the start, or a new server's address
+            starting: !!startId,            // a new instance's server is starting; the hop waits for its address
+            startId: startId || "",
+            failed: null,                   // why a new instance couldn't start: { text, at }
             left: kind !== "hop",           // a hop has gone for the old world once the domain changes
             lostOld: kind !== "hop",        // and has seen the old world's physics or connection drop (physics is
                                             // sometimes switched on again in the very frame of a domain change)
@@ -185,6 +199,23 @@
             return;
         }
         var now = Date.now();
+        if (way.failed) {
+            if (now - way.failed.at >= FAILED_SHOWN) {
+                end();
+                Messages.sendLocalMessage(EXPLORE_CHANNEL, "open");
+            } else {
+                send(true, way.failed.text, -1, false, false);
+                if (HMD.active || CARD_ON_DESKTOP) {
+                    showCard(way.failed.text, now);
+                }
+            }
+            return;
+        }
+        if (way.starting && now - way.started > STARTING_LIMIT * 1000) {
+            print("World loading: no server after " + STARTING_LIMIT + " s, the screen lifts");
+            end();
+            return;
+        }
         var loading = loadingState();
         var physics = Window.isPhysicsEnabled();
         var connected = location.isConnected;
@@ -201,7 +232,8 @@
         // arrived: in the new world with its physics on, and the avatar's own model in (or waited for long enough);
         // the screen then lifts once it has been up MIN_SHOWN
         var arrived = !loading.active && landed && (avatarLoaded() || now - way.physicsOnAt > AVATAR_GRACE * 1000);
-        if ((arrived && now - way.started >= MIN_SHOWN) || (!loading.active && now - way.started > TIME_LIMIT * 1000)) {
+        if ((arrived && now - way.started >= MIN_SHOWN) ||
+                (!loading.active && !way.starting && now - way.waitFrom > TIME_LIMIT * 1000)) {
             end();
             return;
         }
@@ -211,7 +243,7 @@
             way.world = placeName();
             way.picture = way.picture || placePicture();
         }
-        var status = loading.active ? STATUS_WHOLE : STATUS_ARRIVING;
+        var status = way.starting ? STATUS_STARTING : loading.active ? STATUS_WHOLE : STATUS_ARRIVING;
         if (loading.active) {
             way.progress = Math.max(way.progress, wholeWorldProgress(loading));
         } else if (way.progress >= 0) {
@@ -417,13 +449,28 @@
         }
         if (data.type === "start") {
             var keepLaunch = way && way.launchReleased;
-            begin("hop", String(data.world || ""), String(data.author || ""), String(data.picture || ""));
+            begin("hop", String(data.world || ""), String(data.author || ""), String(data.picture || ""),
+                  data.starting === true ? String(data.id || "") : "");
             way.launchReleased = keepLaunch || way.launchReleased;
-            if (Date.now() - lastViewpointAt < VIEWPOINT_BEFORE_START) {
+            if (!way.starting && Date.now() - lastViewpointAt < VIEWPOINT_BEFORE_START) {
                 moveWithinWorld("its viewpoint came " + (Date.now() - lastViewpointAt) + " ms before the start");
             }
-        } else if (data.type === "cancel" && way && way.kind === "hop" && !way.left) {
-            end();
+        } else if (data.type === "started") {
+            if (way && way.starting && way.startId === String(data.id || "")) {
+                print("World loading: the new instance's server is up after " + (Date.now() - way.started) + " ms");
+                way.starting = false;
+                way.waitFrom = Date.now();
+            }
+        } else if (data.type === "cancel" && way && way.kind === "hop" && !way.left &&
+                   (!data.id || data.id === way.startId)) {
+            if (way.starting && data.reason) {
+                print("World loading: the new instance couldn't start: " + data.reason);
+                way.starting = false;
+                way.failed = { text: String(data.reason), at: Date.now() };
+                tick();
+            } else {
+                end();
+            }
         }
     }
 
@@ -485,7 +532,7 @@
     var VIEWPOINT_BEFORE_START = 1500;    // ms
     var lastViewpointAt = 0;
     function moveWithinWorld(why) {
-        if (way && way.kind === "hop" && !way.left && location.isConnected) {
+        if (way && way.kind === "hop" && !way.left && !way.starting && location.isConnected) {
             print("World loading: the hop is a move within this world (" + why + ")");
             way.left = true;
             way.lostOld = true;
@@ -519,7 +566,7 @@
 
     // a hop to a place that doesn't exist or is offline goes nowhere: the old world stays, so the screen lifts at once
     function onLookupFailed() {
-        if (way && way.kind === "hop" && !way.left) {
+        if (way && way.kind === "hop" && !way.left && !way.starting) {
             end();
         }
     }
