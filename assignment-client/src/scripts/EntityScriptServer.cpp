@@ -640,7 +640,7 @@ void EntityScriptServer::handleOctreePacket(QSharedPointer<ReceivedMessage> mess
     if (packetType == PacketType::OctreeStats) {
 
         int statsMessageLength = OctreeHeadlessViewer::parseOctreeStats(message, senderNode);
-        if (message->getSize() > statsMessageLength) {
+        if (statsMessageLength >= 0 && message->getSize() > statsMessageLength) {
             // pull out the piggybacked packet and create a new QSharedPointer<NLPacket> for it
             int piggyBackedSizeWithHeader = message->getSize() - statsMessageLength;
 
@@ -648,6 +648,9 @@ void EntityScriptServer::handleOctreePacket(QSharedPointer<ReceivedMessage> mess
             memcpy(buffer.get(), message->getRawMessage() + statsMessageLength, piggyBackedSizeWithHeader);
 
             auto newPacket = NLPacket::fromReceivedPacket(std::move(buffer), piggyBackedSizeWithHeader, message->getSenderSockAddr());
+            if (!newPacket) {
+                return; // too short for a packet's header: nothing to read
+            }
             message = QSharedPointer<ReceivedMessage>::create(*newPacket);
         } else {
             return; // bail since no piggyback data

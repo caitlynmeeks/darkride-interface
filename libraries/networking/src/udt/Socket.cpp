@@ -479,7 +479,7 @@ void Socket::readPendingDatagrams() {
         if (it != _unfilteredHandlers.end()) {
             // we have a registered unfiltered handler for this HifiSockAddr - call that and return
             if (it->second) {
-                auto basePacket = BasePacket::fromReceivedPacket(std::move(buffer), packetSizeWithHeader, senderSockAddr);
+                auto basePacket = BasePacket::fromReceivedPacket(std::move(buffer), sizeRead, senderSockAddr);
                 basePacket->setReceiveTime(receiveTime);
                 it->second(std::move(basePacket));
             }
@@ -487,12 +487,24 @@ void Socket::readPendingDatagrams() {
             continue;
         }
 
+        // a datagram is size-checked against its header before it is read as a packet
+        if (sizeRead < (qint64)sizeof(uint32_t)) {
+            dropMalformedDatagram(senderSockAddr, sizeRead);
+            continue;
+        }
+
         // check if this was a control packet or a data packet
-        bool isControlPacket = *reinterpret_cast<uint32_t*>(buffer.get()) & CONTROL_BIT_MASK;
+        uint32_t firstWord;
+        memcpy(&firstWord, buffer.get(), sizeof(firstWord));
+        bool isControlPacket = firstWord & CONTROL_BIT_MASK;
 
         if (isControlPacket) {
             // setup a control packet from the data we just read
-            auto controlPacket = ControlPacket::fromReceivedPacket(std::move(buffer), packetSizeWithHeader, senderSockAddr);
+            auto controlPacket = ControlPacket::fromReceivedPacket(std::move(buffer), sizeRead, senderSockAddr);
+            if (!controlPacket) {
+                dropMalformedDatagram(senderSockAddr, sizeRead);
+                continue;
+            }
             controlPacket->setReceiveTime(receiveTime);
 
             // move this control packet to the matching connection, if there is one
@@ -504,7 +516,11 @@ void Socket::readPendingDatagrams() {
 
         } else {
             // setup a Packet from the data we just read
-            auto packet = Packet::fromReceivedPacket(std::move(buffer), packetSizeWithHeader, senderSockAddr);
+            auto packet = Packet::fromReceivedPacket(std::move(buffer), sizeRead, senderSockAddr);
+            if (!packet) {
+                dropMalformedDatagram(senderSockAddr, sizeRead);
+                continue;
+            }
             packet->setReceiveTime(receiveTime);
 
             // save the sequence number in case this is the packet that sticks readyRead
@@ -543,6 +559,19 @@ void Socket::readPendingDatagrams() {
                 }
             }
         }
+    }
+}
+
+// one log line at most every 10 s, with how many were dropped
+void Socket::dropMalformedDatagram(const HifiSockAddr& senderSockAddr, qint64 size) {
+    static const auto LOG_INTERVAL = std::chrono::seconds(10);
+    ++_malformedDatagramsDropped;
+    auto now = std::chrono::steady_clock::now();
+    if (now - _lastMalformedDatagramLog >= LOG_INTERVAL) {
+        qCDebug(networking) << "Dropped" << _malformedDatagramsDropped
+            << "datagram(s) too short for a packet header; the last from" << senderSockAddr << "with" << size << "bytes";
+        _malformedDatagramsDropped = 0;
+        _lastMalformedDatagramLog = now;
     }
 }
 

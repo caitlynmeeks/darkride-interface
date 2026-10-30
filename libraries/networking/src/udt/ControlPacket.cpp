@@ -27,12 +27,17 @@ int ControlPacket::maxPayloadSize() {
 
 std::unique_ptr<ControlPacket> ControlPacket::fromReceivedPacket(std::unique_ptr<char[]> data, qint64 size,
                                                                  const HifiSockAddr &senderSockAddr) {
-    // Fail with null data
-    Q_ASSERT(data);
-    
-    // Fail with invalid size
-    Q_ASSERT(size >= 0);
-    
+    // received data is size- and type-checked against a control packet's header (nullptr when it doesn't hold one)
+    if (!data || size < ControlPacket::totalHeaderSize()) {
+        return nullptr;
+    }
+    ControlBitAndType bitAndType;
+    memcpy(&bitAndType, data.get(), sizeof(bitAndType));
+    if (!(bitAndType & CONTROL_BIT_MASK) ||
+        ((bitAndType & ~CONTROL_BIT_MASK) >> (8 * sizeof(Type))) > ControlPacket::Type::HandshakeRequest) {
+        return nullptr;
+    }
+
     // allocate memory
     auto packet = std::unique_ptr<ControlPacket>(new ControlPacket(std::move(data), size, senderSockAddr));
     

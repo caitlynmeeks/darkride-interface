@@ -78,6 +78,8 @@ public:
     static int localHeaderSize(bool isPartOfMessage = false);
     // Cumulated size of all the headers
     static int totalHeaderSize(bool isPartOfMessage = false);
+    // whether received data is a data packet at least as long as the header its first bytes call for
+    static bool isLongEnoughForHeader(const char* data, qint64 size);
     // The maximum payload size this packet can use to fit in MTU
     static int maxPayloadSize(bool isPartOfMessage = false);
     

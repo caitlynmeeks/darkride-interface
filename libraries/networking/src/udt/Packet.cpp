@@ -48,6 +48,16 @@ int Packet::totalHeaderSize(bool isPartOfMessage) {
     return BasePacket::totalHeaderSize() + Packet::localHeaderSize(isPartOfMessage);
 }
 
+bool Packet::isLongEnoughForHeader(const char* data, qint64 size) {
+    SequenceNumberAndBitField seqNumBitField;
+    if (!data || size < (qint64)sizeof(seqNumBitField)) {
+        return false;
+    }
+    memcpy(&seqNumBitField, data, sizeof(seqNumBitField));
+    return !(seqNumBitField & CONTROL_BIT_MASK) &&
+        size >= Packet::totalHeaderSize((bool)(seqNumBitField & MESSAGE_BIT_MASK));
+}
+
 int Packet::maxPayloadSize(bool isPartOfMessage) {
     return BasePacket::maxPayloadSize() - Packet::localHeaderSize(isPartOfMessage);
 }
@@ -62,8 +72,10 @@ std::unique_ptr<Packet> Packet::create(qint64 size, bool isReliable, bool isPart
 }
 
 std::unique_ptr<Packet> Packet::fromReceivedPacket(std::unique_ptr<char[]> data, qint64 size, const HifiSockAddr& senderSockAddr) {
-    // Fail with invalid size
-    Q_ASSERT(size >= 0);
+    // received data is size-checked against its header (nullptr when it doesn't hold one)
+    if (!isLongEnoughForHeader(data.get(), size)) {
+        return nullptr;
+    }
 
     // allocate memory
     auto packet = std::unique_ptr<Packet>(new Packet(std::move(data), size, senderSockAddr));
