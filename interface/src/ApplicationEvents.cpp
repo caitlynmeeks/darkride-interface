@@ -38,6 +38,7 @@
 #include "editor/Editor.h"
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
 #endif
+#include "ui/LoginDialog.h"
 #include "ui/StandAloneJSConsole.h"
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>
@@ -326,7 +327,8 @@ bool Application::eventFilter(QObject* object, QEvent* event) {
         QWidget* focusWidget = QApplication::focusWidget();
         bool viewHasKeyboard = !focusWidget || focusWidget == getPrimaryWidget() || focusWidget == getWindow();
         if (key->key() == Qt::Key_Tab && viewHasKeyboard) {
-            if (key->isAutoRepeat() == false) {
+            // while a sign-in page is shown, keys go only to it
+            if (key->isAutoRepeat() == false && !LoginDialog::isShown()) {
                 _controllerScriptingInterface->tabKeyEvent(event->type() == QEvent::KeyPress);
             }
             return true; 
@@ -337,7 +339,14 @@ bool Application::eventFilter(QObject* object, QEvent* event) {
 }
 
 void Application::keyPressEvent(QKeyEvent* event) {
-    if (!event->isAutoRepeat()) {
+    // while a sign-in page is shown, keys go only to it: no script hears them, and the keyboard device takes none, so
+    // mappings, Controller.getValue and the avatar's actions read nothing; keys held before it showed are let go at
+    // the first key pressed while it shows (their releases always reach the device, so none stays down)
+    const bool signInShown = LoginDialog::isShown();
+    if (signInShown) {
+        synthesizeKeyReleasEvents();
+    }
+    if (!event->isAutoRepeat() && !signInShown) {
         _keysPressed.insert(event->key(), *event);
     }
 
@@ -345,7 +354,9 @@ void Application::keyPressEvent(QKeyEvent* event) {
         return;
     }
 
-    _controllerScriptingInterface->emitKeyPressEvent(event); // send events to any registered scripts
+    if (!signInShown) {
+        _controllerScriptingInterface->emitKeyPressEvent(event); // send events to any registered scripts
+    }
     // if one of our scripts have asked to capture this event, then stop processing it
     if (_controllerScriptingInterface->isKeyCaptured(event) || isInterstitialMode()) {
         return;
@@ -379,7 +390,7 @@ void Application::keyPressEvent(QKeyEvent* event) {
                 break;
         }
     } else if (hasFocus()) {
-        if (_keyboardMouseDevice->isActive()) {
+        if (_keyboardMouseDevice->isActive() && !signInShown) {
             _keyboardMouseDevice->keyPressEvent(event);
         }
 
@@ -539,11 +550,14 @@ void Application::keyReleaseEvent(QKeyEvent* event) {
         AndroidHelper::instance().requestActivity("Home", false);
     }
 #endif
-    _controllerScriptingInterface->emitKeyReleaseEvent(event); // send events to any registered scripts
+    // while a sign-in page is shown, no script hears keys; the release still reaches the keyboard device
+    if (!LoginDialog::isShown()) {
+        _controllerScriptingInterface->emitKeyReleaseEvent(event); // send events to any registered scripts
 
-    // if one of our scripts have asked to capture this event, then stop processing it
-    if (_controllerScriptingInterface->isKeyCaptured(event)) {
-        return;
+        // if one of our scripts have asked to capture this event, then stop processing it
+        if (_controllerScriptingInterface->isKeyCaptured(event)) {
+            return;
+        }
     }
 
     if (_keyboardMouseDevice->isActive()) {
