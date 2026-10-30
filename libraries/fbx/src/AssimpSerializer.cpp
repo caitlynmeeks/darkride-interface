@@ -1199,6 +1199,7 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
     scene = importer.ReadFileFromMemory(
         glb.constData(), glb.size(),
         // aiProcess_CalcTangentSpace |
+        aiProcess_ValidateDataStructure |   // a scene whose indices or counts do not hold together is refused
         aiProcess_Triangulate |
         aiProcess_RemoveComponent |
         aiProcess_GenNormals | 
