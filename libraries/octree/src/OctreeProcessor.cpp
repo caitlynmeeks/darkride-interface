@@ -104,6 +104,13 @@ void OctreeProcessor::processDatagram(ReceivedMessage& message, SharedNodePointe
             if (packetIsCompressed) {
                 if (message.getBytesLeftToRead() > (qint64) sizeof(OCTREE_PACKET_INTERNAL_SECTION_SIZE)) {
                     message.readPrimitive(&sectionLength);
+                    // a section that claims more than the packet holds is not read; the rest of the packet goes
+                    if ((qint64)sectionLength > message.getBytesLeftToRead()) {
+                        qCWarning(octree) << "Octree packet section claims" << sectionLength << "bytes with"
+                                          << message.getBytesLeftToRead() << "left; the rest of the packet is dropped";
+                        sectionLength = 0;
+                        error = true;
+                    }
                 } else {
                     sectionLength = 0;
                     error = true;

@@ -292,6 +292,38 @@ public:
     static int unpackDataFromBytes(const unsigned char* dataBytes, AACube& result);
     static int unpackDataFromBytes(const unsigned char* dataBytes, QRect& result);
 
+    // The bytes a field of this type takes at dataBytes, as unpackDataFromBytes will read them: a fixed type its size,
+    // a length-prefixed one its two-byte prefix and what the prefix claims; -1 when not even the prefix lies within
+    // bytesLeft. The entity readers compare it with the bytes left before they unpack, so a field that claims more
+    // than the buffer holds is refused instead of read past the end (EntityItemPropertiesMacros.h).
+    template <typename T>
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const T& result) { return (int)sizeof(T); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const glm::quat& result) { return 4 * (int)sizeof(uint16_t); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const AACube& result);
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const QString& result) { return prefixedSize(dataBytes, bytesLeft, 1); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const QUuid& result) { return prefixedSize(dataBytes, bytesLeft, 1); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const QByteArray& result) { return prefixedSize(dataBytes, bytesLeft, 1); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const QVector<glm::vec3>& result) { return prefixedSize(dataBytes, bytesLeft, (int)sizeof(glm::vec3)); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const QVector<glm::quat>& result) { return prefixedSize(dataBytes, bytesLeft, 4 * (int)sizeof(uint16_t)); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const QVector<float>& result) { return prefixedSize(dataBytes, bytesLeft, (int)sizeof(float)); }
+    static int packedSize(const unsigned char* dataBytes, int bytesLeft, const QVector<bool>& result);
+    // a two-byte count followed by that many elements of elementSize bytes; -1 when the count itself does not fit
+    static int prefixedSize(const unsigned char* dataBytes, int bytesLeft, int elementSize) {
+        if (bytesLeft < (int)sizeof(uint16_t)) {
+            return -1;
+        }
+        uint16_t count;
+        memcpy(&count, dataBytes, sizeof(count));
+        const int64_t size = (int64_t)sizeof(uint16_t) + (int64_t)count * (int64_t)elementSize;   // at most 2 + 65535 * 12
+        return (int)size;
+    }
+    // whether a field of this type lies wholly within bytesLeft
+    template <typename T>
+    static bool fits(const unsigned char* dataBytes, int bytesLeft, const T& result) {
+        const int size = packedSize(dataBytes, bytesLeft, result);
+        return size >= 0 && size <= bytesLeft;
+    }
+
 private:
     /// appends raw bytes, might fail if byte would cause packet to be too large
     bool append(const unsigned char* data, int length);

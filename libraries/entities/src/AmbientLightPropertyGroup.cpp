@@ -71,14 +71,14 @@ bool AmbientLightPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
 }
 
 bool AmbientLightPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt,
-    int& processedBytes) {
+    int& processedBytes, int bytesToRead) {
         
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
     
-    READ_ENTITY_PROPERTY(PROP_AMBIENT_LIGHT_INTENSITY, float, setAmbientIntensity);
-    READ_ENTITY_PROPERTY(PROP_AMBIENT_LIGHT_URL, QString, setAmbientURL);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_AMBIENT_LIGHT_INTENSITY, float, setAmbientIntensity);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_AMBIENT_LIGHT_URL, QString, setAmbientURL);
     
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_AMBIENT_LIGHT_INTENSITY, AmbientIntensity);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_AMBIENT_LIGHT_URL, AmbientURL);

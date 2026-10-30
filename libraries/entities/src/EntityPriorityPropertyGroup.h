@@ -50,7 +50,7 @@ public:
 
     virtual bool decodeFromEditPacket(EntityPropertyFlags& propertyFlags,
                                       const unsigned char*& dataAt,
-                                      int& processedBytes) override;
+                                      int& processedBytes, int bytesToRead) override;
     virtual void markAllChanged() override;
     virtual EntityPropertyFlags getChangedProperties() const override;
 

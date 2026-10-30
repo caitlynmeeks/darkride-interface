@@ -25,11 +25,20 @@ public:
         _offset(offset), _data(data), _size(size) {
     }
 
+    // A read that would pass the end of the buffer reads nothing (the value is left zeroed), moves to the end and
+    // marks the parser overrun; a reader checks overrun() before trusting what it read.
     template<typename T>
     inline void readValue(T& result) {
-        Q_ASSERT(remaining() >= sizeof(T));
+        if (remaining() < sizeof(T)) {
+            fail(&result, sizeof(T));
+            return;
+        }
         memcpy(&result, _data + _offset, sizeof(T));
         _offset += sizeof(T);
+    }
+
+    inline bool overrun() const {
+        return _overrun;
     }
 
     inline void readUuid(QUuid& result) {
@@ -56,7 +65,13 @@ public:
     }
 
     inline size_t remaining() const {
-        return _size - _offset;
+        return _offset < _size ? _size - _offset : 0;
+    }
+
+    inline void fail(void* result, size_t size) {
+        memset(result, 0, size);
+        _offset = _size;
+        _overrun = true;
     }
 
     inline size_t offset() const {
@@ -72,11 +87,18 @@ private:
     size_t _offset{ 0 };
     const uint8_t* const _data;
     const size_t _size;
+    bool _overrun{ false };
 };
 
 
 template<>
 inline void BufferParser::readValue<quat>(quat& result) {
+    if (remaining() < 4 * sizeof(uint16_t)) {
+        result = quat();
+        _offset = _size;
+        _overrun = true;
+        return;
+    }
     size_t advance = unpackOrientationQuatFromBytes(_data + _offset, result);
     _offset += advance;
 }
@@ -84,19 +106,37 @@ inline void BufferParser::readValue<quat>(quat& result) {
 template<>
 inline void BufferParser::readValue(QString& result) {
     uint16_t length; readValue(length);
-    result = QString((const char*)_data + _offset);
+    if (remaining() < length) {
+        result = QString();
+        _offset = _size;
+        _overrun = true;
+        return;
+    }
+    result = QString::fromUtf8((const char*)_data + _offset, (int)length);
+    _offset += length;
 }
 
 template<>
 inline void BufferParser::readValue(QUuid& result) {
     uint16_t length; readValue(length);
-    Q_ASSERT(16 == length);
+    if (length != 16) {
+        result = QUuid();
+        _offset = _size;
+        _overrun = true;
+        return;
+    }
     readUuid(result);
 }
 
 template<>
 inline void BufferParser::readValue(QVector<glm::vec3>& result) {
     uint16_t length; readValue(length);
+    if (remaining() < sizeof(glm::vec3) * length) {
+        result.clear();
+        _offset = _size;
+        _overrun = true;
+        return;
+    }
     result.resize(length);
     memcpy(result.data(), _data + _offset, sizeof(glm::vec3) * length);
     _offset += sizeof(glm::vec3) * length;
@@ -105,6 +145,12 @@ inline void BufferParser::readValue(QVector<glm::vec3>& result) {
 template<>
 inline void BufferParser::readValue(QByteArray& result) {
     uint16_t length; readValue(length);
+    if (remaining() < length) {
+        result.clear();
+        _offset = _size;
+        _overrun = true;
+        return;
+    }
     result = QByteArray((char*)_data + _offset, (int)length);
     _offset += length;
 }

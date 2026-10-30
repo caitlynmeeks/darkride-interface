@@ -42,7 +42,7 @@ bool EntityPriorityPropertyGroup::appendToEditPacket(OctreePacketData* packetDat
 
 bool EntityPriorityPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags,
                                                     const unsigned char*& dataAt,
-                                                    int& processedBytes) {
+                                                    int& processedBytes, int bytesToRead) {
     int bytesRead = 0;
     processedBytes += bytesRead;
     return true;

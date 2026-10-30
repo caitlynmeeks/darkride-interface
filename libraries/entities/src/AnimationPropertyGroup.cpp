@@ -239,20 +239,20 @@ bool AnimationPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
 }
 
 
-bool AnimationPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes) {
+bool AnimationPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes, int bytesToRead) {
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
 
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_URL, QString, setURL);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_ALLOW_TRANSLATION, bool, setAllowTranslation);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_FPS, float, setFPS);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_FRAME_INDEX, float, setCurrentFrame);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_PLAYING, bool, setRunning);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_LOOP, bool, setLoop);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_FIRST_FRAME, float, setFirstFrame);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_LAST_FRAME, float, setLastFrame);
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_HOLD, bool, setHold);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_URL, QString, setURL);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_ALLOW_TRANSLATION, bool, setAllowTranslation);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_FPS, float, setFPS);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_FRAME_INDEX, float, setCurrentFrame);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_PLAYING, bool, setRunning);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_LOOP, bool, setLoop);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_FIRST_FRAME, float, setFirstFrame);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_LAST_FRAME, float, setLastFrame);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_ANIMATION_HOLD, bool, setHold);
 
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_ANIMATION_URL, URL);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_ANIMATION_ALLOW_TRANSLATION, AllowTranslation);

@@ -48,9 +48,47 @@
             propertiesDidntFit -= P;                                \
         }
 
+// The entity readers (readEntityDataFromBuffer, readEntitySubclassDataFromBuffer, with bytesLeftToRead, bytesRead
+// and args in scope): a field that claims more bytes than are left is not read; the read is marked failed
+// (args.readFailed), every later field of the packet is skipped, and the tree abandons the rest of the packet
+// (EntityTree::readEntityDataFromBuffer). No field is ever read in part.
 #define READ_ENTITY_PROPERTY(P,T,S)                                                \
+        if (propertyFlags.getHasProperty(P) && !args.readFailed) {                 \
+            T fromBuffer;                                                          \
+            if (!OctreePacketData::fits(dataAt, bytesLeftToRead - bytesRead, fromBuffer)) { \
+                args.readFailed = true;                                            \
+            } else {                                                               \
+                int bytes = OctreePacketData::unpackDataFromBytes(dataAt, fromBuffer); \
+                dataAt += bytes;                                                   \
+                bytesRead += bytes;                                                \
+                if (overwriteLocalData) {                                          \
+                    S(fromBuffer);                                                 \
+                }                                                                  \
+                somethingChanged = true;                                           \
+            }                                                                      \
+        }
+
+#define SKIP_ENTITY_PROPERTY(P,T)                                                  \
+        if (propertyFlags.getHasProperty(P) && !args.readFailed) {                 \
+            T fromBuffer;                                                          \
+            if (!OctreePacketData::fits(dataAt, bytesLeftToRead - bytesRead, fromBuffer)) { \
+                args.readFailed = true;                                            \
+            } else {                                                               \
+                int bytes = OctreePacketData::unpackDataFromBytes(dataAt, fromBuffer); \
+                dataAt += bytes;                                                   \
+                bytesRead += bytes;                                                \
+            }                                                                      \
+        }
+
+// The property groups' edit decoders (decodeFromEditPacket, with bytesToRead the whole edit's length, processedBytes
+// the bytes before the group and bytesRead the group's own in scope): a field that claims more bytes than the edit
+// has left refuses the edit whole.
+#define READ_ENTITY_PROPERTY_FROM_EDIT(P,T,S)                                      \
         if (propertyFlags.getHasProperty(P)) {                                     \
             T fromBuffer;                                                          \
+            if (!OctreePacketData::fits(dataAt, bytesToRead - processedBytes - bytesRead, fromBuffer)) { \
+                return false;                                                      \
+            }                                                                      \
             int bytes = OctreePacketData::unpackDataFromBytes(dataAt, fromBuffer); \
             dataAt += bytes;                                                       \
             bytesRead += bytes;                                                    \
@@ -60,23 +98,20 @@
             somethingChanged = true;                                               \
         }
 
-#define SKIP_ENTITY_PROPERTY(P,T)                                                  \
-        if (propertyFlags.getHasProperty(P)) {                                     \
-            T fromBuffer;                                                          \
-            int bytes = OctreePacketData::unpackDataFromBytes(dataAt, fromBuffer); \
-            dataAt += bytes;                                                       \
-            bytesRead += bytes;                                                    \
-        }
-
 #define DECODE_GROUP_PROPERTY_HAS_CHANGED(P,N) \
         if (propertyFlags.getHasProperty(P)) {  \
             set##N##Changed(true); \
         }
 
 
+// The edit decoder (EntityItemProperties::decodeEntityEditPacket, with bytesToRead and processedBytes in scope): a
+// field that claims more bytes than the edit has left refuses the edit whole.
 #define READ_ENTITY_PROPERTY_TO_PROPERTIES(P,T,O)                                  \
         if (propertyFlags.getHasProperty(P)) {                                     \
             T fromBuffer;                                                          \
+            if (!OctreePacketData::fits(dataAt, bytesToRead - processedBytes, fromBuffer)) { \
+                return false;                                                      \
+            }                                                                      \
             int bytes = OctreePacketData::unpackDataFromBytes(dataAt, fromBuffer); \
             dataAt += bytes;                                                       \
             processedBytes += bytes;                                               \

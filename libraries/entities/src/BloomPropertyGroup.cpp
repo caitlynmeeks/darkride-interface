@@ -70,14 +70,14 @@ bool BloomPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
     return true;
 }
 
-bool BloomPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes) {
+bool BloomPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes, int bytesToRead) {
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
 
-    READ_ENTITY_PROPERTY(PROP_BLOOM_INTENSITY, float, setBloomIntensity);
-    READ_ENTITY_PROPERTY(PROP_BLOOM_THRESHOLD, float, setBloomThreshold);
-    READ_ENTITY_PROPERTY(PROP_BLOOM_SIZE, float, setBloomSize);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_BLOOM_INTENSITY, float, setBloomIntensity);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_BLOOM_THRESHOLD, float, setBloomThreshold);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_BLOOM_SIZE, float, setBloomSize);
 
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_BLOOM_INTENSITY, BloomIntensity);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_BLOOM_THRESHOLD, BloomThreshold);

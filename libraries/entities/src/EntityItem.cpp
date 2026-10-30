@@ -721,6 +721,11 @@ int EntityItem::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
     const unsigned char* dataAt = parser.data() + parser.offset();
     int bytesRead = (int)parser.offset();
 #endif
+    if (parser.overrun()) {
+        // the header passes the end of the packet: nothing of it is trusted, and the rest of the packet is abandoned
+        args.readFailed = true;
+        return bytesLeftToRead;
+    }
 
     auto nodeList = DependencyManager::get<NodeList>();
     const QUuid& myNodeID = nodeList->getSessionUUID();
@@ -730,7 +735,12 @@ int EntityItem::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
     // even when we would otherwise ignore the rest of the packet.
 
     bool filterRejection = false;
-    if (propertyFlags.getHasProperty(PROP_SIMULATION_OWNER)) {
+    // read by hand, not by READ_ENTITY_PROPERTY, so checked by hand against the bytes left
+    if (propertyFlags.getHasProperty(PROP_SIMULATION_OWNER) &&
+        !OctreePacketData::fits(dataAt, bytesLeftToRead - bytesRead, QByteArray())) {
+        args.readFailed = true;
+    }
+    if (propertyFlags.getHasProperty(PROP_SIMULATION_OWNER) && !args.readFailed) {
         QByteArray simOwnerData;
         int bytes = OctreePacketData::unpackDataFromBytes(dataAt, simOwnerData);
         SimulationOwner newSimOwner;

@@ -47,7 +47,7 @@ public:
                                     int& propertyCount,
                                     OctreeElement::AppendState& appendState) const = 0;
 
-    virtual bool decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes) = 0;
+    virtual bool decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes, int bytesToRead) = 0;
     virtual void markAllChanged() = 0;
     virtual EntityPropertyFlags getChangedProperties() const = 0;
 
