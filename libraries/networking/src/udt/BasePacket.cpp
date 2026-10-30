@@ -37,9 +37,11 @@ std::unique_ptr<BasePacket> BasePacket::create(qint64 size) {
 
 std::unique_ptr<BasePacket> BasePacket::fromReceivedPacket(std::unique_ptr<char[]> data,
                                                            qint64 size, const HifiSockAddr& senderSockAddr) {
-    // Fail with invalid size
-    Q_ASSERT(size >= 0);
-    
+    // received data is checked before it is used (nullptr when there is none)
+    if (!data || size < 0) {
+        return nullptr;
+    }
+
     // allocate memory
     auto packet = std::unique_ptr<BasePacket>(new BasePacket(std::move(data), size, senderSockAddr));
     
@@ -124,7 +126,11 @@ BasePacket& BasePacket::operator=(BasePacket&& other) {
 
 void BasePacket::setPayloadSize(qint64 payloadSize) {
     if (isWritable()) {
-        Q_ASSERT(payloadSize <= _payloadCapacity);
+        // a payload size is kept within the packet's capacity
+        if (payloadSize < 0 || payloadSize > _payloadCapacity) {
+            qCWarning(networking) << "Refused a payload size of" << payloadSize << "for a packet of capacity" << _payloadCapacity;
+            return;
+        }
         _payloadSize = payloadSize;
     } else {
         qCDebug(networking) << "You can not call setPayloadSize for a non-writeable Packet.";

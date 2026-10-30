@@ -1135,8 +1135,11 @@ void AvatarMixer::handleOctreePacket(QSharedPointer<ReceivedMessage> message, Sh
             memcpy(buffer.get(), message->getRawMessage() + message->getPosition(), piggyBackedSizeWithHeader);
 
             auto newPacket = NLPacket::fromReceivedPacket(std::move(buffer), piggyBackedSizeWithHeader, message->getSenderSockAddr());
-            auto newMessage = QSharedPointer<ReceivedMessage>::create(*newPacket);
-            handleOctreePacket(newMessage, senderNode);
+            // a piggybacked packet too short for its header is left unread
+            if (newPacket) {
+                auto newMessage = QSharedPointer<ReceivedMessage>::create(*newPacket);
+                handleOctreePacket(newMessage, senderNode);
+            }
         }
         break;
     }

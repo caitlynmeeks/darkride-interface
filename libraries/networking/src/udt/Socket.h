@@ -14,6 +14,7 @@
 #ifndef hifi_Socket_h
 #define hifi_Socket_h
 
+#include <chrono>
 #include <functional>
 #include <unordered_map>
 #include <mutex>
@@ -110,6 +111,7 @@ private slots:
 
 private:
     void setSystemBufferSizes();
+    void dropMalformedDatagram(const HifiSockAddr& senderSockAddr, qint64 size);
     Connection* findOrCreateConnection(const HifiSockAddr& sockAddr, bool filterCreation = false);
    
     // privatized methods used by UDTTest - they are private since they must be called on the Socket thread
@@ -145,6 +147,8 @@ private:
     bool _shouldChangeSocketOptions { true };
 
     int _lastPacketSizeRead { 0 };
+    int _malformedDatagramsDropped { 0 };
+    std::chrono::steady_clock::time_point _lastMalformedDatagramLog;
     SequenceNumber _lastReceivedSequenceNumber;
     HifiSockAddr _lastPacketSockAddr;
     

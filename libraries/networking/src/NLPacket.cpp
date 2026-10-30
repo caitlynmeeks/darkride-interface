@@ -36,11 +36,22 @@ std::unique_ptr<NLPacket> NLPacket::create(PacketType type, qint64 size, bool is
 
 std::unique_ptr<NLPacket> NLPacket::fromReceivedPacket(std::unique_ptr<char[]> data, qint64 size,
                                                        const HifiSockAddr& senderSockAddr) {
-    // Fail with null data
-    Q_ASSERT(data);
-    
-    // Fail with invalid size
-    Q_ASSERT(size >= 0);
+    // received data is size-checked against its header (nullptr when it doesn't hold one)
+    if (!Packet::isLongEnoughForHeader(data.get(), size)) {
+        return nullptr;
+    }
+    SequenceNumberAndBitField seqNumBitField;
+    memcpy(&seqNumBitField, data.get(), sizeof(seqNumBitField));
+    bool isPartOfMessage = seqNumBitField & udt::MESSAGE_BIT_MASK;
+    auto typeOffset = Packet::totalHeaderSize(isPartOfMessage);
+    if (size < typeOffset + (qint64)sizeof(PacketType)) {
+        return nullptr;
+    }
+    PacketType type;
+    memcpy(&type, data.get() + typeOffset, sizeof(type));
+    if (size < NLPacket::totalHeaderSize(type, isPartOfMessage)) {
+        return nullptr;
+    }
 
     // allocate memory
     auto packet = std::unique_ptr<NLPacket>(new NLPacket(std::move(data), size, senderSockAddr));
@@ -157,6 +168,11 @@ QByteArray NLPacket::hashForPacketAndHMAC(const udt::Packet& packet, HMACAuth& h
         + NUM_BYTES_LOCALID + NUM_BYTES_MD5_HASH;
     
     // add the packet payload and the connection UUID
+    // no payload, no hash
+    if (packet.getDataSize() < offset) {
+        return QByteArray();
+    }
+
     HMACAuth::HMACHash hashResult;
     if (!hash.calculateHash(hashResult, packet.getData() + offset, packet.getDataSize() - offset)) {
         return QByteArray();

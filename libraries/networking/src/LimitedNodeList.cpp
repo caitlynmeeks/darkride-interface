@@ -230,6 +230,13 @@ QUdpSocket& LimitedNodeList::getDTLSSocket() {
 }
 
 bool LimitedNodeList::isPacketVerifiedWithSource(const udt::Packet& packet, Node* sourceNode) {
+    // a packet is size-checked against its header before the header is read
+    auto typeOffset = udt::Packet::totalHeaderSize(packet.isPartOfMessage());
+    if (packet.getDataSize() < typeOffset + (qint64)sizeof(PacketType) ||
+        packet.getDataSize() < NLPacket::totalHeaderSize(NLPacket::typeInHeader(packet), packet.isPartOfMessage())) {
+        return false;
+    }
+
     // We track bandwidth when doing packet verification to avoid needing to do a node lookup
     // later when we already do it in packetSourceAndHashMatchAndTrackBandwidth. A node lookup
     // incurs a lock, so it is ideal to avoid needing to do it 2+ times for each packet

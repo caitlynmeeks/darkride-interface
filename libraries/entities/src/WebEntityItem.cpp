@@ -15,6 +15,7 @@
 
 #include <ByteCountCoding.h>
 #include <GeometryUtil.h>
+#include <NetworkingConstants.h>
 #include <shared/LocalFileAccessGate.h>
 
 #include "EntitiesLogging.h"
@@ -275,6 +276,16 @@ void WebEntityItem::setSourceUrl(const QString& value) {
         _needsRenderUpdate |= _sourceUrl != value;
         _sourceUrl = value;
     });
+}
+
+bool WebEntityItem::isWebPageUrl(const QString& url) {
+    if (url.isEmpty()) {
+        return true;
+    }
+    // the scheme as the client reads it (QUrl), so what passes here is always a web page there
+    const QString scheme = QUrl(url).scheme();
+    return scheme == HIFI_URL_SCHEME_HTTP || scheme == HIFI_URL_SCHEME_HTTPS || scheme == URL_SCHEME_DATA ||
+        scheme == HIFI_URL_SCHEME_ABOUT;
 }
 
 QString WebEntityItem::getSourceUrl() const { 

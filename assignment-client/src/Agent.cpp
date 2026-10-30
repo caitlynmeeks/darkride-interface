@@ -181,7 +181,7 @@ void Agent::handleOctreePacket(QSharedPointer<ReceivedMessage> message, SharedNo
     if (packetType == PacketType::OctreeStats) {
 
         int statsMessageLength = OctreeHeadlessViewer::parseOctreeStats(message, senderNode);
-        if (message->getSize() > statsMessageLength) {
+        if (statsMessageLength >= 0 && message->getSize() > statsMessageLength) {
             // pull out the piggybacked packet and create a new QSharedPointer<NLPacket> for it
             int piggyBackedSizeWithHeader = message->getSize() - statsMessageLength;
 
@@ -189,6 +189,9 @@ void Agent::handleOctreePacket(QSharedPointer<ReceivedMessage> message, SharedNo
             memcpy(buffer.get(), message->getRawMessage() + statsMessageLength, piggyBackedSizeWithHeader);
 
             auto newPacket = NLPacket::fromReceivedPacket(std::move(buffer), piggyBackedSizeWithHeader, message->getSenderSockAddr());
+            if (!newPacket) {
+                return; // too short for a packet's header: nothing to read
+            }
             message = QSharedPointer<ReceivedMessage>::create(*newPacket);
         } else {
             return; // bail since no piggyback data
@@ -543,7 +546,16 @@ void Agent::executeScript() {
 
             static quint16 audioSequenceNumber{ 0 };
 
+            // a recording's audio frame is one network frame of samples: another size is cut to that, or filled out with
+            // silence
             QByteArray audio(frame->data);
+            if (audio.size() != AudioConstants::NETWORK_FRAME_BYTES_PER_CHANNEL) {
+                int recordedBytes = audio.size();
+                audio.resize(AudioConstants::NETWORK_FRAME_BYTES_PER_CHANNEL);
+                if (recordedBytes < audio.size()) {
+                    memset(audio.data() + recordedBytes, 0, audio.size() - recordedBytes);
+                }
+            }
 
             int16_t* samples = reinterpret_cast<int16_t*>(audio.data());
             int numSamples = AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL;

@@ -64,6 +64,10 @@ void AbstractAudioInterface::emitAudioPacket(const void* audioData, size_t bytes
         if (audioPacket->getType() != PacketType::SilentAudioFrame) {
             // audio samples have already been packed (written to networkAudioSamples)
             int leadingBytes = audioPacket->getPayloadSize();
+            // more audio than the packet holds is not sent
+            if (leadingBytes + (qint64)bytes > audioPacket->getPayloadCapacity()) {
+                return;
+            }
             audioPacket->setPayloadSize(leadingBytes + bytes);
             memcpy(audioPacket->getPayload() + leadingBytes, audioData, bytes);
         }
