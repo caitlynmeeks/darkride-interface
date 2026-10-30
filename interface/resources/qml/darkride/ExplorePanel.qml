@@ -102,7 +102,10 @@ Page {
         // the last new instance that couldn't start, said on its world's card, tile or row once Explore is open again
         // (until it closes)
         property var startFailure: ({ id: "", text: "" })
-        property var startTicket: null     // the new instance being started, { cancelled }: Cancel drops its late address
+        // the new instance being started, { world, visibility, id, cancelled, answered }: Cancel drops its late address;
+        // the same start asked for again before its answer (Hop after Cancel) takes it up again rather than starting a
+        // second server (Caity's hand test 10-30: two servers for one person)
+        property var startTicket: null
 
         // the worlds in the search bar's order (the metaverse searched them); ties keep the metaverse's order
         readonly property var shown: worldBar.arrange(worlds, false)
@@ -333,8 +336,15 @@ Page {
             }
             hoppingWorld = world.id;
             startFailure = { id: "", text: "" };
+            var pending = startTicket;
+            if (pending && pending.cancelled && !pending.answered && pending.world === world.id &&
+                    pending.visibility === visibility) {
+                pending.cancelled = false;
+                hopStart(world, pending.id);
+                return;
+            }
             var startId = world.id + "@" + Date.now();
-            var ticket = { cancelled: false };
+            var ticket = { world: world.id, visibility: visibility, id: startId, cancelled: false, answered: false };
             startTicket = ticket;
             // the answer may come after the page has gone (in the tablet, closing it goes to the home screen; the
             // headset's screen has no Cancel), so it keeps what it needs
@@ -344,6 +354,7 @@ Page {
             hopStart(world, startId);
             MetaverseRequests.send("POST", "/api/worlds/" + world.id + "/instances",
                                    { visibility: visibility, protocol: root.protocol }, function (error, code, data) {
+                ticket.answered = true;
                 if (ticket.cancelled) {
                     console.log("Explore: the new instance answered " + code + " after its hop was cancelled");
                     return;
@@ -406,7 +417,6 @@ Page {
                 explore.hoppingWorld = "";
                 if (explore.startTicket) {
                     explore.startTicket.cancelled = true;
-                    explore.startTicket = null;
                 }
             }
         }
