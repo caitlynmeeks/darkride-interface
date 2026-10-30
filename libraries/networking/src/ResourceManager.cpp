@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QThread>
 #include <QFileInfo>
+#include <QRegularExpression>
 
 #include <SharedUtil.h>
 #include <plugins/Forward.h>
@@ -61,6 +62,29 @@ void ResourceManager::setUrlPrefixOverride(const QString& prefix, const QString&
     }
 }
 
+// Whether the rest of an address after a prefix stays under the prefix's replacement: its path (up to a query or a
+// fragment), percent-decoded, with backslashes read as separators, never climbs above where it starts.
+static bool staysUnderReplacement(const QString& rest) {
+    QString path = rest;
+    const int end = path.indexOf(QRegularExpression("[?#]"));
+    if (end >= 0) {
+        path.truncate(end);
+    }
+    path = QUrl::fromPercentEncoding(path.toUtf8());
+    path.replace('\\', '/');
+    int depth = 0;
+    for (const QString& part : path.split('/')) {
+        if (part == "..") {
+            if (--depth < 0) {
+                return false;
+            }
+        } else if (!part.isEmpty() && part != ".") {
+            ++depth;
+        }
+    }
+    return true;
+}
+
 QString ResourceManager::normalizeURL(const QString& urlString) {
     QString result = urlString;
     PrefixMap copy;
@@ -74,6 +98,12 @@ QString ResourceManager::normalizeURL(const QString& urlString) {
         const auto& prefix = entry.first;
         const auto& replacement = entry.second;
         if (result.startsWith(prefix)) {
+            // an address that climbs out of the replacement ("../", however spelled) is left as written: a prefix
+            // maps what is under it, never what is beside it
+            if (!staysUnderReplacement(result.mid(prefix.size()))) {
+                qCWarning(networking) << "Not replacing" << prefix << "in an address that leaves it:" << result.left(200);
+                continue;
+            }
             qCDebug(networking) << "Replacing " << prefix << " with " << replacement;
             result.replace(0, prefix.size(), replacement);
         }
