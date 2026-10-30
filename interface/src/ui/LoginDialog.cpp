@@ -80,8 +80,9 @@ bool LoginDialog::isShown() {
         if (!dialog->isVisible()) {
             continue;
         }
-        // the headset's tablet draws its page on a surface of its own, visible to Qt while the tablet is put away
-        if (tabletRoot && tabletRoot->isAncestorOf(dialog) && !tabletShown) {
+        // the headset's tablet draws its page on a surface of its own, visible to Qt while the tablet is put away.
+        // Headset only: on the desktop isVisible() tells the truth, and only the headset has the Home-on-hide net
+        if (qApp->isHMDMode() && tabletRoot && tabletRoot->isAncestorOf(dialog) && !tabletShown) {
             continue;
         }
         return true;
