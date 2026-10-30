@@ -74,31 +74,42 @@ function onClicked() {
     if (onEmoteScreen) {
         tablet.gotoHomeScreen();
     } else {
-        onEmoteScreen = true;
         tablet.gotoWebScreen(EMOTE_APP_URL);
     }
 }
 
+// The Emote page is shown when the tablet says so, by its full address
 function onScreenChanged(type, url) {
-    onEmoteScreen = type === "Web" && (url.indexOf(EMOTE_APP_BASE) === url.length - EMOTE_APP_BASE.length);
+    onEmoteScreen = type === "Web" && url === EMOTE_APP_URL;
     button.editProperties({ isActive: onEmoteScreen });
 }
 
-// Handle the events we're receiving from the web UI
+// Handle the events we're receiving from the web UI. The tablet's web events come from whatever page it shows: only the
+// Emote page's own are heard, and only for its named requests
 function onWebEventReceived(event) {
+    if (!onEmoteScreen) {
+        return;
+    }
 
     // Converts the event to a JavasScript Object
     if (typeof event === "string") {
-        event = JSON.parse(event);
+        try {
+            event = JSON.parse(event);
+        } catch (e) {
+            return;
+        }
+    }
+    if (!event) {
+        return;
     }
 
-    if (event.type === "ready" && onEmoteScreen) {
+    if (event.type === "ready") {
         // the page marks the gaze style the avatar wears, and auto
         showGaze();
         return;
     }
 
-    if (event.type === "gaze" && onEmoteScreen) {
+    if (event.type === "gaze") {
         // one of the Eyes buttons: how the avatar's eyes behave, for everyone to see; a style picked by hand ends auto
         if (event.data === "auto") {
             autoGaze.setOn(!autoGaze.isOn());
@@ -120,7 +131,10 @@ function onWebEventReceived(event) {
         if (emoteName === "Sit"){
             emoteName = event.data + randSit; // Sit1, Sit2, Sit3
         }
-        
+        if (EMOTE_ANIMATIONS.indexOf(emoteName) === -1) {
+            return;
+        }
+
         if (ANIMATIONS[emoteName].resource.state === FINISHED) {
             
             if (activeTimer !== false) {
@@ -207,6 +221,7 @@ Script.scriptEnding.connect(function () {
     }
     button.clicked.disconnect(onClicked);
     tablet.screenChanged.disconnect(onScreenChanged);
+    tablet.webEventReceived.disconnect(onWebEventReceived);
     MyAvatar.gazeStyleChanged.disconnect(showGaze);
     autoGaze.shutdown();
     if (tablet) {
