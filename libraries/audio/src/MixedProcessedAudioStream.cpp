@@ -25,6 +25,14 @@ void MixedProcessedAudioStream::outputFormatChanged(int sampleRate, int channelC
     _ringBuffer.resizeForFrameSize(deviceOutputFrameSamples);
 }
 
+// a mixed frame is always one whole stereo network frame; a decoder's output of any other size (the pcm and zlib
+// codecs pass on whatever the mixer sent, and their lost frames are empty) becomes a silent frame
+static void keepWholeFrame(QByteArray& decodedBuffer) {
+    if (decodedBuffer.size() != AudioConstants::NETWORK_FRAME_BYTES_STEREO) {
+        decodedBuffer.fill(0, AudioConstants::NETWORK_FRAME_BYTES_STEREO);
+    }
+}
+
 int MixedProcessedAudioStream::writeDroppableSilentFrames(int silentFrames) {
     int deviceSilentFrames = networkToDeviceFrames(silentFrames);
     int deviceSilentFramesWritten = InboundAudioStream::writeDroppableSilentFrames(deviceSilentFrames);
@@ -51,6 +59,7 @@ int MixedProcessedAudioStream::lostAudioData(int numPackets) {
             decodedBuffer.resize(AudioConstants::NETWORK_FRAME_BYTES_STEREO);
             memset(decodedBuffer.data(), 0, decodedBuffer.size());
         }
+        keepWholeFrame(decodedBuffer);
         emit addedStereoSamples(decodedBuffer);
 
         emit processSamples(decodedBuffer, outputBuffer);
@@ -74,6 +83,7 @@ int MixedProcessedAudioStream::parseAudioData(PacketType type, const QByteArray&
     } else {
         decodedBuffer = packetAfterStreamProperties;
     }
+    keepWholeFrame(decodedBuffer);
 
     emit addedStereoSamples(decodedBuffer);
 

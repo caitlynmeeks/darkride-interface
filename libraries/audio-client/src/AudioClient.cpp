@@ -1699,10 +1699,16 @@ bool AudioClient::mixLocalAudioInjectors(float* mixBuffer) {
 void AudioClient::processReceivedSamples(const QByteArray& decodedBuffer, QByteArray& outputBuffer) {
 
     const int16_t* decodedSamples = reinterpret_cast<const int16_t*>(decodedBuffer.data());
-    assert(decodedBuffer.size() == AudioConstants::NETWORK_FRAME_BYTES_STEREO);
 
     outputBuffer.resize(_outputFrameSize * AudioConstants::SAMPLE_SIZE);
     int16_t* outputSamples = reinterpret_cast<int16_t*>(outputBuffer.data());
+
+    // the reverb, the resampler and the copy below all read one whole network frame; a frame of any other size (the
+    // mixer chooses its codec and payload) plays as silence
+    if (decodedBuffer.size() != AudioConstants::NETWORK_FRAME_BYTES_STEREO) {
+        memset(outputSamples, 0, outputBuffer.size());
+        return;
+    }
 
     bool hasReverb = _reverb || _receivedAudioStream.hasReverb();
 
