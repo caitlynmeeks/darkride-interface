@@ -1526,6 +1526,10 @@ void Application::installOperators() {
 
     DependencyManager::get<UsersScriptingInterface>()->setKickConfirmationOperator([this] (const QUuid& nodeID) { userKickConfirmation(nodeID); });
 
+    // the app's own QML surfaces made as local Web entities from C++: the only QML a local Web entity may show that
+    // was not made on a client script's thread (RenderableWebEntityItem.cpp)
+    render::entities::WebEntityRenderer::setTrustedQmlUrls({ TabletScriptingInterface::QML, LOGIN_DIALOG.toString(),
+                                                              AVATAR_INPUTS_BAR_QML.toString(), BUBBLE_ICON_QML.toString() });
     render::entities::WebEntityRenderer::setAcquireWebSurfaceOperator([=](const QString& url, bool htmlContent, QSharedPointer<OffscreenQmlSurface>& webSurface, bool& cachedWebSurface) {
         bool isTablet = url == TabletScriptingInterface::QML;
         if (htmlContent) {

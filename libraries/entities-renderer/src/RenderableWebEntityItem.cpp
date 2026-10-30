@@ -51,14 +51,13 @@ static const uint32_t MAX_CONCURRENT_WEB_VIEWS = 20;
 
 static QTouchDevice _touchDevice;
 
-// one of the app's own QML files: baked into the executable (qrc), or in the resources folder of a developer's build
-static bool isAppQmlUrl(const QString& urlString) {
-    const QString lower = urlString.toLower();
-    if (lower.startsWith("qrc:/")) {
-        return true;
-    }
-    const QString resources = PathUtils::resourcesUrl().toLower();
-    return !resources.isEmpty() && lower.startsWith(resources);
+QStringList WebEntityRenderer::_trustedQmlUrls;
+
+// a web page's address: what a Web entity that is not the app's own may show
+static bool isWebPageUrl(const QString& urlString) {
+    const QString scheme = QUrl(urlString).scheme().toLower();
+    return scheme == HIFI_URL_SCHEME_HTTP || scheme == HIFI_URL_SCHEME_HTTPS || scheme == URL_SCHEME_DATA ||
+           scheme == HIFI_URL_SCHEME_ABOUT;
 }
 
 WebEntityRenderer::ContentType WebEntityRenderer::getContentType(const QString& urlString) {
@@ -168,14 +167,15 @@ void WebEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene
     auto newSourceURL = entity->getSourceUrl();
     {
         auto newContentType = getContentType(newSourceURL);
-        // QML is the app's own UI language, with the app's objects in reach. Only a local Web entity may show it, and
-        // only one the app's own scripts made (a client script's thread; the tablet) or one showing one of the app's
-        // own QML files (the login dialog, the avatar inputs bar, the bubble icon: qrc, or the resources folder of a
-        // developer's build). A Web entity that belongs to a world or to another avatar shows web content or nothing,
-        // and so does a local one that a world's entity script made, unless it shows the app's own files.
-        const bool refusedQml = newContentType == ContentType::QmlContent &&
-            !(entity->isLocalEntity() && (entity->getLocalSafeContext() || isAppQmlUrl(newSourceURL)));
-        if (refusedQml) {
+        // The app's own Web entities are the local ones its scripts made (a client script's thread; the tablet) and
+        // the local ones it makes from C++ for its own QML surfaces (the login dialog, the avatar inputs bar, the
+        // bubble icon, listed by the app at start). Every other Web entity, a world's, another avatar's, or a local
+        // one a world's entity script made, shows a web page (http, https, data, about) or nothing: not QML, the
+        // app's own UI language with the app's objects in reach, and not a page from the visitor's own files.
+        const bool trusted = entity->isLocalEntity() &&
+            (entity->getLocalSafeContext() || _trustedQmlUrls.contains(newSourceURL));
+        const bool refused = !trusted && newContentType != ContentType::NoContent && !isWebPageUrl(newSourceURL);
+        if (refused) {
             newContentType = ContentType::NoContent;
         }
         ContentType currentContentType;
@@ -185,8 +185,8 @@ void WebEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene
         currentContentType = _contentType;
 
         if (urlChanged) {
-            if (refusedQml) {
-                qCWarning(entitiesrenderer) << "Web entity" << entity->getID() << "is not the app's own; its QML content is not shown:" << newSourceURL;
+            if (refused) {
+                qCWarning(entitiesrenderer) << "Web entity" << entity->getID() << "is not the app's own; only a web page is shown, not:" << newSourceURL;
             }
             if (newContentType != ContentType::HtmlContent || currentContentType != ContentType::HtmlContent) {
                 destroyWebSurface();
