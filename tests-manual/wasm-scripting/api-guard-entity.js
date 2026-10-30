@@ -66,6 +66,11 @@
         attempt("Entities.getEntityProperties", function() { return Entities.getEntityProperties(self.id, ["name"]).name; });
         attempt("typeof Overlays", function() { return typeof Overlays + " " + typeof Messages + " " + typeof Camera + " " + typeof Picks; });
         attempt("Script.setTimeout", function() { Script.setTimeout(function() { say("timer fired"); }, 10); return "set"; });
+        attempt("new XMLHttpRequest", function() { var x = new XMLHttpRequest(); x.open("GET", "https://example.com/"); return typeof x.send; });
+        attempt("typeof WebSocket", function() { return typeof WebSocket; });
+        attempt("location.hostname", function() { return typeof location.hostname; });
+        attempt("Window.location", function() { return typeof Window.location; });
+        attempt("SoundCache.getSound", function() { var s = SoundCache.getSound("https://cdn.darkride.ai/sounds/none.wav"); return typeof s.downloaded; });
 
         // Messages (security finding #11): the world's messages are marked, the app's channels refused both ways
         Messages.messageReceived.connect(function(channel, message, sender, localOnly, fromOwnScripts) {
