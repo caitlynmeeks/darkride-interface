@@ -43,6 +43,10 @@ namespace AudioConstants {
     
     const int MIN_SAMPLE_VALUE = std::numeric_limits<AudioSample>::min();
     const int MAX_SAMPLE_VALUE = std::numeric_limits<AudioSample>::max();
+
+    // the largest sound kept or made by resampling (1 GB, over three hours of 24 kHz stereo); a larger one is refused,
+    // which also keeps every byte count of a sound within an int
+    const int64_t MAX_SOUND_BYTES = std::numeric_limits<int>::max() / 2;
 }
 
 
