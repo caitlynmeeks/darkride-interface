@@ -11,6 +11,8 @@
 
 #include "WindowScriptingInterface.h"
 
+#include "InterfaceLogging.h"
+
 #include <QClipboard>
 #include <QtCore/QDir>
 #include <QMessageBox>
@@ -165,9 +167,14 @@ void WindowScriptingInterface::disconnectedFromDomain() {
 
 void WindowScriptingInterface::openUrl(const QUrl& url) {
     if (!url.isEmpty()) {
-        auto scheme = url.scheme();
+        auto scheme = url.scheme().toLower();
         if (scheme == URL_SCHEME_HIFI) {
             DependencyManager::get<AddressManager>()->handleLookupString(url.toString());
+        } else if (scheme != "http" && scheme != "https") {
+            // a web page or a world address only: any other scheme (file:, a protocol handler, a custom URL) would
+            // hand the visitor's machine a command on a script's say-so
+            qCWarning(interfaceapp) << "Window.openUrl refused" << url.toDisplayString().left(200)
+                                    << ": only http, https and world addresses open";
         } else {
 #if defined(Q_OS_ANDROID)
             QMap<QString, QString> args;

@@ -80,6 +80,21 @@ QStringList FileScriptingInterface::unzipFile(QString path, QString tempDir) {
     QString dirName = dir.path();
     qCDebug(scriptengine) << "Directory to unzip: " << dirName;
     QString target = tempDir + "/model_repo";
+
+    // every entry has to land inside the target folder: an archive whose entry names climb out of it (../, an absolute
+    // path, a drive letter) would write wherever they point, so such an archive is refused whole
+    const QString targetPath = QDir::cleanPath(QDir(target).absolutePath());
+    const QString targetRoot = targetPath + "/";
+    const QStringList entries = JlCompress::getFileList(dirName);
+    for (const QString& entry : entries) {
+        const QString landing = QDir::cleanPath(QDir(target).absoluteFilePath(entry));
+        if (entry.contains('\\') || entry.contains(':') || (landing != targetPath && !landing.startsWith(targetRoot))) {
+            qCWarning(scriptengine) << "Refused to unzip" << dirName << ": the entry" << entry.left(200)
+                                    << "would land outside the target folder";
+            return QStringList();
+        }
+    }
+
     QStringList list = JlCompress::extractDir(dirName, target);
 
     qCDebug(scriptengine) << list;

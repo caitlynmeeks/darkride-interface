@@ -78,6 +78,10 @@
 #include "AssetScriptingInterface.h"
 #include "BatchLoader.h"
 #include <ScriptNetworkPolicy.h>
+#include "GuardedObject.h"
+#include "WorldMessages.h"
+#include "RefusedGlobal.h"
+#include "ScriptApiPolicy.h"
 #include "BaseScriptEngine.h"
 #include "DataViewClass.h"
 #include "EventTypes.h"
@@ -934,7 +938,9 @@ void ScriptEngine::registerStandardGlobals() {
     registerGlobalObject("Vec3", &_vec3Library);
     registerGlobalObject("Mat4", &_mat4Library);
     registerGlobalObject("Uuid", &_uuidLibrary);
-    registerGlobalObject("Messages", DependencyManager::get<MessagesClient>().data());
+    // a world's entity scripts get their own Messages: the world's send path, the app's channels refused (WorldMessages)
+    registerGlobalObject("Messages", isEntityClientScript() ? static_cast<QObject*>(new WorldMessages(this))
+                                                            : DependencyManager::get<MessagesClient>().data());
     registerGlobalObject("File", new FileScriptingInterface(this));
     registerGlobalObject("console", &_consoleScriptingInterface);
     registerFunction("console", "info", ConsoleScriptingInterface::info, currentContext()->argumentCount());
@@ -1014,7 +1020,14 @@ void ScriptEngine::registerGlobalObject(const QString& name, QObject* object) {
 
     if (!globalObject().property(name).isValid()) {
         if (object) {
+            if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(name)) {
+                // a world's entity scripts don't get this one: a stand-in of the same name, with no members
+                object = new RefusedGlobal(name, this);
+            }
             QScriptValue value = newQObject(object, QScriptEngine::QtOwnership, DEFAULT_QOBJECT_WRAP_OPTIONS);
+            if (isEntityClientScript()) {
+                value = guardClass()->wrap(value);   // a world's scripts see the guard, never the wrapper
+            }
             globalObject().setProperty(name, value);
         } else {
             globalObject().setProperty(name, QScriptValue());
@@ -1037,6 +1050,11 @@ void ScriptEngine::registerFunction(const QString& name, QScriptEngine::Function
     qCDebug(scriptengine) << "ScriptEngine::registerFunction() called on thread [" << QThread::currentThread() << "] name:" << name;
 #endif
 
+    if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(name)) {
+        // a world's entity scripts don't get this one (the QML and web window constructors): the stand-in, as for objects
+        registerGlobalObject(name, new RefusedGlobal(name, this));
+        return;
+    }
     QScriptValue scriptFun = newFunction(functionSignature, numArguments);
     globalObject().setProperty(name, scriptFun);
 }
@@ -1058,9 +1076,39 @@ void ScriptEngine::registerFunction(const QString& parent, const QString& name, 
 
     QScriptValue object = globalObject().property(parent);
     if (object.isValid()) {
-        QScriptValue scriptFun = newFunction(functionSignature, numArguments);
+        if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(parent)) {
+        return;   // a world's entity scripts don't get the parent, so not its functions either
+    }
+    QScriptValue scriptFun = newFunction(functionSignature, numArguments);
         object.setProperty(name, scriptFun);
     }
+}
+
+GuardedObjectClass* ScriptEngine::guardClass() {
+    if (!isEntityClientScript()) {
+        return nullptr;
+    }
+    if (!_guardClass) {
+        HostInterface::MemberGate gate;
+        gate.allowsClass = &ScriptApiPolicy::allowsClass;
+        gate.deniesMethod = &ScriptApiPolicy::deniesMethod;
+        gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
+        gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
+        gate.refusalLine = &ScriptApiPolicy::refusalLine;
+        _guardClass = std::make_unique<GuardedObjectClass>(this, std::move(gate));
+    }
+    return _guardClass.get();
+}
+
+static QScriptValue guardedGetter(QScriptContext* context, QScriptEngine* engine) {
+    auto getter = reinterpret_cast<QScriptEngine::FunctionSignature>(
+        reinterpret_cast<void*>(context->callee().data().toVariant().value<quintptr>()));
+    QScriptValue result = getter ? getter(context, engine) : QScriptValue();
+    ScriptEngine* scriptEngine = qobject_cast<ScriptEngine*>(engine);
+    if (result.isQObject() && scriptEngine && scriptEngine->guardClass()) {
+        result = scriptEngine->guardClass()->wrap(result);
+    }
+    return result;
 }
 
 void ScriptEngine::registerGetterSetter(const QString& name, QScriptEngine::FunctionSignature getter,
@@ -1081,8 +1129,16 @@ void ScriptEngine::registerGetterSetter(const QString& name, QScriptEngine::Func
     qCDebug(scriptengine) << "ScriptEngine::registerGetterSetter() called on thread [" << QThread::currentThread() << "] name:" << name << "parent:" << parent;
 #endif
 
+    if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(parent.isEmpty() ? name : parent)) {
+        return;   // a world's entity scripts don't get this global
+    }
     QScriptValue setterFunction = newFunction(setter, 1);
     QScriptValue getterFunction = newFunction(getter);
+    if (isEntityClientScript()) {
+        // what the getter hands back (location: the address manager) goes behind the guard too
+        getterFunction = newFunction(guardedGetter);
+        getterFunction.setData(newVariant(QVariant::fromValue(quintptr(reinterpret_cast<void*>(getter)))));
+    }
 
     if (!parent.isNull() && !parent.isEmpty()) {
         QScriptValue object = globalObject().property(parent);

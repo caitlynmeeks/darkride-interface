@@ -580,7 +580,78 @@ QVariant HostInterface::describe(const QVariant& target) const {
     if (!object) {
         return QVariant();
     }
-    return MetaObjectDescription::describe(object);
+    QVariant description = MetaObjectDescription::describe(object);
+    if (gated(object->metaObject())) {
+        return gatedDescription(object->metaObject(), description.toMap());
+    }
+    return description;
+}
+
+bool HostInterface::gated(const QMetaObject* meta) const {
+    return meta && bool(_gate.allowsClass);
+}
+
+bool HostInterface::classAllowed(const QMetaObject* meta) const {
+    auto found = _classAllowed.constFind(meta);
+    if (found != _classAllowed.constEnd()) {
+        return found.value();
+    }
+    const bool allowed = _gate.allowsClass(meta);
+    _classAllowed.insert(meta, allowed);
+    return allowed;
+}
+
+bool HostInterface::allowed(const QMetaObject* meta, const QMetaMethod& method) const {
+    if (!callable(method)) {
+        return false;
+    }
+    if (!gated(meta)) {
+        return true;
+    }
+    // a signal is connected to, not called; the gate's word on it is the class's
+    if (method.methodType() == QMetaMethod::Signal) {
+        return classAllowed(meta);
+    }
+    return classAllowed(meta) && !_gate.deniesMethod(meta, method.name());
+}
+
+QString HostInterface::refuse(const QMetaObject* meta, const QByteArray& member) const {
+    const QString line = _gate.refusalLine ? _gate.refusalLine(QString::fromUtf8(meta->className()), QString::fromUtf8(member))
+                                           : QString("%1%2 is not available to this script").arg(QString::fromUtf8(meta->className()), member.isEmpty() ? QString() : "." + QString::fromUtf8(member));
+    log(Warning, line);
+    return line;
+}
+
+QVariantMap HostInterface::gatedDescription(const QMetaObject* meta, QVariantMap description) const {
+    if (!classAllowed(meta)) {
+        // the class name alone: nothing to call, read, write or connect; logged, so a content class missing from
+        // the list shows up in testing
+        refuse(meta, QByteArray());
+        QVariantMap bare;
+        bare["class"] = description.value("class");
+        return bare;
+    }
+    QVariantList methods;
+    for (const QVariant& entry : description.value("methods").toList()) {
+        if (!_gate.deniesMethod(meta, entry.toMap().value("name").toString().toUtf8())) {
+            methods.append(entry);
+        }
+    }
+    description["methods"] = methods;
+    QVariantList properties;
+    for (const QVariant& entry : description.value("properties").toList()) {
+        QVariantMap property = entry.toMap();
+        const QByteArray name = property.value("name").toString().toUtf8();
+        if (_gate.deniesPropertyRead(meta, name)) {
+            continue;
+        }
+        if (_gate.deniesPropertyWrite(meta, name)) {
+            property["writable"] = false;
+        }
+        properties.append(property);
+    }
+    description["properties"] = properties;
+    return description;
 }
 
 const QVector<int>& HostInterface::candidates(const QMetaObject* meta, const QByteArray& name) {
@@ -594,7 +665,7 @@ const QVector<int>& HostInterface::candidates(const QMetaObject* meta, const QBy
     QVector<int> indices;
     for (int i = meta->methodCount() - 1; i >= 0; --i) {
         QMetaMethod method = meta->method(i);
-        if (callable(method) && method.name() == name) {
+        if (allowed(meta, method) && method.name() == name) {
             indices.append(i);
         }
     }
@@ -805,22 +876,28 @@ QVariant HostInterface::callWithCbor(ObjectTable::Handle handle, const QByteArra
     if (name.startsWith('#')) {
         bool ok = false;
         int index = name.mid(1).toInt(&ok);
-        if (!ok || index < 0 || index >= meta->methodCount() || !callable(meta->method(index))) {
-            error = QString("%1 has no method %2").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(methodName));
+        if (!ok || index < 0 || index >= meta->methodCount() || !allowed(meta, meta->method(index))) {
+            error = (ok && index >= 0 && index < meta->methodCount() && callable(meta->method(index)))
+                        ? refuse(meta, meta->method(index).name())
+                        : QString("%1 has no method %2").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(methodName));
             return QVariant();
         }
         indices.append(index);
     } else if (name.contains('(')) {
         int index = meta->indexOfMethod(QMetaObject::normalizedSignature(name.constData()).constData());
-        if (index < 0 || !callable(meta->method(index))) {
-            error = QString("%1 has no method %2").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(methodName));
+        if (index < 0 || !allowed(meta, meta->method(index))) {
+            error = (index >= 0 && callable(meta->method(index)))
+                        ? refuse(meta, meta->method(index).name())
+                        : QString("%1 has no method %2").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(methodName));
             return QVariant();
         }
         indices.append(index);
     } else {
         indices = candidates(meta, name);
         if (indices.isEmpty()) {
-            error = QString("%1 has no method %2").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(methodName));
+            error = (gated(meta) && (!classAllowed(meta) || _gate.deniesMethod(meta, name)))
+                        ? refuse(meta, name)
+                        : QString("%1 has no method %2").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(methodName));
             return QVariant();
         }
     }
@@ -898,6 +975,10 @@ QVariant HostInterface::getByName(ObjectTable::Handle handle, const QByteArray& 
         error = QString("%1.%2 is not readable").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(propertyName));
         return QVariant();
     }
+    if (gated(meta) && (!classAllowed(meta) || _gate.deniesPropertyRead(meta, propertyName))) {
+        error = refuse(meta, propertyName);
+        return QVariant();
+    }
     return property.read(object);
 }
 
@@ -922,6 +1003,10 @@ bool HostInterface::setWithCbor(ObjectTable::Handle handle, const QByteArray& na
     QMetaProperty property = meta->property(index);
     if (!property.isWritable()) {
         error = QString("%1.%2 is read-only").arg(QString::fromUtf8(meta->className()), propertyName);
+        return false;
+    }
+    if (gated(meta) && (!classAllowed(meta) || _gate.deniesPropertyWrite(meta, name))) {
+        error = refuse(meta, name);
         return false;
     }
     QVariant typed;
@@ -974,6 +1059,10 @@ int HostInterface::connect(ObjectTable::Handle handle, const QString& signal, QS
     QObject* object = _objects.object(handle);
     if (!object) {
         error = QString("unknown or dead object handle %1").arg(handle);
+        return 0;
+    }
+    if (gated(object->metaObject()) && !classAllowed(object->metaObject())) {
+        error = refuse(object->metaObject(), signal.toUtf8());
         return 0;
     }
     return _relay.connect(object, signal, [this](int connection, const QVariantList& arguments) {

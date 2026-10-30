@@ -514,3 +514,78 @@ void HostInterfaceTests::testLog() {
 
 // TestObjects.h has no source file of its own, so its moc output is pulled in here.
 #include "moc_TestObjects.cpp"
+
+// The member gate (the script API policy for a world's scripts) holds at the host boundary itself: the module's
+// exports, reached exactly as a guest reaches them, with no shim in between. Nothing a guest does on its side can
+// reach a denied member.
+void HostInterfaceTests::testMemberGate() {
+    Fixture f;
+    QString error;
+    QVERIFY2(f.start(error), qPrintable(error));
+    Other other;
+    f.objects.registerGlobal("Other", &other);
+
+    HostInterface::MemberGate gate;
+    gate.allowsClass = [](const QMetaObject* meta) { return QByteArray(meta->className()) == "Probe"; };   // default-deny: Other is not listed
+    gate.deniesMethod = [](const QMetaObject* meta, const QByteArray& name) { return QByteArray(meta->className()) == "Probe" && name == "scale"; };
+    gate.deniesPropertyWrite = [](const QMetaObject* meta, const QByteArray& name) { return QByteArray(meta->className()) == "Probe" && name == "count"; };
+    gate.deniesPropertyRead = [](const QMetaObject* meta, const QByteArray& name) { return QByteArray(meta->className()) == "Probe" && name == "label"; };
+    gate.refusalLine = [](const QString& object, const QString& member) { return object + "." + member + " is for the visitor's own scripts"; };
+    f.host->setMemberGate(gate);
+
+    const int32_t probe = f.probeHandle();
+    const int32_t otherHandle = f.objects.global("Other");
+
+    // describe: the denied method and the unreadable property are not shown; the unwritable one says so
+    auto name = f.place(QVariant("Probe"));
+    QVariantMap description = f.unpack(f.i64("describe", { name.first, name.second })).toMap();
+    QStringList methodNames;
+    for (const QVariant& entry : description.value("methods").toList()) {
+        methodNames << entry.toMap().value("name").toString();
+    }
+    QVERIFY(methodNames.contains("add"));
+    QVERIFY(!methodNames.contains("scale"));
+    bool sawCount = false, sawLabel = false;
+    for (const QVariant& entry : description.value("properties").toList()) {
+        QVariantMap property = entry.toMap();
+        if (property.value("name") == "count") { sawCount = true; QCOMPARE(property.value("writable").toBool(), false); }
+        if (property.value("name") == "label") { sawLabel = true; }
+    }
+    QVERIFY(sawCount);
+    QVERIFY(!sawLabel);
+    auto otherName = f.place(QVariant("Other"));
+    QVariantMap otherDescription = f.unpack(f.i64("describe", { otherName.first, otherName.second })).toMap();
+    QCOMPARE(otherDescription.value("class").toString(), QString("Other"));
+    QVERIFY(otherDescription.value("methods").toList().isEmpty());
+    QVERIFY(otherDescription.value("properties").toList().isEmpty());
+
+    // calls, in every form the boundary takes: by name, by index, by signature
+    QCOMPARE(f.call(probe, "add", { 2, 3 }), QVariant(5));
+    QVariantMap v { { "x", 1.0 }, { "y", 2.0 }, { "z", 3.0 } };
+    QVERIFY(errorMessage(f.call(probe, "scale", { v, 2 })).contains("Probe.scale is for the visitor's own scripts"));
+    const int scaleIndex = Probe::staticMetaObject.indexOfMethod("scale(glm::vec3,float)");
+    QVERIFY(scaleIndex >= 0);
+    QVERIFY(errorMessage(f.call(probe, QString("#%1").arg(scaleIndex), { v, 2 })).contains("is for the visitor's own scripts"));
+    QVERIFY(errorMessage(f.call(probe, "scale(glm::vec3,float)", { v, 2 })).contains("is for the visitor's own scripts"));
+
+    // properties: the unreadable one and the unwritable one
+    QVERIFY(errorMessage(f.get(probe, "label")).contains("Probe.label is for the visitor's own scripts"));
+    f.probe.setCount(7);
+    QCOMPARE(f.get(probe, "count"), QVariant(7));
+    QVERIFY(errorMessage(f.set(probe, "count", 9)).contains("Probe.count is for the visitor's own scripts"));
+    QCOMPARE(f.probe.count(), 7);
+
+    // a denied class: nothing to call, read or connect, whatever the name
+    QVERIFY(errorMessage(f.call(otherHandle, "objectName", {})).contains("is for the visitor's own scripts"));
+    QVERIFY(errorMessage(f.get(otherHandle, "objectName")).contains("is for the visitor's own scripts"));
+    QCOMPARE(f.connect(otherHandle, "destroyed"), 0);
+
+    // each refusal was logged as a warning
+    int warnings = 0;
+    for (const QString& line : f.logged) {
+        if (line.startsWith("2:") && line.contains("is for the visitor's own scripts")) {
+            warnings++;
+        }
+    }
+    QVERIFY(warnings >= 7);
+}

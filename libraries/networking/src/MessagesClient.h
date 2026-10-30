@@ -161,6 +161,11 @@ public:
      */
     Q_INVOKABLE void unsubscribe(QString channel);
 
+    /// A world's entity scripts send through these (WorldMessages): a message delivered on this computer arrives with
+    /// fromOwnScripts false. Not script-callable.
+    void sendMessageFromWorld(QString channel, QString message, bool localOnly);
+    void sendDataFromWorld(QString channel, QByteArray data, bool localOnly);
+
     static void decodeMessagesPacket(QSharedPointer<ReceivedMessage> receivedMessage, QString& channel, 
                                            bool& isText, QString& message, QByteArray& data, QUuid& senderID);
 
@@ -178,9 +183,12 @@ signals:
      *     script, the UUID of the entity script server if sent by a server entity script, or the UUID of the assignment client 
      *     instance if sent by an assignment client script.
      * @param {boolean} localOnly - <code>true</code> if the message was sent with <code>localOnly == true</code>.
+     * @param {boolean} fromOwnScripts - <code>true</code> only for a local message sent by the user's own scripts on this
+     *     computer (the app's and the ones the user installed); <code>false</code> for one sent by a world's entity scripts on
+     *     this computer and for every message from the network. A script that acts for the user on a message checks it.
      * @returns {Signal}
      */
-    void messageReceived(QString channel, QString message, QUuid senderUUID, bool localOnly);
+    void messageReceived(QString channel, QString message, QUuid senderUUID, bool localOnly, bool fromOwnScripts);
 
     /**jsdoc
      * Triggered when a data message is received.
@@ -193,9 +201,16 @@ signals:
      *     script, the UUID of the entity script server if sent by a server entity script, or the UUID of the assignment client
      *     instance if sent by an assignment client script.
      * @param {boolean} localOnly - <code>true</code> if the message was sent with <code>localOnly == true</code>.
+     * @param {boolean} fromOwnScripts - <code>true</code> only for a local message sent by the user's own scripts on this
+     *     computer (the app's and the ones the user installed); <code>false</code> for one sent by a world's entity scripts on
+     *     this computer and for every message from the network. A script that acts for the user on a message checks it.
      * @returns {Signal}
      */
-    void dataReceived(QString channel, QByteArray data, QUuid senderUUID, bool localOnly);
+    void dataReceived(QString channel, QByteArray data, QUuid senderUUID, bool localOnly, bool fromOwnScripts);
+
+private:
+    void send(const QString& channel, const QString& message, bool localOnly, bool fromOwnScripts);
+    void sendBytes(const QString& channel, const QByteArray& data, bool localOnly, bool fromOwnScripts);
 
 private slots:
     void handleMessagesPacket(QSharedPointer<ReceivedMessage> receivedMessage, SharedNodePointer senderNode);
