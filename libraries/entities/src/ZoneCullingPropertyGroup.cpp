@@ -40,7 +40,7 @@ bool ZoneCullingPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
 
 bool ZoneCullingPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags,
                                                     const unsigned char*& dataAt,
-                                                    int& processedBytes) {
+                                                    int& processedBytes, int bytesToRead) {
     int bytesRead = 0;
     processedBytes += bytesRead;
     return true;

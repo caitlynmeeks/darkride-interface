@@ -213,33 +213,33 @@ bool RingGizmoPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
 }
 
 bool RingGizmoPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags,
-                                             const unsigned char*& dataAt , int& processedBytes) {
+                                             const unsigned char*& dataAt , int& processedBytes, int bytesToRead) {
 
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
 
-    READ_ENTITY_PROPERTY(PROP_START_ANGLE, float, setStartAngle);
-    READ_ENTITY_PROPERTY(PROP_END_ANGLE, float, setEndAngle);
-    READ_ENTITY_PROPERTY(PROP_INNER_RADIUS, float, setInnerRadius);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_START_ANGLE, float, setStartAngle);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_END_ANGLE, float, setEndAngle);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_INNER_RADIUS, float, setInnerRadius);
 
-    READ_ENTITY_PROPERTY(PROP_INNER_START_COLOR, u8vec3Color, setInnerStartColor);
-    READ_ENTITY_PROPERTY(PROP_INNER_END_COLOR, u8vec3Color, setInnerEndColor);
-    READ_ENTITY_PROPERTY(PROP_OUTER_START_COLOR, u8vec3Color, setOuterStartColor);
-    READ_ENTITY_PROPERTY(PROP_OUTER_END_COLOR, u8vec3Color, setOuterEndColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_INNER_START_COLOR, u8vec3Color, setInnerStartColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_INNER_END_COLOR, u8vec3Color, setInnerEndColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_OUTER_START_COLOR, u8vec3Color, setOuterStartColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_OUTER_END_COLOR, u8vec3Color, setOuterEndColor);
 
-    READ_ENTITY_PROPERTY(PROP_INNER_START_ALPHA, float, setInnerStartAlpha);
-    READ_ENTITY_PROPERTY(PROP_INNER_END_ALPHA, float, setInnerEndAlpha);
-    READ_ENTITY_PROPERTY(PROP_OUTER_START_ALPHA, float, setOuterStartAlpha);
-    READ_ENTITY_PROPERTY(PROP_OUTER_END_ALPHA, float, setOuterEndAlpha);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_INNER_START_ALPHA, float, setInnerStartAlpha);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_INNER_END_ALPHA, float, setInnerEndAlpha);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_OUTER_START_ALPHA, float, setOuterStartAlpha);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_OUTER_END_ALPHA, float, setOuterEndAlpha);
 
-    READ_ENTITY_PROPERTY(PROP_HAS_TICK_MARKS, bool, setHasTickMarks);
-    READ_ENTITY_PROPERTY(PROP_MAJOR_TICK_MARKS_ANGLE, float, setMajorTickMarksAngle);
-    READ_ENTITY_PROPERTY(PROP_MINOR_TICK_MARKS_ANGLE, float, setMinorTickMarksAngle);
-    READ_ENTITY_PROPERTY(PROP_MAJOR_TICK_MARKS_LENGTH, float, setMajorTickMarksLength);
-    READ_ENTITY_PROPERTY(PROP_MINOR_TICK_MARKS_LENGTH, float, setMinorTickMarksLength);
-    READ_ENTITY_PROPERTY(PROP_MAJOR_TICK_MARKS_COLOR, u8vec3Color, setMajorTickMarksColor);
-    READ_ENTITY_PROPERTY(PROP_MINOR_TICK_MARKS_COLOR, u8vec3Color, setMinorTickMarksColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAS_TICK_MARKS, bool, setHasTickMarks);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_MAJOR_TICK_MARKS_ANGLE, float, setMajorTickMarksAngle);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_MINOR_TICK_MARKS_ANGLE, float, setMinorTickMarksAngle);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_MAJOR_TICK_MARKS_LENGTH, float, setMajorTickMarksLength);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_MINOR_TICK_MARKS_LENGTH, float, setMinorTickMarksLength);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_MAJOR_TICK_MARKS_COLOR, u8vec3Color, setMajorTickMarksColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_MINOR_TICK_MARKS_COLOR, u8vec3Color, setMinorTickMarksColor);
 
 
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_START_ANGLE, StartAngle);

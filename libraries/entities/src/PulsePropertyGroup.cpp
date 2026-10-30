@@ -131,17 +131,17 @@ bool PulsePropertyGroup::appendToEditPacket(OctreePacketData* packetData,
 }
 
 bool PulsePropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags,
-                                             const unsigned char*& dataAt , int& processedBytes) {
+                                             const unsigned char*& dataAt , int& processedBytes, int bytesToRead) {
 
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
 
-    READ_ENTITY_PROPERTY(PROP_PULSE_MIN, float, setMin);
-    READ_ENTITY_PROPERTY(PROP_PULSE_MAX, float, setMax);
-    READ_ENTITY_PROPERTY(PROP_PULSE_PERIOD, float, setPeriod);
-    READ_ENTITY_PROPERTY(PROP_PULSE_COLOR_MODE, PulseMode, setColorMode);
-    READ_ENTITY_PROPERTY(PROP_PULSE_ALPHA_MODE, PulseMode, setAlphaMode);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_PULSE_MIN, float, setMin);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_PULSE_MAX, float, setMax);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_PULSE_PERIOD, float, setPeriod);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_PULSE_COLOR_MODE, PulseMode, setColorMode);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_PULSE_ALPHA_MODE, PulseMode, setAlphaMode);
 
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_PULSE_MIN, Min);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_PULSE_MAX, Max);

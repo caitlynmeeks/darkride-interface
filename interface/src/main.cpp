@@ -64,6 +64,10 @@ int main(int argc, const char* argv[]) {
     // This appears to resolve the issues with corrupted fonts on OSX.  No
     // idea why.
     qputenv("QT_ENABLE_GLYPH_CACHE_WORKAROUND", "true");
+    // QML's XMLHttpRequest may read and write local files in this Qt (it only warns that a future Qt will refuse):
+    // the app's own QML never needs that, and no QML from anywhere else should have it
+    qputenv("QML_XHR_ALLOW_FILE_READ", "0");
+    qputenv("QML_XHR_ALLOW_FILE_WRITE", "0");
 	// https://i.kym-cdn.com/entries/icons/original/000/008/342/ihave.jpg
     QSurfaceFormat::setDefaultFormat(format);
 #endif

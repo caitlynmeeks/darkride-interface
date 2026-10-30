@@ -215,6 +215,16 @@ int EntityTree::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
                     quint64 entityScriptTimestampBefore = entity->getScriptTimestamp();
 
                     bytesForThisEntity = entity->readEntityDataFromBuffer(dataAt, bytesLeftToRead, args);
+                    if (args.readFailed) {
+                        // a field claimed more than the packet holds: the fields read whole before it stand, the
+                        // rest of the packet is abandoned (its cursor can't be trusted)
+                        qCWarning(entities) << "Entity data for" << entityItemID << "passes the end of its packet; the rest of the packet is dropped";
+                        if (entity->getDirtyFlags()) {
+                            entityChanged(entity);
+                        }
+                        bytesRead += bytesLeftToRead;
+                        break;
+                    }
                     if (entity->getDirtyFlags()) {
                         entityChanged(entity);
                     }
@@ -242,6 +252,13 @@ int EntityTree::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
                     entity = EntityTypes::constructEntityItem(dataAt, bytesLeftToRead);
                     if (entity) {
                         bytesForThisEntity = entity->readEntityDataFromBuffer(dataAt, bytesLeftToRead, args);
+                        if (args.readFailed) {
+                            // a new entity whose data passes the end of its packet is not added, and the rest of
+                            // the packet is abandoned
+                            qCWarning(entities) << "New entity" << entityItemID << "passes the end of its packet; not added, the rest of the packet is dropped";
+                            bytesRead += bytesLeftToRead;
+                            break;
+                        }
 
                         // don't add if we've recently deleted....
                         if (!isDeletedEntity(entityItemID)) {

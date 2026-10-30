@@ -225,10 +225,12 @@ QVector<OBJFace> OBJFace::triangulate() {
 
 void OBJFace::addFrom(const OBJFace* face, int index) { // add using data from f at index i
     vertexIndices.append(face->vertexIndices[index]);
-    if (face->textureUVIndices.count() > 0) { // Any at all. Runtime error if not consistent.
+    // a face may give texture coordinates or normals for only some of its corners: those lists are copied where
+    // the corner has one, and the mesh uses them only when every corner of a triangle does
+    if (index < face->textureUVIndices.count()) {
         textureUVIndices.append(face->textureUVIndices[index]);
     }
-    if (face->normalIndices.count() > 0) {
+    if (index < face->normalIndices.count()) {
         normalIndices.append(face->normalIndices[index]);
     }
 }
@@ -757,17 +759,37 @@ HFMModel::Pointer OBJSerializer::read(const hifi::ByteArray& data, const hifi::V
             foreach(OBJFace face, faceGroup) {
                 HFMMeshPart& meshPart = mesh.parts[materialMeshIdMap[face.materialName]];
 
-                glm::vec3 v0 = checked_at(vertices, face.vertexIndices[0]);
-                glm::vec3 v1 = checked_at(vertices, face.vertexIndices[1]);
-                glm::vec3 v2 = checked_at(vertices, face.vertexIndices[2]);
-
+                // every lookup first, then the appends: a face that names a vertex, colour, normal or texture
+                // coordinate the file does not have is left out whole, so the mesh's lists stay the same length
+                glm::vec3 v0, v1, v2;
                 glm::vec3 vc0, vc1, vc2;
                 bool hasVertexColors = (vertexColors.size() > 0);
-                if (hasVertexColors) {
-                    // If there are any vertex colors, it's safe to assume all meshes had them exported.
-                    vc0 = checked_at(vertexColors, face.vertexIndices[0]);
-                    vc1 = checked_at(vertexColors, face.vertexIndices[1]);
-                    vc2 = checked_at(vertexColors, face.vertexIndices[2]);
+                glm::vec3 n0, n1, n2;
+                bool hasNormals = face.normalIndices.count() >= 3;
+                glm::vec2 uv0(0.0f, 1.0f), uv1(0.0f, 1.0f), uv2(0.0f, 1.0f);
+                try {
+                    v0 = checked_at(vertices, face.vertexIndices[0]);
+                    v1 = checked_at(vertices, face.vertexIndices[1]);
+                    v2 = checked_at(vertices, face.vertexIndices[2]);
+                    if (hasVertexColors) {
+                        // If there are any vertex colors, it's safe to assume all meshes had them exported.
+                        vc0 = checked_at(vertexColors, face.vertexIndices[0]);
+                        vc1 = checked_at(vertexColors, face.vertexIndices[1]);
+                        vc2 = checked_at(vertexColors, face.vertexIndices[2]);
+                    }
+                    if (hasNormals) {
+                        n0 = checked_at(normals, face.normalIndices[0]);
+                        n1 = checked_at(normals, face.normalIndices[1]);
+                        n2 = checked_at(normals, face.normalIndices[2]);
+                    }
+                    if (face.textureUVIndices.count() >= 3) {
+                        uv0 = checked_at(textureUVs, face.textureUVIndices[0]);
+                        uv1 = checked_at(textureUVs, face.textureUVIndices[1]);
+                        uv2 = checked_at(textureUVs, face.textureUVIndices[2]);
+                    }
+                } catch (const std::out_of_range& e) {
+                    qCDebug(modelformat) << "OBJSerializer: a face is left out:" << e.what();
+                    continue;
                 }
 
                 // Scale the vertices if the OBJ file scale is specified as non-one.
@@ -775,6 +797,10 @@ HFMModel::Pointer OBJSerializer::read(const hifi::ByteArray& data, const hifi::V
                     v0 *= scaleGuess;
                     v1 *= scaleGuess;
                     v2 *= scaleGuess;
+                }
+                if (!hasNormals) {
+                    // generate normals from triangle plane if not provided
+                    n0 = n1 = n2 = glm::cross(v1 - v0, v2 - v0);
                 }
 
                 // Add the vertices.
@@ -792,29 +818,11 @@ HFMModel::Pointer OBJSerializer::read(const hifi::ByteArray& data, const hifi::V
                     mesh.colors << vc2;
                 }
 
-                glm::vec3 n0, n1, n2;
-                if (face.normalIndices.count()) {
-                    n0 = checked_at(normals, face.normalIndices[0]);
-                    n1 = checked_at(normals, face.normalIndices[1]);
-                    n2 = checked_at(normals, face.normalIndices[2]);
-                } else { 
-                    // generate normals from triangle plane if not provided
-                    n0 = n1 = n2 = glm::cross(v1 - v0, v2 - v0);
-                }
-
                 mesh.normals.append(n0);
                 mesh.normals.append(n1);
                 mesh.normals.append(n2);
 
-                if (face.textureUVIndices.count()) {
-                    mesh.texCoords <<
-                        checked_at(textureUVs, face.textureUVIndices[0]) <<
-                        checked_at(textureUVs, face.textureUVIndices[1]) <<
-                        checked_at(textureUVs, face.textureUVIndices[2]);
-                } else {
-                    glm::vec2 corner(0.0f, 1.0f);
-                    mesh.texCoords << corner << corner << corner;
-                }
+                mesh.texCoords << uv0 << uv1 << uv2;
             }
         }
     } catch(const std::exception& e) {

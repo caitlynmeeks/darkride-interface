@@ -162,27 +162,27 @@ bool HazePropertyGroup::appendToEditPacket(OctreePacketData* packetData,
     return true;
 }
 
-bool HazePropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes) {
+bool HazePropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes, int bytesToRead) {
 
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
 
-    READ_ENTITY_PROPERTY(PROP_HAZE_RANGE, float, setHazeRange);
-    READ_ENTITY_PROPERTY(PROP_HAZE_COLOR, u8vec3Color, setHazeColor);
-    READ_ENTITY_PROPERTY(PROP_HAZE_GLARE_COLOR, u8vec3Color, setHazeGlareColor);
-    READ_ENTITY_PROPERTY(PROP_HAZE_ENABLE_GLARE, bool, setHazeEnableGlare);
-    READ_ENTITY_PROPERTY(PROP_HAZE_GLARE_ANGLE, float, setHazeGlareAngle);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_RANGE, float, setHazeRange);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_COLOR, u8vec3Color, setHazeColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_GLARE_COLOR, u8vec3Color, setHazeGlareColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_ENABLE_GLARE, bool, setHazeEnableGlare);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_GLARE_ANGLE, float, setHazeGlareAngle);
 
-    READ_ENTITY_PROPERTY(PROP_HAZE_ALTITUDE_EFFECT, bool, setHazeAltitudeEffect);
-    READ_ENTITY_PROPERTY(PROP_HAZE_CEILING, float, setHazeCeiling);
-    READ_ENTITY_PROPERTY(PROP_HAZE_BASE_REF, float, setHazeBaseRef);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_ALTITUDE_EFFECT, bool, setHazeAltitudeEffect);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_CEILING, float, setHazeCeiling);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_BASE_REF, float, setHazeBaseRef);
 
-    READ_ENTITY_PROPERTY(PROP_HAZE_BACKGROUND_BLEND, float, setHazeBackgroundBlend);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_BACKGROUND_BLEND, float, setHazeBackgroundBlend);
 
-    READ_ENTITY_PROPERTY(PROP_HAZE_ATTENUATE_KEYLIGHT, bool, setHazeAttenuateKeyLight);
-    READ_ENTITY_PROPERTY(PROP_HAZE_KEYLIGHT_RANGE, float, setHazeKeyLightRange);
-    READ_ENTITY_PROPERTY(PROP_HAZE_KEYLIGHT_ALTITUDE, float, setHazeKeyLightAltitude);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_ATTENUATE_KEYLIGHT, bool, setHazeAttenuateKeyLight);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_KEYLIGHT_RANGE, float, setHazeKeyLightRange);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_HAZE_KEYLIGHT_ALTITUDE, float, setHazeKeyLightAltitude);
 
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_HAZE_RANGE, HazeRange);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_HAZE_COLOR, HazeColor);

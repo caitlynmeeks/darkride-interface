@@ -58,7 +58,7 @@ public:
                                     OctreeElement::AppendState& appendState) const override;
 
     virtual bool decodeFromEditPacket(EntityPropertyFlags& propertyFlags,
-                                      const unsigned char*& dataAt, int& processedBytes) override;
+                                      const unsigned char*& dataAt, int& processedBytes, int bytesToRead) override;
     virtual void markAllChanged() override;
     virtual EntityPropertyFlags getChangedProperties() const override;
 

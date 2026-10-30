@@ -33,7 +33,14 @@ void CalculateMeshTangentsTask::run(const baker::BakeContextPointer& context, co
         } else if (!normals.empty() && mesh.vertices.size() <= mesh.texCoords.size()) {
             tangentsOut.resize(normals.size());
             baker::calculateTangents(mesh,
-            [&mesh, &normals, &tangentsOut](int firstIndex, int secondIndex, glm::vec3* outVertices, glm::vec2* outTexCoords, glm::vec3& outNormal) {
+            [&mesh, &normals, &tangentsOut](int firstIndex, int secondIndex, glm::vec3* outVertices, glm::vec2* outTexCoords, glm::vec3& outNormal) -> glm::vec3* {
+                // an index the mesh does not have (a broken file) is skipped by the caller
+                const int vertexCount = (int)mesh.vertices.size();
+                if (firstIndex < 0 || secondIndex < 0 || firstIndex >= vertexCount || secondIndex >= vertexCount ||
+                    firstIndex >= (int)normals.size() || firstIndex >= (int)tangentsOut.size() ||
+                    firstIndex >= (int)mesh.texCoords.size() || secondIndex >= (int)mesh.texCoords.size()) {
+                    return nullptr;
+                }
                 outVertices[0] = mesh.vertices[firstIndex];
                 outVertices[1] = mesh.vertices[secondIndex];
                 outNormal = normals[firstIndex];

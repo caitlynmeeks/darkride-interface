@@ -113,18 +113,18 @@ bool KeyLightPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
 }
 
 bool KeyLightPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt, 
-                                                 int& processedBytes) {
+                                                 int& processedBytes, int bytesToRead) {
         
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
     
-    READ_ENTITY_PROPERTY(PROP_KEYLIGHT_COLOR, u8vec3Color, setColor);
-    READ_ENTITY_PROPERTY(PROP_KEYLIGHT_INTENSITY, float, setIntensity);
-    READ_ENTITY_PROPERTY(PROP_KEYLIGHT_DIRECTION, glm::vec3, setDirection);
-    READ_ENTITY_PROPERTY(PROP_KEYLIGHT_CAST_SHADOW, bool, setCastShadows);
-    READ_ENTITY_PROPERTY(PROP_KEYLIGHT_SHADOW_BIAS, float, setShadowBias);
-    READ_ENTITY_PROPERTY(PROP_KEYLIGHT_SHADOW_MAX_DISTANCE, float, setShadowMaxDistance);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_KEYLIGHT_COLOR, u8vec3Color, setColor);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_KEYLIGHT_INTENSITY, float, setIntensity);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_KEYLIGHT_DIRECTION, glm::vec3, setDirection);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_KEYLIGHT_CAST_SHADOW, bool, setCastShadows);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_KEYLIGHT_SHADOW_BIAS, float, setShadowBias);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_KEYLIGHT_SHADOW_MAX_DISTANCE, float, setShadowMaxDistance);
 
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_KEYLIGHT_COLOR, Color);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_KEYLIGHT_INTENSITY, Intensity);

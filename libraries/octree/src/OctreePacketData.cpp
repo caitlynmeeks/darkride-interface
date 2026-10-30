@@ -637,6 +637,12 @@ void OctreePacketData::loadFinalizedContent(const unsigned char* data, int lengt
     if (data && length > 0) {
 
         if (_enableCompression) {
+            // the compressed buffer holds one packet's data; a longer section is not read
+            if (length > _compressedByteArray.size()) {
+                qCWarning(octree) << "OctreePacketData::loadFinalizedContent -- a compressed section of" << length
+                                  << "bytes is larger than a packet; not read";
+                return;
+            }
             _compressedBytes = length;
             memcpy(_compressed, data, _compressedBytes);
 
@@ -656,8 +662,15 @@ void OctreePacketData::loadFinalizedContent(const unsigned char* data, int lengt
             _bytesAvailable -= uncompressedData.size();
             memcpy(_uncompressed, uncompressedData.constData(), _bytesInUse);
         } else {
+            if (length > _bytesAvailable) {
+                int moreNeeded = length - _bytesAvailable;
+                _uncompressedByteArray.resize(_uncompressedByteArray.size() + moreNeeded);
+                _uncompressed = (unsigned char*)_uncompressedByteArray.data();
+                _bytesAvailable += moreNeeded;
+            }
             memcpy(_uncompressed, data, length);
             _bytesInUse = length;
+            _bytesAvailable -= length;
         }
     } else {
         if (_debug) {
@@ -799,6 +812,19 @@ int OctreePacketData::unpackDataFromBytes(const unsigned char* dataBytes, AACube
     memcpy(&cube, dataBytes, sizeof(aaCubeData));
     result = AACube(cube.corner, cube.scale);
     return sizeof(aaCubeData);
+}
+
+int OctreePacketData::packedSize(const unsigned char* dataBytes, int bytesLeft, const AACube& result) {
+    return (int)sizeof(aaCubeData);
+}
+
+int OctreePacketData::packedSize(const unsigned char* dataBytes, int bytesLeft, const QVector<bool>& result) {
+    if (bytesLeft < (int)sizeof(uint16_t)) {
+        return -1;
+    }
+    uint16_t count;
+    memcpy(&count, dataBytes, sizeof(count));
+    return (int)sizeof(uint16_t) + ((int)count + 7) / 8;   // eight to a byte
 }
 
 int OctreePacketData::unpackDataFromBytes(const unsigned char* dataBytes, QRect& result) {

@@ -163,25 +163,25 @@ bool GrabPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
 }
 
 bool GrabPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags,
-                                             const unsigned char*& dataAt , int& processedBytes) {
+                                             const unsigned char*& dataAt , int& processedBytes, int bytesToRead) {
 
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
 
-    READ_ENTITY_PROPERTY(PROP_GRAB_GRABBABLE, bool, setGrabbable);
-    READ_ENTITY_PROPERTY(PROP_GRAB_KINEMATIC, bool, setGrabKinematic);
-    READ_ENTITY_PROPERTY(PROP_GRAB_FOLLOWS_CONTROLLER, bool, setGrabFollowsController);
-    READ_ENTITY_PROPERTY(PROP_GRAB_TRIGGERABLE, bool, setTriggerable);
-    READ_ENTITY_PROPERTY(PROP_GRAB_EQUIPPABLE, bool, setEquippable);
-    READ_ENTITY_PROPERTY(PROP_GRAB_DELEGATE_TO_PARENT, bool, setGrabDelegateToParent);
-    READ_ENTITY_PROPERTY(PROP_GRAB_LEFT_EQUIPPABLE_POSITION_OFFSET, glm::vec3, setEquippableLeftPosition);
-    READ_ENTITY_PROPERTY(PROP_GRAB_LEFT_EQUIPPABLE_ROTATION_OFFSET, glm::quat, setEquippableLeftRotation);
-    READ_ENTITY_PROPERTY(PROP_GRAB_RIGHT_EQUIPPABLE_POSITION_OFFSET, glm::vec3, setEquippableRightPosition);
-    READ_ENTITY_PROPERTY(PROP_GRAB_RIGHT_EQUIPPABLE_ROTATION_OFFSET, glm::quat, setEquippableRightRotation);
-    READ_ENTITY_PROPERTY(PROP_GRAB_EQUIPPABLE_INDICATOR_URL, QString, setEquippableIndicatorURL);
-    READ_ENTITY_PROPERTY(PROP_GRAB_EQUIPPABLE_INDICATOR_SCALE, glm::vec3, setEquippableIndicatorScale);
-    READ_ENTITY_PROPERTY(PROP_GRAB_EQUIPPABLE_INDICATOR_OFFSET, glm::vec3, setEquippableIndicatorOffset);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_GRABBABLE, bool, setGrabbable);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_KINEMATIC, bool, setGrabKinematic);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_FOLLOWS_CONTROLLER, bool, setGrabFollowsController);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_TRIGGERABLE, bool, setTriggerable);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_EQUIPPABLE, bool, setEquippable);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_DELEGATE_TO_PARENT, bool, setGrabDelegateToParent);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_LEFT_EQUIPPABLE_POSITION_OFFSET, glm::vec3, setEquippableLeftPosition);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_LEFT_EQUIPPABLE_ROTATION_OFFSET, glm::quat, setEquippableLeftRotation);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_RIGHT_EQUIPPABLE_POSITION_OFFSET, glm::vec3, setEquippableRightPosition);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_RIGHT_EQUIPPABLE_ROTATION_OFFSET, glm::quat, setEquippableRightRotation);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_EQUIPPABLE_INDICATOR_URL, QString, setEquippableIndicatorURL);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_EQUIPPABLE_INDICATOR_SCALE, glm::vec3, setEquippableIndicatorScale);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_GRAB_EQUIPPABLE_INDICATOR_OFFSET, glm::vec3, setEquippableIndicatorOffset);
 
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_GRAB_GRABBABLE, Grabbable);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_GRAB_KINEMATIC, GrabKinematic);

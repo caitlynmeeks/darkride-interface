@@ -52,11 +52,11 @@ bool ToneMappingPropertyGroup::appendToEditPacket(OctreePacketData* packetData,
     return true;
 }
 
-bool ToneMappingPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes) {
+bool ToneMappingPropertyGroup::decodeFromEditPacket(EntityPropertyFlags& propertyFlags, const unsigned char*& dataAt , int& processedBytes, int bytesToRead) {
     int bytesRead = 0;
     bool overwriteLocalData = true;
     bool somethingChanged = false;
-    READ_ENTITY_PROPERTY(PROP_TONE_MAPPING_EXPOSURE, float, setExposure);
+    READ_ENTITY_PROPERTY_FROM_EDIT(PROP_TONE_MAPPING_EXPOSURE, float, setExposure);
     DECODE_GROUP_PROPERTY_HAS_CHANGED(PROP_TONE_MAPPING_EXPOSURE, Exposure);
     processedBytes += bytesRead;
     Q_UNUSED(somethingChanged);

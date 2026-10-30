@@ -109,6 +109,9 @@ public:
     SharedNodePointer sourceNode;
     int elementsPerPacket = 0;
     int entitiesPerPacket = 0;
+    // set by an entity reader when a field claims more bytes than the packet holds: the rest of the packet is
+    // abandoned (EntityItemPropertiesMacros.h, EntityTree::readEntityDataFromBuffer)
+    bool readFailed = false;
 
     ReadBitstreamToTreeParams(
         bool includeExistsBits = WANT_EXISTS_BITS,

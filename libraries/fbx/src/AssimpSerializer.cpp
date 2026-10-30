@@ -36,6 +36,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QSet>
 #include <QtCore/QtEndian>
+#include <QtCore/QTimer>
 
 // disabled because it causes crashes with Assimp::DefaultLogger::WriteToStreams
 // #define ENABLE_ASSIMP_LOGGING
@@ -64,48 +65,110 @@ std::unique_ptr<hfm::Serializer::Factory> AssimpSerializer::getFactory() const {
     return std::make_unique<hfm::Serializer::SimpleFactory<AssimpSerializer>>();
 }
 
+// A model's side files (a glTF's .bin and textures, an OBJ's .mtl): fetched once each, within a time limit and a
+// size limit, and served to Assimp as the stream it asked for (its size, its position, reads of exactly what was
+// asked), from the same place as the model and nowhere else.
+namespace {
+    const int SIDE_FILE_TIMEOUT_MS = 30 * 1000;
+    const qint64 MAX_SIDE_FILE_BYTES = 512LL * 1024 * 1024;
+    // one model's side files together (all of them sit in memory while it is decoded): a ceiling, a warning on the
+    // way up, and a ceiling on their number so hundreds of small ones cannot become thousands of requests
+    const qint64 MAX_MODEL_SIDE_BYTES = 1024LL * 1024 * 1024;
+    const qint64 WARN_MODEL_SIDE_BYTES = 256LL * 1024 * 1024;
+    const int MAX_SIDE_FILES = 1024;
+}
+
+class TivoliIOSystem;
+
 class TivoliIOStream : public Assimp::IOStream {
     friend class TivoliIOSystem;
 
 protected:
     hifi::URL url;
-    
-    TivoliIOStream(hifi::URL url) : url(url) {}
+    TivoliIOSystem* owner { nullptr };
+    QByteArray data;
+    bool fetched { false };
+    bool ok { false };
+    size_t pos { 0 };
+
+    TivoliIOStream(hifi::URL url, TivoliIOSystem* owner) : url(url), owner(owner) {}
+    bool account(qint64 bytes);
+
+    bool fetch() {
+        if (fetched) {
+            return ok;
+        }
+        fetched = true;
+        auto request = DependencyManager::get<ResourceManager>()->createResourceRequest(
+            nullptr, url, true, -1, "TivoliIOStream::fetch"
+        );
+        if (!request) {
+            return false;
+        }
+        QEventLoop loop;
+        QTimer timer;
+        timer.setSingleShot(true);
+        QObject::connect(request, &ResourceRequest::finished, &loop, &QEventLoop::quit);
+        QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timer.start(SIDE_FILE_TIMEOUT_MS);
+        request->send();
+        loop.exec();
+        if (request->getState() == ResourceRequest::Finished && request->getResult() == ResourceRequest::Success) {
+            data = request->getData();
+            ok = data.size() <= MAX_SIDE_FILE_BYTES && account(data.size());
+            if (!ok) {
+                qCWarning(modelformat) << "Model side file too large, not read:" << url << data.size() << "bytes";
+                data.clear();
+            }
+        } else {
+            qCWarning(modelformat) << "Model side file not read (" << (request->getState() == ResourceRequest::Finished ? "failed" : "timed out") << "):" << url;
+        }
+        request->deleteLater();
+        return ok;
+    }
 
 public:
     ~TivoliIOStream() {}
     size_t Read(void* pvBuffer, size_t pSize, size_t pCount) override {
-        // TODO: i think this function runs twice for some reason
-        auto request = DependencyManager::get<ResourceManager>()->createResourceRequest(
-            nullptr, url, true, -1, "TivoliIOSystem::Exists"
-        );
-        if (!request)  return 0;
-
-        QEventLoop loop;
-        QObject::connect(request, &ResourceRequest::finished, &loop, &QEventLoop::quit);
-        request->send();
-        loop.exec();
-
-        if (request->getResult() == ResourceRequest::Success) {
-            auto data = request->getData();
-            memcpy(pvBuffer, data.data(), data.size());
-            // return data.size();
-            return pCount;
-        } else {
+        if (!fetch() || pSize == 0 || !pvBuffer) {
             return 0;
         }
+        const size_t size = (size_t)data.size();
+        const size_t available = size > pos ? size - pos : 0;
+        const size_t count = std::min(pCount, available / pSize);
+        const size_t bytes = count * pSize;
+        if (bytes > 0) {
+            memcpy(pvBuffer, data.constData() + pos, bytes);
+            pos += bytes;
+        }
+        return count;
     }
     size_t Write(const void* pvBuffer, size_t pSize, size_t pCount) override {
         return 0;
     }
     aiReturn Seek(size_t pOffset, aiOrigin pOrigin) override {
-        return aiReturn_FAILURE;
+        if (!fetch()) {
+            return aiReturn_FAILURE;
+        }
+        const size_t size = (size_t)data.size();
+        size_t base = 0;
+        switch (pOrigin) {
+            case aiOrigin_SET: base = 0; break;
+            case aiOrigin_CUR: base = pos; break;
+            case aiOrigin_END: base = size; break;
+            default: return aiReturn_FAILURE;
+        }
+        if (pOffset > size || base > size - pOffset) {
+            return aiReturn_FAILURE;
+        }
+        pos = base + pOffset;
+        return aiReturn_SUCCESS;
     }
     size_t Tell() const override {
-        return 0;
+        return pos;
     }
     size_t FileSize() const override {
-        return 0;
+        return const_cast<TivoliIOStream*>(this)->fetch() ? (size_t)data.size() : 0;
     }
     void Flush () override {
     }
@@ -114,23 +177,70 @@ public:
 class TivoliIOSystem : public Assimp::IOSystem {
 public:
     hifi::URL originalUrl;
+    qint64 totalBytes { 0 };     // the model's side files so far, together
+    int opened { 0 };            // how many side files it has asked for
+    bool warned { false };
 
     TivoliIOSystem(hifi::URL originalUrl) : originalUrl(originalUrl) {}
     ~TivoliIOSystem() {}
 
-    bool Exists(const char* pFile) const override {
+    // a side file's bytes counted toward the model's ceiling; false when the model would pass it
+    bool account(qint64 bytes) {
+        if (totalBytes + bytes > MAX_MODEL_SIDE_BYTES) {
+            qCWarning(modelformat) << "Model's side files pass" << (MAX_MODEL_SIDE_BYTES >> 20) << "MB together, the rest not read:" << originalUrl;
+            return false;
+        }
+        totalBytes += bytes;
+        if (!warned && totalBytes > WARN_MODEL_SIDE_BYTES) {
+            warned = true;
+            qCWarning(modelformat) << "Model's side files pass" << (WARN_MODEL_SIDE_BYTES >> 20) << "MB together:" << originalUrl;
+        }
         return true;
+    }
+
+    // a side file comes from where the model came from: the same scheme, and for a web model the same host
+    bool allowed(const hifi::URL& side) const {
+        if (!side.isValid() || side.scheme() != originalUrl.scheme()) {
+            return false;
+        }
+        const auto scheme = side.scheme();
+        if (scheme == "http" || scheme == "https") {
+            return side.host().compare(originalUrl.host(), Qt::CaseInsensitive) == 0;
+        }
+        return true;
+    }
+    hifi::URL resolve(const char* pFile) const {
+        return originalUrl.resolved(QString::fromLocal8Bit(pFile));
+    }
+
+    bool Exists(const char* pFile) const override {
+        return allowed(resolve(pFile));
     }
     char getOsSeparator() const override {
         return '/';
     }
     Assimp::IOStream* Open(const char* pFile, const char* pMode) override {
-        return new TivoliIOStream(originalUrl.resolved(QString::fromLocal8Bit(pFile)));
+        auto side = resolve(pFile);
+        if (!allowed(side)) {
+            qCWarning(modelformat) << "Model side file not from the model's place, not read:" << side << "for" << originalUrl;
+            return nullptr;
+        }
+        if (++opened > MAX_SIDE_FILES) {
+            if (opened == MAX_SIDE_FILES + 1) {
+                qCWarning(modelformat) << "Model asks for more than" << MAX_SIDE_FILES << "side files, the rest not read:" << originalUrl;
+            }
+            return nullptr;
+        }
+        return new TivoliIOStream(side, this);
     }
     void Close(Assimp::IOStream* pFile) override {
         delete pFile;
     }
 };
+
+bool TivoliIOStream::account(qint64 bytes) {
+    return owner ? owner->account(bytes) : true;
+}
 
 bool isEmptyVec3(glm::vec3 v) { return v.x == 0 && v.y == 0 && v.z == 0; }
 
@@ -722,7 +832,12 @@ void AssimpSerializer::processAnimations() {
             //     extractTranslation(joint->globalTransform) -
             //     asVec3(positionKey.mValue);
             
-            auto rotationKey = channel->mRotationKeys[frame];
+            // a channel with fewer keys than the longest one holds its last key; one with none is left as the joint is
+            if (channel->mNumRotationKeys == 0 || jointIndex < 0 || jointIndex >= animationFrame->rotations.size()) {
+                continue;
+            }
+            auto keyIndex = std::min<size_t>(frame, channel->mNumRotationKeys - 1);
+            auto rotationKey = channel->mRotationKeys[keyIndex];
             animationFrame->rotations[jointIndex] = asQuat(rotationKey.mValue);            
         }
     }
@@ -1084,6 +1199,7 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
     scene = importer.ReadFileFromMemory(
         glb.constData(), glb.size(),
         // aiProcess_CalcTangentSpace |
+        aiProcess_ValidateDataStructure |   // a scene whose indices or counts do not hold together is refused
         aiProcess_Triangulate |
         aiProcess_RemoveComponent |
         aiProcess_GenNormals | 
