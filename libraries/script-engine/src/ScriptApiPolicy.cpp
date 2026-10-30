@@ -20,7 +20,8 @@ namespace {
 // Account/GlobalServices/AccountServices, AvatarBookmarks, LocationBookmarks, DiskCache, Keyboard, Render, LODManager,
 // Performance, Workload, Scene, Reticle, Friends, Toolbars, File, AvatarInputs, Panels, AudioScope,
 // DesktopPreviewProvider, OffscreenFlags, Test, Desktop and the OverlayWindow/OverlayWebWindow/QmlFragment
-// constructors (QML and web windows on the visitor's desktop), StackTest, Resources (for the visitor's own scripts).
+// constructors (QML and web windows on the visitor's desktop), StackTest, Resources (for the visitor's own scripts),
+// Paths, ResourceRequestObserver.
 const QSet<QString> ALLOWED_GLOBALS {
     // the engine's own
     "Script", "Vec3", "Quat", "Mat4", "Uuid", "console", "print", "atob", "btoa", "TREE_SCALE", "debugEntityID",
@@ -35,8 +36,7 @@ const QSet<QString> ALLOWED_GLOBALS {
     // the app, the part a page would get
     "Window", "Window.location", "Tablet", "tabletInterface", "AddressManager", "location", "Chat", "Settings",
     // reads
-    "Stats", "Rates", "AudioStats", "PlatformInfo", "About", "Paths", "EntityScriptServerLog",
-    "ResourceRequestObserver"
+    "Stats", "Rates", "AudioStats", "PlatformInfo", "About", "EntityScriptServerLog"
 };
 
 // The classes whose objects a world's script may use (by ancestry). The globals' classes, and the classes their
@@ -53,7 +53,7 @@ const QSet<QByteArray> ALLOWED_CLASSES {
     "MyAvatar", "AvatarManager", "controller::ScriptingInterface", "HMDScriptingInterface",
     "WindowScriptingInterface", "TabletScriptingInterface", "AddressManager", "ChatScriptingInterface",
     "ScriptSettingsInterface", "Stats", "RatesScriptingInterface", "AudioStats", "PlatformInfoScriptingInterface",
-    "AboutUtil", "PathUtils", "EntityScriptServerLogClient", "ResourceRequestObserver",
+    "AboutUtil", "EntityScriptServerLogClient",
     // what allowed members hand back
     "QTimer",                                                       // Script.setTimeout / setInterval
     "TabletProxy",                                                  // Tablet.getTablet
