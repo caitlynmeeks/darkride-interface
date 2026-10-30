@@ -18,11 +18,14 @@ QTEST_GUILESS_MAIN(UrlPrefixTests)
 namespace {
 const QString PREFIX = "https://cdn.example.invalid/avatars/model-1/";
 const QString REPLACEMENT = "file:///app/resources/avatars/model/";
+const QString BARE_PREFIX = "https://cdn.example.invalid/avatars/model-2";
+const QString BARE_REPLACEMENT = "file:///app/resources/avatars/model2";
 }
 
 void UrlPrefixTests::initTestCase() {
     DependencyManager::set<ResourceManager>(false);
     DependencyManager::get<ResourceManager>()->setUrlPrefixOverride(PREFIX, REPLACEMENT);
+    DependencyManager::get<ResourceManager>()->setUrlPrefixOverride(BARE_PREFIX, BARE_REPLACEMENT);
 }
 
 void UrlPrefixTests::prefixes_data() {
@@ -53,4 +56,15 @@ void UrlPrefixTests::prefixes() {
     // another address is never touched
     QCOMPARE(DependencyManager::get<ResourceManager>()->normalizeURL("https://elsewhere.invalid/" + rest),
              "https://elsewhere.invalid/" + rest);
+}
+
+// a prefix without a closing slash maps its own name, not a sibling that starts the same way
+void UrlPrefixTests::prefixWithoutSlash() {
+    auto resources = DependencyManager::get<ResourceManager>();
+    for (const QString& rest : { QString(), QString("/model.fst"), QString("?v=2"), QString("#top") }) {
+        QCOMPARE(resources->normalizeURL(BARE_PREFIX + rest), BARE_REPLACEMENT + rest);
+    }
+    for (const QString& rest : { QString("-other/model.fst"), QString("x/model.fst"), QString("/../model.fst") }) {
+        QCOMPARE(resources->normalizeURL(BARE_PREFIX + rest), BARE_PREFIX + rest);
+    }
 }

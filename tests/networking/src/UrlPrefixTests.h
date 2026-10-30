@@ -21,6 +21,7 @@ private slots:
     void initTestCase();
     void prefixes_data();
     void prefixes();
+    void prefixWithoutSlash();
 };
 
 #endif // hifi_UrlPrefixTests_h

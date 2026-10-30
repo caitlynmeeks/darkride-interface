@@ -98,10 +98,14 @@ QString ResourceManager::normalizeURL(const QString& urlString) {
         const auto& prefix = entry.first;
         const auto& replacement = entry.second;
         if (result.startsWith(prefix)) {
-            // an address that climbs out of the replacement ("../", however spelled) is left as written: a prefix
-            // maps what is under it, never what is beside it
-            if (!staysUnderReplacement(result.mid(prefix.size()))) {
-                qCWarning(networking) << "Not replacing" << prefix << "in an address that leaves it:" << result.left(200);
+            // a prefix maps what is under it, never what is beside it: an address that climbs out of the replacement
+            // ("../", however spelled), or one that only starts with a prefix without a closing slash ("…/model-1" for
+            // "…/model-1-other/"), is left as written
+            const QString rest = result.mid(prefix.size());
+            const bool atBoundary = prefix.endsWith('/') || rest.isEmpty() || rest.startsWith('/') || rest.startsWith('?') ||
+                                    rest.startsWith('#');
+            if (!atBoundary || !staysUnderReplacement(rest)) {
+                qCWarning(networking) << "Not replacing" << prefix << "in an address outside it:" << result.left(200);
                 continue;
             }
             qCDebug(networking) << "Replacing " << prefix << " with " << replacement;
