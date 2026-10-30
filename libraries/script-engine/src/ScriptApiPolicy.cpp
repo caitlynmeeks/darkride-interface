@@ -20,14 +20,14 @@ namespace {
 // Account/GlobalServices/AccountServices, AvatarBookmarks, LocationBookmarks, DiskCache, Keyboard, Render, LODManager,
 // Performance, Workload, Scene, Reticle, Friends, Toolbars, File, AvatarInputs, Panels, AudioScope,
 // DesktopPreviewProvider, OffscreenFlags, Test, Desktop and the OverlayWindow/OverlayWebWindow/QmlFragment
-// constructors (QML and web windows on the visitor's desktop), StackTest.
+// constructors (QML and web windows on the visitor's desktop), StackTest, Resources (for the visitor's own scripts).
 const QSet<QString> ALLOWED_GLOBALS {
     // the engine's own
     "Script", "Vec3", "Quat", "Mat4", "Uuid", "console", "print", "atob", "btoa", "TREE_SCALE", "debugEntityID",
     "XMLHttpRequest", "WebSocket", "request", "AudioEffectOptions",
     "Http", "Sockets",                 // the WebAssembly engine's factories under XMLHttpRequest and WebSocket (the guest hides them)
     // the world and its content
-    "Entities", "Messages", "Audio", "Assets", "Resources", "Resource", "Model", "DebugDraw", "Overlays", "Picks",
+    "Entities", "Messages", "Audio", "Assets", "Resource", "Model", "DebugDraw", "Overlays", "Picks",
     "Pointers", "RayPick", "LaserPointers", "Selection", "Camera", "Graphics", "TextToSpeech", "SoundCache",
     "AnimationCache", "TextureCache", "MaterialCache", "ModelCache",
     // the visitor as the world sees them
@@ -45,7 +45,7 @@ const QSet<QByteArray> ALLOWED_CLASSES {
     // the globals
     "ScriptEngine", "Vec3", "Quat", "Mat4", "ScriptUUID", "ConsoleScriptingInterface", "AudioEffectOptions",
     "EntityScriptingInterface", "WorldMessages", "AudioScriptingInterface", "AssetScriptingInterface",
-    "ResourceScriptingInterface", "ScriptableResourceCache", "ModelScriptingInterface", "DebugDraw", "Overlays",
+    "ScriptableResourceCache", "ModelScriptingInterface", "DebugDraw", "Overlays",
     "PickScriptingInterface", "PointerScriptingInterface", "RayPickScriptingInterface",
     "LaserPointerScriptingInterface", "SelectionScriptingInterface", "Camera", "GraphicsScriptingInterface",
     "TTSScriptingInterface", "SoundCacheScriptingInterface", "AnimationCacheScriptingInterface",
