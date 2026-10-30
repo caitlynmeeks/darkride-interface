@@ -15,12 +15,16 @@
 #include <QObject>
 #include <QTimer>
 
+#include <QString>
+
 class QUrl;
-class QString;
 
 class ConnectionMonitor : public QObject {
     Q_OBJECT
 public:
+    // the world this start-up goes to came from Settings > General > Start in ("last": the last world, "home"): if it never
+    // answers, the viewer goes to the entry world instead of its connection failure window. Before init()
+    void setStartUpFallback(const QString& from) { _fallbackFrom = from; }
     void init();
 
 signals:
@@ -31,7 +35,11 @@ private slots:
     void stopTimer();
 
 private:
+    void startUpWorldAsked(const QString& world);
+
     QTimer _timer;
+    QString _fallbackFrom;      // "last" or "home" while the start-up world may still fall back; empty after
+    QString _startUpWorld;      // the domain the start-up world's lookups led to (host:port, or an ICE id)
 };
 
 #endif // hifi_ConnectionMonitor_h

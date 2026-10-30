@@ -29,8 +29,10 @@
 #include "NetworkLogging.h"
 #include "udt/PacketHeaders.h"
 
-const QString DEFAULT_HIFI_ADDRESS = "7def9d04-b4a4-47b2-892f-43f7eb82caf7"; // squirrel nut cafe
-const QString DEFAULT_HOME_ADDRESS = "7def9d04-b4a4-47b2-892f-43f7eb82caf7";
+// the entry world: a name the metaverse resolves (Darkside today), so where newcomers land can change without a release.
+// Tivoli's entry (Squirrel Nut Cafe's id) was retired and answered "not found"
+const QString DEFAULT_HIFI_ADDRESS = "hifi://darkside";
+const QString DEFAULT_HOME_ADDRESS = DEFAULT_HIFI_ADDRESS;
 const QString REDIRECT_HIFI_ADDRESS = "file:///~/serverless/redirect.json";
 const QString ADDRESS_MANAGER_SETTINGS_GROUP = "AddressManager";
 const QString SETTINGS_CURRENT_ADDRESS_KEY = "address";
