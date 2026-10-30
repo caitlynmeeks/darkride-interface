@@ -78,7 +78,7 @@
 #include "ObjectTable.h"
 #include "WasmRuntime.h"
 
-class QMetaObject;
+struct QMetaObject;
 class SignalRelay;
 class ValueCodec;
 
