@@ -12,6 +12,7 @@
 #include "ConnectionMonitor.h"
 
 #include "Application.h"
+#include "InterfaceLogging.h"
 #include "ui/DialogsManager.h"
 #include "scripting/WindowScriptingInterface.h"
 
@@ -42,9 +43,40 @@ void ConnectionMonitor::init() {
     _timer.setSingleShot(true);
     if (!domainHandler.isConnected()) {
         _timer.start(ON_INITIAL_LOAD_REDIRECT_AFTER_DISCONNECTED_FOR_X_MS);
+    } else {
+        _fallbackFrom.clear();
+    }
+
+    // the start-up world is the one its lookups lead to, again on every retry; a lookup leading elsewhere is a world the
+    // person asked for meanwhile (a link, a hop), which keeps the failure window. A plain address has led there already
+    if (!_fallbackFrom.isEmpty()) {
+        if (!domainHandler.getHostname().isEmpty()) {
+            _startUpWorld = domainHandler.getHostname() + ":" + QString::number(domainHandler.getPort());
+        }
+        auto addressManager = DependencyManager::get<AddressManager>();
+        connect(addressManager.data(), &AddressManager::possibleDomainChangeRequired, this,
+                [this](QUrl domainURL, QUuid) {
+            startUpWorldAsked(domainURL.host() + ":" +
+                              QString::number(domainURL.port() != -1 ? domainURL.port() : DEFAULT_DOMAIN_SERVER_PORT));
+        });
+        connect(addressManager.data(), &AddressManager::possibleDomainChangeRequiredViaICEForID, this,
+                [this](const QString&, const QUuid& domainID) { startUpWorldAsked(domainID.toString()); });
     }
 
     connect(&_timer, &QTimer::timeout, this, [this]() {
+        // the start-up world never answered (Caity's 1.1.1: her last world was an instance stopped since, tried again
+        // and again behind the failure window): the entry world instead, the loading screen saying why. Once only:
+        // if the entry doesn't answer either, the failure window as for any world
+        if (!_fallbackFrom.isEmpty()) {
+            const QString from = _fallbackFrom;
+            _fallbackFrom.clear();
+            qCInfo(interfaceapp) << "ConnectionMonitor: the start-up world (" << from << _startUpWorld
+                                 << ") doesn't answer, going to the entry world";
+            emit DependencyManager::get<WindowScriptingInterface>()->startUpWorldUnreachable(from);
+            DependencyManager::get<AddressManager>()->goToEntry();
+            _timer.start(ON_INITIAL_LOAD_REDIRECT_AFTER_DISCONNECTED_FOR_X_MS);   // a lookup that never answers
+            return;
+        }
         // scripts are told first: the loading screen (worldLoading.js) lifts, so the failure window isn't hidden behind it
         emit DependencyManager::get<WindowScriptingInterface>()->domainConnectionTimedOut();
         // set in a timeout error
@@ -63,7 +95,21 @@ void ConnectionMonitor::startTimer() {
     _timer.start(REDIRECT_AFTER_DISCONNECTED_FOR_X_MS);
 }
 
+void ConnectionMonitor::startUpWorldAsked(const QString& world) {
+    if (_fallbackFrom.isEmpty()) {
+        return;
+    }
+    if (_startUpWorld.isEmpty()) {
+        _startUpWorld = world;
+    } else if (world != _startUpWorld) {
+        qCDebug(interfaceapp) << "ConnectionMonitor: another world asked for during start-up, no fallback";
+        _fallbackFrom.clear();
+    }
+}
+
 void ConnectionMonitor::stopTimer() {
+    // the start-up world answered (connected, refused, or left on purpose): nothing to fall back from any more
+    _fallbackFrom.clear();
     _timer.stop();
     bool enableInterstitial = DependencyManager::get<NodeList>()->getDomainHandler().getInterstitialModeEnabled();
     if (!enableInterstitial) {

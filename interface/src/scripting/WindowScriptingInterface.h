@@ -749,6 +749,16 @@ signals:
     void domainConnectionTimedOut();
 
     /**jsdoc
+     * Triggered when the world Interface started in (the last world you were in, or your home, by Settings > General >
+     * Start in) hasn't answered: Interface goes to the entry world instead, without its connection failure window.
+     * {@link Window.domainConnectionTimedOut} is not triggered for it.
+     * @function Window.startUpWorldUnreachable
+     * @param {string} from - <code>"last"</code> for the last world you were in, <code>"home"</code> for your home.
+     * @returns {Signal}
+     */
+    void startUpWorldUnreachable(const QString& from);
+
+    /**jsdoc
      * Triggered when you try to visit a domain but are redirected into the error state.
      * @function Window.redirectErrorStateChanged
      * @param {boolean} isInErrorState - <code>true</code> if the user has been redirected to the error URL, <code>false</code> 

@@ -50,6 +50,14 @@
     // open 10 min), so this is only a backstop
     var STARTING_LIMIT = 660;
     var FAILED_SHOWN = 3000;      // ms: why a new instance couldn't start, on the screen before it lifts
+    // the world a start-up went to (Settings > General > Start in) didn't answer, and the viewer goes to the entry world
+    // instead: said until the arrival there, and at least NOTICE_SHOWN (Caity's 1.1.1, 10-30: her last world was an
+    // instance stopped since; she got "Can't reach this world" and endless tries)
+    var STATUS_FALLBACK = {
+        last: "The world you were in last isn't answering. Taking you to Darkside.",
+        home: "Your home world isn't answering. Taking you to Darkside."
+    };
+    var NOTICE_SHOWN = 4000;      // ms
     // ms: the screen's buttons (Cancel, and Show me now while a world loads whole) fade in once it has been up this
     // long, so a quick arrival never shows them (Caity, 10-22: "a cancel loading button to go back and abort a load")
     var BUTTONS_AFTER = 3000;
@@ -128,6 +136,7 @@
             starting: !!startId,            // a new instance's server is starting; the hop waits for its address
             startId: startId || "",
             failed: null,                   // why a new instance couldn't start: { text, at }
+            notice: null,                   // why this way goes to the entry world instead: { text, at }
             left: kind !== "hop",           // a hop has gone for the old world once the domain changes
             lostOld: kind !== "hop",        // and has seen the old world's physics or connection drop (physics is
                                             // sometimes switched on again in the very frame of a domain change)
@@ -232,7 +241,7 @@
         // arrived: in the new world with its physics on, and the avatar's own model in (or waited for long enough);
         // the screen then lifts once it has been up MIN_SHOWN
         var arrived = !loading.active && landed && (avatarLoaded() || now - way.physicsOnAt > AVATAR_GRACE * 1000);
-        if ((arrived && now - way.started >= MIN_SHOWN) ||
+        if ((arrived && now - way.started >= MIN_SHOWN && (!way.notice || now - way.notice.at >= NOTICE_SHOWN)) ||
                 (!loading.active && !way.starting && now - way.waitFrom > TIME_LIMIT * 1000)) {
             end();
             return;
@@ -243,7 +252,8 @@
             way.world = placeName();
             way.picture = way.picture || placePicture();
         }
-        var status = way.starting ? STATUS_STARTING : loading.active ? STATUS_WHOLE : STATUS_ARRIVING;
+        var status = way.notice ? way.notice.text : way.starting ? STATUS_STARTING :
+            loading.active ? STATUS_WHOLE : STATUS_ARRIVING;
         if (loading.active) {
             way.progress = Math.max(way.progress, wholeWorldProgress(loading));
         } else if (way.progress >= 0) {
@@ -564,6 +574,20 @@
         }
     }
 
+    // the world this start-up went to didn't answer: the viewer goes to the entry world instead (without its failure
+    // window), and the screen stays up saying why until the arrival there
+    function onStartUpWorldUnreachable(from) {
+        print("World loading: the start-up world (" + from + ") didn't answer, going to the entry world");
+        if (!way) {
+            begin("first", "", "", "");
+        }
+        way.notice = { text: STATUS_FALLBACK[from] || STATUS_FALLBACK.last, at: Date.now() };
+        way.world = "";
+        way.picture = "";
+        way.waitFrom = Date.now();
+        tick();
+    }
+
     // a hop to a place that doesn't exist or is offline goes nowhere: the old world stays, so the screen lifts at once
     function onLookupFailed() {
         if (way && way.kind === "hop" && !way.left && !way.starting) {
@@ -586,6 +610,9 @@
     }
     if (Window.domainConnectionTimedOut) {
         Window.domainConnectionTimedOut.connect(onDomainConnectionTimedOut);
+    }
+    if (Window.startUpWorldUnreachable) {
+        Window.startUpWorldUnreachable.connect(onStartUpWorldUnreachable);
     }
     AddressManager.lookupResultIsNotFound.connect(onLookupFailed);
     AddressManager.lookupResultIsOffline.connect(onLookupFailed);
@@ -624,6 +651,9 @@
         }
         if (Window.domainConnectionTimedOut) {
             Window.domainConnectionTimedOut.disconnect(onDomainConnectionTimedOut);
+        }
+        if (Window.startUpWorldUnreachable) {
+            Window.startUpWorldUnreachable.disconnect(onStartUpWorldUnreachable);
         }
         AddressManager.lookupResultIsNotFound.disconnect(onLookupFailed);
         AddressManager.lookupResultIsOffline.disconnect(onLookupFailed);

@@ -1053,6 +1053,8 @@ void DomainSession::goToStartingLocation() {
             } else {
                 goingTo = "previous location";
             }
+            // a saved world (not a link) that doesn't answer falls back to the entry world (no home saved: the last)
+            _connectionMonitor.setStartUpFallback(addressLookupString.isEmpty() ? "last" : "home");
         }
         qCDebug(interfaceapp) << "Not first run... going to" << qPrintable(!goingTo.isEmpty() ? goingTo : addressLookupString);
         DependencyManager::get<AddressManager>()->loadSettings(addressLookupString);
