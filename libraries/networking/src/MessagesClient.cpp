@@ -108,41 +108,56 @@ void MessagesClient::handleMessagesPacket(QSharedPointer<ReceivedMessage> receiv
     QUuid senderID;
     decodeMessagesPacket(receivedMessage, channel, isText, message, data, senderID);
     if (isText) {
-        emit messageReceived(channel, message, senderID, false);
+        emit messageReceived(channel, message, senderID, false, false);
     } else {
-        emit dataReceived(channel, data, senderID, false);
+        emit dataReceived(channel, data, senderID, false, false);
     }
 }
 
 void MessagesClient::sendMessage(QString channel, QString message, bool localOnly) {
+    send(channel, message, localOnly, true);
+}
+
+void MessagesClient::sendMessageFromWorld(QString channel, QString message, bool localOnly) {
+    send(channel, message, localOnly, false);
+}
+
+void MessagesClient::send(const QString& channel, const QString& message, bool localOnly, bool fromOwnScripts) {
     auto nodeList = DependencyManager::get<NodeList>();
     QUuid senderID = nodeList->getSessionUUID();
     if (localOnly) {
-        emit messageReceived(channel, message, senderID, true);
+        emit messageReceived(channel, message, senderID, true, fromOwnScripts);
     } else {
         SharedNodePointer messagesMixer = nodeList->soloNodeOfType(NodeType::MessagesMixer);
         if (messagesMixer) {
             auto packetList = encodeMessagesPacket(channel, message, senderID);
             nodeList->sendPacketList(std::move(packetList), *messagesMixer);
         } else {
-            emit messageReceived(channel, message, senderID, true);
+            emit messageReceived(channel, message, senderID, true, fromOwnScripts);
         }
     }
 }
 
 void MessagesClient::sendData(QString channel, QByteArray data, bool localOnly) {
+    sendBytes(channel, data, localOnly, true);
+}
+
+void MessagesClient::sendDataFromWorld(QString channel, QByteArray data, bool localOnly) {
+    sendBytes(channel, data, localOnly, false);
+}
+
+void MessagesClient::sendBytes(const QString& channel, const QByteArray& data, bool localOnly, bool fromOwnScripts) {
     auto nodeList = DependencyManager::get<NodeList>();
     QUuid senderID = nodeList->getSessionUUID();
     if (localOnly) {
-        emit dataReceived(channel, data, senderID, true);
+        emit dataReceived(channel, data, senderID, true, fromOwnScripts);
     } else {
         SharedNodePointer messagesMixer = nodeList->soloNodeOfType(NodeType::MessagesMixer);
         if (messagesMixer) {
-            QUuid senderID = nodeList->getSessionUUID();
             auto packetList = encodeMessagesDataPacket(channel, data, senderID);
             nodeList->sendPacketList(std::move(packetList), *messagesMixer);
         } else {
-            emit dataReceived(channel, data, senderID, true);
+            emit dataReceived(channel, data, senderID, true, fromOwnScripts);
         }
     }
 }

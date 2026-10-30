@@ -66,6 +66,15 @@
         attempt("Entities.getEntityProperties", function() { return Entities.getEntityProperties(self.id, ["name"]).name; });
         attempt("typeof Overlays", function() { return typeof Overlays + " " + typeof Messages + " " + typeof Camera + " " + typeof Picks; });
         attempt("Script.setTimeout", function() { Script.setTimeout(function() { say("timer fired"); }, 10); return "set"; });
+
+        // Messages (security finding #11): the world's messages are marked, the app's channels refused both ways
+        Messages.messageReceived.connect(function(channel, message, sender, localOnly, fromOwnScripts) {
+            if (channel.indexOf("probe") >= 0) {
+                say("heard " + channel + " fromOwnScripts=" + fromOwnScripts);
+            }
+        });
+        attempt("Messages.sendLocalMessage world.probe", function() { Messages.sendLocalMessage("world.probe", "from the world"); return "sent"; });
+        attempt("Messages.sendLocalMessage io.darkride.probe", function() { Messages.sendLocalMessage("io.darkride.probe", "from the world"); return "sent"; });
         say("done");
     };
     this.unload = function() {};

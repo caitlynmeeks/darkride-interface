@@ -61,7 +61,8 @@ ChatScriptingInterface::ChatScriptingInterface() {
     messages->subscribe("chat");
 
     QObject::connect(messages.data(), &MessagesClient::messageReceived,
-        [&](const QString& channel, const QString& message, const QUuid& senderID, const bool localOnly){
+        [&](const QString& channel, const QString& message, const QUuid& senderID, const bool localOnly, const bool fromOwnScripts){
+            Q_UNUSED(fromOwnScripts);
             if (channel != "chat") return;
 
             QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());

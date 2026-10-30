@@ -44,7 +44,7 @@ const QSet<QString> ALLOWED_GLOBALS {
 const QSet<QByteArray> ALLOWED_CLASSES {
     // the globals
     "ScriptEngine", "Vec3", "Quat", "Mat4", "ScriptUUID", "ConsoleScriptingInterface", "AudioEffectOptions",
-    "EntityScriptingInterface", "MessagesClient", "AudioScriptingInterface", "AssetScriptingInterface",
+    "EntityScriptingInterface", "WorldMessages", "AudioScriptingInterface", "AssetScriptingInterface",
     "ResourceScriptingInterface", "ScriptableResourceCache", "ModelScriptingInterface", "DebugDraw", "Overlays",
     "PickScriptingInterface", "PointerScriptingInterface", "RayPickScriptingInterface",
     "LaserPointerScriptingInterface", "SelectionScriptingInterface", "Camera", "GraphicsScriptingInterface",

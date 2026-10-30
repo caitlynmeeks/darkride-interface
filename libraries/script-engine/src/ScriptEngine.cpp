@@ -79,6 +79,7 @@
 #include "BatchLoader.h"
 #include <ScriptNetworkPolicy.h>
 #include "GuardedObject.h"
+#include "WorldMessages.h"
 #include "RefusedGlobal.h"
 #include "ScriptApiPolicy.h"
 #include "BaseScriptEngine.h"
@@ -937,7 +938,9 @@ void ScriptEngine::registerStandardGlobals() {
     registerGlobalObject("Vec3", &_vec3Library);
     registerGlobalObject("Mat4", &_mat4Library);
     registerGlobalObject("Uuid", &_uuidLibrary);
-    registerGlobalObject("Messages", DependencyManager::get<MessagesClient>().data());
+    // a world's entity scripts get their own Messages: the world's send path, the app's channels refused (WorldMessages)
+    registerGlobalObject("Messages", isEntityClientScript() ? static_cast<QObject*>(new WorldMessages(this))
+                                                            : DependencyManager::get<MessagesClient>().data());
     registerGlobalObject("File", new FileScriptingInterface(this));
     registerGlobalObject("console", &_consoleScriptingInterface);
     registerFunction("console", "info", ConsoleScriptingInterface::info, currentContext()->argumentCount());

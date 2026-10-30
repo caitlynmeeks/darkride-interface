@@ -19,6 +19,16 @@
             dimensions: { x: 0.3, y: 0.3, z: 0.3 }, script: scriptUrl, lifetime: 60
         });
         say("added " + id + " with " + scriptUrl);
+        Messages.messageReceived.connect(function(channel, message, sender, localOnly, fromOwnScripts) {
+            if (channel.indexOf("probe") >= 0) {
+                say("heard " + channel + " fromOwnScripts=" + fromOwnScripts);
+            }
+        });
+        Script.setTimeout(function() {
+            Messages.sendLocalMessage("world.probe-from-client", "from the visitor's own script");
+            Messages.sendLocalMessage("io.darkride.probe-from-client", "from the visitor's own script");
+            say("sent the client's two probes");
+        }, 8000);
         Script.setTimeout(function() { say("stopping"); Script.stop(); }, 15000);
     }, 6000);
 })();
