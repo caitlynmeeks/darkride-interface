@@ -350,7 +350,8 @@ void Application::keyPressEvent(QKeyEvent* event) {
         _keysPressed.insert(event->key(), *event);
     }
 
-    if (DependencyManager::get<Editor>()->handleKeyPress(event)) {
+    // Build mode's keys too (its shortcuts and fly camera) wait while a sign-in page is shown
+    if (!signInShown && DependencyManager::get<Editor>()->handleKeyPress(event)) {
         return;
     }
 
