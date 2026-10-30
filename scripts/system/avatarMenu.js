@@ -7,21 +7,18 @@
 //  Parameters the avatar marks as saved are remembered per avatar and put back the next time it's worn, and a
 //  parameter that starts one of the avatar's emotes plays it. The menu itself is drawn by the Avatar panel
 //  (qml/darkride/AvatarPanel.qml, its Menu tab), which sends each choice here on the local channel
-//  io.darkride.avatarMenu as {type: "set", name, value}; a script may send the same (or, as the Emote menu test
-//  does, a tablet web event {app: "avatarMenu", type: "set", name, value}).
+//  io.darkride.avatarMenu as {type: "set", name, value}; a script of this client's may send the same.
 //
 //  Created on 2026-10-14 for Darkride's import of avatars from Unity packages.
 //
 //  Distributed under the MIT License.
 //  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
 
-/* globals Script, Tablet, MyAvatar, Settings, AnimationCache, Messages */
+/* globals Script, MyAvatar, Settings, AnimationCache, Messages */
 
 (function () {
     var SAVED_SETTING = "io.darkride.avatarMenu.saved";  // {avatar URL: {parameter: value}}
     var CHANNEL = "io.darkride.avatarMenu";
-
-    var tablet = Tablet.getTablet("com.highfidelity.interface.tablet.system");
 
     function savedValues() {
         var all = Settings.getValue(SAVED_SETTING, {}) || {};
@@ -177,31 +174,13 @@
         }
     }
 
-    function onWebEventReceived(event) {
-        if (typeof event === "string") {
-            try {
-                event = JSON.parse(event);
-            } catch (e) {
-                return;
-            }
-        }
-        if (!event || event.app !== "avatarMenu") {
-            return;  // the tablet's web events reach every app
-        }
-        if (event.type === "set") {
-            choose(event.name, event.value);
-        }
-    }
-
     MyAvatar.avatarMenuChanged.connect(onAvatarMenuChanged);
     Messages.subscribe(CHANNEL);
     Messages.messageReceived.connect(onMessageReceived);
-    tablet.webEventReceived.connect(onWebEventReceived);
     Script.scriptEnding.connect(function () {
         MyAvatar.avatarMenuChanged.disconnect(onAvatarMenuChanged);
         Messages.messageReceived.disconnect(onMessageReceived);
         Messages.unsubscribe(CHANNEL);
-        tablet.webEventReceived.disconnect(onWebEventReceived);
         Script.clearInterval(emoteWatch);
         stopEmote();
     });
