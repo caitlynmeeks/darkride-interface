@@ -107,9 +107,9 @@ Item {
         height: parent.height
 
         profile: TivoliWebEngineProfile;
-        settings.pluginsEnabled: true
+        settings.pluginsEnabled: false
         settings.touchIconsEnabled: true
-        settings.allowRunningInsecureContent: true
+        settings.allowRunningInsecureContent: false
         // pages loaded from file:// (the tablet apps) call the metaverse API; Qt blocks that unless this is on
         settings.localContentCanAccessRemoteUrls: true
 

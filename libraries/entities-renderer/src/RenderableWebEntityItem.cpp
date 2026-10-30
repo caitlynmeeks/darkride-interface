@@ -51,6 +51,16 @@ static const uint32_t MAX_CONCURRENT_WEB_VIEWS = 20;
 
 static QTouchDevice _touchDevice;
 
+// one of the app's own QML files: baked into the executable (qrc), or in the resources folder of a developer's build
+static bool isAppQmlUrl(const QString& urlString) {
+    const QString lower = urlString.toLower();
+    if (lower.startsWith("qrc:/")) {
+        return true;
+    }
+    const QString resources = PathUtils::resourcesUrl().toLower();
+    return !resources.isEmpty() && lower.startsWith(resources);
+}
+
 WebEntityRenderer::ContentType WebEntityRenderer::getContentType(const QString& urlString) {
     if (urlString.isEmpty()) {
         return ContentType::NoContent;
@@ -158,6 +168,16 @@ void WebEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene
     auto newSourceURL = entity->getSourceUrl();
     {
         auto newContentType = getContentType(newSourceURL);
+        // QML is the app's own UI language, with the app's objects in reach. Only a local Web entity may show it, and
+        // only one the app's own scripts made (a client script's thread; the tablet) or one showing one of the app's
+        // own QML files (the login dialog, the avatar inputs bar, the bubble icon: qrc, or the resources folder of a
+        // developer's build). A Web entity that belongs to a world or to another avatar shows web content or nothing,
+        // and so does a local one that a world's entity script made, unless it shows the app's own files.
+        const bool refusedQml = newContentType == ContentType::QmlContent &&
+            !(entity->isLocalEntity() && (entity->getLocalSafeContext() || isAppQmlUrl(newSourceURL)));
+        if (refusedQml) {
+            newContentType = ContentType::NoContent;
+        }
         ContentType currentContentType;
         withReadLock([&] {
             urlChanged = newSourceURL.isEmpty() || newSourceURL != _tryingToBuildURL;
@@ -165,6 +185,9 @@ void WebEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene
         currentContentType = _contentType;
 
         if (urlChanged) {
+            if (refusedQml) {
+                qCWarning(entitiesrenderer) << "Web entity" << entity->getID() << "is not the app's own; its QML content is not shown:" << newSourceURL;
+            }
             if (newContentType != ContentType::HtmlContent || currentContentType != ContentType::HtmlContent) {
                 destroyWebSurface();
             }
