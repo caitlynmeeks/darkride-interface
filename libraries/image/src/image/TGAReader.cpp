@@ -107,15 +107,28 @@ image::Image image::readTGA(QIODevice& content) {
     char alphaMask = header.imageDescriptor.attributeBitsPerPixel == 8 ? 0x00 : 0xFF;
     int bytesPerPixel = header.pixelDepth / 8;
 
+    // the size maths in 64 bits (width * height * 4 overflows an int at 16k square), a ceiling on the picture
+    // (16k x 16k, a gigabyte of pixels), and the allocation checked before a line of it is written
+    constexpr qint64 MAX_PIXELS = 16384LL * 16384LL;
+    const qint64 pixelCount = qint64(header.width) * qint64(header.height);
+    if (pixelCount == 0 || pixelCount > MAX_PIXELS) {
+        qWarning(imagelogging) << "TGA - Unsupported size" << header.width << "x" << header.height;
+        return QImage();
+    }
+
     content.skip(header.idLength);
     if (header.imageType == TGAImageType::UncompressedTrueColor) {
-        qint64 minimumSize = header.width * header.height * bytesPerPixel;
+        qint64 minimumSize = pixelCount * bytesPerPixel;
         if (content.bytesAvailable() < minimumSize) {
             qWarning(imagelogging) << "TGA - Unexpectedly reached end of file";
             return QImage();
         }
 
         QImage image{ header.width, header.height, QImage::Format_ARGB32 };
+        if (image.isNull()) {
+            qWarning(imagelogging) << "TGA - Could not allocate the image";
+            return QImage();
+        }
         char* line;
         for (int y = 0; y < header.height; ++y) {
             if (header.imageDescriptor.orientation == ORIENTATION_BOTTOM_LEFT) {
@@ -133,6 +146,10 @@ image::Image image::readTGA(QIODevice& content) {
         return image;
     } else if (header.imageType == TGAImageType::RunLengthEncodedTrueColor) {
         QImage image{ header.width, header.height, QImage::Format_ARGB32 };
+        if (image.isNull()) {
+            qWarning(imagelogging) << "TGA - Could not allocate the image";
+            return QImage();
+        }
 
         for (int y = 0; y < header.height; ++y) {
             char* line;
@@ -155,6 +172,11 @@ image::Image image::readTGA(QIODevice& content) {
                 // The length in `repetition` is always 1 less than the number of following pixels,
                 // so we need to increment it by 1. Because of this, the length is never 0.
                 int length = (repetition & LENGTH_MASK) + 1;
+                // a run never crosses the end of its row (the format says so; a hostile file would write past it)
+                if (col + length > header.width) {
+                    qWarning(imagelogging) << "TGA - A run crosses the end of its row";
+                    return QImage();
+                }
 
                 if (isRepetition) {
                     // Read into temporary buffer
