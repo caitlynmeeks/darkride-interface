@@ -34,7 +34,7 @@ public:
                 decodedBuffer = qUncompress(encodedBuffer);
                 break;
             case Codec::Opus:
-                decodedBuffer.resize(FRAME_BYTES);
+                decodedBuffer.fill(0, FRAME_BYTES);
                 memcpy(decodedBuffer.data(), encodedBuffer.constData(), std::min(FRAME_BYTES, encodedBuffer.size()));
                 break;
             default:
