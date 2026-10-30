@@ -25,7 +25,10 @@ HIFI_QML_DEF(LoginDialog)
 static const QUrl TABLET_LOGIN_DIALOG_URL("dialogs/TabletLoginDialog.qml");
 const QUrl LOGIN_DIALOG = PathUtils::qmlUrl("OverlayLoginDialog.qml");
 
+std::atomic<int> LoginDialog::_openCount { 0 };
+
 LoginDialog::LoginDialog(QQuickItem *parent) : OffscreenQmlDialog(parent) {
+    ++_openCount;
     auto accountManager = DependencyManager::get<AccountManager>();
     // the login hasn't been dismissed yet if the user isn't logged in and is encouraged to login.
 #if !defined(Q_OS_ANDROID)
@@ -41,6 +44,7 @@ LoginDialog::LoginDialog(QQuickItem *parent) : OffscreenQmlDialog(parent) {
 }
 
 LoginDialog::~LoginDialog() {
+    --_openCount;
 }
 
 void LoginDialog::showWithSelection() {
