@@ -43,6 +43,8 @@ public:
     Q_INVOKABLE int scale(int v, int by) { return v * by; }
     Q_INVOKABLE QObject* self() { return this; }
     Q_INVOKABLE QObject* makeOther() { return new Other(); }
+    Q_INVOKABLE bool isSelf(QObject* object) { return object == this; }
+    Q_INVOKABLE int countSelves(const QVariantList& objects) { int n = 0; for (const QVariant& v : objects) { n += v.value<QObject*>() == this; } return n; }
 signals:
     void countChanged(int count);
 private:
@@ -129,6 +131,10 @@ void GuardedObjectTests::testBypassAttempts() {
     QCOMPARE(f.run("probe.self().add(1, 1)"), QString("2"));
     QCOMPARE(f.run("probe.self().count = 99; probe.count"), QString(f.probe.count() == 99 ? "99" : "0"));
     QCOMPARE(f.probe.count(), 0);
+    // a guard handed back to the host goes as the object behind it (a timer to clearInterval, a sound to playSound)
+    QCOMPARE(f.run("String(probe.isSelf(probe))"), QString("true"));
+    QCOMPARE(f.run("String(probe.isSelf(probe.self()))"), QString("true"));
+    QCOMPARE(f.run("probe.countSelves([probe, probe.self(), 1])"), QString("2"));
     // JSON and toString give nothing away
     QCOMPARE(f.run("JSON.stringify(probe)"), QString("{}"));
     QVERIFY(!f.run("String(probe)").startsWith("EXCEPTION"));

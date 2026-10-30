@@ -39,6 +39,9 @@ public:
 
     const HostInterface::MemberGate& gate() const { return _gate; }
 
+    /// The object behind a guard (or behind each guard in an array), for a value going back to the host.
+    QScriptValue unwrap(const QScriptValue& value) const;
+
 private:
     enum Kind { Absent = 0, Method = 1, Property = 2, Signal = 3 };
     /// What the name is on the real object, by the policy: Absent when the world's script may not have it.

@@ -1047,6 +1047,11 @@ void ScriptEngine::registerFunction(const QString& name, QScriptEngine::Function
     qCDebug(scriptengine) << "ScriptEngine::registerFunction() called on thread [" << QThread::currentThread() << "] name:" << name;
 #endif
 
+    if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(name)) {
+        // a world's entity scripts don't get this one (the QML and web window constructors): the stand-in, as for objects
+        registerGlobalObject(name, new RefusedGlobal(name, this));
+        return;
+    }
     QScriptValue scriptFun = newFunction(functionSignature, numArguments);
     globalObject().setProperty(name, scriptFun);
 }

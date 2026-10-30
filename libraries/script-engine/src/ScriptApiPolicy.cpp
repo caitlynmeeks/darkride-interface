@@ -66,7 +66,8 @@ const QSet<QByteArray> ALLOWED_CLASSES {
     "HttpRequestObject", "WebSocketObject",                         // the WebAssembly engine's XMLHttpRequest / WebSocket
     "AnimationObject", "AnimationFrameObject",                      // AnimationCache
     "scriptable::ScriptableModel", "scriptable::ScriptableMesh", "scriptable::ScriptableMeshPart",  // Graphics
-    "Overlay"                                                       // Overlays.getOverlayObject
+    "Overlay",                                                      // Overlays.getOverlayObject
+    "RefusedGlobal"                                                 // the stand-in: its name only, for the refusal message
 };
 
 // Kept classes with an ALLOW-list of methods: anything else on them is refused.

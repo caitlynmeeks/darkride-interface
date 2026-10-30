@@ -115,7 +115,7 @@ void GuardedObjectClass::setProperty(QScriptValue& object, const QScriptString& 
         return;
     }
     Q_UNUSED(id);
-    raw.setProperty(name.toString(), value);
+    raw.setProperty(name.toString(), unwrap(value));
 }
 
 QScriptValue::PropertyFlags GuardedObjectClass::propertyFlags(const QScriptValue& object, const QScriptString& name, uint id) {
@@ -131,19 +131,43 @@ void GuardedObjectClass::refuse(const QScriptValue& raw, const QByteArray& membe
                                                   : className + "." + QString::fromUtf8(member) + " is not available to this script");
 }
 
+QScriptValue GuardedObjectClass::unwrap(const QScriptValue& value) const {
+    // a guard handed back to the host (a timer to clearInterval, a sound to playSound) goes as the object behind it;
+    // the host is not a script, so nothing is given away
+    if (value.isObject() && value.scriptClass() == this) {
+        return value.data();
+    }
+    if (value.isArray()) {
+        const quint32 length = value.property("length").toUInt32();
+        bool any = false;
+        for (quint32 i = 0; i < length && !any; ++i) {
+            QScriptValue item = value.property(i);
+            any = item.isObject() && item.scriptClass() == this;
+        }
+        if (any) {
+            QScriptValue copy = engine()->newArray(length);
+            for (quint32 i = 0; i < length; ++i) {
+                copy.setProperty(i, unwrap(value.property(i)));
+            }
+            return copy;
+        }
+    }
+    return value;
+}
+
 QScriptValue GuardedObjectClass::forward(QScriptContext* context, QScriptEngine* engine) {
     QScriptValue bundle = context->callee().data();
     QScriptValue raw = bundle.property("raw");
     QScriptValue guard = bundle.property("guard");
+    auto guardClass = static_cast<GuardedObjectClass*>(guard.scriptClass());
     QScriptValue method = raw.property(bundle.property("member").toString());
     QScriptValueList arguments;
     for (int i = 0; i < context->argumentCount(); ++i) {
-        arguments << context->argument(i);
+        arguments << (guardClass ? guardClass->unwrap(context->argument(i)) : context->argument(i));
     }
     QScriptValue result = method.call(raw, arguments);
     if (engine->hasUncaughtException()) {
         return result;   // the exception stays raised for the caller
     }
-    auto guardClass = static_cast<GuardedObjectClass*>(guard.scriptClass());
     return (result.isQObject() && guardClass) ? guardClass->wrap(result) : result;
 }

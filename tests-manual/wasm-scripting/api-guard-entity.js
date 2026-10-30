@@ -43,7 +43,7 @@
         attempt("typeof HMD.position", function() { return typeof HMD.position; });
         attempt("HMD.openTablet", function() { return HMD.openTablet(false); });
         attempt("HMD.showTablet = true", function() { HMD.showTablet = true; return HMD.showTablet; });
-        attempt("Audio.muted = true", function() { Audio.muted = true; return Audio.muted; });
+        attempt("Audio.muted = !Audio.muted", function() { var before = Audio.muted; Audio.muted = !before; return "before " + before + ", after " + Audio.muted; });
         attempt("Audio.devices", function() { return typeof Audio.devices; });
         attempt("Audio.getAvatarGain", function() { return Audio.getAvatarGain(); });
         attempt("MyAvatar.position", function() { return typeof MyAvatar.position; });
