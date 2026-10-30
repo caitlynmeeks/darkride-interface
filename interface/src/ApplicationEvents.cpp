@@ -124,7 +124,8 @@ bool Application::event(QEvent* event) {
     }
 
     // Allow focused Entities to handle keyboard input
-    if (isKeyEvent(event->type()) && _keyboardFocus.deliverKeyEvent(event)) {
+    // not while a sign-in page is shown: keys go only to it, never to a Web entity holding the keyboard focus
+    if (isKeyEvent(event->type()) && !LoginDialog::isShown() && _keyboardFocus.deliverKeyEvent(event)) {
         return true;
     }
 
