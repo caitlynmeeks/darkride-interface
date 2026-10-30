@@ -28,7 +28,11 @@ void CalculateMeshNormalsTask::run(const baker::BakeContextPointer& context, con
         } else {
             normalsOut.resize(mesh.vertices.size());
             baker::calculateNormals(mesh,
-                [&normalsOut](int normalIndex) /* NormalAccessor */ {
+                [&normalsOut](int normalIndex) /* NormalAccessor */ -> glm::vec3* {
+                    // an index the mesh does not have (a broken file) is skipped by the caller
+                    if (normalIndex < 0 || normalIndex >= (int)normalsOut.size()) {
+                        return nullptr;
+                    }
                     return &normalsOut[normalIndex];
                 },
                 [&mesh](int vertexIndex, glm::vec3& outVertex) /* VertexSetter */ {

@@ -96,6 +96,15 @@ namespace {
 
         const float* positions = reinterpret_cast<const float*>(hfmMesh.vertices.constData());
         const size_t vertexCount = (size_t)hfmMesh.vertices.size();
+        // a broken file may index vertices the mesh does not have; the simplifier trusts its indices, so such a
+        // mesh gets no levels
+        for (const auto& source : fullParts) {
+            for (uint32_t index : source) {
+                if (index >= vertexCount) {
+                    return {};
+                }
+            }
+        }
         std::vector<float> weights;
         const std::vector<float> attributes = lodAttributes(hfmMesh, normals, weights);
         // the error comes back in the mesh's units; the parts of a mesh share their edges, which stay where they are so
