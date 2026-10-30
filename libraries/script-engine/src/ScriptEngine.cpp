@@ -1073,7 +1073,10 @@ void ScriptEngine::registerFunction(const QString& parent, const QString& name, 
 
     QScriptValue object = globalObject().property(parent);
     if (object.isValid()) {
-        QScriptValue scriptFun = newFunction(functionSignature, numArguments);
+        if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(parent)) {
+        return;   // a world's entity scripts don't get the parent, so not its functions either
+    }
+    QScriptValue scriptFun = newFunction(functionSignature, numArguments);
         object.setProperty(name, scriptFun);
     }
 }
@@ -1123,6 +1126,9 @@ void ScriptEngine::registerGetterSetter(const QString& name, QScriptEngine::Func
     qCDebug(scriptengine) << "ScriptEngine::registerGetterSetter() called on thread [" << QThread::currentThread() << "] name:" << name << "parent:" << parent;
 #endif
 
+    if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(parent.isEmpty() ? name : parent)) {
+        return;   // a world's entity scripts don't get this global
+    }
     QScriptValue setterFunction = newFunction(setter, 1);
     QScriptValue getterFunction = newFunction(getter);
     if (isEntityClientScript()) {

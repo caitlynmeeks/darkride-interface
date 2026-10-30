@@ -25,6 +25,7 @@ const QSet<QString> ALLOWED_GLOBALS {
     // the engine's own
     "Script", "Vec3", "Quat", "Mat4", "Uuid", "console", "print", "atob", "btoa", "TREE_SCALE", "debugEntityID",
     "XMLHttpRequest", "WebSocket", "request", "AudioEffectOptions",
+    "Http", "Sockets",                 // the WebAssembly engine's factories under XMLHttpRequest and WebSocket (the guest hides them)
     // the world and its content
     "Entities", "Messages", "Audio", "Assets", "Resources", "Resource", "Model", "DebugDraw", "Overlays", "Picks",
     "Pointers", "RayPick", "LaserPointers", "Selection", "Camera", "Graphics", "TextToSpeech", "SoundCache",
@@ -32,7 +33,7 @@ const QSet<QString> ALLOWED_GLOBALS {
     // the visitor as the world sees them
     "MyAvatar", "AvatarList", "AvatarManager", "Controller", "HMD",
     // the app, the part a page would get
-    "Window", "Tablet", "tabletInterface", "AddressManager", "location", "Chat", "Settings",
+    "Window", "Window.location", "Tablet", "tabletInterface", "AddressManager", "location", "Chat", "Settings",
     // reads
     "Stats", "Rates", "AudioStats", "PlatformInfo", "About", "Paths", "EntityScriptServerLog",
     "ResourceRequestObserver"
@@ -64,6 +65,7 @@ const QSet<QByteArray> ALLOWED_CLASSES {
     "RenameMappingRequest", "GetAllMappingsRequest",                // Assets
     "ModalDialogListener",                                          // Window.promptAsync
     "HttpRequestObject", "WebSocketObject",                         // the WebAssembly engine's XMLHttpRequest / WebSocket
+    "HttpRequestFactory", "WebSocketFactory", "AudioEffectOptionsFactory", "ResourceStates",  // its internal globals
     "AnimationObject", "AnimationFrameObject",                      // AnimationCache
     "scriptable::ScriptableModel", "scriptable::ScriptableMesh", "scriptable::ScriptableMeshPart",  // Graphics
     "Overlay",                                                      // Overlays.getOverlayObject
