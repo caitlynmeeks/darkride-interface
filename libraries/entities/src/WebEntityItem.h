@@ -68,6 +68,10 @@ public:
     void setSourceUrl(const QString& value);
     QString getSourceUrl() const;
 
+    // whether a Web entity may have this address: none, or a web page's (http, https, data or about), read as the client
+    // reads it (WebEntityRenderer's getContentType)
+    static bool isWebPageUrl(const QString& url);
+
     void setDPI(uint16_t value);
     uint16_t getDPI() const;
 

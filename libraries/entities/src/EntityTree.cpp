@@ -34,6 +34,7 @@
 #include "LogHandler.h"
 #include "EntityEditFilters.h"
 #include "EntityDynamicFactoryInterface.h"
+#include "WebEntityItem.h"
 
 static const quint64 DELETED_ENTITIES_EXTRA_USECS_TO_CONSIDER = USECS_PER_MSEC * 50;
 const float EntityTree::DEFAULT_MAX_TMP_ENTITY_LIFETIME = 60 * 60; // 1 hour
@@ -1612,6 +1613,7 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
             bool suppressDisallowedClientScript = false;
             bool suppressDisallowedServerScript = false;
             bool suppressDisallowedPrivateUserData = false;
+            bool suppressWebAddress = false;
             bool isPhysics = message.getType() == PacketType::EntityPhysics;
 
             _totalEditMessages++;
@@ -1729,6 +1731,27 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                     _recentlyDeletedEntityItemIDs.insert(usecTimestampNow(), entityItemID);
                 }
                 validEditPacket = false;
+            }
+
+            // a Web entity shows a web page on everyone's screen, and nothing else: nobody, owners and script servers too,
+            // gives one an address that isn't a web page's
+            auto setsNonWebPageAddress = [&] {
+                EntityTypes::EntityType type = isAdd ? properties.getType() : existingEntity->getType();
+                return (isAdd || properties.sourceUrlChanged()) && type == EntityTypes::Web &&
+                    !WebEntityItem::isWebPageUrl(properties.getSourceUrl());
+            };
+            if (validEditPacket && setsNonWebPageAddress()) {
+                qCDebug(entities) << "User [" << (senderNode ? senderNode->getUUID() : QUuid())
+                    << "] may not give a Web entity an address that isn't a web page's;" << entityItemID
+                    << (isAdd ? "not added" : "kept its address") << properties.getSourceUrl().left(200);
+                if (isAdd) {
+                    // tell the client that sent it that the entity was not added
+                    QWriteLocker locker(&_recentlyDeletedEntitiesLock);
+                    _recentlyDeletedEntityItemIDs.insert(usecTimestampNow(), entityItemID);
+                    validEditPacket = false;
+                } else {
+                    suppressWebAddress = true;
+                }
             }
 
             // What reaches everyone else takes the domain's owners and editors, or the right to make permanent entities. Who
@@ -1855,6 +1878,17 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                 }
                 endFilter = usecTimestampNow();
 
+                // what a zone's edit filter returned holds to the same rule
+                if (allowed && !suppressWebAddress && setsNonWebPageAddress()) {
+                    qCDebug(entities) << "An edit filter gave Web entity" << entityItemID
+                        << "an address that isn't a web page's;" << (isAdd ? "added without it" : "kept its own");
+                    if (isAdd) {
+                        properties.setSourceUrl(QString());
+                    } else {
+                        suppressWebAddress = true;
+                    }
+                }
+
                 if (existingEntity && !isAdd) {
 
                     if (suppressDisallowedClientScript) {
@@ -1870,6 +1904,12 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                     if (suppressDisallowedPrivateUserData) {
                         bumpTimestamp(properties);
                         properties.setPrivateUserData(existingEntity->getPrivateUserData());
+                    }
+
+                    if (suppressWebAddress) {
+                        // the entity's own, sent back so the sender's client drops what it tried
+                        bumpTimestamp(properties);
+                        properties.setSourceUrl(std::static_pointer_cast<WebEntityItem>(existingEntity)->getSourceUrl());
                     }
 
                     if (suppressScriptsOfVisitor) {
@@ -2975,6 +3015,14 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
             entityItemID = EntityItemID(QUuid(entityMap["id"].toString()));
         } else {
             entityItemID = EntityItemID(QUuid::createUuid());
+        }
+
+        // the server never serves a Web entity whose address isn't a web page's: a saved world's comes in without it
+        if (getIsServer() && properties.getType() == EntityTypes::Web &&
+            !WebEntityItem::isWebPageUrl(properties.getSourceUrl())) {
+            qCDebug(entities) << "Web entity" << entityItemID << "loaded without its address, which isn't a web page's:"
+                              << properties.getSourceUrl().left(200);
+            properties.setSourceUrl(QString());
         }
 
         // Convert old clientOnly bool to new entityHostType enum
