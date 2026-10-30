@@ -67,7 +67,8 @@ const QSet<QByteArray> ALLOWED_CLASSES {
     "AnimationObject", "AnimationFrameObject",                      // AnimationCache
     "scriptable::ScriptableModel", "scriptable::ScriptableMesh", "scriptable::ScriptableMeshPart",  // Graphics
     "Overlay",                                                      // Overlays.getOverlayObject
-    "RefusedGlobal"                                                 // the stand-in: its name only, for the refusal message
+    "RefusedGlobal",                                                // the stand-in: its name only, for the refusal message
+    "SoundScriptingInterface"                                       // SoundCache.getSound: a sound (downloaded, duration, ready)
 };
 
 // Kept classes with an ALLOW-list of methods: anything else on them is refused.
