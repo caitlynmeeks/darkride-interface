@@ -35,6 +35,7 @@
 #include "EntityEditFilters.h"
 #include "EntityDynamicFactoryInterface.h"
 #include "WebEntityItem.h"
+#include "ScriptAddressCheck.h"
 
 static const quint64 DELETED_ENTITIES_EXTRA_USECS_TO_CONSIDER = USECS_PER_MSEC * 50;
 const float EntityTree::DEFAULT_MAX_TMP_ENTITY_LIFETIME = 60 * 60; // 1 hour
@@ -1614,6 +1615,7 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
             bool suppressDisallowedServerScript = false;
             bool suppressDisallowedPrivateUserData = false;
             bool suppressWebAddress = false;
+            bool suppressScriptAddress = false;
             bool isPhysics = message.getType() == PacketType::EntityPhysics;
 
             _totalEditMessages++;
@@ -1754,6 +1756,45 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                 }
             }
 
+            // an entity's script runs in the app of everyone near it, its server scripts on the entity script server: nobody,
+            // owners and script servers too, gives it one that would load a file from the visitor's computer or reach their
+            // own machine or home network (ScriptAddressCheck). An add comes in without it; an edit keeps the entity's own.
+            auto refusedScripts = [&](QString& refusal) {
+                bool script = (isAdd || properties.scriptChanged()) &&
+                    !(refusal = script_address::refusalReason(properties.getScript())).isEmpty();
+                QString serverRefusal;
+                bool serverScripts = (isAdd || properties.serverScriptsChanged()) &&
+                    !(serverRefusal = script_address::refusalReason(properties.getServerScripts())).isEmpty();
+                if (!script) {
+                    refusal = serverRefusal;
+                }
+                return std::make_pair(script, serverScripts);
+            };
+            auto keepScriptsOut = [&](const QString& who) {
+                QString refusal;
+                auto refused = refusedScripts(refusal);
+                if (!refused.first && !refused.second) {
+                    return;
+                }
+                qCDebug(entities) << qUtf8Printable(who) << "may not give entity" << entityItemID << "a script that has" << refusal << ";"
+                    << (isAdd ? "added without it" : "kept its own")
+                    << (refused.first ? properties.getScript() : properties.getServerScripts()).left(200);
+                if (isAdd) {
+                    if (refused.first) {
+                        properties.setScript(ENTITY_ITEM_DEFAULT_SCRIPT);
+                    }
+                    if (refused.second) {
+                        properties.setServerScripts(ENTITY_ITEM_DEFAULT_SERVER_SCRIPTS);
+                    }
+                    bumpTimestamp(properties);
+                } else {
+                    suppressScriptAddress = true;
+                }
+            };
+            if (validEditPacket) {
+                keepScriptsOut(QString("User [%1]").arg((senderNode ? senderNode->getUUID() : QUuid()).toString()));
+            }
+
             // What reaches everyone else takes the domain's owners and editors, or the right to make permanent entities. Who
             // may only make temporary ones (a visitor) keeps the rest of an edit (a vehicle's seat, a colour). A clone's
             // properties are the original's, copied here.
@@ -1889,6 +1930,11 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                     }
                 }
 
+                // and so does what it returned for the scripts
+                if (allowed && !suppressScriptAddress) {
+                    keepScriptsOut("An edit filter");
+                }
+
                 if (existingEntity && !isAdd) {
 
                     if (suppressDisallowedClientScript) {
@@ -1910,6 +1956,14 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                         // the entity's own, sent back so the sender's client drops what it tried
                         bumpTimestamp(properties);
                         properties.setSourceUrl(std::static_pointer_cast<WebEntityItem>(existingEntity)->getSourceUrl());
+                    }
+
+                    if (suppressScriptAddress) {
+                        // the entity's own, sent back so the sender's client drops what it tried
+                        bumpTimestamp(properties);
+                        properties.setScript(existingEntity->getScript());
+                        properties.setScriptTimestamp(existingEntity->getScriptTimestamp());
+                        properties.setServerScripts(existingEntity->getServerScripts());
                     }
 
                     if (suppressScriptsOfVisitor) {
@@ -3023,6 +3077,23 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
             qCDebug(entities) << "Web entity" << entityItemID << "loaded without its address, which isn't a web page's:"
                               << properties.getSourceUrl().left(200);
             properties.setSourceUrl(QString());
+        }
+
+        // nor a script the app would load from the visitor's computer or home network: a saved world's entity comes in
+        // without it
+        if (getIsServer()) {
+            QString refusal = script_address::refusalReason(properties.getScript());
+            if (!refusal.isEmpty()) {
+                qCDebug(entities) << "Entity" << entityItemID << "loaded without its script, which has" << refusal << ":"
+                                  << properties.getScript().left(200);
+                properties.setScript(ENTITY_ITEM_DEFAULT_SCRIPT);
+            }
+            refusal = script_address::refusalReason(properties.getServerScripts());
+            if (!refusal.isEmpty()) {
+                qCDebug(entities) << "Entity" << entityItemID << "loaded without its server scripts, which have" << refusal
+                                  << ":" << properties.getServerScripts().left(200);
+                properties.setServerScripts(ENTITY_ITEM_DEFAULT_SERVER_SCRIPTS);
+            }
         }
 
         // Convert old clientOnly bool to new entityHostType enum
