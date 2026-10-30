@@ -107,6 +107,19 @@ public:
     void setLogger(Logger logger) { _logger = std::move(logger); }
     void setFailureHandler(FailureHandler handler) { _failureHandler = std::move(handler); }
     void setTimeLimitHandler(TimeLimitHandler handler) { _timeLimitHandler = std::move(handler); }
+    /// The members a module may not use, by class, for an engine held to the script API policy (a world's entity
+    /// scripts on a visitor's client). Consulted where the host describes an object and on every call, read, write
+    /// and signal connection, so the gate holds whatever the guest does on its side. Unset: everything a module
+    /// may call by the rules of callable().
+    struct MemberGate {
+        std::function<bool(const QMetaObject*)> allowsClass;    // default-deny: a class not allowed has no members
+        std::function<bool(const QMetaObject*, const QByteArray&)> deniesMethod;
+        std::function<bool(const QMetaObject*, const QByteArray&)> deniesPropertyWrite;
+        std::function<bool(const QMetaObject*, const QByteArray&)> deniesPropertyRead;
+        std::function<QString(const QString&, const QString&)> refusalLine;
+    };
+    void setMemberGate(MemberGate gate) { _gate = std::move(gate); }
+    bool hasMemberGate() const { return bool(_gate.allowsClass); }
 
     /// Defines the imports on the instance. Before instantiate().
     void install();
@@ -178,6 +191,16 @@ private:
     const QVector<int>& candidates(const QMetaObject* meta, const QByteArray& name);
     /// Whether a module may call the method: the rules describe() gives the guest, held for every form of a call.
     static bool callable(const QMetaMethod& method);
+    /// callable(), and the member gate's word on the method for this engine.
+    bool allowed(const QMetaObject* meta, const QMetaMethod& method) const;
+    /// Whether a gate is set (then every class is judged).
+    bool gated(const QMetaObject* meta) const;
+    /// The gate's word on the class, looked up once per class.
+    bool classAllowed(const QMetaObject* meta) const;
+    /// Logs the refusal and gives the line for the error.
+    QString refuse(const QMetaObject* meta, const QByteArray& member) const;
+    /// A description with the members the gate denies left out (writes denied: writable false).
+    QVariantMap gatedDescription(const QMetaObject* meta, QVariantMap description) const;
     /// A method's parameter types, resolved once (a type no library has registered yet is looked up again next time).
     QVector<int> parameterTypes(const QMetaObject* meta, int methodIndex);
     /// A property's index by name, looked up once per class (-1 when it has none).
@@ -202,6 +225,8 @@ private:
     Logger _logger;
     FailureHandler _failureHandler;
     TimeLimitHandler _timeLimitHandler;
+    MemberGate _gate;
+    mutable QHash<const QMetaObject*, bool> _classAllowed;
     bool _timeLimitHit { false };   // the call that just failed ended at the time limit, not by a stop or a trap
     // The JavaScript error type of the last failed call, as QtScript names the same failure: SyntaxError when every
     // candidate took more arguments than were given, TypeError for anything else

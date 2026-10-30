@@ -9,7 +9,8 @@
 //
 //  The test script of api-guard.sh: three probes of the script API's guards. A JSON reply is data (an XMLHttpRequest
 //  with responseType "json" parses it and never runs it); an archive unzips only when every entry lands inside the
-//  target folder; Window.openUrl opens web and world addresses only. Prints API-GUARD lines and stops.
+//  target folder (and a symlink entry is written as a plain file, never a link); Window.openUrl opens web and world
+//  addresses only. Prints API-GUARD lines and stops.
 //
 (function() {
     var BASE = "http://127.0.0.1:43110/results/api-guard-data/";
@@ -44,12 +45,14 @@
         var results = 0;
         File.unzipResult.connect(function(path, fileList) {
             say("unzip " + path.split("/").pop() + ": " + fileList.length + " files " + JSON.stringify(fileList));
-            if (++results === 2) {
+            if (++results === 4) {
                 done();
             }
         });
         File.runUnzip(DATA_DIR + "/good.zip", "", false, true, false);      // one file, extracted
         File.runUnzip(DATA_DIR + "/escape.zip", "", false, true, false);    // an entry named ../../: refused whole
+        File.runUnzip(DATA_DIR + "/links.zip", "", false, true, false);     // a symlink entry "link" -> /etc and "link/x"
+        File.runUnzip(DATA_DIR + "/link-only.zip", "", false, true, false); // the symlink entry alone: a plain file, never a link
     } else {
         say("no File object on this engine");
     }

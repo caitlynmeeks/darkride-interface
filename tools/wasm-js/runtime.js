@@ -441,6 +441,11 @@
         className = description["class"];
         object = host.newHostObject(handle, prototypeFor(className, description));
         defineMembers(object, className, description);
+        if (className === "RefusedGlobal") {
+            // a global the script API policy keeps from a world's scripts: the host registered a stand-in with
+            // nothing but its name, so there is nothing to call either way; this only names the refusal
+            object = refusedStandIn(object.refusedName, object);
+        }
         var twins = methodTwins[className];
         if (twins) {
             Object.keys(twins).forEach(function (name) {
@@ -457,6 +462,26 @@
             releases.register(object, handle);
         }
         return object;
+    }
+
+    function refusedStandIn(name, inner) {
+        var passThrough = { refusedName: true, toString: true, valueOf: true, toJSON: true, constructor: true };
+        return new Proxy(inner, {
+            get: function (target, property) {
+                if (typeof property === "symbol" || passThrough[property]) {
+                    return target[property];
+                }
+                return function () {
+                    var line = name + "." + String(property) + " is for the visitor's own scripts; a world's script may not use it";
+                    host.log(LOG_WARNING, line);
+                    throw new TypeError(line);
+                };
+            },
+            set: function (target, property) {
+                host.log(LOG_WARNING, name + "." + String(property) + " is for the visitor's own scripts; a world's script may not set it");
+                return true;
+            }
+        });
     }
 
     // --- the globals: defined lazily, resolved on first use ------------------------------------------------------

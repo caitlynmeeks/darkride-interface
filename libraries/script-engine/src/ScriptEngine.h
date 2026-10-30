@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <memory>
 #include <QtCore/QObject>
 #include <QtCore/QUrl>
 #include <QtCore/QSet>
@@ -176,6 +177,9 @@ public:
     /// running): the claim counts only when the engine loaded such a script itself; otherwise the engine's own
     /// answer. On this engine, which tracks the running entity script itself, the claim is not needed.
     virtual QUrl verifiedScriptOrigin(const QString& claimed) const { Q_UNUSED(claimed); return currentScriptOrigin(); }
+    /// The guard in front of every global of a world's entity engine on QtScript (the script API policy); made on
+    /// first use, null on any other engine.
+    class GuardedObjectClass* guardClass();
     /// Whether this engine runs on a person's client, where its scripts' requests are held to that rule.
     bool isClientSide() const { return _context == CLIENT_SCRIPT || _context == ENTITY_CLIENT_SCRIPT; }
    
@@ -983,6 +987,7 @@ protected:
     void callWithEnvironment(const EntityItemID& entityID, const QUrl& sandboxURL, QScriptValue function, QScriptValue thisObject, QScriptValueList args);
 
     Context _context;
+    std::unique_ptr<class GuardedObjectClass> _guardClass;
     Type _type;
     QString _scriptContents;
     QString _parentURL;

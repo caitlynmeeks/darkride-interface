@@ -48,6 +48,8 @@
 
 #include "BatchLoader.h"
 #include <ScriptNetworkPolicy.h>
+#include "RefusedGlobal.h"
+#include "ScriptApiPolicy.h"
 #include "HttpRequestObject.h"
 #include "ScriptCache.h"
 #include "ScriptEngineLogging.h"
@@ -329,6 +331,10 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
         qCDebug(scriptengine) << "WasmScriptEngine: global" << name << "is null, not registered";
         return;
     }
+    if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(name)) {
+        // a world's entity scripts don't get this one: a stand-in of the same name, with no members
+        object = new RefusedGlobal(name, this);
+    }
     if (_objects->global(name) == ObjectTable::NULL_HANDLE) {
         _objects->registerGlobal(name, object);
     }
@@ -526,6 +532,16 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         });
     }
     instance->host = std::make_unique<HostInterface>(*instance->instance, *_objects, *instance->codec, *_relay);
+    if (isEntityClientScript()) {
+        // a world's entity scripts: the script API policy, held by the host at describe, call, read and write
+        HostInterface::MemberGate gate;
+        gate.allowsClass = &ScriptApiPolicy::allowsClass;
+        gate.deniesMethod = &ScriptApiPolicy::deniesMethod;
+        gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
+        gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
+        gate.refusalLine = &ScriptApiPolicy::refusalLine;
+        instance->host->setMemberGate(std::move(gate));
+    }
     instance->host->setLogger([this](int level, const QString& text) {
         switch (level) {
             case HostInterface::Print:
