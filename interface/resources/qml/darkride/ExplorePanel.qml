@@ -79,6 +79,8 @@ Page {
             explore.load(true);
             here.refresh();
             history.refresh();
+        } else if (explore.startFailure.id !== "") {
+            explore.startFailure = { id: "", text: "" };
         }
     }
 
@@ -97,6 +99,10 @@ Page {
         readonly property int amount: 50
         property var focused: null         // a world opened from its tile or row, shown alone
         property var likesNow: ({})        // likes changed here since the list came, by world id: { liked, likes }
+        // the last new instance that couldn't start, said on its world's card, tile or row once Explore is open again
+        // (until it closes)
+        property var startFailure: ({ id: "", text: "" })
+        property var startTicket: null     // the new instance being started, { cancelled }: Cancel drops its late address
 
         // the worlds in the search bar's order (the metaverse searched them); ties keep the metaverse's order
         readonly property var shown: worldBar.arrange(worlds, false)
@@ -224,8 +230,8 @@ Page {
             return compatible(world.protocol)
                 && (list.some(function (p) { return p.compatible; }) || !!(instances && instances.canStart));
         }
-        // where the people are; else somewhere running; else a new public instance. report(text) says how it went.
-        function hop(world, list, report) {
+        // where the people are; else somewhere running; else a new public instance
+        function hop(world, list) {
             var instances = world.instances || null;
             var open = list.filter(function (p) { return p.compatible; });
             var best = open.filter(function (p) { return p.people > 0; })[0]
@@ -235,7 +241,7 @@ Page {
             if (best) {
                 join(world, best);
             } else if (instances && instances.canStart) {
-                start(world, "public", report);
+                start(world, "public");
             }
         }
         function join(world, place) {
@@ -245,9 +251,8 @@ Page {
                 joinWorld(world);
             }
         }
-        function start(world, visibility, report) {
-            report("Starting a " + visibility + " instance…");
-            startInstance(world, visibility, report);
+        function start(world, visibility) {
+            startInstance(world, visibility);
         }
 
         // "by <author>", the name a link to their profile (a ListRow detail or a tile's line, as rich text)
@@ -273,12 +278,13 @@ Page {
             return MetaverseRequests.metaverseUrl() + "/api/domain/" + worldId + "/image";
         }
 
-        // a hop: the loading screen and the pop at once, Explore out of the way, then the join
-        function hopStart(world) {
+        // a hop: the loading screen and the pop at once, Explore out of the way, then the join. startId: a new
+        // instance's start, whose server the screen waits for (it then makes the hop itself)
+        function hopStart(world, startId) {
             Tablet.playSound(TabletEnums.TabletOpen);
             Messages.sendLocalMessage("Darkride-Hop", JSON.stringify({
                 type: "start", world: world.label || "", author: world.username || "",
-                picture: world.id ? picture(world.id) : ""
+                picture: world.id ? picture(world.id) : "", starting: !!startId, id: startId || ""
             }));
             root.closePanel();
         }
@@ -316,24 +322,53 @@ Page {
             hopStart(world);
             AddressManager.handleLookupString(instance.address);
         }
-        // a new instance: started first, so a refusal (another version, the servers full) is said here at once
-        function startInstance(world, visibility, done) {
+        // a new instance: the loading screen goes up at once and waits while the metaverse starts a server (it answers
+        // with the address once the server is up: a minute or more on a fresh server, Caity's 10-30 bug: "Hopping…" on
+        // the card all that time). The hop goes when the address comes, unless the screen's Cancel was pressed by then
+        // (the instance stays listed, to join later); a refusal (another version, the servers full) is said on the
+        // screen, and Explore opens again with it on the world's card
+        function startInstance(world, visibility) {
             if (hoppingWorld !== "") {
                 return;
             }
             hoppingWorld = world.id;
+            startFailure = { id: "", text: "" };
+            var startId = world.id + "@" + Date.now();
+            var ticket = { cancelled: false };
+            startTicket = ticket;
+            // the answer may come after the page has gone (in the tablet, closing it goes to the home screen; the
+            // headset's screen has no Cancel), so it keeps what it needs
+            var messages = Messages;
+            var addresses = AddressManager;
+            var plainly = root.plainly;
+            hopStart(world, startId);
             MetaverseRequests.send("POST", "/api/worlds/" + world.id + "/instances",
                                    { visibility: visibility, protocol: root.protocol }, function (error, code, data) {
-                if (error || !data || !data.address) {
-                    hoppingWorld = "";
-                    done(root.plainly(code, data, "Couldn't start an instance. Try again in a minute.",
-                                      "That world isn't there any more.",
-                                      "Couldn't start a server right now. Try again in a minute."));
+                if (ticket.cancelled) {
+                    console.log("Explore: the new instance answered " + code + " after its hop was cancelled");
                     return;
                 }
-                done("");
-                joinInstance(world, data);
+                if (!error && data && data.address) {
+                    messages.sendLocalMessage("Darkride-Hop", JSON.stringify({ type: "started", id: startId }));
+                    addresses.handleLookupString(String(data.address));
+                    return;
+                }
+                var text = plainly(code, data, "Couldn't start an instance. Try again in a minute.",
+                                   "That world isn't there any more.",
+                                   "Couldn't start a server right now. Try again in a minute.");
+                messages.sendLocalMessage("Darkride-Hop", JSON.stringify({ type: "cancel", id: startId, reason: text }));
+                try {
+                    if (hoppingWorld === world.id) {
+                        hoppingWorld = "";
+                    }
+                    startFailure = { id: world.id, text: text };
+                } catch (e) {
+                    // the page has gone: the screen said it
+                }
             });
+        }
+        function failureFor(world) {
+            return startFailure.id !== "" && startFailure.id === world.id ? startFailure.text : "";
         }
 
         // a world from its tile, alone (an inline component can't reach the page's id, so the page scrolls from here)
@@ -364,6 +399,17 @@ Page {
     Connections {
         target: Window
         function onDomainChanged() { explore.hoppingWorld = ""; here.refresh(); history.refresh(); }
+        // the loading screen's Cancel: a hop that hasn't left stops there (a new instance's late address is dropped by
+        // the screen), one that has goes back, which changes the world anyway
+        function onLoadingScreenButtonPressed(button) {
+            if (button === "cancel") {
+                explore.hoppingWorld = "";
+                if (explore.startTicket) {
+                    explore.startTicket.cancelled = true;
+                    explore.startTicket = null;
+                }
+            }
+        }
     }
     Connections {
         target: AccountServices
@@ -607,7 +653,6 @@ Page {
         objectName: "worldCard"   // a test opens one by it
         property var world: ({})
         property bool open: false
-        property string status: ""
         readonly property var instances: world.instances || null
         readonly property bool compatible: explore.compatible(world.protocol)
         readonly property int people: explore.people(world)
@@ -615,11 +660,7 @@ Page {
         readonly property bool canHop: explore.canHop(world, places)
         readonly property string summary: explore.summary(world, places)
 
-        footer: status
-
-        function report(text) {
-            status = text;
-        }
+        footer: explore.failureFor(world)
 
         Item {
             width: parent ? parent.width : 0
@@ -648,7 +689,7 @@ Page {
                 text: explore.hoppingWorld === card.world.id ? "Hopping…" : "Hop"
                 strong: true
                 enabled: card.canHop && explore.hoppingWorld === ""
-                onPressed: explore.hop(card.world, card.places, card.report)
+                onPressed: explore.hop(card.world, card.places)
             }
         }
         ListRow {
@@ -673,9 +714,9 @@ Page {
             visible: card.open && !!(card.instances && card.instances.canStart) && card.compatible
             label: "New instance"
             detail: "Public: anyone · Friends: your friends · Private: only you"
-            CardButton { text: "Public"; enabled: explore.hoppingWorld === ""; onPressed: explore.start(card.world, "public", card.report) }
-            CardButton { text: "Friends"; enabled: explore.hoppingWorld === ""; onPressed: explore.start(card.world, "friends", card.report) }
-            CardButton { text: "Private"; enabled: explore.hoppingWorld === ""; onPressed: explore.start(card.world, "private", card.report) }
+            CardButton { text: "Public"; enabled: explore.hoppingWorld === ""; onPressed: explore.start(card.world, "public") }
+            CardButton { text: "Friends"; enabled: explore.hoppingWorld === ""; onPressed: explore.start(card.world, "friends") }
+            CardButton { text: "Private"; enabled: explore.hoppingWorld === ""; onPressed: explore.start(card.world, "private") }
         }
         ListRow {
             visible: !card.open && (card.places.length > 0 || !!(card.instances && card.instances.canStart))
@@ -695,15 +736,12 @@ Page {
         readonly property var places: explore.places(world)
         readonly property bool canHop: explore.canHop(world, places)
 
-        function report(text) {
-            status = text;
-        }
-
         title: world.label || ""
         subtitle: explore.byline(world, !compatible ? "Another version" : people > 0 ? people + " here" : "")
         picture: world.id ? explore.picture(world.id) : ""
         pictureRatio: 0.6
         dim: !compatible
+        status: explore.failureFor(world)
         onClicked: explore.openWorld(world)
         onLinkActivated: explore.openProfile(decodeURIComponent(link))
 
@@ -717,7 +755,7 @@ Page {
             text: explore.hoppingWorld === tile.world.id ? "Hopping…" : "Hop"
             strong: true
             enabled: tile.canHop && explore.hoppingWorld === ""
-            onPressed: explore.hop(tile.world, tile.places, tile.report)
+            onPressed: explore.hop(tile.world, tile.places)
         }
     }
 
@@ -725,16 +763,12 @@ Page {
     component WorldRow: ListRow {
         id: worldRow
         property var world: ({})
-        property string status: ""
+        readonly property string failure: explore.failureFor(world)
         readonly property var places: explore.places(world)
         readonly property bool canHop: explore.canHop(world, places)
 
-        function report(text) {
-            status = text;
-        }
-
         label: world.label || ""
-        detail: status !== "" ? explore.escaped(status) : explore.byline(world, explore.summary(world, places))
+        detail: failure !== "" ? explore.escaped(failure) : explore.byline(world, explore.summary(world, places))
         detailFormat: Text.RichText
         onLinkActivated: explore.openProfile(decodeURIComponent(link))
         icon: world.id ? explore.picture(world.id) : ""
@@ -751,7 +785,7 @@ Page {
             text: explore.hoppingWorld === worldRow.world.id ? "Hopping…" : "Hop"
             strong: true
             enabled: worldRow.canHop && explore.hoppingWorld === ""
-            onPressed: explore.hop(worldRow.world, worldRow.places, worldRow.report)
+            onPressed: explore.hop(worldRow.world, worldRow.places)
         }
     }
 
