@@ -10,6 +10,7 @@
 
 #include "ScriptAddressCheck.h"
 
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QUrl>
@@ -32,6 +33,14 @@ const QString BUILT_IN_AVATAR_PATH = "/avatars/";
 // Names that resolve to this computer, well known as such; others can't be told from here.
 const QStringList LOOPBACK_NAMES { "localhost", "localtest.me", "lvh.me", "vcap.me", "localho.st", "nip.io", "sslip.io",
                                    "xip.io" };
+
+// The WebAssembly engine fetches a value ending in .wasm as a module before any test for code (WasmScriptEngine::
+// isWasmScript, by its suffixOf), so such a value is never code here either.
+bool isWasmModule(const QString& value) {
+    const QUrl url(value);
+    const QString path = url.isValid() && !url.scheme().isEmpty() ? url.path() : value;
+    return QFileInfo(path).suffix().toLower() == "wasm";
+}
 
 QString decodedFully(QString text) {
     // until it stops changing, so %252e%252e is caught as well as %2e%2e
@@ -162,7 +171,7 @@ bool isInlineCode(const QString& value) {
 }
 
 QString refusalReason(const QString& value) {
-    if (value.isEmpty() || isInlineCode(value)) {
+    if (value.isEmpty() || (!isWasmModule(value) && isInlineCode(value))) {
         return QString();
     }
 

@@ -77,9 +77,13 @@ static QString refusalForCarriedEntity(const QByteArray& data) {
                                                                               : "an address that isn't a web page's";
             }
         } else {
+            // read past the data (a string's length running over it), the scripts read here from the zero padding may
+            // not be what an app reads from its own memory: refused (security, 10-30)
             auto entity = std::make_shared<CommonPropertiesReader>(EntityItemID(id));
-            entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
-            refusal = scriptRefusal(*entity);
+            int bytesRead = entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
+            if (bytesRead > 0 && bytesRead <= data.size()) {
+                refusal = scriptRefusal(*entity);
+            }
         }
     } catch (...) {
         // unreadable: refused

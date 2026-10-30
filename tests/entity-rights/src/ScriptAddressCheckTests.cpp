@@ -35,6 +35,8 @@ void ScriptAddressCheckTests::testValues_data() {
     QTest::newRow("public address") << "https://8.8.8.8/x.js" << true;
     QTest::newRow("port and fragment") << "https://example.com:8443/a/b.js#frag" << true;
     QTest::newRow("cdn outside the avatar folder") << "https://cdn.darkride.ai/scripts/x.js" << true;
+    QTest::newRow("module") << "https://files.darkride.ai/someone/scripts/x.wasm" << true;
+    QTest::newRow("module in assets") << "atp:/darkside/x.wasm" << true;
 
     // files on the visitor's computer
     QTest::newRow("file:") << "file:///Users/x/.ssh/id_rsa" << false;
@@ -54,6 +56,9 @@ void ScriptAddressCheckTests::testValues_data() {
     QTest::newRow("ftp:") << "ftp://example.com/x.js" << false;
     QTest::newRow("hifi:") << "hifi://darkside/x" << false;
     QTest::newRow("a word") << "javascript" << false;
+    QTest::newRow("code ending in .wasm (a path to the engine)") << "(function(){ })//x.wasm" << false;
+    QTest::newRow("javascript: ending in .wasm") << "javascript:print(1)//a.wasm" << false;
+    QTest::newRow("module, app scripts") << "/~/x.wasm" << false;
 
     // this computer and the home network
     QTest::newRow("localhost") << "http://localhost/x.js" << false;
