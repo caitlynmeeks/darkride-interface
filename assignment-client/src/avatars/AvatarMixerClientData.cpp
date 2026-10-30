@@ -25,21 +25,36 @@
 #include "AvatarMixerWorker.h"
 
 // A Web entity an avatar carries shows on everyone's screen, as one from the entity server does, so the same rule holds:
-// one whose address isn't a web page's is never passed on.
+// one whose address isn't a web page's is never passed on. Its data is read from a zero-padded copy and passed on only
+// when it reads cleanly.
+static const int READ_PADDING = 1 << 20;
+
 static bool carriesNonWebPageAddress(const QByteArray& data) {
     EntityTypes::EntityType type = EntityTypes::Unknown;
     QUuid id;
-    auto bytes = reinterpret_cast<const unsigned char*>(data.constData());
-    EntityTypes::extractEntityTypeAndID(bytes, data.size(), type, id);
+    EntityTypes::extractEntityTypeAndID(reinterpret_cast<const unsigned char*>(data.constData()), data.size(), type, id);
     if (type != EntityTypes::Web) {
         return false;
     }
-    // read as the clients read it (OtherAvatar), but freed here at once: EntityTypes' factory frees with deleteLater, and
-    // this worker thread runs no event loop
-    auto entity = std::make_shared<WebEntityItem>(EntityItemID(id));
-    ReadBitstreamToTreeParams args;
-    entity->readEntityDataFromBuffer(bytes, data.size(), args);
-    return !WebEntityItem::isWebPageUrl(entity->getSourceUrl());
+    if (data.size() > AvatarTraits::MAXIMUM_TRAIT_SIZE) {
+        return true;  // more than a client sends
+    }
+    // one zeroed buffer per worker thread: only the data's own bytes are written, and zeroed again after
+    thread_local std::vector<unsigned char> buffer(AvatarTraits::MAXIMUM_TRAIT_SIZE + READ_PADDING, 0);
+    memcpy(buffer.data(), data.constData(), data.size());
+    bool refused = true;
+    try {
+        // read as the clients read it (OtherAvatar), but freed here at once: EntityTypes' factory frees with deleteLater,
+        // and this worker thread runs no event loop
+        auto entity = std::make_shared<WebEntityItem>(EntityItemID(id));
+        ReadBitstreamToTreeParams args;
+        int bytesRead = entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
+        refused = bytesRead <= 0 || bytesRead > data.size() || !WebEntityItem::isWebPageUrl(entity->getSourceUrl());
+    } catch (...) {
+        // unreadable: refused
+    }
+    memset(buffer.data(), 0, data.size());
+    return refused;
 }
 
 AvatarMixerClientData::AvatarMixerClientData(const QUuid& nodeID, Node::LocalID nodeLocalID) : NodeData(nodeID, nodeLocalID) {
@@ -256,7 +271,7 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
                         QByteArray traitData = message.read(traitSize);
                         if (traitType == AvatarTraits::AvatarEntity && carriesNonWebPageAddress(traitData)) {
                             qCDebug(avatars) << "Avatar" << sendingNode.getUUID() << "carries Web entity" << instanceID
-                                << "with an address that isn't a web page's; not passed on";
+                                << "with an address that isn't a web page's, or that doesn't read cleanly; not passed on";
                             // nobody else sees it: taken away, as a deleted one, until a version with a web page's address
                             _avatar->processDeletedTraitInstance(traitType, instanceID);
                             _avatar->getAndClearRecentlyRemovedIDs();
