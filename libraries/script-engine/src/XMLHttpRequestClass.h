@@ -370,6 +370,7 @@ private:
     QNetworkReply::NetworkError _errorCode { QNetworkReply::NoError };
     QUrl _origin;                // where the script making the request came from
     bool _ruled { false };       // whether the network rule holds here (a person's client)
+    bool _worldIsLocal { false };    // the world the script is judged in (ScriptEngine::worldIsLocal), when it made the request
     bool _deciding { false };    // the rule is still judging (a name lookup)
     int _generation { 0 };       // abort() moves it on, so a judgement that comes late is dropped
 

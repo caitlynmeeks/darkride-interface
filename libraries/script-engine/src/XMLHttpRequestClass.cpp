@@ -39,6 +39,7 @@ XMLHttpRequestClass::XMLHttpRequestClass(QScriptEngine* engine) :
     if (auto scriptEngine = qobject_cast<ScriptEngine*>(engine)) {
         _origin = scriptEngine->currentScriptOrigin();
         _ruled = scriptEngine->isClientSide();
+        _worldIsLocal = scriptEngine->worldIsLocal();
     }
 }
 
@@ -187,7 +188,7 @@ void XMLHttpRequestClass::send(const QScriptValue& data) {
                     refuse(reason);
                 }
             }, Qt::QueuedConnection);
-        });
+        }, _worldIsLocal);
     }
     if (!_async && _readyState != DONE) {
         QEventLoop loop;
@@ -207,7 +208,7 @@ void XMLHttpRequestClass::refuse(const QString& reason) {
 
 void XMLHttpRequestClass::doSend() {
     DependencyManager::get<ResourceRequestObserver>()->update(_url, -1, "XMLHttpRequestClass::doSend");
-    const bool ruled = _ruled && ScriptNetworkPolicy::applies(_origin);
+    const bool ruled = _ruled && ScriptNetworkPolicy::applies(_origin, _worldIsLocal);
     if (ruled) {
         // a redirect is judged as the request was
         _request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
@@ -238,7 +239,7 @@ void XMLHttpRequestClass::doSend() {
                     scriptEngine->scriptWarningMessage(ScriptNetworkPolicy::refusalLine(_origin, url, decision.reason + " (a redirect)"));
                 }
                 reply->abort();
-            });
+            }, _worldIsLocal);
         });
     }
 

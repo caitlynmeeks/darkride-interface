@@ -22,10 +22,16 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 
+#include <AddressManager.h>
 #include <DependencyManager.h>
+#include <NodeList.h>
+#include <PathUtils.h>
 #include <ResourceManager.h>
+#include <ResourceScriptingInterface.h>
 
 #include <HttpRequestObject.h>
+#include <ScriptApiPolicy.h>
+#include <ScriptNetworkPolicy.h>
 #include <WasmScriptEngine.h>
 #include <WebSocketObject.h>
 
@@ -62,6 +68,15 @@ private:
     QObject _context;
 };
 
+// the world the client is in, by its server's address: on the internet, on this machine, on the home network
+const char* PUBLIC_WORLD = "203.0.113.5";
+const char* THIS_MACHINE_WORLD = "127.0.0.1";
+const char* HOME_NETWORK_WORLD = "192.168.1.20";
+
+void setWorld(const char* address) {
+    DependencyManager::get<NodeList>()->getDomainHandler().setSockAddr(HifiSockAddr(QHostAddress(address), 40102), address);
+}
+
 bool writeFile(const QString& path, const QByteArray& contents) {
     QFile file(path);
     return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
@@ -83,6 +98,15 @@ void VerifiedSandboxTests::initTestCase() {
     QVERIFY(writeFile(_root + "/world/entity.js", "(function () {});"));
     QVERIFY(writeFile(_root + "/world/lib.js", "module.exports = 1;"));
     QVERIFY(writeFile(_root + "/outside/other.js", "module.exports = 2;"));
+    // the app's own scripts, in a folder of the test's own
+    QVERIFY(QDir(_root).mkpath("app/scripts/entities"));
+    QVERIFY(writeFile(_root + "/app/scripts/entities/example.js", "(function () {});"));
+    QVERIFY(writeFile(_root + "/app/scripts/entities/helper.js", "var helper = 1;"));
+    PathUtils::defaultScriptsLocation(_root + "/app/scripts");
+    // a world on the internet, unless a test says otherwise
+    DependencyManager::set<AddressManager>();
+    DependencyManager::set<NodeList>(NodeType::Agent, INVALID_PORT);
+    setWorld(PUBLIC_WORLD);
 }
 
 void VerifiedSandboxTests::testClaims() {
@@ -97,9 +121,16 @@ void VerifiedSandboxTests::testClaims() {
     engine.addEntityScript(failed, EntityScriptStatus::ERROR_RUNNING_SCRIPT);
     engine.addEntityScript(unloaded, EntityScriptStatus::UNLOADED);
 
-    // an entity script this engine runs, or is loading, is believed
+    // an entity script this engine runs, or is loading, is believed (a local one only in a world on this machine: the
+    // world rule, testWorldRule)
     QCOMPARE(engine.verifiedSandbox(NETWORK_SCRIPT.toString()), NETWORK_SCRIPT);
-    QCOMPARE(engine.verifiedSandbox(localScript.toString()), localScript);
+    setWorld(THIS_MACHINE_WORLD);
+    {
+        EntitiesEngine local;
+        local.addEntityScript(localScript, EntityScriptStatus::RUNNING);
+        QCOMPARE(local.verifiedSandbox(localScript.toString()), localScript);
+    }
+    setWorld(PUBLIC_WORLD);
     QCOMPARE(engine.verifiedSandbox(loading.toString()), loading);
     QCOMPARE(engine.verifiedScriptOrigin(NETWORK_SCRIPT.toString()), NETWORK_SCRIPT);
     // no address: the engine itself; an entity script given as code keeps its about: name (never local)
@@ -160,9 +191,13 @@ void VerifiedSandboxTests::testInclude() {
     // the network script's own address: the same answer, under its own name
     QCOMPARE(engine.resolveInclude(outside, NETWORK_SCRIPT.toString(), NETWORK_SCRIPT.toString()).value("reason").toString(),
              "outside of original entity script " + NETWORK_SCRIPT.toString());
-    // the control: the world's real local entity script includes its neighbour
-    const QVariantMap result = engine.resolveInclude("lib.js", localScript.toString(), localScript.toString());
+    // the control: in a world on this machine, the world's real local entity script includes its neighbour
+    setWorld(THIS_MACHINE_WORLD);
+    EntitiesEngine local;
+    local.addEntityScript(localScript, EntityScriptStatus::RUNNING);
+    const QVariantMap result = local.resolveInclude("lib.js", localScript.toString(), localScript.toString());
     QCOMPARE(result.value("url").toString(), QUrl::fromLocalFile(_root + "/world/lib.js").toString());
+    setWorld(PUBLIC_WORLD);
 }
 
 void VerifiedSandboxTests::testRequire() {
@@ -183,9 +218,13 @@ void VerifiedSandboxTests::testRequire() {
                      qPrintable(result.value("error").toString()));
         }
     }
-    // the control: the world's real local entity script requires its neighbour
-    const QVariantMap result = engine.resolveModule("./lib.js", QString(), localScript.toString(), localScript.toString());
+    // the control: in a world on this machine, the world's real local entity script requires its neighbour
+    setWorld(THIS_MACHINE_WORLD);
+    EntitiesEngine local;
+    local.addEntityScript(localScript, EntityScriptStatus::RUNNING);
+    const QVariantMap result = local.resolveModule("./lib.js", QString(), localScript.toString(), localScript.toString());
     QCOMPARE(result.value("url").toString(), QUrl::fromLocalFile(_root + "/world/lib.js").toString());
+    setWorld(PUBLIC_WORLD);
 }
 
 void VerifiedSandboxTests::testFetch() {
@@ -274,4 +313,213 @@ void VerifiedSandboxTests::testWebSocket() {
         QVERIFY2(warnings.lines[0].startsWith(refusedFrom(c.origin, QUrl(c.target).toDisplayString())), qPrintable(warnings.lines[0]));
         factory.dispose(socket);
     }
+}
+
+
+void VerifiedSandboxTests::testWorldRule() {
+    const QUrl localScript = QUrl::fromLocalFile(_root + "/world/entity.js");
+    const QUrl appScript = QUrl::fromLocalFile(_root + "/app/scripts/entities/example.js");
+    const QUrl machineScript("http://127.0.0.1:8000/entity.js");
+    const QString lib = QUrl::fromLocalFile(_root + "/world/lib.js").toString();
+
+    // a world on the internet: no entity script is local, whatever its own address
+    {
+        EntitiesEngine engine;
+        for (const QUrl& url : { localScript, appScript, machineScript, NETWORK_SCRIPT }) {
+            engine.addEntityScript(url, EntityScriptStatus::RUNNING);
+        }
+        QVERIFY(!engine.entityScriptsMayBeLocal());
+        QVERIFY(!engine.worldIsLocal());
+        QCOMPARE(engine.verifiedSandbox(localScript.toString()), ENTITIES);
+        QCOMPARE(engine.verifiedSandbox(appScript.toString()), ENTITIES);
+        QCOMPARE(engine.verifiedSandbox(machineScript.toString()), ENTITIES);
+        QCOMPARE(engine.verifiedSandbox(NETWORK_SCRIPT.toString()), NETWORK_SCRIPT);
+        QCOMPARE(engine.verifiedScriptOrigin(localScript.toString()), ENTITIES);
+        QCOMPARE(engine.effectiveSandbox(QUrl("qrc:///scripts/x.js")), ENTITIES);
+        QCOMPARE(engine.effectiveSandbox(QUrl("about:EmbeddedEntityScript")), QUrl("about:EmbeddedEntityScript"));
+        // the local entity script reaches no file beside it
+        QCOMPARE(engine.resolveInclude("lib.js", localScript.toString(), localScript.toString()).value("reason").toString(),
+                 QString("outside of original entity script about:Entities"));
+        QVERIFY(engine.resolveModule("./lib.js", QString(), localScript.toString(), localScript.toString()).contains("error"));
+        QCOMPARE(engine.fetchScript(lib, false, localScript.toString()).value("status").toString(), QString("Refused"));
+        // an app script run as an entity script has what any script of the world has: no file here (the network rule
+        // refuses file addresses, the app's own scripts too, as for every script from the internet since 1.1.1)
+        QVERIFY(!engine.resolveInclude("helper.js", appScript.toString(), appScript.toString()).contains("url"));
+        QVERIFY(!engine.resolveInclude(lib, appScript.toString(), appScript.toString()).contains("url"));
+        QCOMPARE(engine.fetchScript(lib, false, appScript.toString()).value("status").toString(), QString("Refused"));
+    }
+
+    // a world on this machine: as before, a local entity script keeps every file
+    setWorld(THIS_MACHINE_WORLD);
+    {
+        EntitiesEngine engine;
+        engine.addEntityScript(localScript, EntityScriptStatus::RUNNING);
+        QVERIFY(engine.entityScriptsMayBeLocal());
+        QVERIFY(engine.worldIsLocal());
+        QCOMPARE(engine.verifiedSandbox(localScript.toString()), localScript);
+        QCOMPARE(engine.resolveInclude("../outside/other.js", localScript.toString(), localScript.toString()).value("url").toString(),
+                 QUrl::fromLocalFile(_root + "/outside/other.js").toString());
+        // held one way: once the engine has served a world on the internet, a local world doesn't change that
+        setWorld(PUBLIC_WORLD);
+        QCOMPARE(engine.verifiedSandbox(localScript.toString()), ENTITIES);
+        setWorld(THIS_MACHINE_WORLD);
+        QCOMPARE(engine.verifiedSandbox(localScript.toString()), ENTITIES);
+        QVERIFY(!engine.entityScriptsMayBeLocal());
+        QVERIFY(!engine.worldIsLocal());
+    }
+    // a world on the home network counts as local (the rule as it stands)
+    setWorld(HOME_NETWORK_WORLD);
+    {
+        EntitiesEngine engine;
+        QVERIFY(engine.entityScriptsMayBeLocal());
+    }
+    setWorld(PUBLIC_WORLD);
+
+    // a client script is the visitor's own: its file keeps its rights in any world
+    {
+        WasmScriptEngine engine(ScriptEngine::CLIENT_SCRIPT, NO_SCRIPT, localScript.toString());
+        QCOMPARE(engine.verifiedScriptOrigin(QString()), localScript);
+        QCOMPARE(engine.effectiveSandbox(localScript), localScript);
+    }
+}
+
+void VerifiedSandboxTests::testWorldRuleOnRequests() {
+    const QUrl localScript = QUrl::fromLocalFile(_root + "/world/entity.js");
+    const QUrl appScript = QUrl::fromLocalFile(_root + "/app/scripts/entities/example.js");
+    const QStringList targets { "http://127.0.0.1:9/", "http://192.168.1.1/", "file:///a/b.js" };
+
+    // a world on the internet: a local or app entity script's requests are held to the rule, as the entities engine's
+    EntitiesEngine engine;
+    engine.addEntityScript(localScript, EntityScriptStatus::RUNNING);
+    engine.addEntityScript(appScript, EntityScriptStatus::RUNNING);
+    Warnings warnings(engine);
+    HttpRequestFactory requests(&engine);
+    WebSocketFactory sockets(&engine);
+    for (const QUrl& script : { localScript, appScript }) {
+        for (const QString& target : targets) {
+            warnings.lines.clear();
+            HttpRequestObject* request = requests.createRequest(script.toString());
+            bool completed = false;
+            QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+            request->open("GET", target);
+            request->send();
+            QTRY_VERIFY(completed);
+            QCOMPARE(request->errorCode(), int(QNetworkReply::ContentAccessDenied));
+            QCOMPARE(warnings.lines.size(), 1);
+            QVERIFY2(warnings.lines[0].startsWith(refusedFrom(ENTITIES, QUrl(target).toDisplayString())), qPrintable(warnings.lines[0]));
+            requests.dispose(request);
+        }
+        warnings.lines.clear();
+        WebSocketObject* socket = sockets.createWebSocket("ws://127.0.0.1:9/", script.toString());
+        bool errored = false;
+        QObject::connect(socket, &WebSocketObject::errored, [&errored] { errored = true; });
+        QTRY_VERIFY(errored);
+        QVERIFY2(warnings.lines.value(0).startsWith(refusedFrom(ENTITIES, "ws://127.0.0.1:9/")), qPrintable(warnings.lines.value(0)));
+        sockets.dispose(socket);
+    }
+
+    // leaving that world for one on this machine: a request the world's script makes now is still held to the rule,
+    // even from a script on the network
+    setWorld(THIS_MACHINE_WORLD);
+    engine.addEntityScript(NETWORK_SCRIPT, EntityScriptStatus::RUNNING);
+    for (const QUrl& script : { NETWORK_SCRIPT, localScript }) {
+        warnings.lines.clear();
+        HttpRequestObject* request = requests.createRequest(script.toString());
+        bool completed = false;
+        QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+        request->open("GET", "http://127.0.0.1:9/");
+        request->send();
+        QTRY_VERIFY(completed);
+        QCOMPARE(request->errorCode(), int(QNetworkReply::ContentAccessDenied));
+        QCOMPARE(warnings.lines.size(), 1);
+        requests.dispose(request);
+    }
+    QString reason;
+    QVERIFY(!ScriptNetworkPolicy::decideBlocking(QUrl("http://127.0.0.1:9/x.js"), NETWORK_SCRIPT, reason, engine.worldIsLocal()));
+    setWorld(PUBLIC_WORLD);
+}
+
+void VerifiedSandboxTests::testRefusalAtLoad() {
+    const QString app = _root + "/app/scripts/entities/example.js";
+    const QString outside = _root + "/outside/other.js";
+    QStringList refused {
+        "file:///a/b.js",
+        QUrl::fromLocalFile(outside).toString(),
+        outside,                                                    // a path: the script cache reads it as a file
+        _root.mid(1) + "/outside/other.js",                         // a path without its first slash
+        "file://" + _root + "/app/scripts/../../outside/other.js",
+        "file://" + _root + "/app/scripts/%2e%2e/%2e%2e/outside/other.js",
+        "file://" + _root + "/app/scripts/..%5c..%5coutside%5cother.js",
+        "unknown:/a/b.js",                                          // an unknown scheme: read as a file too
+    };
+    const QStringList allowed {
+        QUrl::fromLocalFile(app).toString(),
+        app,
+        "qrc:///scripts/x.js",
+        "https://example.invalid/world/entity.js",
+        "http://127.0.0.1:8000/entity.js",                          // held to the network rule instead
+        "atp:/entity.js",
+        "(function () { return {}; })",
+        "javascript:(function () { return {}; })",
+    };
+
+    // a world on the internet
+    {
+        EntitiesEngine engine;
+        for (const QString& script : refused) {
+            QVERIFY2(!engine.entityScriptRefusal(script).isEmpty(), qPrintable(script));
+        }
+        for (const QString& script : allowed) {
+            QVERIFY2(engine.entityScriptRefusal(script).isEmpty(), qPrintable(script));
+        }
+    }
+    // a world on this machine: a local file runs, as before
+    setWorld(THIS_MACHINE_WORLD);
+    {
+        EntitiesEngine engine;
+        for (const QString& script : refused) {
+            QVERIFY2(engine.entityScriptRefusal(script).isEmpty(), qPrintable(script));
+        }
+    }
+    setWorld(PUBLIC_WORLD);
+    // the entity script server is the world's own machine: not this rule
+    {
+        WasmScriptEngine engine(ScriptEngine::ENTITY_SERVER_SCRIPT, NO_SCRIPT, "about:Entities 1");
+        QVERIFY(engine.entityScriptRefusal("file:///a/b.js").isEmpty());
+        QCOMPARE(engine.effectiveSandbox(QUrl("file:///a/b.js")), QUrl("file:///a/b.js"));
+    }
+}
+
+void VerifiedSandboxTests::testAppScriptsFolder() {
+    // the app's scripts folder is open to every script; a path that only starts there is not. In a world on this
+    // machine, so the network rule doesn't stand in front of the folder test (a script from the internet in it)
+    setWorld(THIS_MACHINE_WORLD);
+    EntitiesEngine engine;
+    engine.addEntityScript(NETWORK_SCRIPT, EntityScriptStatus::RUNNING);
+    Warnings warnings(engine);
+    const QString network = NETWORK_SCRIPT.toString();
+    const QString up = "../../";
+    QCOMPARE(engine.resolveInclude("/~/entities/helper.js", network, network).value("url").toString(),
+             QUrl::fromLocalFile(_root + "/app/scripts/entities/helper.js").toString());
+    QCOMPARE(engine.resolveInclude("/~/" + up + "outside/other.js", network, network).value("reason").toString(),
+             QString("outside of standard libraries"));
+    // percent signs in a /~/ path are part of a name, not dots: the address stays in the folder, and names nothing
+    const QUrl encoded(engine.resolveInclude("/~/%2e%2e/%2e%2e/outside/other.js", network, network).value("url").toString());
+    QVERIFY(ScriptNetworkPolicy::isAppScript(encoded));
+    QVERIFY(!QFileInfo(encoded.toLocalFile()).exists());
+    for (const QString& target : { "file://" + _root + "/app/scripts/" + up + "outside/other.js",
+                                   "file://" + _root + "/app/scripts/%2e%2e/%2e%2e/outside/other.js",
+                                   "file://" + _root + "/app/scripts/entities/" + up + up + "outside/other.js" }) {
+        QVERIFY2(!engine.resolveInclude(target, network, network).contains("url"), qPrintable(target));
+        QVERIFY2(!engine.resolveModule(target, QString(), network, network).contains("url"), qPrintable(target));
+        QCOMPARE(engine.fetchScript(target, false, network).value("status").toString(), QString("Refused"));
+    }
+    setWorld(PUBLIC_WORLD);
+}
+
+void VerifiedSandboxTests::testResourcesNotForWorlds() {
+    // for the visitor's own scripts
+    QVERIFY(!ScriptApiPolicy::allowsGlobal("Resources"));
+    QVERIFY(!ScriptApiPolicy::allowsClass(&ResourceScriptingInterface::staticMetaObject));
+    QVERIFY(ScriptApiPolicy::allowsGlobal("Resource"));
 }

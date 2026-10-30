@@ -177,6 +177,23 @@ public:
     /// running): the claim counts only when the engine loaded such a script itself; otherwise the engine's own
     /// answer. On this engine, which tracks the running entity script itself, the claim is not needed.
     virtual QUrl verifiedScriptOrigin(const QString& claimed) const { Q_UNUSED(claimed); return currentScriptOrigin(); }
+    /// Whether this engine's entity scripts may count as local: an entities engine on a client whose world is served
+    /// from this machine or its network, with the strict switch off. Held one way: once the engine has served a world
+    /// that isn't local, it never counts local again (an engine serves one world; the next world gets a new engine).
+    bool entityScriptsMayBeLocal() const;
+    /// Whether the world this engine's scripts are judged in is local, for the network rule: a client's entities engine
+    /// goes by its own world, held one way (entityScriptsMayBeLocal); any other engine by the world the client is in
+    /// now.
+    bool worldIsLocal() const;
+    /// An entity script's address as its rights go: which files here include and require may reach, and the origin
+    /// the network rule judges its requests by. On a client whose world isn't local, no entity script is local,
+    /// whatever its own address (a file here, one of the app's own scripts, an address on this machine or its
+    /// network), and such an address comes back as about:Entities. Any other engine's scripts, and addresses that
+    /// aren't local, keep their own.
+    QUrl effectiveSandbox(const QUrl& sandbox) const;
+    /// Why this engine won't run an entity script from this address, or empty: on a client whose world isn't local, a
+    /// file of this machine that isn't one of the app's own scripts.
+    QString entityScriptRefusal(const QString& entityScript) const;
     /// The guard in front of every global of a world's entity engine on QtScript (the script API policy); made on
     /// first use, null on any other engine.
     class GuardedObjectClass* guardClass();
@@ -1001,6 +1018,7 @@ protected:
     int _goneEntityTimersStopped { 0 };         // entity scripts whose timers were stopped as their entities were gone,
     quint64 _goneEntityTimersLoggedAt { 0 };    // since this was last logged
     QHash<EntityItemID, EntityScriptDetails> _entityScripts;
+    mutable std::atomic<bool> _servedNonLocalWorld { false };   // entityScriptsMayBeLocal's one-way answer
     EntityScriptContentAvailableMap _contentAvailableQueue;
 
     bool _isThreaded { false };

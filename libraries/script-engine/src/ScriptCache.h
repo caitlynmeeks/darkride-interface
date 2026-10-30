@@ -46,6 +46,8 @@ class ScriptCache : public QObject, public Dependency {
 public:
     static const QString STATUS_INLINE;
     static const QString STATUS_CACHED;
+    /// Whether an entity's script property holds the script itself (code, not an address).
+    static bool isInlineScript(const QString& scriptOrURL);
     static bool isSuccessStatus(const QString& status) {
         return status == "Success" || status == STATUS_INLINE || status == STATUS_CACHED;
     }

@@ -60,6 +60,11 @@ void ScriptCache::deleteScript(const QUrl& unnormalizedURL) {
     }
 }
 
+bool ScriptCache::isInlineScript(const QString& scriptOrURL) {
+    return QUrl(scriptOrURL).scheme().isEmpty() &&
+           scriptOrURL.simplified().replace(" ", "").contains(QRegularExpression(R"(\(function\([a-z]?[\w,]*\){)"));
+}
+
 void ScriptCache::getScriptContents(const QString& scriptOrURL, contentAvailableCallback contentAvailable, bool forceDownload, int maxRetries) {
     #ifdef THREAD_DEBUGGING
     qCDebug(scriptengine) << "ScriptCache::getScriptContents() on thread [" << QThread::currentThread() << "] expected thread [" << thread() << "]";
@@ -69,8 +74,7 @@ void ScriptCache::getScriptContents(const QString& scriptOrURL, contentAvailable
 
     // attempt to determine if this is a URL to a script, or if this is actually a script itself (which is valid in the
     // entityScript use case)
-    if (unnormalizedURL.scheme().isEmpty() &&
-            scriptOrURL.simplified().replace(" ", "").contains(QRegularExpression(R"(\(function\([a-z]?[\w,]*\){)"))) {
+    if (isInlineScript(scriptOrURL)) {
         contentAvailable(scriptOrURL, scriptOrURL, false, true, STATUS_INLINE);
         return;
     }

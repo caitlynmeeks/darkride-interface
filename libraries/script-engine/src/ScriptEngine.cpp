@@ -625,17 +625,56 @@ QUrl ScriptEngine::currentScriptOrigin() const {
             return QUrl("about:EmbeddedEntityScript");   // the code itself, as a javascript: URL
         }
         if (!scheme.isEmpty()) {
-            return currentSandboxURL;
+            return effectiveSandbox(currentSandboxURL);
         }
         // an entity script given as code in the script property keeps that code as its sandbox (entityScriptContentAvailable)
         const QString text = currentSandboxURL.toString();
-        return text.startsWith('/') ? QUrl::fromLocalFile(text) : QUrl("about:EmbeddedEntityScript");
+        return text.startsWith('/') ? effectiveSandbox(QUrl::fromLocalFile(text)) : QUrl("about:EmbeddedEntityScript");
     }
     QUrl url(_fileNameString);
     if (url.scheme().isEmpty() && !_fileNameString.isEmpty()) {
         url = QUrl::fromLocalFile(_fileNameString);
     }
     return url;
+}
+
+bool ScriptEngine::entityScriptsMayBeLocal() const {
+    if (_context != ENTITY_CLIENT_SCRIPT || _servedNonLocalWorld) {
+        return false;
+    }
+    // decided by the world the engine serves, never by anything a script passes
+    if (ScriptNetworkPolicy::isStrict() || !ScriptNetworkPolicy::isWorldLocal()) {
+        _servedNonLocalWorld = true;
+        return false;
+    }
+    return true;
+}
+
+bool ScriptEngine::worldIsLocal() const {
+    return _context == ENTITY_CLIENT_SCRIPT ? entityScriptsMayBeLocal() : ScriptNetworkPolicy::isWorldLocal();
+}
+
+QUrl ScriptEngine::effectiveSandbox(const QUrl& sandbox) const {
+    if (_context != ENTITY_CLIENT_SCRIPT || !ScriptNetworkPolicy::isLocalOrigin(sandbox) || entityScriptsMayBeLocal()) {
+        return sandbox;
+    }
+    return QUrl("about:Entities");
+}
+
+QString ScriptEngine::entityScriptRefusal(const QString& entityScript) const {
+    if (_context != ENTITY_CLIENT_SCRIPT || entityScriptsMayBeLocal()) {
+        return QString();
+    }
+    // the address as the script cache reads it: code given as the script, or a javascript: URL, is no address; an
+    // address the cache takes as a file here (a file URL, a path, an unknown scheme) is judged as that file
+    if (ScriptCache::isInlineScript(entityScript) || QUrl(entityScript).scheme().toLower() == "javascript") {
+        return QString();
+    }
+    const QUrl url = DependencyManager::get<ResourceManager>()->normalizeURL(QUrl(entityScript));
+    if (!url.isLocalFile() || ScriptNetworkPolicy::isAppScript(url)) {
+        return QString();
+    }
+    return "a file of this machine, in a world that isn't served from it or its network";
 }
 
 void ScriptEngine::scriptErrorMessage(const QString& message) {
@@ -1944,12 +1983,13 @@ QString ScriptEngine::_requireResolve(const QString& moduleId, const QString& re
             canonical.setPath(file.canonicalFilePath());
         }
 
-        bool disallowOutsideFiles = !PathUtils::defaultScriptsLocation().isParentOf(canonical) && !currentSandboxURL.isLocalFile();
-        if (disallowOutsideFiles && !PathUtils::isDescendantOf(canonical, currentSandboxURL)) {
+        const QUrl sandbox = effectiveSandbox(currentSandboxURL);
+        bool disallowOutsideFiles = !ScriptNetworkPolicy::isAppScript(canonical) && !sandbox.isLocalFile();
+        if (disallowOutsideFiles && !PathUtils::isDescendantOf(canonical, sandbox)) {
             return throwResolveError(makeError(message.arg(
                 QString("path '%1' outside of origin script '%2' '%3'")
                     .arg(PathUtils::stripFilename(url))
-                    .arg(PathUtils::stripFilename(currentSandboxURL))
+                    .arg(PathUtils::stripFilename(sandbox))
                     .arg(canonical.toString())
             )));
         }
@@ -2045,7 +2085,7 @@ QVariantMap ScriptEngine::fetchModuleSource(const QString& modulePath, const boo
         // the network rule for a script's own requests: a module's download is a request too (a JSON module comes
         // back to the script as data)
         QString reason;
-        if (!ScriptNetworkPolicy::decideBlocking(QUrl(modulePath), currentScriptOrigin(), reason)) {
+        if (!ScriptNetworkPolicy::decideBlocking(QUrl(modulePath), currentScriptOrigin(), reason, worldIsLocal())) {
             scriptWarningMessage(ScriptNetworkPolicy::refusalLine(currentScriptOrigin(), QUrl(modulePath), reason));
             req["url"] = modulePath;
             req["status"] = "Refused";
@@ -2255,8 +2295,7 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
         bool isStandardLibrary = false;
         if (file.startsWith("/~/")) {
             thisURL = expandScriptUrl(QUrl::fromLocalFile(expandScriptPath(file)));
-            QUrl defaultScriptsLoc = PathUtils::defaultScriptsLocation();
-            if (!defaultScriptsLoc.isParentOf(thisURL)) {
+            if (!ScriptNetworkPolicy::isAppScript(thisURL)) {
                 scriptWarningMessage("Script.include() -- skipping" + file + "-- outside of standard libraries");
                 continue;
             }
@@ -2265,13 +2304,14 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
             thisURL = resolvePath(file);
         }
 
-        bool disallowOutsideFiles = thisURL.isLocalFile() && !isStandardLibrary && !currentSandboxURL.isLocalFile();
-        if (disallowOutsideFiles && !PathUtils::isDescendantOf(thisURL, currentSandboxURL)) {
+        const QUrl sandbox = effectiveSandbox(currentSandboxURL);
+        bool disallowOutsideFiles = thisURL.isLocalFile() && !isStandardLibrary && !sandbox.isLocalFile();
+        if (disallowOutsideFiles && !PathUtils::isDescendantOf(thisURL, sandbox)) {
             scriptWarningMessage("Script.include() ignoring file path" + thisURL.toString()
-                                + "outside of original entity script" + currentSandboxURL.toString());
+                                + "outside of original entity script" + sandbox.toString());
         } else {
             QString reason;
-            if (isClientSide() && !ScriptNetworkPolicy::decideBlocking(thisURL, currentScriptOrigin(), reason)) {
+            if (isClientSide() && !ScriptNetworkPolicy::decideBlocking(thisURL, currentScriptOrigin(), reason, worldIsLocal())) {
                 // the network rule for a script's own requests: an include's download is a request too
                 scriptWarningMessage(ScriptNetworkPolicy::refusalLine(currentScriptOrigin(), thisURL, reason));
                 continue;
@@ -2567,6 +2607,14 @@ void ScriptEngine::loadEntityScript(const EntityItemID& entityID, const QString&
         newDetails.errorInfo = "a WebAssembly entity script needs the entities engine on WebAssembly (untick Developer > Scripting > Run JavaScript on QtScript)";
         setEntityScriptDetails(entityID, newDetails);
         scriptWarningMessage(QString("entity script %1 (%2): %3").arg(entityScript, entityID.toString(), newDetails.errorInfo));
+        return;
+    }
+    const QString refusal = entityScriptRefusal(entityScript);
+    if (!refusal.isEmpty()) {
+        newDetails.status = EntityScriptStatus::ERROR_LOADING_SCRIPT;
+        newDetails.errorInfo = "not run: " + refusal;
+        setEntityScriptDetails(entityID, newDetails);
+        scriptWarningMessage(QString("entity script %1 (%2) %3").arg(entityScript, entityID.toString(), newDetails.errorInfo));
         return;
     }
     newDetails.status = EntityScriptStatus::LOADING;

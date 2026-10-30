@@ -57,7 +57,7 @@ bool ScriptSettingsInterface::refuses(const QString& setting) const {
     if (!_engine || !_engine->isClientSide() || !isProtected(setting)) {
         return false;
     }
-    return ScriptNetworkPolicy::applies(_engine->currentScriptOrigin());
+    return ScriptNetworkPolicy::applies(_engine->currentScriptOrigin(), _engine->worldIsLocal());
 }
 
 QVariant ScriptSettingsInterface::getValue(const QString& setting) {

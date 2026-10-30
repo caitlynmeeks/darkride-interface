@@ -1025,6 +1025,14 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
     }
     EntityScriptDetails newDetails;
     newDetails.scriptText = entityScript;
+    const QString refusal = entityScriptRefusal(entityScript);
+    if (!refusal.isEmpty()) {
+        newDetails.status = EntityScriptStatus::ERROR_LOADING_SCRIPT;
+        newDetails.errorInfo = "not run: " + refusal;
+        setEntityScriptDetails(entityID, newDetails);
+        scriptWarningMessage(QString("entity script %1 (%2) %3").arg(entityScript, entityID.toString(), newDetails.errorInfo));
+        return;
+    }
     newDetails.status = EntityScriptStatus::LOADING;
     newDetails.definingSandboxURL = currentSandboxURL;
     if (isWasmScript(entityScript) && !wasmEntityScriptsEnabled()) {
@@ -1412,7 +1420,7 @@ QUrl WasmScriptEngine::verifiedSandbox(const QString& claimed) const {
     for (auto it = _entityScripts.constBegin(); it != _entityScripts.constEnd(); ++it) {
         if ((it->status == EntityScriptStatus::RUNNING || it->status == EntityScriptStatus::LOADING) &&
             it->definingSandboxURL == url) {
-            return url;
+            return effectiveSandbox(url);   // and what its rights are in this world
         }
     }
     return QUrl("about:Entities");
@@ -1433,7 +1441,7 @@ QVariantMap WasmScriptEngine::resolveInclude(const QString& file, const QString&
     bool isStandardLibrary = false;
     if (normalized.startsWith("/~/")) {
         thisURL = expandScriptUrl(QUrl::fromLocalFile(expandScriptPath(normalized)));
-        if (!PathUtils::defaultScriptsLocation().isParentOf(thisURL)) {
+        if (!ScriptNetworkPolicy::isAppScript(thisURL)) {
             result["reason"] = "outside of standard libraries";
             return result;
         }
@@ -1450,7 +1458,7 @@ QVariantMap WasmScriptEngine::resolveInclude(const QString& file, const QString&
         // the network rule for a script's own requests: an include's download is a request too
         const QUrl origin = sandbox.isEmpty() ? currentScriptOrigin() : sandbox;
         QString reason;
-        if (!ScriptNetworkPolicy::decideBlocking(thisURL, origin, reason)) {
+        if (!ScriptNetworkPolicy::decideBlocking(thisURL, origin, reason, worldIsLocal())) {
             result["reason"] = ScriptNetworkPolicy::refusalLine(origin, thisURL, reason);
             return result;
         }
@@ -1506,7 +1514,7 @@ QVariantMap WasmScriptEngine::resolveModule(const QString& moduleId, const QStri
         if (file.exists()) {
             canonical.setPath(file.canonicalFilePath());
         }
-        bool disallowOutsideFiles = !defaultScriptsLoc.isParentOf(canonical) && !sandbox.isLocalFile();
+        bool disallowOutsideFiles = !ScriptNetworkPolicy::isAppScript(canonical) && !sandbox.isLocalFile();
         if (disallowOutsideFiles && !PathUtils::isDescendantOf(canonical, sandbox)) {
             return fail(QString("path '%1' outside of origin script '%2' '%3'")
                             .arg(PathUtils::stripFilename(url), PathUtils::stripFilename(sandbox), canonical.toString()));
@@ -1523,7 +1531,7 @@ QVariantMap WasmScriptEngine::resolveModule(const QString& moduleId, const QStri
         // back to the script as data)
         const QUrl origin = sandbox.isEmpty() ? currentScriptOrigin() : sandbox;
         QString reason;
-        if (!ScriptNetworkPolicy::decideBlocking(url, origin, reason)) {
+        if (!ScriptNetworkPolicy::decideBlocking(url, origin, reason, worldIsLocal())) {
             scriptWarningMessage(ScriptNetworkPolicy::refusalLine(origin, url, reason));
             return fail("Refused: " + reason);
         }
@@ -1553,13 +1561,13 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
     if (target.isLocalFile() || target.scheme().toLower() == "qrc") {
         // Script.include's rule for a file of this machine: the app's own scripts, any file for a script that is
         // itself a local file (or the engine's own code), a file under the entity script's own folder
-        const bool standardLibrary = target.isLocalFile() && PathUtils::defaultScriptsLocation().isParentOf(target);
+        const bool standardLibrary = target.isLocalFile() && ScriptNetworkPolicy::isAppScript(target);
         const bool ownCode = sandbox.isEmpty() && !_isEntitiesEngine;
         if (!standardLibrary && !ownCode && !sandbox.isLocalFile() && !PathUtils::isDescendantOf(target, sandbox)) {
             reason = "a file of this machine outside the script's own place";
         }
     }
-    if (reason.isEmpty() && isClientSide() && !ScriptNetworkPolicy::decideBlocking(target, origin, reason)) {
+    if (reason.isEmpty() && isClientSide() && !ScriptNetworkPolicy::decideBlocking(target, origin, reason, worldIsLocal())) {
         // the network rule for a script's own requests
     }
     if (!reason.isEmpty()) {
