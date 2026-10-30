@@ -392,9 +392,12 @@ export class ButtonManager {
 				},
 			);
 
+			// the tablet's events come from whatever page it shows: only this button's own page is heard
 			this.signalManager.connect(
 				this.tablet.webEventReceived,
-				handler.webEventReceived,
+				(message: string) => {
+					if (visible) handler.webEventReceived(message);
+				},
 			);
 		}
 
