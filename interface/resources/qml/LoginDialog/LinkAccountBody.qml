@@ -118,8 +118,8 @@ Item {
         Item {
             id: loginContainer
             width: emailField.width
-            height: errorContainer.height + emailField.height + passwordField.height + 4 * hifi.dimensions.contentSpacing.y +
-                keepMeLoggedInCheckbox.height + loginButton.height + cantAccessTextMetrics.height
+            height: errorContainer.height + emailField.height + passwordField.height + 5 * hifi.dimensions.contentSpacing.y +
+                keepMeLoggedInCheckbox.height + loginButton.height + createAccountButton.height + cantAccessTextMetrics.height
             anchors {
                 top: parent.top
                 topMargin: root.bannerHeight + 0.25 * parent.height
@@ -310,6 +310,27 @@ Item {
                     linkAccountBody.login();
                 }
             }
+            // making an account is on the website, in the browser. Right under Log In, so it shows wherever Log In does:
+            // a row of its own further down fell off the bottom of a short window (on the desktop the tablet's window,
+            // where a world's sign-in request opens this, is taller than a 600 px app window; 10-30)
+            HifiControlsUit.Button {
+                id: createAccountButton
+                width: passwordField.width
+                height: d.minHeightButton
+                text: qsTr("Create an Account")
+                color: hifi.buttons.none
+                fontFamily: linkAccountBody.fontFamily
+                fontSize: linkAccountBody.fontSize
+                fontBold: linkAccountBody.fontBold
+                anchors {
+                    top: loginButton.bottom
+                    topMargin: hifi.dimensions.contentSpacing.y
+                }
+                onClicked: {
+                    Tablet.playSound(TabletEnums.ButtonClick);
+                    Window.openUrl("https://darkride.ai/?signUp");
+                }
+            }
             TextMetrics {
                 id: cantAccessTextMetrics
                 font: cantAccessText.font
@@ -319,7 +340,7 @@ Item {
                 id: cantAccessText
                 z: 10
                 anchors {
-                    top: loginButton.bottom
+                    top: createAccountButton.bottom
                     topMargin: hifi.dimensions.contentSpacing.y
                     left: emailField.left
                 }
@@ -343,56 +364,6 @@ Item {
                         lightboxPopup.visible = false;
                     }
                     lightboxPopup.visible = true;
-                }
-            }
-        }
-        Item {
-            id: signUpContainer
-            width: loginContainer.width
-            height: signUpTextMetrics.height
-            anchors {
-                left: loginContainer.left
-                top: loginContainer.bottom
-                topMargin: 0.15 * parent.height
-            }
-            TextMetrics {
-                id: signUpTextMetrics
-                font: signUpText.font
-                text: signUpText.text
-            }
-            Text {
-                id: signUpText
-                text: qsTr("Don't have an account?")
-                anchors {
-                    left: parent.left
-                }
-                lineHeight: 1
-                color: "white"
-                font.family: linkAccountBody.fontFamily
-                font.pixelSize: linkAccountBody.textFieldFontSize
-                font.bold: linkAccountBody.fontBold
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignHCenter
-            }
-
-            HifiStylesUit.ShortcutText {
-                id: signUpShortcutText
-                z: 10
-                font.family: linkAccountBody.fontFamily
-                font.pixelSize: linkAccountBody.textFieldFontSize
-                font.bold: linkAccountBody.fontBold
-                anchors {
-                     left: signUpText.right
-                     leftMargin: hifi.dimensions.contentSpacing.x
-                }
-
-                // signing up is on the website, in the browser
-                text: "<a href='https://darkride.ai/?signUp'>Sign Up</a>"
-
-                linkColor: hifi.colors.blueAccent
-                onLinkActivated: {
-                    Tablet.playSound(TabletEnums.ButtonClick);
-                    Window.openUrl(link);
                 }
             }
         }
