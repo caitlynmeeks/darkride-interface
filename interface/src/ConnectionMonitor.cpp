@@ -47,22 +47,6 @@ void ConnectionMonitor::init() {
         _fallbackFrom.clear();
     }
 
-    // the start-up world is the one its lookups lead to, again on every retry; a lookup leading elsewhere is a world the
-    // person asked for meanwhile (a link, a hop), which keeps the failure window. A plain address has led there already
-    if (!_fallbackFrom.isEmpty()) {
-        if (!domainHandler.getHostname().isEmpty()) {
-            _startUpWorld = domainHandler.getHostname() + ":" + QString::number(domainHandler.getPort());
-        }
-        auto addressManager = DependencyManager::get<AddressManager>();
-        connect(addressManager.data(), &AddressManager::possibleDomainChangeRequired, this,
-                [this](QUrl domainURL, QUuid) {
-            startUpWorldAsked(domainURL.host() + ":" +
-                              QString::number(domainURL.port() != -1 ? domainURL.port() : DEFAULT_DOMAIN_SERVER_PORT));
-        });
-        connect(addressManager.data(), &AddressManager::possibleDomainChangeRequiredViaICEForID, this,
-                [this](const QString&, const QUuid& domainID) { startUpWorldAsked(domainID.toString()); });
-    }
-
     connect(&_timer, &QTimer::timeout, this, [this]() {
         // the start-up world never answered (Caity's 1.1.1: her last world was an instance stopped since, tried again
         // and again behind the failure window): the entry world instead, the loading screen saying why. Once only:
@@ -89,6 +73,20 @@ void ConnectionMonitor::init() {
             DependencyManager::get<DialogsManager>()->setDomainConnectionFailureVisibility(true);
         }
     });
+}
+
+void ConnectionMonitor::setStartUpFallback(const QString& from) {
+    _fallbackFrom = from;
+    // the start-up world is the first one its lookups lead to (the address is asked for right after this), again on
+    // every retry; a lookup leading elsewhere is a world the person asked for meanwhile (a link, a hop), which keeps the
+    // failure window. Heard here, not read off the DomainHandler, which takes the address on the NodeList's thread
+    auto addressManager = DependencyManager::get<AddressManager>();
+    connect(addressManager.data(), &AddressManager::possibleDomainChangeRequired, this, [this](QUrl domainURL, QUuid) {
+        startUpWorldAsked(domainURL.host() + ":" +
+                          QString::number(domainURL.port() != -1 ? domainURL.port() : DEFAULT_DOMAIN_SERVER_PORT));
+    });
+    connect(addressManager.data(), &AddressManager::possibleDomainChangeRequiredViaICEForID, this,
+            [this](const QString&, const QUuid& domainID) { startUpWorldAsked(domainID.toString()); });
 }
 
 void ConnectionMonitor::startTimer() {

@@ -23,8 +23,9 @@ class ConnectionMonitor : public QObject {
     Q_OBJECT
 public:
     // the world this start-up goes to came from Settings > General > Start in ("last": the last world, "home"): if it never
-    // answers, the viewer goes to the entry world instead of its connection failure window. Before init()
-    void setStartUpFallback(const QString& from) { _fallbackFrom = from; }
+    // answers, the viewer goes to the entry world instead of its connection failure window. Before the address is asked
+    // for, and before init()
+    void setStartUpFallback(const QString& from);
     void init();
 
 signals:
