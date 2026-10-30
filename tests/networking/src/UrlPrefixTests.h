@@ -22,6 +22,7 @@ private slots:
     void prefixes_data();
     void prefixes();
     void prefixWithoutSlash();
+    void localNeverRemote();
 };
 
 #endif // hifi_UrlPrefixTests_h

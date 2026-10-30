@@ -53,7 +53,19 @@ ResourceManager::~ResourceManager() {
     }
 }
 
+// An address read as one on this machine: a file or qrc URL, or a string the loaders take as a path (no scheme, or a
+// Windows drive letter); a prefix that is part of such an address (empty, "fi") counts too.
+static bool isLocalAddress(const QString& address) {
+    const QString scheme = QUrl(address).scheme().toLower();
+    return scheme.isEmpty() || scheme.length() == 1 || scheme == "file" || scheme == "qrc";
+}
+
 void ResourceManager::setUrlPrefixOverride(const QString& prefix, const QString& replacement) {
+    // what is on this machine is never served from elsewhere
+    if (!replacement.isEmpty() && isLocalAddress(prefix) && !isLocalAddress(replacement)) {
+        qCWarning(networking) << "Not mapping addresses on this machine elsewhere:" << prefix.left(200) << replacement.left(200);
+        return;
+    }
     QMutexLocker locker(&_prefixMapLock);
     if (replacement.isEmpty()) {
         _prefixMap.erase(prefix);

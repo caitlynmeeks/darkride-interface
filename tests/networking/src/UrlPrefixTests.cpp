@@ -68,3 +68,21 @@ void UrlPrefixTests::prefixWithoutSlash() {
         QCOMPARE(resources->normalizeURL(BARE_PREFIX + rest), BARE_PREFIX + rest);
     }
 }
+
+// what is on this machine is never mapped elsewhere; the other way round, and local to local, is
+void UrlPrefixTests::localNeverRemote() {
+    auto resources = DependencyManager::get<ResourceManager>();
+    const QStringList refused { "file:///app/scripts/", "qrc:///scripts/", "/app/scripts/", "c:/app/scripts/", "", "fi" };
+    for (const QString& prefix : refused) {
+        resources->setUrlPrefixOverride(prefix, "https://example.invalid/x/");
+    }
+    for (const QString& address : { "file:///app/scripts/a.js", "qrc:///scripts/a.js", "/app/scripts/a.js", "c:/app/scripts/a.js" }) {
+        QCOMPARE(resources->normalizeURL(address), QString(address));
+    }
+    resources->setUrlPrefixOverride("atp:/", "file:///app/test/");
+    QCOMPARE(resources->normalizeURL("atp:/a.fst"), QString("file:///app/test/a.fst"));
+    resources->setUrlPrefixOverride("file:///app/one/", "file:///app/two/");
+    QCOMPARE(resources->normalizeURL("file:///app/one/a.js"), QString("file:///app/two/a.js"));
+    resources->setUrlPrefixOverride("atp:/", QString());
+    resources->setUrlPrefixOverride("file:///app/one/", QString());
+}
