@@ -538,11 +538,18 @@
         createNotification(wordWrap(msg), NotificationType.UNKNOWN); // Needs a generic notification system for user feedback, thus using this
     }
 
-    function onMessageReceived(channel, message) {
-        if (channel === NOTIFICATIONS_MESSAGE_CHANNEL) {
-            message = JSON.parse(message);
-            createNotification(wordWrap(message.message), message.notificationType);
+    // a notification looks like the app's own, so only the visitor's own scripts and the app's pages make one: never one
+    // from the network, nor a world's scripts on this computer (fromOwnScripts false; a viewer without it gives none)
+    function onMessageReceived(channel, message, senderID, localOnly, fromOwnScripts) {
+        if (channel !== NOTIFICATIONS_MESSAGE_CHANNEL || !localOnly || fromOwnScripts === false) {
+            return;
         }
+        try {
+            message = JSON.parse(message);
+        } catch (e) {
+            return;
+        }
+        createNotification(wordWrap(String(message.message)), message.notificationType);
     }
 
     function onSnapshotTaken(pathStillSnapshot, notify) {

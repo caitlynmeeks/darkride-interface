@@ -447,7 +447,9 @@
         card = {};
     }
 
-    function onMessage(channel, message, sender, localOnly) {
+    // a world's scripts may send a hop's start (a portal), but not a new instance's wait, which holds the screen for
+    // minutes: only Explore starts an instance (fromOwnScripts false for a world's scripts on this computer)
+    function onMessage(channel, message, sender, localOnly, fromOwnScripts) {
         if (channel !== CHANNEL || !localOnly) {
             return;
         }
@@ -460,7 +462,7 @@
         if (data.type === "start") {
             var keepLaunch = way && way.launchReleased;
             begin("hop", String(data.world || ""), String(data.author || ""), String(data.picture || ""),
-                  data.starting === true ? String(data.id || "") : "");
+                  data.starting === true && fromOwnScripts !== false ? String(data.id || "") : "");
             way.launchReleased = keepLaunch || way.launchReleased;
             if (!way.starting && Date.now() - lastViewpointAt < VIEWPOINT_BEFORE_START) {
                 moveWithinWorld("its viewpoint came " + (Date.now() - lastViewpointAt) + " ms before the start");
