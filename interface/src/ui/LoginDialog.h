@@ -14,7 +14,7 @@
 #ifndef hifi_LoginDialog_h
 #define hifi_LoginDialog_h
 
-#include <atomic>
+#include <QSet>
 
 #include <OffscreenQmlDialog.h>
 
@@ -33,10 +33,12 @@ public:
 
     static void showWithSelection();
 
-    // a sign-in page is up, however it came: the start's full-window one (LoginDialog.qml), the headset's
-    // (OverlayLoginDialog.qml) or the one in the tablet window from inside a world (dialogs/TabletLoginDialog.qml);
-    // each makes one of these. Its links (Create an Account, Can't access your account?) open the web browser
-    static bool isOpen() { return _openCount > 0; }
+    // a sign-in page is on screen, however it came: the start's full-window one (LoginDialog.qml), the headset's
+    // (OverlayLoginDialog.qml) or the one in the tablet from inside a world (dialogs/TabletLoginDialog.qml); each makes
+    // one of these. Loaded but not shown doesn't count: hidden with its window (the desktop's tablet window toggled
+    // off), or on the headset's tablet put away (which also sends that tablet Home, see the constructor). Its links
+    // (Create an Account, Can't access your account?) open the web browser. Main thread
+    static bool isShown();
 
 signals:
     void handleLoginCompleted();
@@ -56,7 +58,7 @@ protected slots:
     Q_INVOKABLE bool getLoginDialogPoppedUp() const;
 
 private:
-    static std::atomic<int> _openCount;
+    static QSet<LoginDialog*> _instances;   // the live ones (made and destroyed on the main thread, with their QML)
 };
 
 #endif // hifi_LoginDialog_h
