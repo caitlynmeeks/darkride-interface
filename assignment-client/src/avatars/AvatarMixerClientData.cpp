@@ -41,30 +41,36 @@ public:
     ALLOW_INSTANTIATION
 };
 
-QString scriptRefusal(const EntityItem& entity) {
+// Why a worn entity isn't passed on (empty when it is), and the value refused, for the log.
+struct CarriedRefusal {
+    QString reason;
+    QString value;
+};
+
+CarriedRefusal scriptRefusal(const EntityItem& entity) {
     for (const QString& script : { entity.getScript(), entity.getServerScripts() }) {
         QString refusal = script_address::refusalReason(script);
         if (!refusal.isEmpty()) {
-            return "a script that has " + refusal + " (" + script.left(200) + ")";
+            return { "a script that has " + refusal, script.left(200) };
         }
     }
-    return QString();
+    return {};
 }
 
 }
 
-// Why an entity an avatar carries isn't passed on, or an empty string when it is.
-static QString refusalForCarriedEntity(const QByteArray& data) {
+// Why an entity an avatar carries isn't passed on, or an empty reason when it is.
+static CarriedRefusal refusalForCarriedEntity(const QByteArray& data) {
     EntityTypes::EntityType type = EntityTypes::Unknown;
     QUuid id;
     EntityTypes::extractEntityTypeAndID(reinterpret_cast<const unsigned char*>(data.constData()), data.size(), type, id);
     if (data.size() > AvatarTraits::MAXIMUM_TRAIT_SIZE) {
-        return "more data than an app sends";
+        return { "more data than an app sends", QString() };
     }
     // one zeroed buffer per worker thread: only the data's own bytes are written, and zeroed again after
     thread_local std::vector<unsigned char> buffer(AvatarTraits::MAXIMUM_TRAIT_SIZE + READ_PADDING, 0);
     memcpy(buffer.data(), data.constData(), data.size());
-    QString refusal = "data that doesn't read cleanly";
+    CarriedRefusal refusal { "data that doesn't read cleanly", QString() };
     try {
         // read as the apps read it (OtherAvatar), but freed here at once: EntityTypes' factory frees with deleteLater,
         // and this worker thread runs no event loop
@@ -73,8 +79,9 @@ static QString refusalForCarriedEntity(const QByteArray& data) {
             auto entity = std::make_shared<WebEntityItem>(EntityItemID(id));
             int bytesRead = entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
             if (bytesRead > 0 && bytesRead <= data.size()) {
-                refusal = WebEntityItem::isWebPageUrl(entity->getSourceUrl()) ? scriptRefusal(*entity)
-                                                                              : "an address that isn't a web page's";
+                refusal = WebEntityItem::isWebPageUrl(entity->getSourceUrl())
+                    ? scriptRefusal(*entity)
+                    : CarriedRefusal { "an address that isn't a web page's", entity->getSourceUrl().left(200) };
             }
         } else {
             // read past the data (a string's length running over it), the scripts read here from the zero padding may
@@ -305,20 +312,21 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
                         instanceVersionRef = -packetTraitVersion;
                     } else {
                         QByteArray traitData = message.read(traitSize);
-                        QString refusal;
+                        CarriedRefusal refusal;
                         if (traitType == AvatarTraits::AvatarEntity) {
                             refusal = refusalForCarriedEntity(traitData);
                         }
-                        if (!refusal.isEmpty()) {
+                        if (!refusal.reason.isEmpty()) {
                             static const size_t MAX_REFUSALS_REMEMBERED = 256;  // many ids only log again
                             if (_refusedCarriedEntities.size() >= MAX_REFUSALS_REMEMBERED) {
                                 _refusedCarriedEntities.clear();
                             }
+                            // the reason, not the value: a value changed on every update still logs once
                             QString& lastRefusal = _refusedCarriedEntities[instanceID];
-                            if (lastRefusal != refusal) {
+                            if (lastRefusal != refusal.reason) {
                                 qCDebug(avatars) << "Avatar" << sendingNode.getUUID() << "carries entity" << instanceID
-                                    << "with" << refusal << "; not passed on";
-                                lastRefusal = refusal;
+                                    << "with" << refusal.reason << refusal.value << "; not passed on";
+                                lastRefusal = refusal.reason;
                             }
                             // nobody else sees it: taken away, as a deleted one, until a version that passes
                             _avatar->processDeletedTraitInstance(traitType, instanceID);
