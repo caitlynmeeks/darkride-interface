@@ -600,10 +600,9 @@ bool DomainHandler::holdCheckInForSignIn() {
 }
 
 bool DomainHandler::signedIn() {
-    if (!_waitingForSignIn) {
+    if (!_waitingForSignIn.exchange(false)) {
         return false;
     }
-    _waitingForSignIn = false;
     // a refusal after signing in (signed in, but not let in) is news again
     _domainConnectionRefusals.clear();
     return true;

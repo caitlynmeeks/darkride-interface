@@ -97,15 +97,16 @@ NodeList::NodeList(char newOwnerType, int socketListenPort, int dtlsListenPort) 
     // assume that we may need to send a new DS check in anytime a new keypair is generated
     connect(accountManager.data(), &AccountManager::newKeypair, this, &NodeList::sendDomainServerCheckIn);
 
-    // a world that was waiting for the visitor to sign in is asked again at once
-    connect(accountManager.data(), &AccountManager::loginComplete, this, [this] {
-        if (_domainHandler.signedIn()) {
+    // clear out NodeList when login is finished and we know our new username; a world that was waiting for the visitor
+    // to sign in is asked again at once (not on loginComplete: that comes before the username, and the check-in would
+    // be refused again). signedIn() before reset(), whose soft reset ends the wait
+    connect(accountManager.data(), &AccountManager::usernameChanged , this, [this](const QString& username) {
+        bool wasWaitingForSignIn = !username.isEmpty() && _domainHandler.signedIn();
+        reset("Username changed");
+        if (wasWaitingForSignIn) {
             sendDomainServerCheckIn();
         }
     });
-
-    // clear out NodeList when login is finished and we know our new username
-    connect(accountManager.data(), &AccountManager::usernameChanged , this, [this]{ reset("Username changed"); });
 
     // clear our NodeList when logout is requested
     connect(accountManager.data(), &AccountManager::logoutComplete , this, [this]{ reset("Logged out"); });

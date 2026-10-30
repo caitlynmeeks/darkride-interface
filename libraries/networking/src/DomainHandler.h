@@ -12,6 +12,8 @@
 #ifndef hifi_DomainHandler_h
 #define hifi_DomainHandler_h
 
+#include <atomic>
+
 #include <QProcessEnvironment>
 
 #include <QtCore/QJsonObject>
@@ -146,7 +148,6 @@ public:
 
     // a world that lets in signed-in visitors only refused us while we're signed out: we check in only now and then
     // (SIGNED_OUT_CHECK_IN_MSECS) until the visitor signs in, the domain changes or the connection is reset
-    bool isWaitingForSignIn() const { return _waitingForSignIn; }
     bool holdCheckInForSignIn();
     bool signedIn();
 
@@ -288,8 +289,9 @@ private:
     bool _hasCheckedForAccessToken { false };
     int _connectionDenialsSinceKeypairRegen { 0 };
     int _checkInPacketsSinceLastReply { 0 };
-    bool _waitingForSignIn { false };
-    quint64 _lastSignedOutCheckIn { 0 };
+    // atomic: on assignment clients the check-in runs on its timer's thread, refusals on the NodeList's
+    std::atomic<bool> _waitingForSignIn { false };
+    std::atomic<quint64> _lastSignedOutCheckIn { 0 };
 
     QTimer _apiRefreshTimer;
 
