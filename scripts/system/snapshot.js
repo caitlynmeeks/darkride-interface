@@ -805,7 +805,8 @@ function processRezPermissionChange(canRez) {
 // opens the tablet page as before.
 
 var CAMERA_PAGE = Script.resolvePath("html/SnapCamera.html");
-var CAMERA_CHANNEL = "Snap.camera"; // local messages to Snap: "open", "close", "shutter", "review"
+// messages to Snap from the visitor's own scripts (the tests'): "open", "close", "shutter", "review"
+var CAMERA_CHANNEL = "Snap.camera";
 var CAMERA_ASPECT_RATIO = 1.91; // what a Snap keeps of the window: its centre at this width/height
 var CAMERA_BAR = { width: 460, height: 56 };
 var CAMERA_DOCK = { width: 340, height: 108 };
@@ -1425,8 +1426,9 @@ function onCameraKey(event) {
     }
 }
 
-function onCameraMessage(channel, message, senderID, localOnly) {
-    if (channel !== CAMERA_CHANNEL || !localOnly) {
+// (fromOwnScripts: false for a world's scripts on this computer; a viewer without it gives none)
+function onCameraMessage(channel, message, senderID, localOnly, fromOwnScripts) {
+    if (channel !== CAMERA_CHANNEL || !localOnly || fromOwnScripts === false) {
         return;
     }
     if (message === "open") {

@@ -44,11 +44,16 @@ function AppUi(properties) {
     that.inject = "";
     that.graphicsDirectory = "icons/tablet-icons/"; // Where to look for button svgs. See below.
     that.additionalAppScreens = [];
+    // a page's address without its query and #fragment
+    function pageOf(url) {
+        return String(url || "").split(/[?#]/)[0];
+    }
     that.checkIsOpen = function checkIsOpen(type, tabletUrl) { // Are we active? Value used to set isOpen.
-        // Actual url may have prefix or suffix.
-        return that.currentVisibleUrl &&
-            ((that.home.indexOf(that.currentVisibleUrl) > -1) ||
-            (that.additionalAppScreens.indexOf(that.currentVisibleUrl) > -1));
+        // the page shown is this app's own: the same address, its query and #fragment aside
+        var shown = pageOf(that.currentVisibleUrl);
+        return shown !== "" && (shown === pageOf(that.home) || that.additionalAppScreens.some(function (screen) {
+            return pageOf(screen) === shown;
+        }));
     };
     that.setCurrentVisibleScreenMetadata = function setCurrentVisibleScreenMetadata(type, url) {
         that.currentVisibleScreenType = type;

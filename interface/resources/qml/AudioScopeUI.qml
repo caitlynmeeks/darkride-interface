@@ -130,7 +130,7 @@ Item {
         // Using controller recording default directory
         _wavFilePath = Recording.getDefaultRecordingSaveDirectory() + _wavFilePath;
         if (!AudioScriptingInterface.startRecording(_wavFilePath)) {
-            Messages.sendMessage("Hifi-Notifications", JSON.stringify({message:"Error creating: "+_wavFilePath}));
+            Messages.sendLocalMessage("Hifi-Notifications", JSON.stringify({message:"Error creating: "+_wavFilePath}));
             updateRecordingUI(false);
         }
     }
@@ -138,7 +138,7 @@ Item {
     function stopRecording() {
         AudioScriptingInterface.stopRecording();
         setRecordingLabelOpacity(0.0);
-        Messages.sendMessage("Hifi-Notifications", JSON.stringify({message:"Saved: "+_wavFilePath}));
+        Messages.sendLocalMessage("Hifi-Notifications", JSON.stringify({message:"Saved: "+_wavFilePath}));
     }
 
     function updateRecordingUI(isRecording) {
