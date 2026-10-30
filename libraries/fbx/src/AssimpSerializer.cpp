@@ -71,19 +71,28 @@ std::unique_ptr<hfm::Serializer::Factory> AssimpSerializer::getFactory() const {
 namespace {
     const int SIDE_FILE_TIMEOUT_MS = 30 * 1000;
     const qint64 MAX_SIDE_FILE_BYTES = 512LL * 1024 * 1024;
+    // one model's side files together (all of them sit in memory while it is decoded): a ceiling, a warning on the
+    // way up, and a ceiling on their number so hundreds of small ones cannot become thousands of requests
+    const qint64 MAX_MODEL_SIDE_BYTES = 1024LL * 1024 * 1024;
+    const qint64 WARN_MODEL_SIDE_BYTES = 256LL * 1024 * 1024;
+    const int MAX_SIDE_FILES = 1024;
 }
+
+class TivoliIOSystem;
 
 class TivoliIOStream : public Assimp::IOStream {
     friend class TivoliIOSystem;
 
 protected:
     hifi::URL url;
+    TivoliIOSystem* owner { nullptr };
     QByteArray data;
     bool fetched { false };
     bool ok { false };
     size_t pos { 0 };
 
-    TivoliIOStream(hifi::URL url) : url(url) {}
+    TivoliIOStream(hifi::URL url, TivoliIOSystem* owner) : url(url), owner(owner) {}
+    bool account(qint64 bytes);
 
     bool fetch() {
         if (fetched) {
@@ -106,7 +115,7 @@ protected:
         loop.exec();
         if (request->getState() == ResourceRequest::Finished && request->getResult() == ResourceRequest::Success) {
             data = request->getData();
-            ok = data.size() <= MAX_SIDE_FILE_BYTES;
+            ok = data.size() <= MAX_SIDE_FILE_BYTES && account(data.size());
             if (!ok) {
                 qCWarning(modelformat) << "Model side file too large, not read:" << url << data.size() << "bytes";
                 data.clear();
@@ -168,9 +177,26 @@ public:
 class TivoliIOSystem : public Assimp::IOSystem {
 public:
     hifi::URL originalUrl;
+    qint64 totalBytes { 0 };     // the model's side files so far, together
+    int opened { 0 };            // how many side files it has asked for
+    bool warned { false };
 
     TivoliIOSystem(hifi::URL originalUrl) : originalUrl(originalUrl) {}
     ~TivoliIOSystem() {}
+
+    // a side file's bytes counted toward the model's ceiling; false when the model would pass it
+    bool account(qint64 bytes) {
+        if (totalBytes + bytes > MAX_MODEL_SIDE_BYTES) {
+            qCWarning(modelformat) << "Model's side files pass" << (MAX_MODEL_SIDE_BYTES >> 20) << "MB together, the rest not read:" << originalUrl;
+            return false;
+        }
+        totalBytes += bytes;
+        if (!warned && totalBytes > WARN_MODEL_SIDE_BYTES) {
+            warned = true;
+            qCWarning(modelformat) << "Model's side files pass" << (WARN_MODEL_SIDE_BYTES >> 20) << "MB together:" << originalUrl;
+        }
+        return true;
+    }
 
     // a side file comes from where the model came from: the same scheme, and for a web model the same host
     bool allowed(const hifi::URL& side) const {
@@ -199,12 +225,22 @@ public:
             qCWarning(modelformat) << "Model side file not from the model's place, not read:" << side << "for" << originalUrl;
             return nullptr;
         }
-        return new TivoliIOStream(side);
+        if (++opened > MAX_SIDE_FILES) {
+            if (opened == MAX_SIDE_FILES + 1) {
+                qCWarning(modelformat) << "Model asks for more than" << MAX_SIDE_FILES << "side files, the rest not read:" << originalUrl;
+            }
+            return nullptr;
+        }
+        return new TivoliIOStream(side, this);
     }
     void Close(Assimp::IOStream* pFile) override {
         delete pFile;
     }
 };
+
+bool TivoliIOStream::account(qint64 bytes) {
+    return owner ? owner->account(bytes) : true;
+}
 
 bool isEmptyVec3(glm::vec3 v) { return v.x == 0 && v.y == 0 && v.z == 0; }
 
