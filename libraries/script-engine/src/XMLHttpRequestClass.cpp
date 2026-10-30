@@ -274,8 +274,11 @@ void XMLHttpRequestClass::requestFinished() {
         _rawResponseData.append(_reply->readAll());
 
         if (_responseType == "json") {
-            _responseData = _engine->evaluate("(" + QString(_rawResponseData.data()) + ")");
-            if (_responseData.isError()) {
+            // the reply is data: JSON.parse, never evaluate (a server's answer must not get to run as code in the
+            // requesting script); a reply that isn't JSON gives null, as before
+            QScriptValue parse = _engine->globalObject().property("JSON").property("parse");
+            _responseData = parse.call(QScriptValue(), QScriptValueList() << QString::fromUtf8(_rawResponseData));
+            if (_engine->hasUncaughtException() || _responseData.isError()) {
                 _engine->clearExceptions();
                 _responseData = QScriptValue::NullValue;
             }
