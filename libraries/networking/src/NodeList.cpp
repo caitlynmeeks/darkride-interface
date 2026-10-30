@@ -97,6 +97,13 @@ NodeList::NodeList(char newOwnerType, int socketListenPort, int dtlsListenPort) 
     // assume that we may need to send a new DS check in anytime a new keypair is generated
     connect(accountManager.data(), &AccountManager::newKeypair, this, &NodeList::sendDomainServerCheckIn);
 
+    // a world that was waiting for the visitor to sign in is asked again at once
+    connect(accountManager.data(), &AccountManager::loginComplete, this, [this] {
+        if (_domainHandler.signedIn()) {
+            sendDomainServerCheckIn();
+        }
+    });
+
     // clear out NodeList when login is finished and we know our new username
     connect(accountManager.data(), &AccountManager::usernameChanged , this, [this]{ reset("Username changed"); });
 
@@ -318,6 +325,10 @@ void NodeList::sendDomainServerCheckIn() {
 
     if (_isShuttingDown) {
         qCDebug(networking_ice) << "Refusing to send a domain-server check in while shutting down.";
+        return;
+    }
+
+    if (_domainHandler.holdCheckInForSignIn()) {
         return;
     }
 

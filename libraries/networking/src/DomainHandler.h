@@ -144,6 +144,12 @@ public:
     bool checkInPacketTimeout();
     void clearPendingCheckins() { _checkInPacketsSinceLastReply = 0; }
 
+    // a world that lets in signed-in visitors only refused us while we're signed out: we check in only now and then
+    // (SIGNED_OUT_CHECK_IN_MSECS) until the visitor signs in, the domain changes or the connection is reset
+    bool isWaitingForSignIn() const { return _waitingForSignIn; }
+    bool holdCheckInForSignIn();
+    bool signedIn();
+
     /**jsdoc
      * <p>The reasons that you may be refused connection to a domain are defined by numeric values:</p>
      * <table>
@@ -282,6 +288,8 @@ private:
     bool _hasCheckedForAccessToken { false };
     int _connectionDenialsSinceKeypairRegen { 0 };
     int _checkInPacketsSinceLastReply { 0 };
+    bool _waitingForSignIn { false };
+    quint64 _lastSignedOutCheckIn { 0 };
 
     QTimer _apiRefreshTimer;
 
