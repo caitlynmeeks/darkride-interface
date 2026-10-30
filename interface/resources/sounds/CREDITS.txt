@@ -1,0 +1,4 @@
+test-sound.mp3, Settings > Sound's Test sound
+
+test-sound.mp3: an excerpt of "Darkride" by Caitlyn Meeks, © 2026, all rights reserved. Included for use in Darkride
+only; not covered by this repository's licences.
