@@ -923,7 +923,7 @@ Page {
             // when it isn't ready yet, and stopped when the tab or the panel goes
             ListRow {
                 id: testSound
-                // Darkride's own test clip, 9.6 s (Caity chose it 10-28)
+                // the first 12 s of Caity's song "Darkride", faded out (her choice 10-30)
                 readonly property url source: Qt.resolvedUrl("../../sounds/test-sound.mp3")
                 property var sound: null
                 property var injector: null
