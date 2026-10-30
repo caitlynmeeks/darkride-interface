@@ -105,7 +105,9 @@ const QHash<QByteArray, QSet<QByteArray>> ALLOWED_METHODS {
 
 // Kept classes with a DENY-list of methods instead: too large and too much of them content's to allow-list, so a
 // member added later is reachable until it is judged. MyAvatar: what persists the visitor's avatar identity and
-// points the loaders at a world's content on every start. Controller: the recordings on the visitor's disk.
+// points the loaders at a world's content on every start. Controller: the recordings on the visitor's disk, and taking
+// the visitor's input for itself (keys, mouse, wheel, touch, joysticks, clicks on entities, the avatar's actions); a
+// world's script may still hear the 3D view's keys and use mappings.
 const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
     { "MyAvatar", {
         "setSkeletonModelURL", "setSkeletonModelURLFromScript", "useFullAvatarURL", "setAnimGraphUrl",
@@ -114,7 +116,12 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
         "loadData", "setDisplayName" } },
     { "controller::ScriptingInterface", {
         "startInputRecording", "stopInputRecording", "startInputPlayback", "stopInputPlayback", "saveInputRecording",
-        "loadInputRecording", "getInputRecorderSaveDirectory" } }
+        "loadInputRecording", "getInputRecorderSaveDirectory", "captureMouseEvents", "releaseMouseEvents",
+        "captureTouchEvents", "releaseTouchEvents", "captureWheelEvents", "releaseWheelEvents", "captureActionEvents",
+        "releaseActionEvents" } },
+    { "ControllerScriptingInterface", {
+        "captureKeyEvents", "releaseKeyEvents", "captureJoystick", "releaseJoystick", "captureEntityClickEvents",
+        "releaseEntityClickEvents" } }
 };
 
 // Properties a world's script may write on an allow-listed class (every other write on such a class is refused).

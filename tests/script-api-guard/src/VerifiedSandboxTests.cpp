@@ -31,6 +31,7 @@
 
 #include <HttpRequestObject.h>
 #include <ScriptApiPolicy.h>
+#include <controllers/ScriptingInterface.h>
 #include <ScriptNetworkPolicy.h>
 #include <WasmScriptEngine.h>
 #include <WebSocketObject.h>
@@ -522,4 +523,19 @@ void VerifiedSandboxTests::testResourcesNotForWorlds() {
     QVERIFY(!ScriptApiPolicy::allowsGlobal("Resources"));
     QVERIFY(!ScriptApiPolicy::allowsClass(&ResourceScriptingInterface::staticMetaObject));
     QVERIFY(ScriptApiPolicy::allowsGlobal("Resource"));
+}
+
+void VerifiedSandboxTests::testInputAndPrivacyNotForWorlds() {
+    // the app's folders (the visitor's account name in them) and every address the app requests
+    QVERIFY(!ScriptApiPolicy::allowsGlobal("Paths"));
+    QVERIFY(!ScriptApiPolicy::allowsGlobal("ResourceRequestObserver"));
+    // taking the visitor's input for itself; hearing and mapping it stay (games)
+    const QMetaObject* controller = &controller::ScriptingInterface::staticMetaObject;
+    for (const char* member : { "captureMouseEvents", "releaseMouseEvents", "captureTouchEvents", "releaseTouchEvents",
+                                "captureWheelEvents", "releaseWheelEvents", "captureActionEvents", "releaseActionEvents" }) {
+        QVERIFY2(ScriptApiPolicy::deniesMethod(controller, member), member);
+    }
+    for (const char* member : { "newMapping", "enableMapping", "getValue", "getActionNames", "getPoseValue" }) {
+        QVERIFY2(!ScriptApiPolicy::deniesMethod(controller, member), member);
+    }
 }

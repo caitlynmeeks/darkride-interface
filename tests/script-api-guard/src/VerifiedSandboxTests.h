@@ -30,6 +30,7 @@ private slots:
     void testRefusalAtLoad();
     void testAppScriptsFolder();
     void testResourcesNotForWorlds();
+    void testInputAndPrivacyNotForWorlds();
 
 private:
     QTemporaryDir _dir;
