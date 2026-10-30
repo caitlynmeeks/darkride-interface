@@ -1433,6 +1433,16 @@ AudioSRC::AudioSRC(int inputSampleRate, int outputSampleRate, int numChannels, Q
     assert(numChannels > 0);
     assert(numChannels <= SRC_MAX_CHANNELS);
 
+    // checked in release builds too: the buffers below are for 1, 2 or 4 channels at most, and a rate of zero or less
+    // divides by zero; anything else makes a resampler that produces nothing (callers check what they pass)
+    if (numChannels != 1 && numChannels != 2 && numChannels != 4) {
+        numChannels = 0;
+    }
+    if (inputSampleRate <= 0 || outputSampleRate <= 0) {
+        inputSampleRate = outputSampleRate = 1;
+        numChannels = 0;
+    }
+
     _inputSampleRate = inputSampleRate;
     _outputSampleRate = outputSampleRate;
     _numChannels = numChannels;

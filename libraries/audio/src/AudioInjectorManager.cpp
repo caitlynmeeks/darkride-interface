@@ -11,6 +11,8 @@
 
 #include "AudioInjectorManager.h"
 
+#include <cmath>
+
 #include <QtCore/QCoreApplication>
 
 #include <SharedUtil.h>
@@ -169,6 +171,45 @@ bool AudioInjectorManager::threadInjector(const AudioInjectorPointer& injector) 
     return true;
 }
 
+// The sound resampled to another pitch, limited to 4 octaves either way (a pitch that isn't a number plays the sound as
+// it is). Null when the sound isn't mono, stereo or ambisonic, or would be larger than a sound may be at that pitch.
+static AudioDataPointer atPitch(const AudioDataPointer& audioData, float pitch) {
+    using AudioConstants::AudioSample;
+    using AudioConstants::SAMPLE_RATE;
+    if (!audioData || !std::isfinite(pitch)) {
+        return audioData;
+    }
+    pitch = glm::clamp(pitch, 1 / 16.0f, 16.0f);
+    const int standardRate = SAMPLE_RATE;
+    const int resampledRate = glm::round(SAMPLE_RATE / pitch);
+
+    const int numChannels = (int)audioData->getNumChannels();
+    const int64_t numFrames = audioData->getNumFrames();
+    if (numChannels != AudioConstants::MONO && numChannels != AudioConstants::STEREO &&
+        numChannels != AudioConstants::AMBISONIC) {
+        return nullptr;
+    }
+    // sized in 64 bits first (a frame over for the resampler's rounding), so the counts below fit an int
+    int64_t outputBytes = (numFrames * resampledRate / standardRate + 1) * numChannels * (int64_t)sizeof(AudioSample);
+    if (numFrames > std::numeric_limits<int>::max() || outputBytes > AudioConstants::MAX_SOUND_BYTES) {
+        qCWarning(audio) << "Sound at pitch" << pitch << "would be" << outputBytes << "bytes; not played";
+        return nullptr;
+    }
+
+    AudioSRC resampler(standardRate, resampledRate, numChannels);
+
+    // create a resampled buffer that is guaranteed to be large enough
+    const int maxOutputFrames = resampler.getMaxOutput((int)numFrames);
+    const int maxOutputSize = maxOutputFrames * numChannels * sizeof(AudioSample);
+    QByteArray resampledBuffer(maxOutputSize, '\0');
+    auto bufferPtr = reinterpret_cast<AudioSample*>(resampledBuffer.data());
+
+    resampler.render(audioData->data(), bufferPtr, (int)numFrames);
+
+    int numSamples = maxOutputFrames * numChannels;
+    return AudioData::make(numSamples, numChannels, bufferPtr);
+}
+
 AudioInjectorPointer AudioInjectorManager::playSound(const SharedSoundPointer& sound, const AudioInjectorOptions& options, bool setPendingDelete) {
     if (_shouldStop) {
         qCDebug(audio) << "AudioInjectorManager::threadInjector asked to thread injector but is shutting down.";
@@ -179,31 +220,7 @@ AudioInjectorPointer AudioInjectorManager::playSound(const SharedSoundPointer& s
     if (sound && sound->isReady()) {
         if (options.pitch == 1.0f) {
             injector = QSharedPointer<AudioInjector>(new AudioInjector(sound, options), &AudioInjector::deleteLater);
-        } else {
-            using AudioConstants::AudioSample;
-            using AudioConstants::SAMPLE_RATE;
-            const int standardRate = SAMPLE_RATE;
-            // limit pitch to 4 octaves
-            const float pitch = glm::clamp(options.pitch, 1 / 16.0f, 16.0f);
-            const int resampledRate = glm::round(SAMPLE_RATE / pitch);
-
-            auto audioData = sound->getAudioData();
-            auto numChannels = audioData->getNumChannels();
-            auto numFrames = audioData->getNumFrames();
-
-            AudioSRC resampler(standardRate, resampledRate, numChannels);
-
-            // create a resampled buffer that is guaranteed to be large enough
-            const int maxOutputFrames = resampler.getMaxOutput(numFrames);
-            const int maxOutputSize = maxOutputFrames * numChannels * sizeof(AudioSample);
-            QByteArray resampledBuffer(maxOutputSize, '\0');
-            auto bufferPtr = reinterpret_cast<AudioSample*>(resampledBuffer.data());
-
-            resampler.render(audioData->data(), bufferPtr, numFrames);
-
-            int numSamples = maxOutputFrames * numChannels;
-            auto newAudioData = AudioData::make(numSamples, numChannels, bufferPtr);
-
+        } else if (auto newAudioData = atPitch(sound->getAudioData(), options.pitch)) {
             injector = QSharedPointer<AudioInjector>(new AudioInjector(newAudioData, options), &AudioInjector::deleteLater);
         }
     }
@@ -231,30 +248,7 @@ AudioInjectorPointer AudioInjectorManager::playSound(const AudioDataPointer& aud
     AudioInjectorPointer injector = nullptr;
     if (options.pitch == 1.0f) {
         injector = QSharedPointer<AudioInjector>(new AudioInjector(audioData, options), &AudioInjector::deleteLater);
-    } else {
-        using AudioConstants::AudioSample;
-        using AudioConstants::SAMPLE_RATE;
-        const int standardRate = SAMPLE_RATE;
-        // limit pitch to 4 octaves
-        const float pitch = glm::clamp(options.pitch, 1 / 16.0f, 16.0f);
-        const int resampledRate = glm::round(SAMPLE_RATE / pitch);
-
-        auto numChannels = audioData->getNumChannels();
-        auto numFrames = audioData->getNumFrames();
-
-        AudioSRC resampler(standardRate, resampledRate, numChannels);
-
-        // create a resampled buffer that is guaranteed to be large enough
-        const int maxOutputFrames = resampler.getMaxOutput(numFrames);
-        const int maxOutputSize = maxOutputFrames * numChannels * sizeof(AudioSample);
-        QByteArray resampledBuffer(maxOutputSize, '\0');
-        auto bufferPtr = reinterpret_cast<AudioSample*>(resampledBuffer.data());
-
-        resampler.render(audioData->data(), bufferPtr, numFrames);
-
-        int numSamples = maxOutputFrames * numChannels;
-        auto newAudioData = AudioData::make(numSamples, numChannels, bufferPtr);
-
+    } else if (auto newAudioData = atPitch(audioData, options.pitch)) {
         injector = QSharedPointer<AudioInjector>(new AudioInjector(newAudioData, options), &AudioInjector::deleteLater);
     }
 

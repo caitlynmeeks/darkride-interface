@@ -153,6 +153,34 @@ void SoundProcessor::run() {
         return;
     }
 
+    // what the file says comes from whoever made it: sounds play as mono, stereo or ambisonic (4 channels), and are
+    // resampled to 24 kHz from 4 kHz to 384 kHz (384 kHz is as far as a sound's pitch already takes the resampler)
+    const int MIN_SOUND_SAMPLE_RATE = 4000;
+    const int MAX_SOUND_SAMPLE_RATE = 384000;
+    if (properties.numChannels != AudioConstants::MONO && properties.numChannels != AudioConstants::STEREO &&
+        properties.numChannels != AudioConstants::AMBISONIC) {
+        qCWarning(audio) << "Sound file has" << properties.numChannels << "channels";
+        emit onError(300, "Failed to load sound file, reason: " + QString::number(properties.numChannels) +
+                              " channels (sounds can have 1, 2 or 4)");
+        return;
+    }
+    if (properties.sampleRate < MIN_SOUND_SAMPLE_RATE || properties.sampleRate > MAX_SOUND_SAMPLE_RATE) {
+        qCWarning(audio) << "Sound file's sample rate is" << properties.sampleRate;
+        emit onError(300, "Failed to load sound file, reason: sample rate of " + QString::number(properties.sampleRate) +
+                              " Hz (sounds can be 4000 to 384000 Hz)");
+        return;
+    }
+
+    // its size at 24 kHz, in 64 bits (a frame over for the resampler's rounding)
+    int64_t numFrames = outputAudioByteArray.size() / (properties.numChannels * AudioConstants::SAMPLE_SIZE);
+    int64_t bytesAtNetworkRate = (numFrames * AudioConstants::SAMPLE_RATE / properties.sampleRate + 1) *
+                                 properties.numChannels * AudioConstants::SAMPLE_SIZE;
+    if (bytesAtNetworkRate > AudioConstants::MAX_SOUND_BYTES) {
+        qCWarning(audio) << "Sound would be" << bytesAtNetworkRate << "bytes at 24 kHz";
+        emit onError(300, "Failed to load sound file, reason: too long");
+        return;
+    }
+
     auto data = downSample(outputAudioByteArray, properties);
 
     int numSamples = data.size() / AudioConstants::SAMPLE_SIZE;
@@ -175,7 +203,7 @@ QByteArray SoundProcessor::downSample(const QByteArray& rawAudioByteArray,
     AudioSRC resampler(properties.sampleRate, AudioConstants::SAMPLE_RATE,
                        properties.numChannels);
 
-    // resize to max possible output
+    // resize to max possible output (run() has checked it is within MAX_SOUND_BYTES, so these sizes fit an int)
     int numSourceFrames = rawAudioByteArray.size() / (properties.numChannels * AudioConstants::SAMPLE_SIZE);
     int maxDestinationFrames = resampler.getMaxOutput(numSourceFrames);
     int maxDestinationBytes = maxDestinationFrames * properties.numChannels * AudioConstants::SAMPLE_SIZE;
