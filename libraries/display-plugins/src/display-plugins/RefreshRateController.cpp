@@ -74,15 +74,19 @@ float RefreshRateController::getPacedPeriodSeconds() const {
     return (period >= MIN_PERIOD_NS && period <= MAX_PERIOD_NS) ? (float)period * 1.0e-9f : 0.0f;
 }
 
-void RefreshRateController::countPresent(int64_t nowNs, int refreshes, int lateUs, int displayRate) {
+void RefreshRateController::countPresent(int64_t nowNs, Schedule schedule, int refreshes, int lateUs, int displayRate) {
     _presentRefreshes = refreshes;
     _presentLateUs = lateUs;
     CadenceCounters& counting = _cadenceCounting;
     counting.presents++;
     counting.displayRefreshRate = displayRate;
-    if (refreshes <= 0) {
-        counting.unpaced++;
-    } else if (refreshes == 1) {
+    if (schedule == Schedule::FREE) {
+        counting.onFreeSchedule++;
+    } else if (schedule == Schedule::VSYNC) {
+        counting.withVsync++;
+    } else if (schedule == Schedule::HMD) {
+        counting.inHmd++;
+    } else if (refreshes <= 1) {
         counting.onOneRefresh++;
     } else if (refreshes == 2) {
         counting.onTwoRefreshes++;
@@ -154,7 +158,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
     if (isHmd) {
         _scheduled = false;
         _slotIndex++;
-        countPresent(nowNs, 0, 0, _displayRefreshRate);
+        countPresent(nowNs, Schedule::HMD, 0, 0, _displayRefreshRate);
         return nanoseconds(0);
     }
     // With vsync the swap waits for the display's refresh: a sleep on top of it only beats against the refreshes.
@@ -163,7 +167,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
     if (vsync && _displayRefreshRate > 0 && getRefreshRateLimitPeriod() >= _displayRefreshRate) {
         _scheduled = false;
         _slotIndex++;
-        countPresent(nowNs, 0, 0, _displayRefreshRate);
+        countPresent(nowNs, Schedule::VSYNC, 0, 0, _displayRefreshRate);
         return nanoseconds(0);
     }
     auto period = nanoseconds(_refreshRateLimitPeriod);
@@ -218,7 +222,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         _slotIndex += (uint64_t)std::max<int64_t>(1, advanced);
         // the counters: a present after its slot overran the one before (it presents at once, in this interval)
         const int measuredRate = refreshPeriodNs > 0 ? (int)((1000000000LL + refreshPeriodNs / 2) / refreshPeriodNs) : (int)_displayRefreshRate;
-        countPresent(nowNs, (int)std::max<int64_t>(1, advanced), nowNs > slot ? (int)((nowNs - slot) / 1000) : 0, measuredRate);
+        countPresent(nowNs, Schedule::PHASE, (int)std::max<int64_t>(1, advanced), nowNs > slot ? (int)((nowNs - slot) / 1000) : 0, measuredRate);
         logSchedule(true, refreshesPerPresent, targetRate, measuredRate, true);
         _lastSlotNs = slot;
         _nextPresent = steady_clock::time_point(nanoseconds(slot));   // in the past for an overrun: no wait
@@ -237,7 +241,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         // the counters: off the display's phase; late when the schedule restarts because a present overran its period
         int64_t lateNs = (_scheduled && period == _scheduledPeriod && now >= _nextPresent + period) ?
             duration_cast<nanoseconds>(now - _nextPresent).count() : 0;
-        countPresent(nowNs, 0, (int)(lateNs / 1000), _displayRefreshRate);
+        countPresent(nowNs, Schedule::FREE, 0, (int)(lateNs / 1000), _displayRefreshRate);
         logSchedule(false, refreshesPerPresent, targetRate, _displayRefreshRate, DisplayLink::instance().isRunning());
         if (restart) {
             _scheduled = true;

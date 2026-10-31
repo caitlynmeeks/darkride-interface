@@ -40,6 +40,10 @@ public:
     // The present cadence's counters (team/performance/INSTRUMENTS-PLAN.md, item 3): a few integers the present
     // thread keeps per present and rolls over once a second, so any thread can read what the last whole second's
     // presents looked like (one short lock per read). Paid every present: a dozen integer operations.
+    // how a present was paced: in phase with the display's refreshes (the slots), on the free schedule (no refresh
+    // signal, or a target that is no whole fraction of the display's rate), by vsync at the display's own rate (the
+    // swap waits for the refresh: one present per refresh, which the controller cannot count), or by an HMD
+    enum class Schedule { PHASE, FREE, VSYNC, HMD };
     struct CadenceCounters {
         int displayRefreshRate { 0 };   // Hz: the display link's measured rate while it runs, else the screen's
         int presents { 0 };             // presents in the second
@@ -47,7 +51,9 @@ public:
         int onTwoRefreshes { 0 };       // two refreshes after the last: a frame shown twice, or a present every second refresh
         int onThreeRefreshes { 0 };
         int onMoreRefreshes { 0 };
-        int unpaced { 0 };              // on the free schedule (no refresh signal, or a target that is no whole fraction of the display's rate), with vsync, or in an HMD
+        int onFreeSchedule { 0 };       // off the display's phase: no refresh signal, or a target that is no whole fraction of the display's rate
+        int withVsync { 0 };            // paced by vsync at the display's own rate (in phase by the hardware; refreshes per present unknown here)
+        int inHmd { 0 };                // paced by the HMD
         int late { 0 };                 // arrived after their slot: the present before overran it
         int maxLateUs { 0 };            // the worst of them
         int repeated { 0 };             // showed the frame before again (no new frame was ready)
@@ -76,7 +82,7 @@ public:
     // all; an HMD never sleeps.
     std::chrono::nanoseconds sleepThreadIfNeeded(QThread* thread, bool isHmd, bool vsync = false);
 private:
-    void countPresent(int64_t nowNs, int refreshes, int lateUs, int displayRate);
+    void countPresent(int64_t nowNs, Schedule schedule, int refreshes, int lateUs, int displayRate);
     // a log line when the schedule, the target or the display's rate changes (present thread)
     void logSchedule(bool inPhase, int refreshesPerPresent, int targetRate, int displayRate, bool linkRunning);
     std::chrono::time_point<std::chrono::high_resolution_clock> _startTime { std::chrono::high_resolution_clock::now() };
