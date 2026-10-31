@@ -146,13 +146,14 @@ static const int INACTIVE_TIMER_LIMIT = 3000;
 // the cadence governor's numbers (RefreshRateManager.h): presents in a second that showed the frame before again or
 // landed two or more refreshes apart before the target drops (3 of 144 is a hitch the eye sees; 1 or 2 are a world
 // loading something); the hold of fitting seconds before a return, its first value and its ceiling after failed
-// returns; the seconds after a return in which a drop marks it failed; the clean seconds at full rate that forgive
+// returns; the seconds after a return in which a drop marks it failed (a world that hitches every ten seconds would
+// otherwise return and drop without the hold ever growing); the clean seconds at full rate that forgive
 // the back-off; the share of new frames allowed over 70 % of a refresh, and of presents over half of one, for a
 // second to count as fitting (a maximum would let one texture upload a second hold the half rate for ever)
 static const int GOVERNOR_DROP_MISSES = 3;
 static const int GOVERNOR_HOLD_MIN_SECONDS = 5;
 static const int GOVERNOR_HOLD_MAX_SECONDS = 60;
-static const int GOVERNOR_PROBE_SECONDS = 4;
+static const int GOVERNOR_PROBE_SECONDS = 30;
 static const int GOVERNOR_FORGIVE_SECONDS = 60;
 static const int GOVERNOR_SLOW_FRAMES_PER_HUNDRED = 5;
 
@@ -162,6 +163,19 @@ static const int GOVERNOR_SLOW_FRAMES_PER_HUNDRED = 5;
 static int environmentRefreshCap() {
     static const int cap = qEnvironmentVariableIntValue("DARKRIDE_REFRESH_CAP");
     return cap;
+}
+
+// "Half" the display's rate for the resting rate and the governor: the largest whole fraction at or under half, so
+// the presents lock to every second, third or fourth refresh (RefreshRateController): 72 on 144, 60 on 120, 55 on
+// 165 (82 would be no whole fraction and run the free schedule, worse than the hitch it cures: performance's review,
+// 2026-10-31); 0 when the rate has none
+static int halfRateOf(int displayRate) {
+    for (int n = 2; n <= 4; n++) {
+        if (displayRate > 0 && displayRate % n == 0) {
+            return displayRate / n;
+        }
+    }
+    return 0;
 }
 
 
@@ -197,8 +211,7 @@ RefreshRateManager::RefreshRateManager() {
 }
 
 bool RefreshRateManager::governable(int displayRate) const {
-    if (_uxMode != UXMode::DESKTOP || _refreshRateRegime != RefreshRateRegime::FOCUS_ACTIVE ||
-        displayRate < MIN_GOVERNED_DISPLAY_RATE) {
+    if (_uxMode != UXMode::DESKTOP || displayRate < MIN_GOVERNED_DISPLAY_RATE || halfRateOf(displayRate) == 0) {
         return false;
     }
     // the profile must ask for the display's own rate; a cap under it already paces slower
@@ -228,10 +241,13 @@ void RefreshRateManager::governorTick() {
         if (_halfRate) {
             _halfRate = false;
             _governorFitSeconds = 0;
-            qCDebug(interfaceapp) << "Refresh governor: full rate again, the rate is set elsewhere now (regime, profile, a cap or VR)";
+            qCDebug(interfaceapp) << "Refresh governor: full rate again, the rate is set elsewhere now (profile, a cap, VR or the display)";
             updateRefreshRateController();
         }
         return;
+    }
+    if (_refreshRateRegime != RefreshRateRegime::FOCUS_ACTIVE) {
+        return;   // at rest, unfocused or minimized another rate rules; the governor's state keeps for the wake
     }
     const int displayRate = sample.displayRate;
     if (!_halfRate) {
@@ -255,7 +271,7 @@ void RefreshRateManager::governorTick() {
             _governorFitSeconds = 0;
             _governorHalfRateSeconds = 0;
             _governorProbeSecondsLeft = 0;
-            qCDebug(interfaceapp).nospace() << "Refresh governor: half rate, " << displayRate / 2 << " of " << displayRate
+            qCDebug(interfaceapp).nospace() << "Refresh governor: half rate, " << halfRateOf(displayRate) << " of " << displayRate
                 << " Hz: in the last second " << sample.repeated << " presents showed the frame before again and "
                 << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart"
                 << (returnFailed ? " (the return failed; hold now " : " (hold ") << _governorHoldSeconds << " s)";
@@ -285,7 +301,7 @@ void RefreshRateManager::governorTick() {
 QString RefreshRateManager::getGovernorStatus() const {
     if (_halfRate) {
         return QString("half rate (%1 of %2 Hz), back after %3 s of fitting frames (%4 so far)")
-            .arg(_governorDisplayRate / 2).arg(_governorDisplayRate).arg(_governorHoldSeconds).arg(_governorFitSeconds);
+            .arg(halfRateOf(_governorDisplayRate)).arg(_governorDisplayRate).arg(_governorHoldSeconds).arg(_governorFitSeconds);
     }
     if (_governorHoldSeconds > GOVERNOR_HOLD_MIN_SECONDS) {
         return QString("full rate (hold %1 s after a failed return)").arg(_governorHoldSeconds);
@@ -402,7 +418,8 @@ void RefreshRateManager::updateRefreshRateController() const {
 
         if (targetRefreshRate == RESTING_RATE) {
             const int MIN_RESTING_DISPLAY_RATE = 120;
-            targetRefreshRate = displayRefreshRate >= MIN_RESTING_DISPLAY_RATE ? displayRefreshRate / 2 : 999;
+            const int restingRate = halfRateOf(displayRefreshRate);
+            targetRefreshRate = displayRefreshRate >= MIN_RESTING_DISPLAY_RATE && restingRate > 0 ? restingRate : 999;
         }
         if (targetRefreshRate >= 900) {
             targetRefreshRate = displayRefreshRate;
@@ -411,8 +428,9 @@ void RefreshRateManager::updateRefreshRateController() const {
                 targetRefreshRate = 60;
             }
             // the cadence governor's half rate (governorTick), in phase: every frame for the same two refreshes
-            if (_halfRate && _uxMode == UXMode::DESKTOP && displayRefreshRate >= MIN_GOVERNED_DISPLAY_RATE) {
-                targetRefreshRate = displayRefreshRate / 2;
+            if (_halfRate && _uxMode == UXMode::DESKTOP && displayRefreshRate >= MIN_GOVERNED_DISPLAY_RATE &&
+                halfRateOf(displayRefreshRate) > 0) {
+                targetRefreshRate = halfRateOf(displayRefreshRate);
             }
         }
         if (_screenCap > 0 && _uxMode == UXMode::DESKTOP && targetRefreshRate > _screenCap) {

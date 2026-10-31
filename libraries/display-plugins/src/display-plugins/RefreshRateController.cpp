@@ -180,6 +180,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         _scheduled = false;
         _slotIndex++;
         countPresent(nowNs, Schedule::HMD, 0, 0, _displayRefreshRate);
+        _lastDeadlineNs = 0;
         return nanoseconds(0);
     }
     // With vsync the swap waits for the display's refresh: a sleep on top of it only beats against the refreshes.
@@ -189,6 +190,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         _scheduled = false;
         _slotIndex++;
         countPresent(nowNs, Schedule::VSYNC, 0, 0, _displayRefreshRate);
+        _lastDeadlineNs = 0;
         return nanoseconds(0);
     }
     auto period = nanoseconds(_refreshRateLimitPeriod);
@@ -246,6 +248,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         countPresent(nowNs, Schedule::PHASE, (int)std::max<int64_t>(1, advanced), nowNs > slot ? (int)((nowNs - slot) / 1000) : 0, measuredRate);
         logSchedule(true, refreshesPerPresent, targetRate, measuredRate, true);
         _lastSlotNs = slot;
+        _lastDeadlineNs = slot - phase + refreshPeriodNs;   // the refresh at the end of the slot's interval
         _nextPresent = steady_clock::time_point(nanoseconds(slot));   // in the past for an overrun: no wait
         _scheduled = false;   // the free schedule restarts from now if the link goes quiet
         _pacedPeriodNs = refreshPeriodNs;
@@ -263,6 +266,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         int64_t lateNs = (_scheduled && period == _scheduledPeriod && now >= _nextPresent + period) ?
             duration_cast<nanoseconds>(now - _nextPresent).count() : 0;
         countPresent(nowNs, Schedule::FREE, 0, (int)(lateNs / 1000), _displayRefreshRate);
+        _lastDeadlineNs = 0;
         logSchedule(false, refreshesPerPresent, targetRate, _displayRefreshRate, DisplayLink::instance().isRunning());
         if (restart) {
             _scheduled = true;

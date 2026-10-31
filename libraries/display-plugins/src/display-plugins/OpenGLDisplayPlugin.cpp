@@ -55,6 +55,7 @@
 #include "Logging.h"
 #include "RefreshRateController.h"
 #include "DisplayLink.h"
+#include <FrameTrace.h>
 
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
@@ -442,7 +443,7 @@ bool OpenGLDisplayPlugin::activate() {
                 _linkWatchdog->setTimerType(Qt::VeryCoarseTimer);
             }
             _linkWatchdog->disconnect();
-            connect(_linkWatchdog, &QTimer::timeout, this, [window, displayUnderWindow] {
+            connect(_linkWatchdog, &QTimer::timeout, this, [this, window, displayUnderWindow] {
                 QWindow::Visibility visibility = window->visibility();
                 if (visibility == QWindow::Minimized || visibility == QWindow::Hidden) {
                     return;
@@ -459,11 +460,30 @@ bool OpenGLDisplayPlugin::activate() {
                 } else if (wanted && wanted != link.displayId()) {
                     reason = "the window is on another display";
                 }
-                if (reason) {
-                    qCDebug(displayPlugins) << "Display link: restarted on display" << wanted << "(was" << link.displayId() << "):" << reason;
-                    link.stop();
-                    link.start(wanted);
+                if (!reason) {
+                    _linkQuietRestarts = 0;   // running and refreshing on the window's display
+                    _linkNextRestartNs = 0;
+                    return;
                 }
+                // a display that is asleep, or a link that is stuck, stays quiet after a restart too: after the first
+                // restart that did not help, one more try a minute, said once (performance's review, 2026-10-31)
+                const bool quietAgain = link.isQuiet(nowNs) && _linkQuietRestarts > 0;
+                if (quietAgain) {
+                    if (nowNs < _linkNextRestartNs) {
+                        return;
+                    }
+                    _linkNextRestartNs = nowNs + 60 * 1000000000LL;
+                    if (_linkQuietRestarts == 1) {
+                        qCDebug(displayPlugins) << "Display link: still quiet after a restart on display" << wanted << "; trying again once a minute";
+                    }
+                    _linkQuietRestarts++;
+                } else {
+                    qCDebug(displayPlugins) << "Display link: restarted on display" << wanted << "(was" << link.displayId() << "):" << reason;
+                    _linkQuietRestarts = link.isQuiet(nowNs) ? 1 : 0;
+                    _linkNextRestartNs = 0;
+                }
+                link.stop();
+                link.start(wanted);
             });
             _linkWatchdog->start();
         }
@@ -1026,9 +1046,27 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
                 refreshRateController->noteNewFrame(asked > 0 && _currentFrame->submitTime > asked ?
                     (int)(_currentFrame->submitTime - asked) : 0);
             }
-            // Execute the frame rendering commands
-            PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
-            _gpuContext->executeFrame(_currentFrame);
+            if (FrameTrace::enabled()) {
+                // the frame trace's present columns, in the record of the game-loop frame this gpu frame came from:
+                // the gpu frame's index (the join with Test.takePresentTrace), the refreshes the frame has been shown
+                // for (summed over held presents), whether it was held, and how late this present came past its slot
+                const uint64_t traceFrame = _currentFrame->traceFrame;
+                const int refreshes = refreshRateController->getPresentRefreshes();
+                _tracePresentRefreshes = _presentedNewFrame ? refreshes : _tracePresentRefreshes + refreshes;
+                FrameTrace::set(traceFrame, "render.frame", (double)_currentFrame->frameIndex);
+                FrameTrace::set(traceFrame, "present.refreshes", (double)_tracePresentRefreshes);
+                FrameTrace::set(traceFrame, "present.repeat", _presentedNewFrame ? 0.0 : 1.0);
+                FrameTrace::set(traceFrame, "present.late_us", (double)refreshRateController->getPresentLateUs());
+            }
+            if (_presentedNewFrame || isHmd()) {
+                // Execute the frame rendering commands. A held present (the same frame shown again because no new one
+                // was ready) keeps the frame's framebuffer as it was drawn and only composites it again, instead of
+                // drawing the whole scene a second time for the same picture: until 2026-10-31 the GPU's time doubled
+                // on exactly the frames that were late already, which made the next one late too. An HMD re-executes
+                // with the newer pose: that is its reprojection.
+                PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
+                _gpuContext->executeFrame(_currentFrame);
+            }
         }
 
         // Write all layers to a local framebuffer
@@ -1098,6 +1136,15 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     _movingAveragePresent.addSample((float)presentUsecs);
     refreshRateController->notePresentCost((int)presentUsecs, _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
     _previousPresentStart = startPresent;
+    if (FrameTrace::enabled() && _currentFrame) {
+        // how long before the refresh this present's picture was due the present returned; negative when it missed
+        const int64_t deadlineNs = refreshRateController->getPresentDeadlineNs();
+        if (deadlineNs > 0) {
+            const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            FrameTrace::set(_currentFrame->traceFrame, "present.slack_us", (double)(deadlineNs - nowNs) / 1000.0);
+        }
+    }
 }
 
 float OpenGLDisplayPlugin::newFramePresentRate() const {
