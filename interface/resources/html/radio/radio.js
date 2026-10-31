@@ -3,11 +3,13 @@
 //  interface/resources/html/radio
 //
 //  The Radio page: Webamp (webamp.darkride.min.js, our copy without Winamp's art) starts on Darkride's skin
-//  (darkride-skin.js), lists SomaFM's stations (stations.js) and the player's own, and plays any stream address. A
-//  classic .wsz skin the player loads is kept for next time (IndexedDB); "Reset to Darkride" and the skins menu's
-//  "Darkride" bring ours back. Kept cheap (performance, 10-30): the spectrum draws at most 30 times a second, only while
-//  playing (Webamp's own rule) and shown (a hidden page gets no animation frames); RadioPanel.qml tears the page down
-//  when the radio is closed.
+//  (darkride-skin.js), lists SomaFM's stations (stations.js) and the player's own, finds stations in the Radio Browser
+//  directory (radio-browser.info, free and open) and plays any stream address; under the player, three tabs: SomaFM,
+//  Find, Address. A station found or typed in joins the player's list (kept for next time); one that won't play here
+//  is said so, the player stops, and it comes off the list again. A classic .wsz skin the player loads is kept for next time (IndexedDB); "Reset to
+//  Darkride" and the skins menu's "Darkride" bring ours back. Kept cheap (performance, 10-30): the spectrum draws at
+//  most 30 times a second, only while playing (Webamp's own rule) and shown (a hidden page gets no animation frames);
+//  RadioPanel.qml tears the page down when the radio is closed.
 //
 //  Copyright 2026 Darkride.
 //
@@ -28,6 +30,26 @@
     var PLAYLIST_HEIGHT = 116;                   // its playlist at its smallest; it grows in steps of 29
     var PLAYLIST_STEP = 29;
     var KEY = "darkride.radio.";
+    var TABS = ["soma", "find", "address"];
+    // the Radio Browser directory (security's rules, 10-31): these hosts only, tried in order (the round-robin name,
+    // then one server by its own name: each server has its own certificate); https; a capped answer, read as JSON;
+    // its words shown as text, capped; no station pictures (each would tell a station's host who's searching)
+    var DIRECTORY_HOSTS = ["all.api.radio-browser.info", "de1.api.radio-browser.info"];
+    var DIRECTORY_MAX_BYTES = 256 * 1024;
+    var DIRECTORY_ASK = 60;           // asked for, before the ones this engine can't play are left out
+    var FOUND_MAX = 30;
+    var FOUND_FEW = 10;               // fewer found by name: the same words as a kind of music (the directory's tags)
+    var NAME_MAX = 80;
+    var TAGS_MAX = 120;
+    // the directory's codec names, as this engine is asked whether it plays them (an HLS stream never: Chrome doesn't)
+    var CODEC_TYPES = {
+        "MP3": "audio/mpeg",
+        "AAC": "audio/aac",
+        "AAC+": "audio/aac",
+        "OGG": "audio/ogg; codecs=\"vorbis\"",
+        "OPUS": "audio/ogg; codecs=\"opus\"",
+        "FLAC": "audio/flac",
+    };
 
     // ---- at most 30 frames a second, for every animation in the page (the spectrum is the only one that runs on) ----
 
@@ -246,6 +268,14 @@
                     resetSkin();
                     return undefined;
                 }
+                // the sound has started (the media element's own "playing"): this station plays here
+                if (action && action.type === "IS_PLAYING") {
+                    var state = webamp.store.getState();
+                    var track = state.tracks[state.playlist.currentTrack];
+                    if (track) {
+                        heard[track.url] = true;
+                    }
+                }
                 if (action && action.type === "SET_SKIN_DATA") {
                     if (loadingBuiltin) {
                         builtinImages = action.data.skinImages;
@@ -323,6 +353,41 @@
         });
     }
 
+    // a stream the player plays from its list: one not in it yet joins it (and is kept), and comes off again if it
+    // won't play here (the media error below)
+    var addedNow = {};   // stream addresses put in the list this visit
+    var heard = {};      // stream addresses that have played this visit
+    function playStream(url, title) {
+        var trackWith = function () {
+            var state = webamp.store.getState();
+            return state.playlist.trackOrder.find(function (id) { return state.tracks[id].url === url; });
+        };
+        var id = trackWith();
+        if (id == null) {
+            ownStations.push({ url: url, title: title });
+            save("ownStations", ownStations);
+            addedNow[url] = true;
+            webamp.appendTracks([ownTrack({ url: url, title: title })]);
+            id = trackWith();
+        }
+        note("");
+        webamp.store.dispatch({ type: "PLAY_TRACK", id: id });
+    }
+
+    // a stream that won't play here (gone, a format this engine can't play, or a server that doesn't let other sites'
+    // pages play it): said under the player, which stops (make-bundle.py: Webamp would go on to the next station)
+    window.addEventListener("darkrideMediaError", function () {
+        var state = webamp.store.getState();
+        var id = state.playlist.currentTrack;
+        var track = id == null ? null : state.tracks[id];
+        webamp.stop();
+        note("That station didn't play here. Try another.", true);
+        if (track && addedNow[track.url] && !heard[track.url]) {
+            delete addedNow[track.url];
+            webamp.store.dispatch({ type: "REMOVE_TRACKS", ids: [id] });
+        }
+    });
+
     var addressField = document.getElementById("address-field");
     function playAddress(text) {
         var address;
@@ -341,22 +406,8 @@
             : Promise.resolve({ url: address.href, title: "" });
         note("Tuning in…");
         stream.then(function (found) {
-            var url = found.url;
-            title = found.title || title;
-            var trackWith = function () {
-                var state = webamp.store.getState();
-                return state.playlist.trackOrder.find(function (id) { return state.tracks[id].url === url; });
-            };
-            var id = trackWith();
-            if (id == null) {
-                ownStations.push({ url: url, title: title });
-                save("ownStations", ownStations);
-                webamp.appendTracks([ownTrack({ url: url, title: title })]);
-                id = trackWith();
-            }
-            webamp.store.dispatch({ type: "PLAY_TRACK", id: id });
+            playStream(found.url, found.title || title);
             addressField.value = "";
-            note("");
         }, function () {
             note("Couldn't read that playlist. Try the stream's own address.", true);
         });
@@ -399,9 +450,9 @@
             main: { position: { top: 0, left: 0 } },
             playlist: { position: { top: MAIN_HEIGHT, left: 0 }, size: { extraHeight: 0, extraWidth: 0 } },
         },
-        // the playlist's ADD > URL: the address field
+        // the playlist's ADD > URL: the Address tab
         handleAddUrlEvent: function () {
-            addressField.focus();
+            showTab("address", true);
             note("Type or paste a stream address, then Play.");
             return Promise.resolve(null);
         },
@@ -427,10 +478,210 @@
         });
     }
     var layoutTimer = null;
-    window.addEventListener("resize", function () {
+    function layoutSoon() {
         clearTimeout(layoutTimer);
         layoutTimer = setTimeout(layout, 50);
+    }
+    window.addEventListener("resize", layoutSoon);
+
+    // ---- Find: stations in the Radio Browser directory ----
+
+    var probe = document.createElement("audio");
+    function playable(codec) {
+        var type = CODEC_TYPES[String(codec || "").toUpperCase()];
+        return !!type && probe.canPlayType(type) !== "";
+    }
+    function clip(text, most) {
+        return String(text == null ? "" : text).replace(/\s+/g, " ").trim().slice(0, most);
+    }
+    function streamAddress(text) {
+        try {
+            var address = new URL(String(text || ""));
+            return address.protocol === "http:" || address.protocol === "https:" ? address.href : "";
+        } catch (error) {
+            return "";
+        }
+    }
+
+    // one answer from the directory, read only up to the cap, within the time, without cookies
+    function readCapped(address) {
+        var abort = new AbortController();
+        var timer = setTimeout(function () { abort.abort(); }, FETCH_TIMEOUT_MS);
+        return fetch(address, { credentials: "omit", signal: abort.signal }).then(function (response) {
+            if (!response.ok || !response.body) {
+                throw new Error("the directory answered " + response.status);
+            }
+            var reader = response.body.getReader();
+            var parts = [];
+            var size = 0;
+            function more() {
+                return reader.read().then(function (part) {
+                    if (part.done) {
+                        return new Blob(parts).text();
+                    }
+                    size += part.value.byteLength;
+                    if (size > DIRECTORY_MAX_BYTES) {
+                        abort.abort();
+                        throw new Error("the directory's answer is too big");
+                    }
+                    parts.push(part.value);
+                    return more();
+                });
+            }
+            return more();
+        }).then(function (text) {
+            clearTimeout(timer);
+            return JSON.parse(text);
+        }, function (error) {
+            clearTimeout(timer);
+            throw error;
+        });
+    }
+    // our hosts in turn, never one named in an answer
+    function askDirectory(path) {
+        var hosts = DIRECTORY_HOSTS.slice();
+        function next(why) {
+            var host = hosts.shift();
+            return host ? readCapped("https://" + host + path).catch(next) : Promise.reject(why);
+        }
+        return next();
+    }
+
+    // a station from the directory's answer, only what the radio shows and plays, or null when this engine can't play it
+    function stationFrom(row) {
+        if (!row || typeof row !== "object" || Number(row.hls) === 1 || !playable(row.codec)) {
+            return null;
+        }
+        var url = streamAddress(row.url_resolved) || streamAddress(row.url);
+        if (!url) {
+            return null;
+        }
+        var bitrate = Math.round(Number(row.bitrate)) || 0;
+        var format = clip(row.codec, 8).toUpperCase() + (bitrate > 0 && bitrate < 10000 ? " " + bitrate + "k" : "");
+        var id = clip(row.stationuuid, 36).toLowerCase();
+        return {
+            url: url,
+            name: clip(row.name, NAME_MAX) || new URL(url).hostname,
+            about: [clip(row.countrycode, 2).toUpperCase(), format].filter(Boolean).join(" · "),
+            tags: clip(row.tags, TAGS_MAX).replace(/,\s*/g, ", "),
+            id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) ? id : "",
+        };
+    }
+
+    function searchPath(field, words) {
+        return "/json/stations/search?" + field + "=" + encodeURIComponent(words) +
+            "&hidebroken=true&order=clickcount&reverse=true&limit=" + DIRECTORY_ASK;
+    }
+    // by name, the most listened to first; with few found, the same words as a kind of music too
+    function findStations(words) {
+        var found = [];
+        var seen = {};
+        function take(rows) {
+            (Array.isArray(rows) ? rows : []).forEach(function (row) {
+                var station = found.length < FOUND_MAX ? stationFrom(row) : null;
+                if (station && !seen[station.url]) {
+                    seen[station.url] = true;
+                    found.push(station);
+                }
+            });
+        }
+        return askDirectory(searchPath("name", words)).then(function (rows) {
+            take(rows);
+            if (found.length >= FOUND_FEW) {
+                return found;
+            }
+            return askDirectory(searchPath("tag", words.toLowerCase())).then(function (more) {
+                take(more);
+                return found;
+            }, function () {
+                return found;
+            });
+        });
+    }
+
+    var findField = document.getElementById("find-field");
+    var resultsElement = document.getElementById("results");
+    function showFound(stations, status) {
+        resultsElement.textContent = "";
+        if (status) {
+            var line = document.createElement("li");
+            line.className = "status";
+            line.textContent = status;
+            resultsElement.appendChild(line);
+        }
+        stations.forEach(function (station) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "station";
+            button.title = station.tags ? station.name + "\n" + station.tags : station.name;
+            var name = document.createElement("span");
+            name.className = "name";
+            name.textContent = station.name;
+            var about = document.createElement("span");
+            about.className = "about";
+            about.textContent = station.about;
+            button.appendChild(name);
+            button.appendChild(about);
+            button.addEventListener("click", function () { playFound(station); });
+            var item = document.createElement("li");
+            item.appendChild(button);
+            resultsElement.appendChild(item);
+        });
+        resultsElement.scrollTop = 0;
+    }
+    function playFound(station) {
+        playStream(station.url, station.name);
+        // the directory counts a station's listens when a player tells it (it asks players to); nothing comes back
+        if (station.id) {
+            fetch("https://" + DIRECTORY_HOSTS[0] + "/json/url/" + station.id, { credentials: "omit" })
+                .catch(function () {});
+        }
+    }
+    var searchNumber = 0;
+    document.getElementById("find").addEventListener("submit", function (event) {
+        event.preventDefault();
+        var words = clip(findField.value, NAME_MAX);
+        if (!words) {
+            findField.focus();
+            return;
+        }
+        var number = ++searchNumber;
+        showFound([], "Looking…");
+        findStations(words).then(function (found) {
+            if (number === searchNumber) {
+                showFound(found, found.length ? "" : "No stations found for “" + words + "”.");
+            }
+        }, function () {
+            if (number === searchNumber) {
+                showFound([], "The directory didn't answer. Try again in a moment.");
+            }
+        });
     });
+
+    // ---- the tabs under the player: SomaFM, Find, Address (the last one open is open next time) ----
+
+    var tabButtons = Array.from(document.querySelectorAll("#tabs [role=tab]"));
+    function showTab(name, focus) {
+        tabButtons.forEach(function (button) {
+            var open = button.dataset.tab === name;
+            button.setAttribute("aria-selected", open ? "true" : "false");
+            document.getElementById("tab-" + button.dataset.tab).hidden = !open;
+        });
+        save("tab", name);
+        if (focus) {
+            var field = name === "find" ? findField : name === "address" ? addressField : null;
+            if (field) {
+                field.focus();
+            }
+        }
+        // the station list makes room for the open tab
+        layoutSoon();
+    }
+    tabButtons.forEach(function (button) {
+        button.addEventListener("click", function () { showTab(button.dataset.tab, true); });
+    });
+    var firstTab = load("tab", "soma");
+    showTab(TABS.indexOf(firstTab) >= 0 ? firstTab : "soma", false);
 
     // the volume, kept
     var volume = load("volume", null);

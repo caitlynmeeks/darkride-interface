@@ -4,8 +4,8 @@
   interface/resources/html/radio
 
   The Radio panel's page (qml/darkride/RadioPanel.qml): internet radio in a classic skin player (Webamp, MIT), wearing
-  Darkride's own skin (mary's), with SomaFM's stations, any stream address, and the player's own skins. Each listener's
-  app plays the stream straight from the station.
+  Darkride's own skin (mary's), with SomaFM's stations, a search of the Radio Browser directory, any stream address,
+  and the player's own skins. Each listener's app plays the stream straight from the station.
 
   Copyright 2026 Darkride.
 
@@ -21,18 +21,36 @@
 <main id="radio">
     <div id="player"></div>
     <div id="controls">
-        <form id="address" autocomplete="off">
-            <input id="address-field" type="text" placeholder="Any stream address (or .pls, .m3u)" spellcheck="false"
-                aria-label="Stream address">
-            <button type="submit">Play</button>
-        </form>
+        <div id="tabs" role="tablist">
+            <button type="button" role="tab" data-tab="soma" aria-controls="tab-soma">SomaFM</button>
+            <button type="button" role="tab" data-tab="find" aria-controls="tab-find">Find</button>
+            <button type="button" role="tab" data-tab="address" aria-controls="tab-address">Address</button>
+        </div>
+        <section id="tab-soma" class="tab" role="tabpanel">
+            <div class="row">
+                <span class="credit">Radio from SomaFM</span>
+                <a id="support" href="https://somafm.com/support/" target="_blank" rel="noopener">Support SomaFM</a>
+            </div>
+        </section>
+        <section id="tab-find" class="tab" role="tabpanel" hidden>
+            <form id="find" class="field" autocomplete="off">
+                <input id="find-field" type="search" placeholder="A station's name, or a kind of music" spellcheck="false"
+                    maxlength="80" aria-label="Find a station">
+                <button type="submit">Find</button>
+            </form>
+            <ol id="results" aria-label="Stations found"></ol>
+            <p class="credit">Searches go to radio-browser.info, a free directory.</p>
+        </section>
+        <section id="tab-address" class="tab" role="tabpanel" hidden>
+            <form id="address" class="field" autocomplete="off">
+                <input id="address-field" type="text" placeholder="Any stream address (or .pls, .m3u)"
+                    spellcheck="false" aria-label="Stream address">
+                <button type="submit">Play</button>
+            </form>
+        </section>
         <div class="row">
             <button id="load-skin" type="button" title="A classic .wsz skin from your computer">Load a skin…</button>
             <button id="reset-skin" type="button">Reset to Darkride</button>
-        </div>
-        <div class="row">
-            <span class="credit">Radio from SomaFM</span>
-            <a id="support" href="https://somafm.com/support/" target="_blank" rel="noopener">Support SomaFM</a>
         </div>
         <p id="note" role="status" hidden></p>
     </div>

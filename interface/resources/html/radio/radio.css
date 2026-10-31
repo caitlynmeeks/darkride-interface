@@ -71,14 +71,14 @@ html body #webamp .playlist-tracks .track-cell {
     user-select: none;
 }
 
-#address, .row {
+.field, .row {
     display: flex;
     align-items: center;
     gap: 4px;
     margin-top: 5px;
 }
 
-#address-field {
+.field input {
     flex: 1;
     min-width: 0;
     box-sizing: border-box;
@@ -92,11 +92,93 @@ html body #webamp .playlist-tracks .track-cell {
     outline: none;
     user-select: text;
 }
-#address-field::placeholder {
+.field input::placeholder {
     color: var(--dim);
 }
-#address-field:focus {
+.field input:focus {
     border-color: var(--cream);
+}
+.field input::-webkit-search-cancel-button {
+    display: none;
+}
+
+/* SomaFM, Find, Address: one segmented control, the open one lit in brass */
+#tabs {
+    display: flex;
+    margin-top: 5px;
+    border: 1px solid var(--brass);
+    border-radius: 2px;
+    overflow: hidden;
+}
+#tabs button {
+    flex: 1;
+    height: 20px;
+    border: 0;
+    border-radius: 0;
+    line-height: 20px;
+}
+#tabs button + button {
+    border-left: 1px solid var(--brass);
+}
+#tabs button[aria-selected="true"] {
+    background: var(--brass);
+    color: var(--navy);
+    cursor: default;
+}
+
+/* the stations found: five rows' room, whether found yet or not, so the player doesn't move as they come in */
+#results {
+    box-sizing: border-box;
+    height: 102px;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+    background: var(--well);
+    border: 1px solid var(--raised);
+    border-radius: 2px;
+}
+#results::-webkit-scrollbar {
+    width: 6px;
+}
+#results::-webkit-scrollbar-thumb {
+    background: var(--raised);
+    border-radius: 3px;
+}
+#results .station {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    height: 20px;
+    padding: 0 6px;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    text-align: left;
+}
+#results .station:hover, #results .station:focus {
+    background: var(--hover);
+    outline: none;
+}
+#results .name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#results .about {
+    flex: none;
+    color: var(--dim);
+}
+#results .status {
+    padding: 4px 6px;
+    color: var(--dim);
+}
+#tab-find > .credit {
+    display: block;
+    margin: 3px 0 0;
+    white-space: normal;
 }
 
 button, #support {
@@ -122,6 +204,9 @@ button:active, #support:active {
 }
 .row button {
     flex: 1;
+}
+.tab[hidden] {
+    display: none;
 }
 
 .credit {
