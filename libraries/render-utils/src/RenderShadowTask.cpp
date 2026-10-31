@@ -252,6 +252,23 @@ void RenderShadowMap::run(const render::RenderContextPointer& renderContext, con
     // unconditional and the monorail car's shadow on the rail, in a far cascade with a low sun, moved every other
     // frame while the car moved every frame (Caity: "the shadow beneath the carriage is juddering real bad").
     // Nothing of a held cascade is touched before this return: its frustum must stay the one its map was drawn by.
+    // A mover that left the frustum this frame is not in the list, so its change would not be seen and its shadow
+    // would stay in the held map a frame longer: a caster of the drawn map now missing AND changed since the draw
+    // (a deleted one stamps its change frame too) counts as changed. Only a changed one: an item the nearer
+    // cascade's frustum came to cover (the anti-frustum moves with the camera) has not moved and is no reason to
+    // draw again. Both lists are sorted: one merge walk, getItem only for the missing ones.
+    if (cascade.isHeld() && !castersChanged) {
+        auto present = _casterIds.begin();
+        for (auto drawnId : _drawnCasters) {
+            while (present != _casterIds.end() && *present < drawnId) {
+                ++present;
+            }
+            if ((present == _casterIds.end() || *present != drawnId) && scene->getItem(drawnId).getChangeFrame() > _drawnFrame) {
+                castersChanged = true;
+                break;
+            }
+        }
+    }
     if (cascade.isHeld() && !castersChanged) {
         return;
     }
@@ -660,6 +677,8 @@ void CullShadowBounds::run(const render::RenderContextPointer& renderContext, co
     };
 
     if (!filter.selectsNothing() && currentKeyLight) {
+        // Stats' shadow line (considered / out of view / too small / rendered) counts here, at the cull, so "rendered"
+        // includes the casters of a far cascade waiting for its turn, whose map is drawn only when one of them changed
         auto& details = args->_details.edit(RenderDetails::SHADOW);
         render::CullTest test(shadowCullFunctor, args, details, antiFrustum);
         auto scene = args->_scene;
