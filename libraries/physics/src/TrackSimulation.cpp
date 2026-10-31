@@ -117,7 +117,8 @@ void TrackSimulation::startFromCar(Train& train, const EntityItemPointer& car, c
 
 // A state from the server (or, on the server, a state persisted by the entity server): the follower takes it and runs
 // it on to this substep in the same substeps the server took, so both agree; what this client showed meanwhile becomes
-// the residual, which decays over BLEND_TIME, or is dropped when it is too large to blend.
+// the residual, which closes slowly when it is small (the clocks' noise, CLOSE_RATE), decays over BLEND_TIME when it is
+// a desync, or is dropped when it is too large to blend.
 void TrackSimulation::adoptState(Train& train, const TrackEntityItem& track, const EntityItemPointer& car,
                                  const glm::vec3& trackPosition, const glm::quat& toTrack, quint64 stepTime, uint32_t step) {
     float shown;
@@ -186,10 +187,15 @@ void TrackSimulation::advance(Train& train, uint32_t steps, bool watchEvents) {
             train.publishPending = true;   // a departure, an arrival, a turn at the end of an open track
         }
     }
-    // the residual closes exponentially; what it closed this step is a velocity the car reports
+    // the residual closes: a small one (the clocks' noise) at no more than CLOSE_RATE, a desync's exponentially over
+    // BLEND_TIME; what it closed this step is a velocity the car reports
     if (train.residual != 0.0f && steps > 0) {
         float dt = (float)steps * PHYSICS_ENGINE_FIXED_SUBSTEP;
         float remaining = train.residual * std::exp(-dt / BLEND_TIME);
+        if (std::fabs(train.residual) <= BLEND_DISTANCE) {
+            float closing = glm::min(std::fabs(train.residual), CLOSE_RATE * dt);
+            remaining = train.residual - std::copysign(closing, train.residual);
+        }
         if (std::fabs(remaining) < 1.0e-4f) {
             remaining = 0.0f;
         }
