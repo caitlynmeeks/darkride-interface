@@ -4,12 +4,15 @@
 //
 //  The Radio page: Webamp (webamp.darkride.min.js, our copy without Winamp's art) starts on Darkride's skin
 //  (darkride-skin.js), lists SomaFM's stations (stations.js) and the player's own, finds stations in the Radio Browser
-//  directory (radio-browser.info, free and open) and plays any stream address; under the player, three tabs: SomaFM,
-//  Find, Address. A station found or typed in joins the player's list (kept for next time); one that won't play here
-//  is said so, the player stops, and it comes off the list again. A classic .wsz skin the player loads is kept for next time (IndexedDB); "Reset to
-//  Darkride" and the skins menu's "Darkride" bring ours back. Kept cheap (performance, 10-30): the spectrum draws at
-//  most 30 times a second, only while playing (Webamp's own rule) and shown (a hidden page gets no animation frames);
-//  RadioPanel.qml tears the page down when the radio is closed.
+//  directory (radio-browser.info, free and open) and plays any stream address. Only the player (its two windows) is
+//  here and wears the skin; the controls under it are the panel's own native ones (RadioPanel.qml, Caity 10-31), which
+//  call darkrideRadioApi and take the page's events (notes, stations found) when its title says "Radio: events".
+//  A station found or typed in joins the player's list (kept for next time); one that won't play here is said so, the
+//  player stops, and it comes off the list again. A classic .wsz skin the player loads (the panel's Load a skin…,
+//  a drop, or the player's own menu) is kept for next time (IndexedDB); "Reset to Darkride" and the skins menu's
+//  "Darkride" bring ours back. Kept cheap (performance, 10-30): the spectrum draws at most 30 times a second, only while
+//  playing (Webamp's own rule) and shown (a hidden page gets no animation frames); RadioPanel.qml tears the page down
+//  when the radio is closed.
 //
 //  Copyright 2026 Darkride.
 //
@@ -30,7 +33,6 @@
     var PLAYLIST_HEIGHT = 116;                   // its playlist at its smallest; it grows in steps of 29
     var PLAYLIST_STEP = 29;
     var KEY = "darkride.radio.";
-    var TABS = ["soma", "find", "address"];
     // the Radio Browser directory (security's rules, 10-31): these hosts only, tried in order (the round-robin name,
     // then one server by its own name: each server has its own certificate); https; a capped answer, read as JSON;
     // its words shown as text, capped; no station pictures (each would tell a station's host who's searching)
@@ -97,18 +99,18 @@
         frameCallbacks.delete(id);
     };
 
-    // ---- a line under the buttons instead of the browser's alert boxes ----
+    // ---- events for the panel's native controls (RadioPanel.qml): the page's title says there are some, and the panel
+    // takes them (darkrideRadioApi.takeEvents) ----
 
-    var noteElement = document.getElementById("note");
-    var noteTimer = null;
+    var events = [];
+    var eventCount = 0;
+    function tell(event) {
+        events.push(event);
+        document.title = "Radio: events " + (++eventCount);
+    }
+    // a line under the controls instead of the browser's alert boxes
     function note(text, problem) {
-        noteElement.textContent = text;
-        noteElement.className = problem ? "problem" : "";
-        noteElement.hidden = !text;
-        clearTimeout(noteTimer);
-        if (text) {
-            noteTimer = setTimeout(function () { noteElement.hidden = true; }, problem ? 8000 : 4000);
-        }
+        tell({ type: "note", text: String(text || ""), problem: !!problem });
     }
     var skinProblem = null;   // why the gate refused the last skin, said instead of Webamp's own words
     window.alert = function (message) {
@@ -456,7 +458,6 @@
         }
     });
 
-    var addressField = document.getElementById("address-field");
     function playAddress(text) {
         var address;
         try {
@@ -475,19 +476,11 @@
         note("Tuning in…");
         stream.then(function (found) {
             playStream(found.url, found.title || title);
-            addressField.value = "";
+            tell({ type: "addressPlayed" });
         }, function () {
             note("Couldn't read that playlist. Try the stream's own address.", true);
         });
     }
-    document.getElementById("address").addEventListener("submit", function (event) {
-        event.preventDefault();
-        if (addressField.value.trim()) {
-            playAddress(addressField.value);
-        } else {
-            addressField.focus();
-        }
-    });
 
     // the player's own stations follow its list: one taken out (REM) stays out
     function keepOwnStations() {
@@ -518,9 +511,9 @@
             main: { position: { top: 0, left: 0 } },
             playlist: { position: { top: MAIN_HEIGHT, left: 0 }, size: { extraHeight: 0, extraWidth: 0 } },
         },
-        // the playlist's ADD > URL: the Address tab
+        // the playlist's ADD > URL: the panel's Address tab
         handleAddUrlEvent: function () {
-            showTab("address", true);
+            tell({ type: "tab", tab: "address" });
             note("Type or paste a stream address, then Play.");
             return Promise.resolve(null);
         },
@@ -534,8 +527,7 @@
 
     // the playlist as tall as the panel allows, under the main window
     function layout() {
-        var controls = document.getElementById("controls").offsetHeight;
-        var room = window.innerHeight - 16 - controls - MAIN_HEIGHT - PLAYLIST_HEIGHT;
+        var room = window.innerHeight - 16 - MAIN_HEIGHT - PLAYLIST_HEIGHT;
         var steps = Math.max(0, Math.floor(room / PLAYLIST_STEP));
         playerElement.style.height = MAIN_HEIGHT + PLAYLIST_HEIGHT + steps * PLAYLIST_STEP + "px";
         webamp.store.dispatch({ type: "WINDOW_SIZE_CHANGED", windowId: "playlist", size: [0, steps] });
@@ -685,35 +677,13 @@
         });
     }
 
-    var findField = document.getElementById("find-field");
-    var resultsElement = document.getElementById("results");
+    // what was found last, for the panel's list (its rows play by index)
+    var found = [];
     function showFound(stations, status) {
-        resultsElement.textContent = "";
-        if (status) {
-            var line = document.createElement("li");
-            line.className = "status";
-            line.textContent = status;
-            resultsElement.appendChild(line);
-        }
-        stations.forEach(function (station) {
-            var button = document.createElement("button");
-            button.type = "button";
-            button.className = "station";
-            button.title = station.tags ? station.name + "\n" + station.tags : station.name;
-            var name = document.createElement("span");
-            name.className = "name";
-            name.textContent = station.name;
-            var about = document.createElement("span");
-            about.className = "about";
-            about.textContent = station.about;
-            button.appendChild(name);
-            button.appendChild(about);
-            button.addEventListener("click", function () { playFound(station); });
-            var item = document.createElement("li");
-            item.appendChild(button);
-            resultsElement.appendChild(item);
-        });
-        resultsElement.scrollTop = 0;
+        found = stations;
+        tell({ type: "found", status: status || "", stations: stations.map(function (station) {
+            return { name: station.name, about: station.about, tags: station.tags };
+        }) });
     }
     function playFound(station) {
         playStream(station.url, station.name);
@@ -724,50 +694,24 @@
         }
     }
     var searchNumber = 0;
-    document.getElementById("find").addEventListener("submit", function (event) {
-        event.preventDefault();
-        var words = clip(findField.value, NAME_MAX);
+    function find(text) {
+        var words = clip(text, NAME_MAX);
         if (!words) {
-            findField.focus();
             return;
         }
         var number = ++searchNumber;
         showFound([], "Looking…");
-        findStations(words).then(function (found) {
+        findStations(words).then(function (stations) {
             if (number === searchNumber) {
-                showFound(found, found.length ? "" : "No stations found for “" + words + "”.");
+                showFound(stations, stations.length ? "" : "No stations found for \u201c" + words + "\u201d.");
             }
         }, function () {
             if (number === searchNumber) {
                 showFound([], "The directory didn't answer. Try again in a moment.");
             }
         });
-    });
-
-    // ---- the tabs under the player: SomaFM, Find, Address (the last one open is open next time) ----
-
-    var tabButtons = Array.from(document.querySelectorAll("#tabs [role=tab]"));
-    function showTab(name, focus) {
-        tabButtons.forEach(function (button) {
-            var open = button.dataset.tab === name;
-            button.setAttribute("aria-selected", open ? "true" : "false");
-            document.getElementById("tab-" + button.dataset.tab).hidden = !open;
-        });
-        save("tab", name);
-        if (focus) {
-            var field = name === "find" ? findField : name === "address" ? addressField : null;
-            if (field) {
-                field.focus();
-            }
-        }
-        // the station list makes room for the open tab
-        layoutSoon();
     }
-    tabButtons.forEach(function (button) {
-        button.addEventListener("click", function () { showTab(button.dataset.tab, true); });
-    });
-    var firstTab = load("tab", "soma");
-    showTab(TABS.indexOf(firstTab) >= 0 ? firstTab : "soma", false);
+
 
     // the volume, kept
     var volume = load("volume", null);
@@ -808,15 +752,49 @@
         playerReady();
     });
 
-    document.getElementById("load-skin").addEventListener("click", function () {
-        var input = document.getElementById("skin-file");
-        input.value = "";
-        input.click();
-    });
-    document.getElementById("skin-file").addEventListener("change", function (event) {
-        loadSkinFile(event.target.files[0]);
-    });
-    document.getElementById("reset-skin").addEventListener("click", resetSkin);
+    // ---- for the panel's native controls (RadioPanel.qml, by runJavaScript): fixed calls, their words passed as JSON ----
+
+    window.darkrideRadioApi = {
+        // as JSON text: the panel reads it with JSON.parse only (security, 10-31)
+        takeEvents: function () {
+            var taken = events;
+            events = [];
+            return JSON.stringify(taken);
+        },
+        playAddress: function (text) {
+            playAddress(String(text || ""));
+        },
+        find: function (text) {
+            find(String(text || ""));
+        },
+        playFound: function (index) {
+            var station = found[Number(index)];
+            if (station) {
+                playFound(station);
+            }
+        },
+        resetSkin: resetSkin,
+        // the panel's open tab, kept for next time (the panel hears it back as a "tab" event when the page starts)
+        rememberTab: function (tab) {
+            if (["soma", "find", "address"].indexOf(tab) >= 0) {
+                save("tab", tab);
+            }
+        },
+        // a skin the person picked in the app's dialog (RadioSkinPicker), its bytes in base64: through the same gate
+        loadSkin: function (name, base64) {
+            var file;
+            try {
+                file = new File([base64Blob(String(base64 || ""), "application/zip")], String(name || "skin.wsz"));
+            } catch (error) {
+                note("That skin couldn't be read. Classic skins are .wsz files.", true);
+                return;
+            }
+            loadSkinFile(file);
+        },
+    };
+
+    var keptTab = load("tab", "soma");
+    tell({ type: "tab", tab: ["soma", "find", "address"].indexOf(keptTab) >= 0 ? keptTab : "soma" });
 
     // a file dropped anywhere outside the player doesn't open in the page; a skin dropped there goes on
     window.addEventListener("dragover", function (event) {

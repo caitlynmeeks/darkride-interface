@@ -19,6 +19,7 @@
 
 import QtQuick 2.15
 import QtWebEngine 1.10
+import "panel"
 
 Rectangle {
     id: root
@@ -27,7 +28,7 @@ Rectangle {
 
     // the tablet's loader sizes the page; a dock or a desktop window parents it to its content area
     anchors.fill: parent
-    color: "#0c1022"   // the page's own background (radio.css --navy), behind it while it loads
+    color: Theme.background   // the native controls' panel; the player's page has its own (radio.css --navy)
 
     readonly property url pageUrl: "qrc:///html/radio/radio.html"
     // a dock on the desktop: alive while the panel is open (shown, or tabbed behind another); else (the tablet, the bar's
@@ -96,14 +97,345 @@ Rectangle {
         }
     }
 
+    // ---- the controls under the player: the app's own, in the panels' current skin (Caity 10-31: "only the player is
+    // skinned ... make those bottom areas native UI. like explore or chat"); they call the page's fixed functions
+    // (html/radio/radio.js darkrideRadioApi) and take its events when its title says "Radio: events" ----
+
+    property string tab: "soma"
+    property var stations: []            // the last search's: { name, about, tags }, shown as plain text only
+    property string foundStatus: ""
+    property string noteText: ""
+    property bool noteProblem: false
+    property bool pickingSkin: false
+
+    // one of the page's fixed calls, every argument passed as JSON (security, 10-31)
+    function call(name, args) {
+        var view = loader.item;
+        if (!view) {
+            return;
+        }
+        var quoted = (args || []).map(function (arg) { return JSON.stringify(arg); }).join(", ");
+        view.runJavaScript("window.darkrideRadioApi && darkrideRadioApi." + name + "(" + quoted + ")");
+    }
+    // the page's events, as JSON text, read with JSON.parse only and taken as data
+    function takeEvents() {
+        var view = loader.item;
+        if (!view) {
+            return;
+        }
+        view.runJavaScript("window.darkrideRadioApi ? darkrideRadioApi.takeEvents() : '[]'", function (text) {
+            var list;
+            try {
+                list = JSON.parse(String(text));
+            } catch (error) {
+                return;
+            }
+            if (!Array.isArray(list)) {
+                return;
+            }
+            list.forEach(function (event) {
+                if (!event || typeof event !== "object") {
+                    return;
+                }
+                if (event.type === "note") {
+                    root.showNote(String(event.text || ""), event.problem === true);
+                } else if (event.type === "found") {
+                    root.foundStatus = String(event.status || "").slice(0, 120);
+                    root.stations = (Array.isArray(event.stations) ? event.stations : []).slice(0, 30).map(
+                        function (station) {
+                            return {
+                                name: String(station && station.name || "").slice(0, 80),
+                                about: String(station && station.about || "").slice(0, 40),
+                                tags: String(station && station.tags || "").slice(0, 120),
+                            };
+                        });
+                } else if (event.type === "tab" && ["soma", "find", "address"].indexOf(event.tab) >= 0) {
+                    root.tab = event.tab;
+                } else if (event.type === "addressPlayed") {
+                    addressField.text = "";
+                }
+            });
+        });
+    }
+    function showNote(text, problem) {
+        noteText = text.slice(0, 200);
+        noteProblem = problem;
+        noteTimer.interval = problem ? 8000 : 4000;
+        noteTimer.restart();
+    }
+    Timer {
+        id: noteTimer
+        onTriggered: root.noteText = ""
+    }
+    function find() {
+        if (findField.text.trim() !== "") {
+            call("find", [findField.text]);
+        } else {
+            findField.forceActiveFocus();
+        }
+    }
+    function playAddress() {
+        if (addressField.text.trim() !== "") {
+            call("playAddress", [addressField.text]);
+        } else {
+            addressField.forceActiveFocus();
+        }
+    }
+
+    // Load a skin…: the app's own dialog (RadioSkinPicker), the picked skin's bytes into the page's skin gate
+    Connections {
+        target: typeof RadioSkins !== "undefined" ? RadioSkins : null
+        function onPicked(name, base64, problem) {
+            if (!root.pickingSkin) {
+                return;
+            }
+            root.pickingSkin = false;
+            if (problem !== "") {
+                root.showNote(problem, true);
+            } else if (base64 !== "") {
+                root.call("loadSkin", [name, base64]);
+            }
+        }
+    }
+
+    component PanelButton: Rectangle {
+        id: panelButton
+        property string text: ""
+        property bool strong: false
+        signal pressed()
+        implicitWidth: panelButtonLabel.implicitWidth + 22 * Theme.unit
+        implicitHeight: Theme.controlHeight
+        radius: 7 * Theme.unit
+        color: strong ? Theme.tint : Theme.fill
+        opacity: enabled ? (panelButtonMouse.pressed ? 0.7 : 1) : 0.4
+        Text {
+            id: panelButtonLabel
+            anchors.centerIn: parent
+            text: panelButton.text
+            textFormat: Text.PlainText
+            color: panelButton.strong ? "#ffffff" : Theme.tint
+            font.pixelSize: Theme.controlTextSize
+            font.bold: panelButton.strong
+        }
+        MouseArea {
+            id: panelButtonMouse
+            anchors.fill: parent
+            enabled: panelButton.enabled
+            onClicked: panelButton.pressed()
+        }
+    }
+
+    Column {
+        id: controls
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: Theme.gap
+        spacing: 6 * Theme.unit
+        visible: root.live
+
+        Segmented {
+            width: parent.width
+            model: [{ text: "SomaFM", value: "soma" }, { text: "Find", value: "find" },
+                { text: "Address", value: "address" }]
+            current: root.tab
+            onChosen: {
+                root.tab = value;
+                root.call("rememberTab", [value]);
+                if (value === "find") {
+                    findField.forceActiveFocus();
+                } else if (value === "address") {
+                    addressField.forceActiveFocus();
+                }
+            }
+        }
+
+        // SomaFM: their credit, and their donation page in the system's browser (a fixed https address)
+        Item {
+            visible: root.tab === "soma"
+            width: parent.width
+            height: Theme.controlHeight
+            Text {
+                anchors.left: parent.left
+                anchors.right: supportButton.left
+                anchors.rightMargin: 6 * Theme.unit
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Radio from SomaFM"
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: Theme.secondaryText
+                font.pixelSize: Theme.controlTextSize
+            }
+            PanelButton {
+                id: supportButton
+                anchors.right: parent.right
+                text: "Support SomaFM"
+                onPressed: Qt.openUrlExternally("https://somafm.com/support/")
+            }
+        }
+
+        // Find: the Radio Browser directory, searched by the page; its stations listed here as plain text
+        Column {
+            visible: root.tab === "find"
+            width: parent.width
+            spacing: 4 * Theme.unit
+            Item {
+                width: parent.width
+                height: Theme.controlHeight
+                Field {
+                    id: findField
+                    anchors.left: parent.left
+                    anchors.right: findButton.left
+                    anchors.rightMargin: 6 * Theme.unit
+                    height: parent.height
+                    placeholderText: "A station's name, or a kind of music"
+                    maximumLength: 80
+                    onAccepted: root.find()
+                }
+                PanelButton {
+                    id: findButton
+                    anchors.right: parent.right
+                    text: "Find"
+                    strong: true
+                    onPressed: root.find()
+                }
+            }
+            Rectangle {
+                width: parent.width
+                height: 4 * 28 * Theme.unit
+                radius: 7 * Theme.unit
+                color: Theme.fill
+                clip: true
+                Text {
+                    anchors.centerIn: parent
+                    width: parent.width - 16 * Theme.unit
+                    visible: root.stations.length === 0
+                    text: root.foundStatus
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                    color: Theme.secondaryText
+                    font.pixelSize: Theme.controlTextSize
+                }
+                ListView {
+                    anchors.fill: parent
+                    model: root.stations
+                    boundsBehavior: Flickable.StopAtBounds
+                    delegate: Rectangle {
+                        width: ListView.view.width
+                        height: 28 * Theme.unit
+                        color: stationMouse.pressed ? Theme.cardPressed
+                            : stationMouse.containsMouse ? Theme.card : "transparent"
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8 * Theme.unit
+                            anchors.right: stationAbout.left
+                            anchors.rightMargin: 6 * Theme.unit
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.name
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            color: Theme.text
+                            font.pixelSize: Theme.controlTextSize
+                        }
+                        Text {
+                            id: stationAbout
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8 * Theme.unit
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: modelData.about
+                            textFormat: Text.PlainText
+                            color: Theme.secondaryText
+                            font.pixelSize: Theme.detailSize
+                        }
+                        MouseArea {
+                            id: stationMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onClicked: root.call("playFound", [index])
+                        }
+                    }
+                }
+            }
+            Text {
+                width: parent.width
+                text: "Searches go to radio-browser.info, a free directory."
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: Theme.tertiaryText
+                font.pixelSize: Theme.detailSize
+            }
+        }
+
+        // Address: any stream, or a .pls or .m3u
+        Item {
+            visible: root.tab === "address"
+            width: parent.width
+            height: Theme.controlHeight
+            Field {
+                id: addressField
+                anchors.left: parent.left
+                anchors.right: playButton.left
+                anchors.rightMargin: 6 * Theme.unit
+                height: parent.height
+                placeholderText: "Any stream address (or .pls, .m3u)"
+                onAccepted: root.playAddress()
+            }
+            PanelButton {
+                id: playButton
+                anchors.right: parent.right
+                text: "Play"
+                strong: true
+                onPressed: root.playAddress()
+            }
+        }
+
+        // the player's skin
+        Item {
+            width: parent.width
+            height: Theme.controlHeight
+            PanelButton {
+                anchors.left: parent.left
+                width: (parent.width - 6 * Theme.unit) / 2
+                text: "Load a skin…"
+                enabled: typeof RadioSkins !== "undefined"
+                onPressed: {
+                    root.pickingSkin = true;
+                    RadioSkins.pick();
+                }
+            }
+            PanelButton {
+                anchors.right: parent.right
+                width: (parent.width - 6 * Theme.unit) / 2
+                text: "Reset to Darkride"
+                onPressed: root.call("resetSkin", [])
+            }
+        }
+
+        Text {
+            width: parent.width
+            visible: root.noteText !== ""
+            text: root.noteText
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: root.noteProblem ? Theme.destructive : Theme.secondaryText
+            font.pixelSize: Theme.controlTextSize
+        }
+    }
+
     Loader {
-        anchors.fill: parent
+        id: loader
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: controls.top
+        anchors.bottomMargin: Theme.gap
         active: root.live
         sourceComponent: WebEngineView {
             url: root.pageUrl
-            backgroundColor: root.color
-            // the skin's pixels at a whole size: twice once both of the player's windows and its buttons fit twice
-            zoomFactor: root.width >= 600 && root.height >= 820 ? 2 : 1
+            backgroundColor: "#0c1022"   // the page's own background (radio.css --navy), behind it while it loads
+            // the skin's pixels at a whole size: twice once both of the player's windows fit twice
+            zoomFactor: width >= 600 && height >= 500 ? 2 : 1
 
             profile: WebEngineProfile {
                 storageName: "DarkrideRadio"
@@ -161,6 +493,8 @@ Rectangle {
             onTitleChanged: {
                 if (title === "Radio: close") {
                     root.closeRadio();
+                } else if (title.indexOf("Radio: events") === 0) {
+                    root.takeEvents();
                 }
             }
             onRenderProcessTerminated: function (terminationStatus, exitCode) {

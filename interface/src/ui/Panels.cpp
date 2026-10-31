@@ -47,13 +47,13 @@ namespace {
         int height { FLOATING_HEIGHT };
     };
     // the bar's order; at the overlay windows' widths, which the panels were laid out for: a column, or wider for
-    // Explore's cards; the radio at its player's size (Webamp's two windows, 275 px wide, and a row of buttons)
+    // Explore's cards; the radio at its player's size (Webamp's two windows, 275 px wide) and its native controls
     const QList<QmlPanel> QML_PANELS {
         { "Settings", "qrc:///qml/darkride/SettingsPanel.qml", 560 },
         { "Avatar", "qrc:///qml/darkride/AvatarPanel.qml", 560 },
         { "People", "qrc:///qml/darkride/PeoplePanel.qml", 560 },
         { "Explore", "qrc:///qml/darkride/ExplorePanel.qml", 760 },
-        { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 320, 500 },
+        { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 320, 640 },
     };
 
     const QString TABS_BEGIN = "/* dock tabs: begin */";
