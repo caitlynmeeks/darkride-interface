@@ -45,6 +45,7 @@ Item {
                 pingCol.widest = pingCol.width;
                 geoCol.widest = geoCol.width;
                 octreeCol.widest = octreeCol.width;
+                traceCol.widest = traceCol.width;
             }
         }
 
@@ -477,6 +478,34 @@ Item {
                     StatText {
                         visible: root.expanded
                         text: "Entity Updates: " + root.numEntityUpdates + " / " + root.numNeededEntityUpdates;
+                    }
+                }
+            }
+
+            // The frame trace's columns, live (team/performance/INSTRUMENTS-PLAN.md item 1): shown while the trace is
+            // on or holds records (Test.frameTrace, Developer > Recording Mode); an instrument's values appear here as
+            // soon as its owner writes them, before it has Stats lines of its own. Collapsed: the heading only.
+            Rectangle {
+                width: traceCol.widest + 8
+                height: traceCol.height + 8
+                color: root.bgColor;
+                visible: root.frameTraceLines.length > 0
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { root.expanded = !root.expanded; }
+                    hoverEnabled: true
+                }
+                Column {
+                    id: traceCol
+                    property real widest: 0   // see narrowAgain
+                    onWidthChanged: widest = Math.max(widest, width)
+                    spacing: 4; x: 4; y: 4;
+                    Repeater {
+                        model: root.frameTraceLines
+                        StatText {
+                            visible: index === 0 || root.expanded
+                            text: modelData
+                        }
                     }
                 }
             }
