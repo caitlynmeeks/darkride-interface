@@ -147,7 +147,9 @@ void MaterialEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPo
             }
         }
         {
-            QString applyToTag = QJsonDocument::fromJson(entity->getUserData().toUtf8()).object()
+            // a domain's or a local entity's: one on a visitor's avatar would reach every tagged model for everyone
+            QString applyToTag = entity->isAvatarEntity() ? QString() :
+                QJsonDocument::fromJson(entity->getUserData().toUtf8()).object()
                 .value("applyTo").toObject().value("tag").toString();
             if (applyToTag != _applyToTag) {
                 _applyToTag = applyToTag;
@@ -331,6 +333,7 @@ void MaterialEntityRenderer::doRender(RenderArgs* args) {
         glm::vec4 outColor = glm::vec4(drawMaterial->getAlbedo(), drawMaterial->getOpacity());
         outColor = proceduralDrawMaterial->getColor(outColor);
         const bool forward = DeferredLightingEffect::isForwardLit(args);
+        RenderPipelines::bindDefaultUnderlyingMaterial(batch);
         proceduralDrawMaterial->prepare(batch, renderTransform.getTranslation(), renderTransform.getScale(),
                                         renderTransform.getRotation(), _created,
                                         ProceduralProgramKey(outColor.a < 1.0f, false, false, forward));

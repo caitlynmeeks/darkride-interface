@@ -105,8 +105,8 @@ public:
     static int dumpFrame() { return _dumpFrame.load(std::memory_order_relaxed); }
 
 protected:
-    // for a procedural on top (simple_procedural.slf's getMaterial* functions): the schema and the albedo and normal maps
-    // of the layers beneath it, merged as they are without it. Only those two maps: its channels take units 2 to 5
+    // for a procedural on top (simple_procedural.slf's getUnderlying* functions): the layers beneath it, merged as they
+    // are without it (RenderPipelines::bindUnderlyingMaterial)
     void bindUnderlyingMaterial(gpu::Batch& batch);
     // this part's own standard inputs for a procedural (Procedural::prepare): one material on many models places each
     gpu::BufferPointer getProceduralInputs();

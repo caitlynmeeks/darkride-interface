@@ -1797,13 +1797,15 @@ void ModelEntityRenderer::applyTaggedMaterials(const TypedEntityPointer& entity)
     if (!model || !model->isLoaded()) {
         return;
     }
-    uint32_t version;
-    auto taggedMaterials = EntityTreeRenderer::getTaggedMaterials(version);
     QUrl modelURL = model->getURL();
     QString userData = entity->getUserData();
-    if (version == _taggedMaterialsVersion && modelURL == _taggedMaterialsModelURL && userData == _taggedMaterialsUserData) {
+    // an animated model comes here every frame: the version alone tells whether anything changed, without a copy
+    if (EntityTreeRenderer::getTaggedMaterialsVersion() == _taggedMaterialsVersion && modelURL == _taggedMaterialsModelURL &&
+        userData == _taggedMaterialsUserData) {
         return;
     }
+    uint32_t version;
+    auto taggedMaterials = EntityTreeRenderer::getTaggedMaterials(version);
     _taggedMaterialsVersion = version;
     _taggedMaterialsModelURL = modelURL;
     _taggedMaterialsUserData = userData;

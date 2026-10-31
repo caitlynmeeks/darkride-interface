@@ -1040,7 +1040,7 @@ EntityPropertyFlags EntityItemProperties::getChangedProperties() const {
  * in its own <code>userData</code>, which decides where it names the tag (<code>{ "isTree": false }</code> leaves one
  * model out), on the parts <code>parentMaterialName</code> names (<code>"all"</code>, say), at its
  * <code>priority</code>. It does not render as a sphere then. With a parent it applies to the parent alone, as
- * always.</p>
+ * always. Domain and local entities only: an avatar entity's tag is left aside.</p>
  *
  * @typedef {object} Entities.EntityProperties-Material
  * @property {Vec3} dimensions=0.1,0.1,0.1 - Used when <code>materialMappingMode == "projected"</code>.

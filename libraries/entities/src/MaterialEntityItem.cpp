@@ -280,7 +280,8 @@ void MaterialEntityItem::setUserData(const QString& value) {
 }
 
 bool MaterialEntityItem::appliesByTag() const {
-    return getParentID().isNull() && resultWithReadLock<bool>([&] { return _hasApplyToTag; });
+    // not on an avatar (MaterialEntityRenderer leaves its tag aside)
+    return getParentID().isNull() && !isAvatarEntity() && resultWithReadLock<bool>([&] { return _hasApplyToTag; });
 }
 
 AACube MaterialEntityItem::calculateInitialQueryAACube(bool& success) {

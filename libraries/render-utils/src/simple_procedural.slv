@@ -75,6 +75,8 @@ void main(void) {
 
     positionMS = proceduralData.position;
     normalMS = proceduralData.normal;
+    // the tangent stays in the surface whose normal the shader bent (the material beneath's normal map reads with it)
+    tangentMS -= normalMS * (dot(normalMS, tangentMS) / max(dot(normalMS, normalMS), 1.0e-8));
     color = proceduralData.color;
     texCoord0 = proceduralData.texCoord0;
 #endif

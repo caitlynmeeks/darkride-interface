@@ -443,12 +443,13 @@ void Procedural::prepare(gpu::Batch& batch,
 
     batch.setPipeline(recompiledShader ? _proceduralPipelines[drawKey] : pipeline->second);
 
-    bool recreateUniforms = _shaderDirty || _uniformsDirty || recompiledShader || _prevKey != key;
+    // by the draw key: an underlying cull mode it does not use leaves its uniforms as they are from part to part
+    bool recreateUniforms = _shaderDirty || _uniformsDirty || recompiledShader || _prevKey != drawKey;
     if (recreateUniforms) {
         setupUniforms();
     }
 
-    _prevKey = key;
+    _prevKey = drawKey;
     _shaderDirty = _uniformsDirty = false;
 
     for (auto lambda : _uniforms) {

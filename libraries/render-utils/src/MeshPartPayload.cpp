@@ -23,7 +23,6 @@
 
 #include "render-utils/ShaderConstants.h"
 #include <procedural/Procedural.h>
-#include <procedural/ShaderConstants.h>
 #include "DeferredLightingEffect.h"
 
 #include "RenderPipelines.h"
@@ -114,16 +113,7 @@ void MeshPartPayload::removeMaterial(graphics::MaterialPointer material) {
 }
 
 void MeshPartPayload::bindUnderlyingMaterial(gpu::Batch& batch) {
-    if (_underlyingMaterials.shouldUpdate()) {
-        RenderPipelines::updateMultiMaterial(_underlyingMaterials);
-    }
-    batch.setUniformBuffer(graphics::slot::buffer::Material, _underlyingMaterials.getSchemaBuffer());
-    auto textures = _underlyingMaterials.getTextureTable()->getTextures();
-    batch.setResourceTexture(graphics::slot::texture::MaterialAlbedo, textures[graphics::slot::texture::MaterialAlbedo]);
-    batch.setResourceTexture(graphics::slot::texture::MaterialNormal, textures[graphics::slot::texture::MaterialNormal]);
-    batch.setResourceTexture(procedural::slot::texture::UnderlyingRoughness, textures[graphics::slot::texture::MaterialRoughness]);
-    batch.setResourceTexture(procedural::slot::texture::UnderlyingMetallic, textures[graphics::slot::texture::MaterialMetallic]);
-    batch.setResourceTexture(procedural::slot::texture::UnderlyingOcclusion, textures[graphics::slot::texture::MaterialOcclusion]);
+    RenderPipelines::bindUnderlyingMaterial(_underlyingMaterials, batch);
 }
 
 gpu::BufferPointer MeshPartPayload::getProceduralInputs() {
