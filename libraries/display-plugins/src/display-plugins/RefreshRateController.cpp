@@ -24,6 +24,7 @@
 #endif
 
 #include "DisplayLink.h"
+#include "Logging.h"
 
 namespace {
     // Sleeps about this long. On Windows the plain sleep keeps to the system timer's resolution (a millisecond at
@@ -73,11 +74,112 @@ float RefreshRateController::getPacedPeriodSeconds() const {
     return (period >= MIN_PERIOD_NS && period <= MAX_PERIOD_NS) ? (float)period * 1.0e-9f : 0.0f;
 }
 
+void RefreshRateController::countPresent(int64_t nowNs, Schedule schedule, int refreshes, int lateUs, int displayRate) {
+    _presentRefreshes = refreshes;
+    _presentLateUs = lateUs;
+    CadenceCounters& counting = _cadenceCounting;
+    counting.presents++;
+    counting.displayRefreshRate = displayRate;
+    if (schedule == Schedule::FREE) {
+        counting.onFreeSchedule++;
+    } else if (schedule == Schedule::VSYNC) {
+        counting.withVsync++;
+    } else if (schedule == Schedule::HMD) {
+        counting.inHmd++;
+    } else if (refreshes <= 1) {
+        counting.onOneRefresh++;
+    } else if (refreshes == 2) {
+        counting.onTwoRefreshes++;
+    } else if (refreshes == 3) {
+        counting.onThreeRefreshes++;
+    } else {
+        counting.onMoreRefreshes++;
+    }
+    if (lateUs > 0) {
+        counting.late++;
+        counting.maxLateUs = std::max(counting.maxLateUs, lateUs);
+    }
+    if (_cadenceSecondStartNs == 0) {
+        _cadenceSecondStartNs = nowNs;
+    }
+    const int64_t SECOND_NS = 1000000000LL;
+    if (nowNs - _cadenceSecondStartNs >= SECOND_NS) {
+        counting.rolledAtNs = nowNs;
+        {
+            std::lock_guard<std::mutex> lock(_cadenceMutex);
+            _cadenceLastSecond = counting;
+        }
+        counting = CadenceCounters();
+        _cadenceSecondStartNs = nowNs;
+    }
+}
+
+void RefreshRateController::logSchedule(bool inPhase, int refreshesPerPresent, int targetRate, int displayRate, bool linkRunning) {
+    _inPhase = inPhase;
+    // the display's measured rate wanders by a hertz; a change of schedule, target or whole hertz is worth a line,
+    // not the wander (rounded to the nearest 5 Hz for the comparison)
+    int displayRateRounded = ((displayRate + 2) / 5) * 5;
+    if ((int)inPhase == _loggedInPhase && refreshesPerPresent == _loggedRefreshesPerPresent &&
+        targetRate == _loggedTargetRate && displayRateRounded == _loggedDisplayRate) {
+        return;
+    }
+    _loggedInPhase = (int)inPhase;
+    _loggedRefreshesPerPresent = refreshesPerPresent;
+    _loggedTargetRate = targetRate;
+    _loggedDisplayRate = displayRateRounded;
+    if (inPhase) {
+        qCDebug(displayPlugins).nospace() << "Present pacing: in phase with display " << DisplayLink::instance().displayId()
+            << " at " << displayRate << " Hz, a present every " << refreshesPerPresent
+            << (refreshesPerPresent == 1 ? " refresh" : " refreshes") << " (target " << targetRate << " Hz)";
+    } else {
+        const char* why = !linkRunning ? "no display link" :
+            (displayRate > 0 && targetRate > 0 && targetRate < displayRate && displayRate % targetRate != 0) ?
+                "the target is no whole fraction of the display's rate" : "the display link is quiet";
+        qCDebug(displayPlugins).nospace() << "Present pacing: on the free schedule at " << targetRate << " Hz (display "
+            << DisplayLink::instance().displayId() << " at " << displayRate << " Hz): " << why;
+    }
+}
+
+void RefreshRateController::notePresentedFrame(bool newFrame) {
+    if (!newFrame) {
+        _cadenceCounting.repeated++;
+    }
+}
+
+void RefreshRateController::noteNewFrame(int latencyUs) {
+    CadenceCounters& counting = _cadenceCounting;
+    counting.newFrames++;
+    counting.maxFrameLatencyUs = std::max(counting.maxFrameLatencyUs, latencyUs);
+    // slow: over 70 % of one refresh of the display (the governor's room for the present and the flush)
+    const int displayRate = _displayRefreshRate;
+    if (displayRate > 0 && latencyUs > 700000 / displayRate) {
+        counting.slowNewFrames++;
+    }
+}
+
+void RefreshRateController::notePresentCost(int presentUs, float gpuMs) {
+    CadenceCounters& counting = _cadenceCounting;
+    counting.maxPresentUs = std::max(counting.maxPresentUs, presentUs);
+    const int displayRate = _displayRefreshRate;
+    if (displayRate > 0 && presentUs > 500000 / displayRate) {
+        counting.slowPresents++;
+    }
+    counting.gpuMs = gpuMs;
+}
+
+RefreshRateController::CadenceCounters RefreshRateController::getCadenceCounters() const {
+    std::lock_guard<std::mutex> lock(_cadenceMutex);
+    return _cadenceLastSecond;
+}
+
 std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thread, bool isHmd, bool vsync) {
     using namespace std::chrono;
+    auto now = steady_clock::now();
+    int64_t nowNs = duration_cast<nanoseconds>(now.time_since_epoch()).count();
     if (isHmd) {
         _scheduled = false;
         _slotIndex++;
+        countPresent(nowNs, Schedule::HMD, 0, 0, _displayRefreshRate);
         return nanoseconds(0);
     }
     // With vsync the swap waits for the display's refresh: a sleep on top of it only beats against the refreshes.
@@ -86,15 +188,26 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
     if (vsync && _displayRefreshRate > 0 && getRefreshRateLimitPeriod() >= _displayRefreshRate) {
         _scheduled = false;
         _slotIndex++;
+        countPresent(nowNs, Schedule::VSYNC, 0, 0, _displayRefreshRate);
         return nanoseconds(0);
     }
     auto period = nanoseconds(_refreshRateLimitPeriod);
-    auto now = steady_clock::now();
-    int64_t nowNs = duration_cast<nanoseconds>(now.time_since_epoch()).count();
     int64_t refreshNs = 0;
     int64_t refreshPeriodNs = 0;
-    bool atDisplayRate = _displayRefreshRate > 0 && getRefreshRateLimitPeriod() >= _displayRefreshRate;
-    if (atDisplayRate && DisplayLink::instance().nextRefresh(nowNs, refreshNs, refreshPeriodNs)) {
+    // In phase with the display when the target is the display's own rate, or a whole fraction of it (72 or 48 on a
+    // 144 Hz panel): a present every refresh, or every second or third, so every frame shows for the same number of
+    // refreshes. An uneven ratio (60 on 144) keeps the free schedule below, where frames show for 2 or 3 refreshes in
+    // turn (2026-10-31, the monorail's judder).
+    const int targetRate = getRefreshRateLimitPeriod();
+    int refreshesPerPresent = 0;
+    if (_displayRefreshRate > 0 && targetRate > 0) {
+        if (targetRate >= _displayRefreshRate) {
+            refreshesPerPresent = 1;
+        } else if (_displayRefreshRate % targetRate == 0) {
+            refreshesPerPresent = _displayRefreshRate / targetRate;
+        }
+    }
+    if (refreshesPerPresent > 0 && DisplayLink::instance().nextRefresh(nowNs, refreshNs, refreshPeriodNs)) {
         // In phase with the display: one slot per refresh interval, a fixed phase after the interval's refresh, so
         // the frame is flushed at the same point of every interval and the compositor shows it at the next refresh.
         // The phase, 2 ms: measured on 2026-10-20 (a 144 Hz panel, 6.94 ms intervals, a 120 Hz second display), the
@@ -118,13 +231,20 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         int64_t phase = sweep ? (int64_t)(_presentCount * SWEEP_STEP_NS) % refreshPeriodNs : phaseSetting % refreshPeriodNs;
         _presentCount++;
         int64_t slot = refreshNs - refreshPeriodNs + phase;   // this interval's (the refresh is the next one)
-        if (slot <= _lastSlotNs + refreshPeriodNs / 2) {
-            // this interval's slot was the last present's: one present an interval
-            slot += refreshPeriodNs;
+        // this interval's slot is taken when it was the last present's, or nearer the last than the presents' spacing
+        // (one interval as a rule; two or three for a present every second or third refresh): the first interval's
+        // slot at the spacing is next. The lateness policy stands: a present that overran presents at once.
+        const int64_t minimumSpacing = refreshesPerPresent * refreshPeriodNs - refreshPeriodNs / 2;
+        if (_lastSlotNs > 0 && slot <= _lastSlotNs + minimumSpacing) {
+            slot += ((_lastSlotNs + minimumSpacing - slot) / refreshPeriodNs + 1) * refreshPeriodNs;
         }
         // the intervals this slot is on from the last (one as a rule; a lost refresh counts)
         int64_t advanced = _lastSlotNs > 0 ? (slot - _lastSlotNs + refreshPeriodNs / 2) / refreshPeriodNs : 1;
         _slotIndex += (uint64_t)std::max<int64_t>(1, advanced);
+        // the counters: a present after its slot overran the one before (it presents at once, in this interval)
+        const int measuredRate = refreshPeriodNs > 0 ? (int)((1000000000LL + refreshPeriodNs / 2) / refreshPeriodNs) : (int)_displayRefreshRate;
+        countPresent(nowNs, Schedule::PHASE, (int)std::max<int64_t>(1, advanced), nowNs > slot ? (int)((nowNs - slot) / 1000) : 0, measuredRate);
+        logSchedule(true, refreshesPerPresent, targetRate, measuredRate, true);
         _lastSlotNs = slot;
         _nextPresent = steady_clock::time_point(nanoseconds(slot));   // in the past for an overrun: no wait
         _scheduled = false;   // the free schedule restarts from now if the link goes quiet
@@ -139,6 +259,11 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         // presents land in their slots again; likewise when the schedule starts or the rate changes.
         static const int RESUME_PACED_PRESENTS = 8;
         bool restart = !_scheduled || period != _scheduledPeriod || now >= _nextPresent + period;
+        // the counters: off the display's phase; late when the schedule restarts because a present overran its period
+        int64_t lateNs = (_scheduled && period == _scheduledPeriod && now >= _nextPresent + period) ?
+            duration_cast<nanoseconds>(now - _nextPresent).count() : 0;
+        countPresent(nowNs, Schedule::FREE, 0, (int)(lateNs / 1000), _displayRefreshRate);
+        logSchedule(false, refreshesPerPresent, targetRate, _displayRefreshRate, DisplayLink::instance().isRunning());
         if (restart) {
             _scheduled = true;
             _scheduledPeriod = period;

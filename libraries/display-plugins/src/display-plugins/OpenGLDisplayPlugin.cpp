@@ -405,22 +405,67 @@ bool OpenGLDisplayPlugin::activate() {
         QWindow* window = (widget && widget->window()) ? widget->window()->windowHandle() : nullptr;
         if (window) {
             // the link runs while the window can be seen: a minimized or hidden window has nothing to pace, and the
-            // link's thread would wake at every refresh for nothing (10-21 review)
-            auto startLink = [window] {
+            // link's thread would wake at every refresh for nothing (10-21 review). The display is the one under the
+            // window's own centre (its screen's centre when the window has no size yet): until 2026-10-31 it was the
+            // centre of the screen Qt reported, and Qt's screen-change signal was the only thing that moved the link,
+            // so one wrong answer at a window's change of state left the link on the wrong display for the rest of
+            // the run (a ride on the 144 Hz panel paced by the 120 Hz one's refreshes: the free schedule, unknowingly).
+            auto displayUnderWindow = [window]() -> uint32_t {
+                QRect frame = window->frameGeometry();
+                QPoint centre = frame.isValid() && !frame.isEmpty() ? frame.center()
+                    : (window->screen() ? window->screen()->geometry().center() : QPoint(0, 0));
+                uint32_t display = DisplayLink::displayAt(centre.x(), centre.y());
+                if (!display && window->screen()) {
+                    QPoint screenCentre = window->screen()->geometry().center();
+                    display = DisplayLink::displayAt(screenCentre.x(), screenCentre.y());
+                }
+                return display;
+            };
+            auto startLink = [window, displayUnderWindow] {
                 QWindow::Visibility visibility = window->visibility();
                 if (visibility == QWindow::Minimized || visibility == QWindow::Hidden) {
                     DisplayLink::instance().stop();
                     return;
                 }
-                QScreen* screen = window->screen();
-                QPoint centre = screen ? screen->geometry().center() : QPoint(0, 0);
-                DisplayLink::instance().start(DisplayLink::displayAt(centre.x(), centre.y()));
+                DisplayLink::instance().start(displayUnderWindow());
             };
             startLink();
             QObject::disconnect(_screenConnection);
             QObject::disconnect(_visibilityConnection);
             _screenConnection = connect(window, &QWindow::screenChanged, this, [startLink](QScreen*) { startLink(); });
             _visibilityConnection = connect(window, &QWindow::visibilityChanged, this, [startLink](QWindow::Visibility) { startLink(); });
+            // the watchdog, every 2 s on the main thread: a link on another display than the window's, or one that has
+            // gone quiet while the window can be seen, is started again on the window's display, and said so
+            if (!_linkWatchdog) {
+                _linkWatchdog = new QTimer(this);
+                _linkWatchdog->setInterval(2000);
+                _linkWatchdog->setTimerType(Qt::VeryCoarseTimer);
+            }
+            _linkWatchdog->disconnect();
+            connect(_linkWatchdog, &QTimer::timeout, this, [window, displayUnderWindow] {
+                QWindow::Visibility visibility = window->visibility();
+                if (visibility == QWindow::Minimized || visibility == QWindow::Hidden) {
+                    return;
+                }
+                auto& link = DisplayLink::instance();
+                uint32_t wanted = displayUnderWindow();
+                int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                const char* reason = nullptr;
+                if (!link.isRunning()) {
+                    reason = "it was not running";
+                } else if (link.isQuiet(nowNs)) {
+                    reason = "it went quiet";
+                } else if (wanted && wanted != link.displayId()) {
+                    reason = "the window is on another display";
+                }
+                if (reason) {
+                    qCDebug(displayPlugins) << "Display link: restarted on display" << wanted << "(was" << link.displayId() << "):" << reason;
+                    link.stop();
+                    link.start(wanted);
+                }
+            });
+            _linkWatchdog->start();
         }
     }
 
@@ -451,6 +496,10 @@ void OpenGLDisplayPlugin::deactivate() {
     // the display link paces this plugin's presents only: off with it (the next desktop plugin starts it again)
     QObject::disconnect(_screenConnection);
     QObject::disconnect(_visibilityConnection);
+    if (_linkWatchdog) {
+        _linkWatchdog->stop();
+        _linkWatchdog->disconnect();
+    }
     DisplayLink::instance().stop();
 
     auto presentThread = DependencyManager::get<PresentThread>();
@@ -602,6 +651,7 @@ bool OpenGLDisplayPlugin::eventFilter(QObject* receiver, QEvent* event) {
 }
 
 void OpenGLDisplayPlugin::submitFrame(const gpu::FramePointer& newFrame) {
+    newFrame->submitTime = usecTimestampNow();
     withNonPresentThreadLock([&] {
         _newFrameQueue.push(newFrame);
     });
@@ -967,6 +1017,15 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
                 }
                 _lastFrame = _currentFrame.get();
             });
+            refreshRateController->notePresentedFrame(_presentedNewFrame);
+            if (_presentedNewFrame) {
+                // the frame's latency: from the start of the present whose update asked for it (the one before, as a
+                // rule; an upper bound when the loop fell behind) to the render thread's hand-over. The governor
+                // reads it to know whether the frames would fit a refresh at the display's full rate.
+                uint64_t asked = _previousPresentStart;
+                refreshRateController->noteNewFrame(asked > 0 && _currentFrame->submitTime > asked ?
+                    (int)(_currentFrame->submitTime - asked) : 0);
+            }
             // Execute the frame rendering commands
             PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
             _gpuContext->executeFrame(_currentFrame);
@@ -1035,7 +1094,10 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     } else {
         refreshRateController->clockEndTime();
     }
-    _movingAveragePresent.addSample((float)(usecTimestampNow() - startPresent));
+    uint64_t presentUsecs = usecTimestampNow() - startPresent;
+    _movingAveragePresent.addSample((float)presentUsecs);
+    refreshRateController->notePresentCost((int)presentUsecs, _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
+    _previousPresentStart = startPresent;
 }
 
 float OpenGLDisplayPlugin::newFramePresentRate() const {
@@ -1063,6 +1125,15 @@ std::function<void(int, int)> OpenGLDisplayPlugin::getRefreshRateOperator() {
         auto refreshRateController = DependencyManager::get<PresentThread>()->getRefreshRateController();
         refreshRateController->setRefreshRateLimitPeriod(targetRefreshRate);
         refreshRateController->setDisplayRefreshRate(displayRefreshRate);
+    };
+}
+
+std::function<RefreshRateController::CadenceCounters()> OpenGLDisplayPlugin::getCadenceCountersOperator() {
+    return []() -> RefreshRateController::CadenceCounters {
+        if (!DependencyManager::isSet<PresentThread>()) {
+            return RefreshRateController::CadenceCounters();
+        }
+        return DependencyManager::get<PresentThread>()->getRefreshRateController()->getCadenceCounters();
     };
 }
 

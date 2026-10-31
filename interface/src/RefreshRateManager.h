@@ -99,6 +99,33 @@ public:
     // (the target rate, the display's own rate or 0 when unknown)
     void setRefreshRateOperator(std::function<void(int, int)> refreshRateOperator) { _refreshRateOperator = refreshRateOperator; }
 
+    // The cadence governor (Caity, 2026-10-31, "go on the half-rate fix"). At the display's own rate, when the frames
+    // don't fit a refresh (presents showing the frame before again, or landing two refreshes apart: the picture
+    // holds a refresh and then steps twice, the hitch of a heavy world at 144 Hz), the target drops to half the
+    // display's rate, in phase, where every frame shows for the same two refreshes and the motion is even. It comes
+    // back up once the frames have fitted comfortably inside a refresh for a hold (their latency, the present's cost
+    // and the GPU's time, from the present cadence's counters), and the hold doubles after each return that failed,
+    // so it cannot flap. Desktop only, displays of 100 Hz and up, the display-based profile's active regime; the
+    // resting rate and the caps stand on top. What it reads comes once a second through the cadence source.
+    struct CadenceSample {
+        int displayRate { 0 };
+        int presents { 0 };
+        int repeated { 0 };
+        int onTwoOrMoreRefreshes { 0 };
+        int newFrames { 0 };
+        int slowNewFrames { 0 };
+        int maxPresentUs { 0 };
+        int slowPresents { 0 };
+        float gpuMs { 0.0f };
+        int64_t rolledAtNs { 0 };
+    };
+    void setCadenceSource(std::function<CadenceSample()> source) { _cadenceSource = source; }
+    bool isHalfRate() const { return _halfRate; }
+    int getGovernorHoldSeconds() const { return _governorHoldSeconds; }
+    // one line for the Stats panel: "full rate" / "half rate (72 of 144 Hz), back after 5 s of fitting frames (2 so far)"
+    QString getGovernorStatus() const;
+    static const int MIN_GOVERNED_DISPLAY_RATE = 100;
+
     // A cap for what is on the desktop's screen, in Hz, 0 for none; Application::update sets it each frame. The sign-in
     // screen moves nothing faster than a caret (SIGN_IN_SCREEN_RATE); a loading screen keeps 60 (LOADING_SCREEN_RATE),
     // so a load paces its per-frame work (texture uploads, renderable updates) no slower than on a 60 Hz display today.
@@ -140,6 +167,19 @@ private:
     int _screenCap { 0 };
 
     std::shared_ptr<QTimer> _inactiveTimer { std::make_shared<QTimer>() };
+
+    void governorTick();
+    bool governable(int displayRate) const;
+    std::function<CadenceSample()> _cadenceSource;
+    std::shared_ptr<QTimer> _governorTimer { std::make_shared<QTimer>() };
+    bool _halfRate { false };
+    int _governorHoldSeconds { 5 };       // seconds of fitting frames before a return; doubles after a failed return
+    int _governorFitSeconds { 0 };        // fitting seconds in a row at half rate
+    int _governorProbeSecondsLeft { 0 };  // after a return: a drop within these marks the return failed
+    int _governorCleanSeconds { 0 };      // clean seconds in a row at full rate: a long run forgives the back-off
+    int _governorHalfRateSeconds { 0 };
+    int64_t _governorLastRollNs { 0 };
+    int _governorDisplayRate { 0 };
 
     // the camera's pose at the last activity
     bool _restPoseValid { false };

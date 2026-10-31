@@ -31,6 +31,11 @@ public:
     void start(uint32_t displayId);
     void stop();
     bool isRunning() const { return _running; }
+    // the display the link runs on (a CGDirectDisplayID), 0 when it is not running
+    uint32_t displayId() const { return _running ? _displayId : 0; }
+    // running, yet no refresh callback for half a second (since the start, or since the last one): the display
+    // went quiet, or the link is on a display that is not refreshing; the plugin's watchdog restarts it
+    bool isQuiet(int64_t nowNs) const;
 
     // The next refresh's instant on std::chrono::steady_clock (nanoseconds since its epoch), predicted from the last
     // callback, and the refresh period; false when there is no recent refresh (none within a quarter second: the
@@ -54,6 +59,7 @@ private:
     std::atomic<int64_t> _nextRefreshNs { 0 };
     std::atomic<int64_t> _periodNs { 0 };
     std::atomic<int64_t> _lastCallbackNs { 0 };
+    std::atomic<int64_t> _startedNs { 0 };
     std::atomic<bool> _tracing { false };
     std::mutex _traceMutex;
     std::vector<uint64_t> _trace;
