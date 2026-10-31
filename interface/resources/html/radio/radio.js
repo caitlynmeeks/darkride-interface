@@ -618,7 +618,7 @@
     // a stream on the listener's own network (this computer, the home network): never from the directory, so a click
     // there can't send a request into the listener's home (security, 10-31); one typed into Address is the listener's own
     function onOwnNetwork(url) {
-        var host = new URL(url).hostname.toLowerCase();
+        var host = new URL(url).hostname.toLowerCase().replace(/\.+$/, "");   // "localhost." is localhost too
         if (host === "localhost" || /\.(local|localhost)$/.test(host)) {
             return true;
         }
