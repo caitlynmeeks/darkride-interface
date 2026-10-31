@@ -287,6 +287,13 @@ void RefreshRateManager::governorTick() {
         updateGovernorStatus();
         return;
     }
+    if (effectiveRegime() != RefreshRateRegime::FOCUS_ACTIVE) {
+        // at rest, unfocused or minimized another rate rules; the governor's state keeps for the wake. Asked first:
+        // the unfocused regime's own 30 Hz read as "a cap under the display's rate" below and reset the half rate
+        // every time the window lost the focus with no ride in view, so a ride began at the full rate again after a
+        // click away (performance's walled run and Caity's 11:45, 2026-10-31)
+        return;
+    }
     if (!governable(sample.displayRate)) {
         if (_halfRate) {
             _halfRate = false;
@@ -296,9 +303,6 @@ void RefreshRateManager::governorTick() {
             updateGovernorStatus();
         }
         return;
-    }
-    if (effectiveRegime() != RefreshRateRegime::FOCUS_ACTIVE) {
-        return;   // at rest, unfocused or minimized another rate rules; the governor's state keeps for the wake
     }
     const int displayRate = sample.displayRate;
     if (!_halfRate) {
