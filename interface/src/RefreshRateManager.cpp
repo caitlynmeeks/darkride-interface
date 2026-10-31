@@ -149,15 +149,17 @@ static const int INACTIVE_TIMER_LIMIT = 3000;
 // loading something); the hold of fitting seconds before a return, its first value and its ceiling after failed
 // returns; the seconds after a return in which a drop marks it failed (a world that hitches every ten seconds would
 // otherwise return and drop without the hold ever growing); the clean seconds at full rate that forgive
-// the back-off; the share of frames allowed over 70 % of a refresh in any one stage (the main thread, the render
-// thread's build, the present's own work; the GPU's average under 70 %) for a second to count as fitting: a stage's
-// tail, not its maximum (a maximum would let one texture upload a second hold the half rate for ever)
+// the back-off. A second at half rate counts as fitting when each stage's slow count (frames over 70 % of a
+// full-rate refresh in the main thread, the render thread's build or the present's own work), scaled to the full
+// rate, stays under the drop threshold, and the GPU's average is under 70 %: at 72 on 144 at most one slow frame a
+// second per stage, since each would be a miss at 144 (performance's re-ride, 2026-10-31: two slow executes a second
+// at 72 passed a tenth, returned, and were 4-6 misses a second at 144, a drop again). A maximum would let one
+// texture upload a second hold the half rate for ever; this is a tail the full rate could carry.
 static const int GOVERNOR_DROP_MISSES = 3;
 static const int GOVERNOR_HOLD_MIN_SECONDS = 5;
 static const int GOVERNOR_HOLD_MAX_SECONDS = 60;
 static const int GOVERNOR_PROBE_SECONDS = 30;
 static const int GOVERNOR_FORGIVE_SECONDS = 60;
-static const int GOVERNOR_SLOW_FRAMES_PER_HUNDRED = 10;
 
 // DARKRIDE_REFRESH_CAP=<Hz> in the environment caps the desktop's rate at that number, for a hand test at a whole
 // fraction of the display's rate (72 or 48 on a 144 Hz panel; the presents then lock to every second or third
@@ -292,14 +294,17 @@ void RefreshRateManager::governorTick() {
         }
     } else {
         _governorHalfRateSeconds++;
-        // the way back: each stage's own work inside 70 % of a full-rate refresh for all but a tail of the second's
-        // frames: the main thread's frame, the render thread's build, the present's own work, the GPU's time; a
-        // pipelined 144 Hz needs each stage under a refresh, not their sum
+        // the way back: each stage's own work inside 70 % of a full-rate refresh (the main thread's frame, the render
+        // thread's build, the present's own work; a pipelined 144 Hz needs each stage under a refresh, not their sum),
+        // with a stage's slow frames a second, scaled to the full rate, under the drop threshold: what the full rate
+        // could carry without a miss
         const float refreshUs = 1000000.0f / (float)displayRate;
+        const int halfRate = std::max(1, halfRateOf(displayRate));
+        const int scale = std::max(1, displayRate / halfRate);
         const bool fits = sample.newFrames > 0 && sample.presents > 0 &&
-            sample.slowMainFrames * 100 <= sample.newFrames * GOVERNOR_SLOW_FRAMES_PER_HUNDRED &&
-            sample.slowBuildFrames * 100 <= sample.newFrames * GOVERNOR_SLOW_FRAMES_PER_HUNDRED &&
-            sample.slowExecutes * 100 <= sample.presents * GOVERNOR_SLOW_FRAMES_PER_HUNDRED &&
+            sample.slowMainFrames * scale < GOVERNOR_DROP_MISSES &&
+            sample.slowBuildFrames * scale < GOVERNOR_DROP_MISSES &&
+            sample.slowExecutes * scale < GOVERNOR_DROP_MISSES &&
             sample.gpuMs * 1000.0f < refreshUs * 0.7f;
         _governorFitSeconds = fits ? _governorFitSeconds + 1 : 0;
         if (_governorFitSeconds >= _governorHoldSeconds) {
