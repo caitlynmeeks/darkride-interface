@@ -473,8 +473,13 @@ int EntityTreeRenderer::getRenderUpdateFramesBehind(const EntityItemID& id) cons
     if (!renderable) {
         return -1;
     }
+    // behind only while it is actually waiting in the budget's set: a stamp a path outside the three lanes left
+    // behind (performance's review, 2026-10-31) cannot then read as a wait that grows
     uint64_t since = renderable->getDeferredSinceFrame();
-    return since ? (int)(_renderUpdateFrame - since + 1) : 0;
+    if (since == 0 || _renderablesToUpdate.count(renderable) == 0) {
+        return 0;
+    }
+    return (int)(_renderUpdateFrame - since + 1);
 }
 
 int EntityTreeRenderer::getRenderUpdateLastLateFrames(const EntityItemID& id) const {
