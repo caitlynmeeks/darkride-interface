@@ -1039,12 +1039,11 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
             });
             refreshRateController->notePresentedFrame(_presentedNewFrame);
             if (_presentedNewFrame) {
-                // the frame's latency: from the start of the present whose update asked for it (the one before, as a
-                // rule; an upper bound when the loop fell behind) to the render thread's hand-over. The governor
-                // reads it to know whether the frames would fit a refresh at the display's full rate.
-                uint64_t asked = _previousPresentStart;
-                refreshRateController->noteNewFrame(asked > 0 && _currentFrame->submitTime > asked ?
-                    (int)(_currentFrame->submitTime - asked) : 0);
+                // the frame's own work, the main thread's frame and the render thread's build, stamped on it by the
+                // game loop and the graphics engine: the governor's measure of whether the frames would fit a refresh
+                // at the display's full rate (not a latency from the present before: with vsync that held the swap's
+                // wait for the refresh, and the governor never came back)
+                refreshRateController->noteNewFrame((int)_currentFrame->mainTime, (int)_currentFrame->buildTime);
             }
             if (FrameTrace::enabled()) {
                 // the frame trace's present columns, in the record of the game-loop frame this gpu frame came from:
@@ -1134,7 +1133,9 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     }
     uint64_t presentUsecs = usecTimestampNow() - startPresent;
     _movingAveragePresent.addSample((float)presentUsecs);
-    refreshRateController->notePresentCost((int)presentUsecs, _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
+    // the present's own work: the present less its swap (with vsync the swap waits for the refresh, which is not work)
+    refreshRateController->notePresentCost(presentUsecs > _lastSwapUsecs ? (int)(presentUsecs - _lastSwapUsecs) : 0,
+                                           _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
     _previousPresentStart = startPresent;
     if (FrameTrace::enabled() && _currentFrame) {
         // how long before the refresh this present's picture was due the present returned; negative when it missed

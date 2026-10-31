@@ -560,6 +560,7 @@ private:
     RateCounter<500> _gameLoopCounter;
 
     QElapsedTimer _lastTimeUpdated;
+    std::atomic<uint64_t> _lastIdleDurationUsecs { 0 };   // the main thread's last frame (idle), for the refresh governor's fit
 
     ShapeManager _shapeManager;
     PhysicalEntitySimulationPointer _entitySimulation;

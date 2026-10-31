@@ -275,6 +275,13 @@ void setupCpuMonitorThread() {
 
 void Application::idle() {
     PerformanceTimer perfTimer("idle");
+    // the main thread's frame time, for the refresh governor's fit (RefreshRateManager): the whole of idle, whichever
+    // way it returns
+    struct IdleClock {
+        uint64_t start;
+        std::atomic<uint64_t>& out;
+        ~IdleClock() { out = usecTimestampNow() - start; }
+    } idleClock { usecTimestampNow(), _lastIdleDurationUsecs };
     // the frame trace (FrameTrace.h; team/performance/INSTRUMENTS-PLAN.md item 1): this frame's record opened, so
     // everything the frame does can write its numbers to it; off, one atomic load
     FrameTrace::beginFrame();
@@ -934,6 +941,7 @@ void Application::updateRenderArgs(float deltaTime) {
                 RenderArgs::MONO, RenderArgs::DEFERRED, RenderArgs::RENDER_DEBUG_NONE);
             appRenderArgs._renderArgs._scene = getMain3DScene();
             appRenderArgs._traceFrame = FrameTrace::currentFrame();
+            appRenderArgs._mainFrameUsecs = _lastIdleDurationUsecs.load();
             FrameTrace::set("governor.half", getRefreshRateManager().isHalfRate() ? 1.0 : 0.0);
             appRenderArgs._renderArgs._impostorAngleHalfTanSq = lodManager->getImpostorAngleHalfTanSq();
             appRenderArgs._renderArgs._impostorDebug = lodManager->getImpostorDebug();

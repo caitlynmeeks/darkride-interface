@@ -35,6 +35,10 @@ namespace gpu {
         /// the frame trace's record of the game-loop frame this frame was built for (FrameTrace::currentFrame when
         /// the render args were taken), so the present thread writes its columns to the right frame; 0 = none
         uint64_t traceFrame{ 0 };
+        /// the main thread's frame (idle) that made this frame and the render thread's build of it, in microseconds:
+        /// what the refresh governor reads to know whether the frames would fit a refresh at the display's full rate
+        uint64_t mainTime{ 0 };
+        uint64_t buildTime{ 0 };
         /// The view matrix used for rendering the frame, only applicable for HMDs
         Mat4 view;
         /// The sensor pose used for rendering the frame, only applicable for HMDs
