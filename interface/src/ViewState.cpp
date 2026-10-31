@@ -519,7 +519,22 @@ glm::vec3 ViewState::collideCameraBoom(const glm::vec3& pivot, const glm::vec3& 
         return wanted;
     }
     glm::vec3 start = pivot;   // the pivot moved out of a wall it was pressed against
-    float allowed = allowedBoomLength(pivot, wanted, QVector<QUuid>(), &start);
+    // The cast passes through the frame or vehicle the avatar rides and its parts (a car's walls and rails, a seat's
+    // vehicle): nothing of the thing you ride is a wall between you and your own camera, and a sweep that clipped a
+    // rail pulled the camera inside the car at every turn of the view (Caity's monorail ride, 2026-10-31). The chase
+    // camera passes through the chased entity the same way.
+    QVector<QUuid> ride;
+    if (auto myAvatar = getMyAvatar()) {
+        EntityTreePointer tree = qApp->getEntities()->getTree();
+        QUuid id = myAvatar->getParentID();
+        const int MAX_DEPTH = 16;
+        for (int depth = 0; tree && !id.isNull() && depth < MAX_DEPTH; depth++) {
+            ride.append(id);
+            EntityItemPointer entity = tree->findEntityByID(id);
+            id = entity ? entity->getParentID() : QUuid();
+        }
+    }
+    float allowed = allowedBoomLength(pivot, wanted, ride, &start);
     boom = wanted - start;
     wantedLength = glm::length(boom);
     if (wantedLength < EPSILON) {
