@@ -1058,9 +1058,15 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
                 FrameTrace::set(traceFrame, "present.repeat", _presentedNewFrame ? 0.0 : 1.0);
                 FrameTrace::set(traceFrame, "present.late_us", (double)refreshRateController->getPresentLateUs());
             }
-            // Execute the frame rendering commands
-            PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
-            _gpuContext->executeFrame(_currentFrame);
+            if (_presentedNewFrame || isHmd()) {
+                // Execute the frame rendering commands. A held present (the same frame shown again because no new one
+                // was ready) keeps the frame's framebuffer as it was drawn and only composites it again, instead of
+                // drawing the whole scene a second time for the same picture: until 2026-10-31 the GPU's time doubled
+                // on exactly the frames that were late already, which made the next one late too. An HMD re-executes
+                // with the newer pose: that is its reprojection.
+                PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
+                _gpuContext->executeFrame(_currentFrame);
+            }
         }
 
         // Write all layers to a local framebuffer
