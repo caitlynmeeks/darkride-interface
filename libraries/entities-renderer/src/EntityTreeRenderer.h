@@ -368,6 +368,7 @@ private:
     int _maxDeferredFramesLastSecond { 0 };
     uint64_t _countersSecondStart { 0 };
     uint64_t _lastMovingAssemblyInView { 0 };
+    uint64_t _lastMovingAssemblyTest { 0 };
 
     std::unordered_set<EntityRendererPointer> _renderablesToUpdate;
     std::unordered_set<EntityRendererPointer> _priorityRenderablesToUpdate;

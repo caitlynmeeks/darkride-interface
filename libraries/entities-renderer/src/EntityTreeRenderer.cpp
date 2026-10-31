@@ -563,8 +563,10 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
         }
         _prevNumCarriedEntityUpdates = (int)refreshed;
         // a moving assembly in view, for the refresh regime (getLastMovingAssemblyInViewTime): the carried parts'
-        // bounds against the view, a handful of tests a frame while something with parts moves, none otherwise
-        if (carriedStart - _lastMovingAssemblyInView > USECS_PER_SECOND / 4) {
+        // bounds against the view, four times a second while something with parts moves, whatever the answer
+        // (performance's review: throttled by the last test, so an assembly moving out of view costs the same)
+        if (carriedStart - _lastMovingAssemblyTest > USECS_PER_SECOND / 4) {
+            _lastMovingAssemblyTest = carriedStart;
             const auto& views = _viewState->getConicalViews();
             for (const EntityRendererPointer& renderable : carried) {
                 const EntityItemPointer& entity = renderable->getEntity();
