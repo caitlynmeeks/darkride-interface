@@ -122,6 +122,7 @@ public:
         int maxExecuteUs { 0 };
         float gpuMs { 0.0f };
         int64_t rolledAtNs { 0 };
+        int64_t startedAtNs { 0 };
     };
     void setCadenceSource(std::function<CadenceSample()> source) { _cadenceSource = source; }
 
@@ -194,7 +195,7 @@ private:
     void governorDiag(const CadenceSample& sample) const;
     bool governable(int displayRate) const;
     QString _governorStatus { "full rate" };
-    int _governorGraceSeconds { 0 };      // seconds after a change of target that carry no verdict (a mixed second)
+    int64_t _governorChangeNs { 0 };      // when the target last changed, on std::chrono::steady_clock: a second that began before it (or within the presents' settling after it) carries no verdict
     std::function<CadenceSample()> _cadenceSource;
     std::shared_ptr<QTimer> _governorTimer { std::make_shared<QTimer>() };
     bool _halfRate { false };

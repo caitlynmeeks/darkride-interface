@@ -21,6 +21,7 @@
 #include <QtGui/QWindow>
 
 #include <array>
+#include <chrono>
 
 #include "Application.h"
 #include "MainWindow.h"
@@ -160,6 +161,13 @@ static const int GOVERNOR_HOLD_MIN_SECONDS = 5;
 static const int GOVERNOR_HOLD_MAX_SECONDS = 60;
 static const int GOVERNOR_PROBE_SECONDS = 30;
 static const int GOVERNOR_FORGIVE_SECONDS = 60;
+// after a change of target the presents already paced on the old spacing settle within this: a counted second that
+// began before the change plus this is mixed and carries no verdict (governorTick)
+static const int64_t GOVERNOR_SETTLE_NS = 50000000;
+
+static int64_t steadyNowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 // DARKRIDE_REFRESH_CAP=<Hz> in the environment caps the desktop's rate at that number, for a hand test at a whole
 // fraction of the display's rate (72 or 48 on a 144 Hz panel; the presents then lock to every second or third
@@ -247,7 +255,7 @@ void RefreshRateManager::updateRideExemption() {
         _rideKeepsFullRate = keep;
         qCDebug(interfaceapp) << (keep ? "Refresh regime: unfocused, but a ride is in view: the full rate stays"
                                        : "Refresh regime: unfocused and no ride in view: the unfocused rate");
-        _governorGraceSeconds = 1;
+        _governorChangeNs = steadyNowNs();
     }
 }
 
@@ -269,11 +277,13 @@ void RefreshRateManager::governorTick() {
     _governorLastRollNs = sample.rolledAtNs;
     _governorDisplayRate = sample.displayRate;
     governorDiag(sample);
-    // the second that spans a change of target (a governor switch, a regime change, a rest's end) is mixed by
-    // construction: it carries no verdict (2026-10-31: the first second after a return counted the half rate's own
-    // two-refresh presents as misses and dropped again)
-    if (_governorGraceSeconds > 0) {
-        _governorGraceSeconds--;
+    // a second that began before the last change of target (a governor switch, a regime change, a rest's end), or
+    // within the presents' settling after it, is mixed by construction: it carries no verdict (2026-10-31: the first
+    // second after a return counted the half rate's own two-refresh presents as misses and dropped again). Judged by
+    // the second's own start, not by a count of ticks: a grace of one tick was spent on the second rolled BEFORE a
+    // click's change of regime and the mixed second was judged (Caity's ride of 11:3x dropped to the half rate 2 s
+    // after each FocusInactive -> FocusActive flip, on the resting rate's own two-refresh presents, with 0 held)
+    if (sample.startedAtNs < _governorChangeNs + GOVERNOR_SETTLE_NS) {
         updateGovernorStatus();
         return;
     }
@@ -312,7 +322,7 @@ void RefreshRateManager::governorTick() {
             _governorFitSeconds = 0;
             _governorHalfRateSeconds = 0;
             _governorProbeSecondsLeft = 0;
-            _governorGraceSeconds = 1;
+            _governorChangeNs = steadyNowNs();
             qCDebug(interfaceapp).nospace() << "Refresh governor: half rate, " << halfRateOf(displayRate) << " of " << displayRate
                 << " Hz: in the last second " << sample.repeated << " presents showed the frame before again and "
                 << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart"
@@ -339,7 +349,7 @@ void RefreshRateManager::governorTick() {
             _governorProbeSecondsLeft = GOVERNOR_PROBE_SECONDS;
             _governorFitSeconds = 0;
             _governorCleanSeconds = 0;
-            _governorGraceSeconds = 1;
+            _governorChangeNs = steadyNowNs();
             qCDebug(interfaceapp).nospace() << "Refresh governor: full rate, " << displayRate << " Hz, after "
                 << _governorHalfRateSeconds << " s at half rate: the frames fitted a refresh for " << _governorHoldSeconds << " s";
             updateRefreshRateController();
@@ -372,7 +382,8 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
         << "), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
         << " ms; build slow " << sample.slowBuildFrames << ", max " << sample.maxBuildUs / 1000.0 << " ms), execute slow "
         << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms; fit "
-        << _governorFitSeconds << " of " << _governorHoldSeconds << " s" << (_governorGraceSeconds > 0 ? ", grace" : "")
+        << _governorFitSeconds << " of " << _governorHoldSeconds << " s"
+        << (sample.startedAtNs < _governorChangeNs + GOVERNOR_SETTLE_NS ? ", mixed (no verdict)" : "")
         << (_governorProbeSecondsLeft > 0 ? ", probe" : "");
 }
 
@@ -431,7 +442,7 @@ void RefreshRateManager::setRefreshRateRegime(RefreshRateManager::RefreshRateReg
         }
         updateRideExemption();   // a ride in view keeps the full rate through the unfocused regime (no blip at the change)
         updateRefreshRateController();
-        _governorGraceSeconds = 1;   // the second that spans the change of target carries no verdict (governorTick)
+        _governorChangeNs = steadyNowNs();   // a second that began before this carries no verdict (governorTick)
         // one line a change (a wake or a rest every few seconds at most), with the time, to line up with an input's
         qCDebug(interfaceapp).noquote() << "Refresh regime" << QString::fromStdString(refreshRateRegimeToString(refreshRateRegime))
             << "target" << _activeRefreshRate << "Hz at usec" << usecTimestampNow();

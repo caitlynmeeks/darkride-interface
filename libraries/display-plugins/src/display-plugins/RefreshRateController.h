@@ -69,6 +69,7 @@ public:
         int maxExecuteUs { 0 };
         float gpuMs { 0.0f };           // the GPU's frame time as last averaged
         int64_t rolledAtNs { 0 };       // when the second ended, on std::chrono::steady_clock; 0 before the first second
+        int64_t startedAtNs { 0 };      // when it began, on the same clock (the governor skips a second that began before a change of target)
     };
     CadenceCounters getCadenceCounters() const;
     // the present under way, for the frame trace (present thread): refreshes since the last present (0 off the

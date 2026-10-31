@@ -105,6 +105,7 @@ void RefreshRateController::countPresent(int64_t nowNs, Schedule schedule, int r
     const int64_t SECOND_NS = 1000000000LL;
     if (nowNs - _cadenceSecondStartNs >= SECOND_NS) {
         counting.rolledAtNs = nowNs;
+        counting.startedAtNs = _cadenceSecondStartNs;
         {
             std::lock_guard<std::mutex> lock(_cadenceMutex);
             _cadenceLastSecond = counting;

@@ -660,6 +660,7 @@ void Display::setDisplayPlugin(DisplayPluginPointer newDisplayPlugin) {
             sample.maxExecuteUs = c.maxExecuteUs;
             sample.gpuMs = c.gpuMs;
             sample.rolledAtNs = c.rolledAtNs;
+            sample.startedAtNs = c.startedAtNs;
             return sample;
         });
         bool isHmd = newDisplayPlugin->isHmd();
