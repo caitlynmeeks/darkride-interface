@@ -15,11 +15,20 @@
 #include <QtCore/QStandardPaths>
 #include <QtWidgets/QFileDialog>
 
+#include <PathUtils.h>
+
 #include "InterfaceLogging.h"
 
 namespace {
     // as the radio's page takes them (html/radio/radio.js SKIN_MAX_BYTES; classic skins are 20-500 KB)
     const qint64 SKIN_MAX_BYTES = 4 * 1024 * 1024;
+}
+
+QString RadioSkinPicker::walledStoragePath() const {
+    if (qEnvironmentVariableIsEmpty("TIVOLI_APP_DATA_DIR")) {
+        return QString();
+    }
+    return PathUtils::getAppDataPath() + "QtWebEngine/DarkrideRadio";
 }
 
 void RadioSkinPicker::pick() {

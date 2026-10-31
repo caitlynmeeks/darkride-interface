@@ -432,7 +432,16 @@ Rectangle {
         anchors.bottomMargin: Theme.gap
         active: root.live
         sourceComponent: WebEngineView {
-            url: root.pageUrl
+            id: view
+            // a walled-off client's radio keeps its storage in that client's own folder (RadioSkins.walledStoragePath),
+            // set before the page first loads
+            Component.onCompleted: {
+                var walled = typeof RadioSkins !== "undefined" ? RadioSkins.walledStoragePath : "";
+                if (walled !== "") {
+                    view.profile.persistentStoragePath = walled;
+                }
+                view.url = root.pageUrl;
+            }
             backgroundColor: "#0c1022"   // the page's own background (radio.css --navy), behind it while it loads
             // the skin's pixels at a whole size: twice once both of the player's windows fit twice
             zoomFactor: width >= 600 && height >= 500 ? 2 : 1

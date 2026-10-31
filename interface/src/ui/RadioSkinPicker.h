@@ -19,13 +19,20 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
+#include <QtCore/QString>
 
 class QFileDialog;
 
 class RadioSkinPicker : public QObject {
     Q_OBJECT
+    // where a walled-off client's radio keeps its web storage (stations, volume, skin): its own data folder
+    // (TIVOLI_APP_DATA_DIR) + QtWebEngine/DarkrideRadio; "" for a normal app, whose radio keeps its own place. Test
+    // clients otherwise shared the dev builds' one folder, a person's own stations and skin included (10-31)
+    Q_PROPERTY(QString walledStoragePath READ walledStoragePath CONSTANT)
 public:
     using QObject::QObject;
+
+    QString walledStoragePath() const;
 
     // opens the dialog (or brings an open one to the front); its answer comes as picked()
     Q_INVOKABLE void pick();
