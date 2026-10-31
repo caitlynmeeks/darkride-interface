@@ -63,6 +63,8 @@ namespace FrameTrace {
     QStringList columns();
     // the records, oldest first: each a list in columns() order; a cell is a double, a string, or invalid when unset
     QList<QVariantList> rows();
+    // rows() and clear() in one step, so no frame written between the two is lost
+    QList<QVariantList> take();
     // the records as a CSV (the columns() header, then one line per frame, blank cells where unset, text quoted);
     // the rows written, or -1 when the file could not be written
     int dump(const QString& path);
