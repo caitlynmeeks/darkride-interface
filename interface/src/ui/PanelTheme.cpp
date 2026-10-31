@@ -39,9 +39,13 @@ PanelTheme::PanelTheme() {
 }
 
 void PanelTheme::registerWithQml() {
-    auto instance = DependencyManager::get<PanelTheme>().data();
-    QQmlEngine::setObjectOwnership(instance, QQmlEngine::CppOwnership);
-    qmlRegisterSingletonInstance("DarkridePanels", 1, 0, "PanelTheme", instance);
+    // every engine gets the one PanelTheme: the desktop's panels and the tablet in a headset each have an engine of their
+    // own, and qmlRegisterSingletonInstance serves one engine only, handing the second a null (a crash in VR, 10-31)
+    qmlRegisterSingletonType<PanelTheme>("DarkridePanels", 1, 0, "PanelTheme", [](QQmlEngine*, QJSEngine*) -> QObject* {
+        auto instance = DependencyManager::get<PanelTheme>().data();
+        QQmlEngine::setObjectOwnership(instance, QQmlEngine::CppOwnership);   // the engines never delete it
+        return instance;
+    });
 }
 
 void PanelTheme::setSkin(const QVariantMap& skin) {
