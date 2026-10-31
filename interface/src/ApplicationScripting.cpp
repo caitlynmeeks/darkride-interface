@@ -135,6 +135,9 @@ void Application::onDesktopRootContextCreated(QQmlContext* surfaceContext) {
     surfaceContext->setContextProperty("AvatarThumbnails", DependencyManager::get<AvatarThumbnails>().data());
     surfaceContext->setContextProperty("SystemToolbar", SystemToolbar::instance());
     surfaceContext->setContextProperty("Skins", DependencyManager::get<Skins>().data());
+    // the window's panels by name: a dock panel's page (made in this context, ui/QmlDock.cpp) asks whether it's open
+    // (the radio plays on while tabbed behind another) and closes itself
+    surfaceContext->setContextProperty("Panels", DependencyManager::get<Panels>().data());
     _fileDownload = new FileScriptingInterface(engine);
     surfaceContext->setContextProperty("File", _fileDownload);
     connect(_fileDownload, &FileScriptingInterface::unzipResult, &_assetImport, &AssetImport::handleUnzip);
