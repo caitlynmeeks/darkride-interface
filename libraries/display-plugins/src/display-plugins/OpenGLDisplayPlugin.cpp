@@ -651,6 +651,7 @@ bool OpenGLDisplayPlugin::eventFilter(QObject* receiver, QEvent* event) {
 }
 
 void OpenGLDisplayPlugin::submitFrame(const gpu::FramePointer& newFrame) {
+    newFrame->submitTime = usecTimestampNow();
     withNonPresentThreadLock([&] {
         _newFrameQueue.push(newFrame);
     });
@@ -1017,6 +1018,14 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
                 _lastFrame = _currentFrame.get();
             });
             refreshRateController->notePresentedFrame(_presentedNewFrame);
+            if (_presentedNewFrame) {
+                // the frame's latency: from the start of the present whose update asked for it (the one before, as a
+                // rule; an upper bound when the loop fell behind) to the render thread's hand-over. The governor
+                // reads it to know whether the frames would fit a refresh at the display's full rate.
+                uint64_t asked = _previousPresentStart;
+                refreshRateController->noteNewFrame(asked > 0 && _currentFrame->submitTime > asked ?
+                    (int)(_currentFrame->submitTime - asked) : 0);
+            }
             // Execute the frame rendering commands
             PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
             _gpuContext->executeFrame(_currentFrame);
@@ -1085,7 +1094,10 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     } else {
         refreshRateController->clockEndTime();
     }
-    _movingAveragePresent.addSample((float)(usecTimestampNow() - startPresent));
+    uint64_t presentUsecs = usecTimestampNow() - startPresent;
+    _movingAveragePresent.addSample((float)presentUsecs);
+    refreshRateController->notePresentCost((int)presentUsecs, _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
+    _previousPresentStart = startPresent;
 }
 
 float OpenGLDisplayPlugin::newFramePresentRate() const {
@@ -1113,6 +1125,15 @@ std::function<void(int, int)> OpenGLDisplayPlugin::getRefreshRateOperator() {
         auto refreshRateController = DependencyManager::get<PresentThread>()->getRefreshRateController();
         refreshRateController->setRefreshRateLimitPeriod(targetRefreshRate);
         refreshRateController->setDisplayRefreshRate(displayRefreshRate);
+    };
+}
+
+std::function<RefreshRateController::CadenceCounters()> OpenGLDisplayPlugin::getCadenceCountersOperator() {
+    return []() -> RefreshRateController::CadenceCounters {
+        if (!DependencyManager::isSet<PresentThread>()) {
+            return RefreshRateController::CadenceCounters();
+        }
+        return DependencyManager::get<PresentThread>()->getRefreshRateController()->getCadenceCounters();
     };
 }
 

@@ -146,6 +146,27 @@ void RefreshRateController::notePresentedFrame(bool newFrame) {
     }
 }
 
+void RefreshRateController::noteNewFrame(int latencyUs) {
+    CadenceCounters& counting = _cadenceCounting;
+    counting.newFrames++;
+    counting.maxFrameLatencyUs = std::max(counting.maxFrameLatencyUs, latencyUs);
+    // slow: over 70 % of one refresh of the display (the governor's room for the present and the flush)
+    const int displayRate = _displayRefreshRate;
+    if (displayRate > 0 && latencyUs > 700000 / displayRate) {
+        counting.slowNewFrames++;
+    }
+}
+
+void RefreshRateController::notePresentCost(int presentUs, float gpuMs) {
+    CadenceCounters& counting = _cadenceCounting;
+    counting.maxPresentUs = std::max(counting.maxPresentUs, presentUs);
+    const int displayRate = _displayRefreshRate;
+    if (displayRate > 0 && presentUs > 500000 / displayRate) {
+        counting.slowPresents++;
+    }
+    counting.gpuMs = gpuMs;
+}
+
 RefreshRateController::CadenceCounters RefreshRateController::getCadenceCounters() const {
     std::lock_guard<std::mutex> lock(_cadenceMutex);
     return _cadenceLastSecond;

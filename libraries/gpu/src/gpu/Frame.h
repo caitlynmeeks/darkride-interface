@@ -29,6 +29,9 @@ namespace gpu {
 
         StereoState stereoState;
         uint32_t frameIndex{ 0 };
+        /// usecTimestampNow() when the render thread handed the frame to the display plugin (the present cadence's
+        /// frame latency: how long after the present that asked for it the frame was ready)
+        uint64_t submitTime{ 0 };
         /// The view matrix used for rendering the frame, only applicable for HMDs
         Mat4 view;
         /// The sensor pose used for rendering the frame, only applicable for HMDs

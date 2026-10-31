@@ -143,6 +143,27 @@ static const std::array<
 
 static const int INACTIVE_TIMER_LIMIT = 3000;
 
+// the cadence governor's numbers (RefreshRateManager.h): presents in a second that showed the frame before again or
+// landed two or more refreshes apart before the target drops (3 of 144 is a hitch the eye sees; 1 or 2 are a world
+// loading something); the hold of fitting seconds before a return, its first value and its ceiling after failed
+// returns; the seconds after a return in which a drop marks it failed; the clean seconds at full rate that forgive
+// the back-off; the share of new frames allowed over 70 % of a refresh, and of presents over half of one, for a
+// second to count as fitting (a maximum would let one texture upload a second hold the half rate for ever)
+static const int GOVERNOR_DROP_MISSES = 3;
+static const int GOVERNOR_HOLD_MIN_SECONDS = 5;
+static const int GOVERNOR_HOLD_MAX_SECONDS = 60;
+static const int GOVERNOR_PROBE_SECONDS = 4;
+static const int GOVERNOR_FORGIVE_SECONDS = 60;
+static const int GOVERNOR_SLOW_FRAMES_PER_HUNDRED = 5;
+
+// DARKRIDE_REFRESH_CAP=<Hz> in the environment caps the desktop's rate at that number, for a hand test at a whole
+// fraction of the display's rate (72 or 48 on a 144 Hz panel; the presents then lock to every second or third
+// refresh, RefreshRateController::sleepThreadIfNeeded): PHYSICS.md "The monorail's judder", 2026-10-31
+static int environmentRefreshCap() {
+    static const int cap = qEnvironmentVariableIntValue("DARKRIDE_REFRESH_CAP");
+    return cap;
+}
+
 
 std::string RefreshRateManager::refreshRateProfileToString(RefreshRateManager::RefreshRateProfile refreshRateProfile) {
     return REFRESH_RATE_PROFILE_TO_STRING.at(refreshRateProfile);
@@ -167,6 +188,109 @@ RefreshRateManager::RefreshRateManager() {
     QObject::connect(_inactiveTimer.get(), &QTimer::timeout, [&] {
         toggleInactive();
     });
+    _governorTimer->setInterval(1000);
+    _governorTimer->setTimerType(Qt::CoarseTimer);
+    QObject::connect(_governorTimer.get(), &QTimer::timeout, [&] {
+        governorTick();
+    });
+    _governorTimer->start();
+}
+
+bool RefreshRateManager::governable(int displayRate) const {
+    if (_uxMode != UXMode::DESKTOP || _refreshRateRegime != RefreshRateRegime::FOCUS_ACTIVE ||
+        displayRate < MIN_GOVERNED_DISPLAY_RATE) {
+        return false;
+    }
+    // the profile must ask for the display's own rate; a cap under it already paces slower
+    if (queryRefreshRateTarget(getRefreshRateProfile(), _refreshRateRegime, _uxMode) < 900) {
+        return false;
+    }
+    if (_screenCap > 0 && _screenCap < displayRate) {
+        return false;
+    }
+    if (environmentRefreshCap() > 0 && environmentRefreshCap() < displayRate) {
+        return false;
+    }
+    return true;
+}
+
+void RefreshRateManager::governorTick() {
+    if (!_cadenceSource) {
+        return;
+    }
+    CadenceSample sample = _cadenceSource();
+    if (sample.rolledAtNs == 0 || sample.rolledAtNs == _governorLastRollNs) {
+        return;   // no new second counted (no presents: the window hidden, a pause)
+    }
+    _governorLastRollNs = sample.rolledAtNs;
+    _governorDisplayRate = sample.displayRate;
+    if (!governable(sample.displayRate)) {
+        if (_halfRate) {
+            _halfRate = false;
+            _governorFitSeconds = 0;
+            qCDebug(interfaceapp) << "Refresh governor: full rate again, the rate is set elsewhere now (regime, profile, a cap or VR)";
+            updateRefreshRateController();
+        }
+        return;
+    }
+    const int displayRate = sample.displayRate;
+    if (!_halfRate) {
+        if (sample.presents < displayRate / 2) {
+            return;   // not presenting for the whole second: no verdict
+        }
+        const int misses = sample.repeated + sample.onTwoOrMoreRefreshes;
+        if (_governorProbeSecondsLeft > 0) {
+            _governorProbeSecondsLeft--;
+        }
+        _governorCleanSeconds = misses == 0 ? _governorCleanSeconds + 1 : 0;
+        if (_governorCleanSeconds >= GOVERNOR_FORGIVE_SECONDS) {
+            _governorHoldSeconds = GOVERNOR_HOLD_MIN_SECONDS;
+        }
+        if (misses >= GOVERNOR_DROP_MISSES) {
+            const bool returnFailed = _governorProbeSecondsLeft > 0;
+            if (returnFailed) {
+                _governorHoldSeconds = std::min(_governorHoldSeconds * 2, GOVERNOR_HOLD_MAX_SECONDS);
+            }
+            _halfRate = true;
+            _governorFitSeconds = 0;
+            _governorHalfRateSeconds = 0;
+            _governorProbeSecondsLeft = 0;
+            qCDebug(interfaceapp).nospace() << "Refresh governor: half rate, " << displayRate / 2 << " of " << displayRate
+                << " Hz: in the last second " << sample.repeated << " presents showed the frame before again and "
+                << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart"
+                << (returnFailed ? " (the return failed; hold now " : " (hold ") << _governorHoldSeconds << " s)";
+            updateRefreshRateController();
+        }
+    } else {
+        _governorHalfRateSeconds++;
+        // the way back: the frames' latency, the present's cost and the GPU's time all inside a refresh with room
+        const float refreshUs = 1000000.0f / (float)displayRate;
+        const bool fits = sample.newFrames > 0 && sample.presents > 0 &&
+            sample.slowNewFrames * 100 <= sample.newFrames * GOVERNOR_SLOW_FRAMES_PER_HUNDRED &&
+            sample.slowPresents * 100 <= sample.presents * GOVERNOR_SLOW_FRAMES_PER_HUNDRED &&
+            sample.gpuMs * 1000.0f < refreshUs * 0.7f;
+        _governorFitSeconds = fits ? _governorFitSeconds + 1 : 0;
+        if (_governorFitSeconds >= _governorHoldSeconds) {
+            _halfRate = false;
+            _governorProbeSecondsLeft = GOVERNOR_PROBE_SECONDS;
+            _governorFitSeconds = 0;
+            _governorCleanSeconds = 0;
+            qCDebug(interfaceapp).nospace() << "Refresh governor: full rate, " << displayRate << " Hz, after "
+                << _governorHalfRateSeconds << " s at half rate: the frames fitted a refresh for " << _governorHoldSeconds << " s";
+            updateRefreshRateController();
+        }
+    }
+}
+
+QString RefreshRateManager::getGovernorStatus() const {
+    if (_halfRate) {
+        return QString("half rate (%1 of %2 Hz), back after %3 s of fitting frames (%4 so far)")
+            .arg(_governorDisplayRate / 2).arg(_governorDisplayRate).arg(_governorHoldSeconds).arg(_governorFitSeconds);
+    }
+    if (_governorHoldSeconds > GOVERNOR_HOLD_MIN_SECONDS) {
+        return QString("full rate (hold %1 s after a failed return)").arg(_governorHoldSeconds);
+    }
+    return QString("full rate");
 }
 
 void RefreshRateManager::resetInactiveTimer() {
@@ -286,14 +410,16 @@ void RefreshRateManager::updateRefreshRateController() const {
             if (targetRefreshRate < 60) {
                 targetRefreshRate = 60;
             }
+            // the cadence governor's half rate (governorTick), in phase: every frame for the same two refreshes
+            if (_halfRate && _uxMode == UXMode::DESKTOP && displayRefreshRate >= MIN_GOVERNED_DISPLAY_RATE) {
+                targetRefreshRate = displayRefreshRate / 2;
+            }
         }
         if (_screenCap > 0 && _uxMode == UXMode::DESKTOP && targetRefreshRate > _screenCap) {
             targetRefreshRate = _screenCap;
         }
-        // DARKRIDE_REFRESH_CAP=<Hz> in the environment caps the desktop's rate at that number, for a hand test at a
-        // whole fraction of the display's rate (72 or 48 on a 144 Hz panel; the presents then lock to every second or
-        // third refresh, RefreshRateController::sleepThreadIfNeeded): PHYSICS.md "The monorail's judder", 2026-10-31
-        static const int environmentCap = qEnvironmentVariableIntValue("DARKRIDE_REFRESH_CAP");
+        // the environment's cap, for hand tests (environmentRefreshCap)
+        const int environmentCap = environmentRefreshCap();
         if (environmentCap > 0 && _uxMode == UXMode::DESKTOP && targetRefreshRate > environmentCap) {
             targetRefreshRate = environmentCap;
         }
