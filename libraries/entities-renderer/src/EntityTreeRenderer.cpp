@@ -27,6 +27,7 @@
 #include <AbstractViewStateInterface.h>
 #include <AddressManager.h>
 #include <ColorUtils.h>
+#include <FrameTrace.h>
 #include <Model.h>
 #include <NetworkAccessManager.h>
 #include <PerfStat.h>
@@ -786,6 +787,16 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
         _maxDeferredThisSecond = 0;
         _maxDeferredFramesThisSecond = 0;
     }
+
+    // the frame trace's columns (FrameTrace.h, the instruments plan): seven set() calls, each one atomic load while
+    // the trace is off
+    FrameTrace::set("update.needed", _prevTotalNeededEntityUpdates);
+    FrameTrace::set("update.done", _prevNumEntityUpdates);
+    FrameTrace::set("update.carried", _prevNumCarriedEntityUpdates);
+    FrameTrace::set("update.avatar", _prevNumAvatarChildUpdates);
+    FrameTrace::set("update.priority", _prevNumPriorityEntityUpdates);
+    FrameTrace::set("update.deferred", _prevNumDeferredEntityUpdates);
+    FrameTrace::set("update.oldest_frames", _prevOldestDeferredFrames);
 }
 
 void EntityTreeRenderer::deferModelMesh(const EntityItemID& id, const glm::vec3& centerWS, float radius) {

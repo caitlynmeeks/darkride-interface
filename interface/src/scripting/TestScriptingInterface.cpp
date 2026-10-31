@@ -40,6 +40,7 @@
 #include <QtQuick/QQuickItem>
 #include <StatTracker.h>
 #include <Trace.h>
+#include <FrameTrace.h>
 #include <ui/TabletScriptingInterface.h>
 
 #include "Application.h"
@@ -1175,6 +1176,31 @@ QVariantList TestScriptingInterface::takePresentTrace() {
             list << QVariant(QVariantList { (double)sample.time * 1.0e-3, (double)sample.frameIndex, sample.newFrame ? 1.0 : 0.0,
                                             (double)sample.presentUsecs * 1.0e-3, (double)sample.swapUsecs * 1.0e-3, (double)sample.gpuMs });
         }
+    }
+    return list;
+}
+
+void TestScriptingInterface::frameTrace(bool on) {
+    if (on) {
+        FrameTrace::start();
+    } else {
+        FrameTrace::stop();
+    }
+}
+
+int TestScriptingInterface::dumpFrameTrace(const QString& path) {
+    return FrameTrace::dump(path);
+}
+
+QVariantList TestScriptingInterface::takeFrameTrace() {
+    QVariantList list;
+    QVariantList header;
+    for (const QString& column : FrameTrace::columns()) {
+        header << column;
+    }
+    list << QVariant(header);
+    for (const QVariantList& row : FrameTrace::take()) {
+        list << QVariant(row);
     }
     return list;
 }

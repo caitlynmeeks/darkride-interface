@@ -28,6 +28,7 @@
 #include <gl/Config.h>
 #include <QtQuick/QQuickWindow>
 #include <StatTracker.h>
+#include <FrameTrace.h>
 #include <AnimDebugDraw.h>
 #include <DebugDraw.h>
 #include <EntityScriptingInterface.h>
@@ -274,6 +275,9 @@ void setupCpuMonitorThread() {
 
 void Application::idle() {
     PerformanceTimer perfTimer("idle");
+    // the frame trace (FrameTrace.h; team/performance/INSTRUMENTS-PLAN.md item 1): this frame's record opened, so
+    // everything the frame does can write its numbers to it; off, one atomic load
+    FrameTrace::beginFrame();
 
     auto offscreenUi = getOffscreenUI();
 
@@ -316,6 +320,7 @@ void Application::idle() {
 
     float secondsSinceLastUpdate = (float)_lastTimeUpdated.nsecsElapsed() / NSECS_PER_MSEC / MSECS_PER_SECOND;
     _lastTimeUpdated.start();
+    FrameTrace::set("frame.dt_ms", secondsSinceLastUpdate * 1000.0f);
 
     // If the offscreen Ui has something active that is NOT the root, then assume it has keyboard focus.
     if (offscreenUi && offscreenUi->getWindow()) {
@@ -388,6 +393,9 @@ void Application::idle() {
 
     _overlayConductor.update(secondsSinceLastUpdate);
 
+    if (FrameTrace::enabled()) {
+        FrameTrace::set("frame.idle_ms", _lastTimeUpdated.nsecsElapsed() * 1.0e-6);
+    }
     _gameLoopCounter.increment();
 }
 
