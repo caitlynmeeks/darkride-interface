@@ -562,6 +562,28 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
             refreshed++;
         }
         _prevNumCarriedEntityUpdates = (int)refreshed;
+        // a moving assembly in view, for the refresh regime (getLastMovingAssemblyInViewTime): the carried parts'
+        // bounds against the view, a handful of tests a frame while something with parts moves, none otherwise
+        if (carriedStart - _lastMovingAssemblyInView > USECS_PER_SECOND / 4) {
+            const auto& views = _viewState->getConicalViews();
+            for (const EntityRendererPointer& renderable : carried) {
+                const EntityItemPointer& entity = renderable->getEntity();
+                const glm::vec3 position = entity->getWorldPosition();
+                const float radius = 0.5f * entity->getQueryAACube().getScale();
+                bool inView = false;
+                for (const auto& view : views) {
+                    const glm::vec3 relative = position - view.getPosition();
+                    if (view.intersects(relative, glm::length(relative), radius)) {
+                        inView = true;
+                        break;
+                    }
+                }
+                if (inView) {
+                    _lastMovingAssemblyInView = carriedStart;
+                    break;
+                }
+            }
+        }
         // TIVOLI_UPDATE_DIAG in the environment: a line a second with the count and the cost (a Box part's refresh
         // measured about a millisecond on the budget's pass, performance 2026-10-31, when it should be microseconds)
         static const bool CARRIED_DIAG = QProcessEnvironment::systemEnvironment().contains("TIVOLI_UPDATE_DIAG");

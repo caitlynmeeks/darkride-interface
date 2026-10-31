@@ -219,7 +219,7 @@ bool RefreshRateManager::governable(int displayRate) const {
         return false;
     }
     // the profile must ask for the display's own rate; a cap under it already paces slower
-    if (queryRefreshRateTarget(getRefreshRateProfile(), _refreshRateRegime, _uxMode) < 900) {
+    if (queryRefreshRateTarget(getRefreshRateProfile(), effectiveRegime(), _uxMode) < 900) {
         return false;
     }
     if (_screenCap > 0 && _screenCap < displayRate) {
@@ -231,7 +231,34 @@ bool RefreshRateManager::governable(int displayRate) const {
     return true;
 }
 
+RefreshRateManager::RefreshRateRegime RefreshRateManager::effectiveRegime() const {
+    return (_refreshRateRegime == RefreshRateRegime::UNFOCUS && _rideKeepsFullRate) ? RefreshRateRegime::FOCUS_ACTIVE
+                                                                                     : _refreshRateRegime;
+}
+
+void RefreshRateManager::updateRideExemption() {
+    bool keep = false;
+    if (_refreshRateRegime == RefreshRateRegime::UNFOCUS && _uxMode == UXMode::DESKTOP && _rideInViewSource) {
+        QWindow* handle = qApp->getWindow() ? qApp->getWindow()->windowHandle() : nullptr;
+        const bool visible = handle && handle->visibility() != QWindow::Minimized && handle->visibility() != QWindow::Hidden;
+        keep = visible && _rideInViewSource();
+    }
+    if (keep != _rideKeepsFullRate) {
+        _rideKeepsFullRate = keep;
+        qCDebug(interfaceapp) << (keep ? "Refresh regime: unfocused, but a ride is in view: the full rate stays"
+                                       : "Refresh regime: unfocused and no ride in view: the unfocused rate");
+        _governorGraceSeconds = 1;
+    }
+}
+
 void RefreshRateManager::governorTick() {
+    if (_refreshRateRegime == RefreshRateRegime::UNFOCUS) {
+        const bool kept = _rideKeepsFullRate;
+        updateRideExemption();
+        if (kept != _rideKeepsFullRate) {
+            updateRefreshRateController();
+        }
+    }
     if (!_cadenceSource) {
         return;
     }
@@ -260,7 +287,7 @@ void RefreshRateManager::governorTick() {
         }
         return;
     }
-    if (_refreshRateRegime != RefreshRateRegime::FOCUS_ACTIVE) {
+    if (effectiveRegime() != RefreshRateRegime::FOCUS_ACTIVE) {
         return;   // at rest, unfocused or minimized another rate rules; the governor's state keeps for the wake
     }
     const int displayRate = sample.displayRate;
@@ -402,6 +429,7 @@ void RefreshRateManager::setRefreshRateRegime(RefreshRateManager::RefreshRateReg
         if (refreshRateRegime == RefreshRateRegime::FOCUS_ACTIVE && _uxMode == UXMode::DESKTOP) {
             _inactiveTimer->start();
         }
+        updateRideExemption();   // a ride in view keeps the full rate through the unfocused regime (no blip at the change)
         updateRefreshRateController();
         _governorGraceSeconds = 1;   // the second that spans the change of target carries no verdict (governorTick)
         // one line a change (a wake or a rest every few seconds at most), with the time, to line up with an input's
@@ -451,7 +479,7 @@ int RefreshRateManager::queryRefreshRateTarget(RefreshRateProfile profile, Refre
 
 void RefreshRateManager::updateRefreshRateController() const {
     if (_refreshRateOperator) {
-        int targetRefreshRate = queryRefreshRateTarget(_refreshRateProfile, _refreshRateRegime, _uxMode);
+        int targetRefreshRate = queryRefreshRateTarget(_refreshRateProfile, effectiveRegime(), _uxMode);
         // rounded, not truncated: a panel reporting 143.98 Hz is a 144 Hz one (truncated to 143, the pacing repeated a
         // frame about once a second, 10-21 review); 0 while the window has no screen yet
         QWindow* handle = qApp->getWindow() ? qApp->getWindow()->windowHandle() : nullptr;

@@ -124,6 +124,15 @@ public:
         int64_t rolledAtNs { 0 };
     };
     void setCadenceSource(std::function<CadenceSample()> source) { _cadenceSource = source; }
+
+    // Caity, 2026-10-31: no drop to the unfocused rate while the window is visible and a ride is in the picture (the
+    // client's avatar on a frame or vehicle, a moving vehicle, train car, frame or platform with parts drawn in the
+    // view within the last second, or another avatar riding one in the view): the full regime stays and the governor
+    // decides. A minimized or hidden window, or nobody riding, drops as before; a ride that ends while unfocused
+    // drops within a second, with a grace second for the governor. The source answers "is a ride in view", asked
+    // when the regime turns unfocused and once a second while it is.
+    void setRideInViewSource(std::function<bool()> source) { _rideInViewSource = source; }
+    bool isRideKeepingFullRate() const { return _rideKeepsFullRate; }
     bool isHalfRate() const { return _halfRate; }
     int getGovernorHoldSeconds() const { return _governorHoldSeconds; }
     // one line for the Stats panel: "full rate" / "half rate (72 of 144 Hz), back after 5 s of fitting frames (2 so far)";
@@ -177,6 +186,10 @@ private:
     std::shared_ptr<QTimer> _inactiveTimer { std::make_shared<QTimer>() };
 
     void governorTick();
+    void updateRideExemption();
+    RefreshRateRegime effectiveRegime() const;
+    std::function<bool()> _rideInViewSource;
+    bool _rideKeepsFullRate { false };
     void updateGovernorStatus();
     void governorDiag(const CadenceSample& sample) const;
     bool governable(int displayRate) const;

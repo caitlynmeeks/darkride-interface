@@ -641,6 +641,8 @@ void Display::setDisplayPlugin(DisplayPluginPointer newDisplayPlugin) {
         RefreshRateManager& refreshRateManager = qApp->getRefreshRateManager();
         refreshRateManager.setRefreshRateOperator(OpenGLDisplayPlugin::getRefreshRateOperator());
         // the present cadence's last second, for the refresh governor
+        // a ride in view keeps the full rate through the unfocused regime (Caity, 2026-10-31)
+        refreshRateManager.setRideInViewSource([]() { return qApp->isRideInView(); });
         refreshRateManager.setCadenceSource([counters = OpenGLDisplayPlugin::getCadenceCountersOperator()]() {
             RefreshRateController::CadenceCounters c = counters();
             RefreshRateManager::CadenceSample sample;

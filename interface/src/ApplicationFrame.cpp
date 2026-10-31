@@ -905,6 +905,37 @@ void Application::update(float deltaTime) {
     }
 }
 
+bool Application::isRideInView() {
+    auto myAvatar = getMyAvatar();
+    if (myAvatar && (!myAvatar->getParentID().isNull() || myAvatar->isSeated())) {
+        return true;   // riding or seated myself
+    }
+    auto entities = getEntities();
+    if (entities && usecTimestampNow() - entities->getLastMovingAssemblyInViewTime() < USECS_PER_SECOND) {
+        return true;   // a vehicle, a train car, a frame or a platform moving in the view
+    }
+    // another avatar riding (parented to an entity) in the view; once a second, a copy of the avatar table
+    auto avatarManager = DependencyManager::get<AvatarManager>();
+    if (!avatarManager) {
+        return false;
+    }
+    const auto& views = getConicalViews();
+    const float AVATAR_RADIUS = 1.0f;
+    for (const auto& avatar : avatarManager->getHashCopy()) {
+        if (!avatar || avatar->getParentID().isNull()) {
+            continue;
+        }
+        const glm::vec3 position = avatar->getWorldPosition();
+        for (const auto& view : views) {
+            const glm::vec3 relative = position - view.getPosition();
+            if (view.intersects(relative, glm::length(relative), AVATAR_RADIUS)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void Application::updateRenderArgs(float deltaTime) {
     _graphicsEngine.editRenderArgs([this, deltaTime](AppRenderArgs& appRenderArgs) {
         PerformanceTimer perfTimer("editRenderArgs");

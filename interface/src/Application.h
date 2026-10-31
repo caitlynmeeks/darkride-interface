@@ -308,6 +308,10 @@ public:
     void updateMyAvatarLookAtPosition(float deltaTime);
 
     float getGameLoopRate() const { return _gameLoopCounter.rate(); }
+    // whether a ride is in the picture: this avatar seated or on a frame or vehicle, a moving assembly with parts
+    // drawn in the view within the last second, or another avatar riding one in the view (RefreshRateManager: no
+    // drop to the unfocused rate while the window is visible and a ride is in view; Caity, 2026-10-31). Main thread.
+    bool isRideInView();
     float getPresentPeriod() const { return _display.getPresentPeriod(); }   // the period the presents are paced at, in seconds; 0 while they are not
 
     SnapshotRequests& getSnapshotRequests() { return _snapshotRequests; }   // the snapshots asked of the next frame (SnapshotRequests.h)

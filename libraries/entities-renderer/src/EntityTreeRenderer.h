@@ -218,6 +218,10 @@ public:
     // came. Main thread, no lock (the map is the main thread's own); cheap enough to poll.
     int getRenderUpdateFramesBehind(const EntityItemID& id) const;
     int getRenderUpdateLastLateFrames(const EntityItemID& id) const;
+    // when a moving assembly (a vehicle, a train car, a frame, a platform: a moving entity with parts, the carried
+    // lane) was last refreshed inside the view, usecTimestampNow(); 0 when never. The refresh regime reads it: a ride
+    // in view keeps the full rate while the window is unfocused (Caity, 2026-10-31). Main thread.
+    uint64_t getLastMovingAssemblyInViewTime() const { return _lastMovingAssemblyInView; }
 
 signals:
     void enterEntity(const EntityItemID& entityItemID);
@@ -363,6 +367,7 @@ private:
     int _maxDeferredLastSecond { 0 };
     int _maxDeferredFramesLastSecond { 0 };
     uint64_t _countersSecondStart { 0 };
+    uint64_t _lastMovingAssemblyInView { 0 };
 
     std::unordered_set<EntityRendererPointer> _renderablesToUpdate;
     std::unordered_set<EntityRendererPointer> _priorityRenderablesToUpdate;
