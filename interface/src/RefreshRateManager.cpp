@@ -290,6 +290,13 @@ void RefreshRateManager::updateRefreshRateController() const {
         if (_screenCap > 0 && _uxMode == UXMode::DESKTOP && targetRefreshRate > _screenCap) {
             targetRefreshRate = _screenCap;
         }
+        // DARKRIDE_REFRESH_CAP=<Hz> in the environment caps the desktop's rate at that number, for a hand test at a
+        // whole fraction of the display's rate (72 or 48 on a 144 Hz panel; the presents then lock to every second or
+        // third refresh, RefreshRateController::sleepThreadIfNeeded): PHYSICS.md "The monorail's judder", 2026-10-31
+        static const int environmentCap = qEnvironmentVariableIntValue("DARKRIDE_REFRESH_CAP");
+        if (environmentCap > 0 && _uxMode == UXMode::DESKTOP && targetRefreshRate > environmentCap) {
+            targetRefreshRate = environmentCap;
+        }
 
         _refreshRateOperator(targetRefreshRate, displayRefreshRate);
         _activeRefreshRate = targetRefreshRate;

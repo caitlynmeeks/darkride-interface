@@ -93,8 +93,20 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
     int64_t nowNs = duration_cast<nanoseconds>(now.time_since_epoch()).count();
     int64_t refreshNs = 0;
     int64_t refreshPeriodNs = 0;
-    bool atDisplayRate = _displayRefreshRate > 0 && getRefreshRateLimitPeriod() >= _displayRefreshRate;
-    if (atDisplayRate && DisplayLink::instance().nextRefresh(nowNs, refreshNs, refreshPeriodNs)) {
+    // In phase with the display when the target is the display's own rate, or a whole fraction of it (72 or 48 on a
+    // 144 Hz panel): a present every refresh, or every second or third, so every frame shows for the same number of
+    // refreshes. An uneven ratio (60 on 144) keeps the free schedule below, where frames show for 2 or 3 refreshes in
+    // turn (2026-10-31, the monorail's judder).
+    const int targetRate = getRefreshRateLimitPeriod();
+    int refreshesPerPresent = 0;
+    if (_displayRefreshRate > 0 && targetRate > 0) {
+        if (targetRate >= _displayRefreshRate) {
+            refreshesPerPresent = 1;
+        } else if (_displayRefreshRate % targetRate == 0) {
+            refreshesPerPresent = _displayRefreshRate / targetRate;
+        }
+    }
+    if (refreshesPerPresent > 0 && DisplayLink::instance().nextRefresh(nowNs, refreshNs, refreshPeriodNs)) {
         // In phase with the display: one slot per refresh interval, a fixed phase after the interval's refresh, so
         // the frame is flushed at the same point of every interval and the compositor shows it at the next refresh.
         // The phase, 2 ms: measured on 2026-10-20 (a 144 Hz panel, 6.94 ms intervals, a 120 Hz second display), the
@@ -118,9 +130,12 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         int64_t phase = sweep ? (int64_t)(_presentCount * SWEEP_STEP_NS) % refreshPeriodNs : phaseSetting % refreshPeriodNs;
         _presentCount++;
         int64_t slot = refreshNs - refreshPeriodNs + phase;   // this interval's (the refresh is the next one)
-        if (slot <= _lastSlotNs + refreshPeriodNs / 2) {
-            // this interval's slot was the last present's: one present an interval
-            slot += refreshPeriodNs;
+        // this interval's slot is taken when it was the last present's, or nearer the last than the presents' spacing
+        // (one interval as a rule; two or three for a present every second or third refresh): the first interval's
+        // slot at the spacing is next. The lateness policy stands: a present that overran presents at once.
+        const int64_t minimumSpacing = refreshesPerPresent * refreshPeriodNs - refreshPeriodNs / 2;
+        if (_lastSlotNs > 0 && slot <= _lastSlotNs + minimumSpacing) {
+            slot += ((_lastSlotNs + minimumSpacing - slot) / refreshPeriodNs + 1) * refreshPeriodNs;
         }
         // the intervals this slot is on from the last (one as a rule; a lost refresh counts)
         int64_t advanced = _lastSlotNs > 0 ? (slot - _lastSlotNs + refreshPeriodNs / 2) / refreshPeriodNs : 1;
