@@ -10,8 +10,6 @@
 #define hifi_Stats_h
 
 #include <QtGui/QVector3D>
-#include <QtCore/QVariantMap>
-#include <atomic>
 
 #include <OffscreenQmlElement.h>
 #include <AudioIOStats.h>
@@ -669,14 +667,6 @@ public:
     }
 
     void updateStats(bool force = false);
-
-    // a script reading the values while the panel is hidden (Test.statsLive and Test.statsSnapshot; the instruments
-    // plan's item 8): while any reader is on, the cheap sections update every frame without a changed signal (the
-    // hidden panel's bindings would re-evaluate for nothing); the expanded-only sections and the timers stay off
-    void addLiveReader(int delta);
-    bool hasLiveReaders() const { return _liveReaders.load(std::memory_order_relaxed) > 0; }
-    // every property's value by name, read in one go on the main thread (vectors as {x, y, z} maps)
-    QVariantMap snapshot();
 
     bool isExpanded() { return _expanded; }
     bool isTimingExpanded() { return _showTimingDetails; }
@@ -1955,10 +1945,6 @@ private:
     bool _expanded{ false };
     bool _showTimingDetails{ false };
     bool _showGameUpdateStats{ false };
-    std::atomic<int> _liveReaders{ 0 };
-    bool _silent{ false };        // this pass updates the members without changed signals
-    bool _signalsOwed{ false };   // a silent pass changed members the panel has not been told about
-    void emitAllChanged();
     QString _monospaceFont;
     const AudioIOStats* _audioStats;
     QStringList _downloadUrls = QStringList();

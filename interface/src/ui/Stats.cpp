@@ -37,8 +37,6 @@
 #include "SequenceNumberStats.h"
 #include "StatTracker.h"
 #include <FrameTrace.h>
-#include <QtCore/QMetaProperty>
-#include <QtGui/QVector2D>
 
 
 HIFI_QML_DEF(Stats)
@@ -93,9 +91,7 @@ bool Stats::includeTimingRecord(const QString& name) {
         auto val = src; \
         if (_##name != val) { \
             _##name = val; \
-            if (!_silent) { \
-                emit name##Changed(); \
-            } \
+            emit name##Changed(); \
         } \
     }
 
@@ -104,9 +100,7 @@ bool Stats::includeTimingRecord(const QString& name) {
         float val = src; \
         if (fabs(_##name - val) >= epsilon) { \
             _##name = val; \
-            if (!_silent) { \
-                emit name##Changed(); \
-            } \
+            emit name##Changed(); \
         } \
     }
 
@@ -119,31 +113,16 @@ void Stats::updateStats(bool force) {
         return;
     }
     QQuickItem* parent = parentItem();
-    // a script reading the values while the panel is hidden (Test.statsLive; the instruments plan's item 8): the cheap
-    // sections run as if the panel were shown and collapsed, the members update without a changed signal, and the
-    // panel is told once when it shows again
-    bool hiddenReaderPass = false;
     if (!force) {
         if (!Menu::getInstance()->isOptionChecked(MenuOption::Stats)) {
             if (parent->isVisible()) {
                 parent->setVisible(false);
             }
-            if (!hasLiveReaders()) {
-                return;
-            }
-            hiddenReaderPass = true;
+            return;
         } else if (!parent->isVisible()) {
             parent->setVisible(true);
         }
     }
-    _silent = hiddenReaderPass;
-    if (hiddenReaderPass) {
-        _signalsOwed = true;
-    } else if (_signalsOwed) {
-        _signalsOwed = false;
-        emitAllChanged();
-    }
-    const bool expanded = _expanded && !hiddenReaderPass;
 
     auto nodeList = DependencyManager::get<NodeList>();
     auto avatarManager = DependencyManager::get<AvatarManager>();
@@ -192,7 +171,7 @@ void Stats::updateStats(bool force) {
     STAT_UPDATE(frameTraceLines, FrameTrace::summaryLines());
 
     auto pickManager = DependencyManager::get<PickManager>();
-    if (pickManager && (expanded || force)) {
+    if (pickManager && (_expanded || force)) {
         std::vector<int> totalPicks = pickManager->getTotalPickCounts();
         STAT_UPDATE(stylusPicksCount, totalPicks[PickQuery::Stylus]);
         STAT_UPDATE(rayPicksCount, totalPicks[PickQuery::Ray]);
@@ -264,7 +243,7 @@ void Stats::updateStats(bool force) {
     STAT_UPDATE(position, QVector3D(avatarPos.x, avatarPos.y, avatarPos.z));
     STAT_UPDATE_FLOAT(speed, glm::length(myAvatar->getWorldVelocity()), 0.01f);
     STAT_UPDATE_FLOAT(yaw, myAvatar->getBodyYaw(), 0.1f);
-    if (expanded || force) {
+    if (_expanded || force) {
         SharedNodePointer avatarMixer = nodeList->soloNodeOfType(NodeType::AvatarMixer);
         if (avatarMixer) {
             STAT_UPDATE(avatarMixerInKbps, (int)roundf(avatarMixer->getInboundKbps()));
@@ -366,7 +345,7 @@ void Stats::updateStats(bool force) {
         //const QUuid& uuid = i->first;
         OctreeSceneStats& stats = i->second;
         serverCount++;
-        if (expanded) {
+        if (_expanded) {
             if (serverCount > 1) {
                 sendingModeStream << ",";
             }
@@ -386,12 +365,12 @@ void Stats::updateStats(bool force) {
 
         // calculate server node totals
         totalNodes += stats.getTotalElements();
-        if (expanded) {
+        if (_expanded) {
             totalInternal += stats.getTotalInternal();
             totalLeaves += stats.getTotalLeaves();
         }
     }
-    if (expanded || force) {
+    if (_expanded || force) {
         if (serverCount == 0) {
             sendingModeStream << "---";
         }
@@ -420,7 +399,7 @@ void Stats::updateStats(bool force) {
     STAT_UPDATE(engineFrameTime, (float) config->getCPURunTime());
     STAT_UPDATE(avatarSimulationTime, (float)avatarManager->getAvatarSimulationTime());
 
-    if (expanded) {
+    if (_expanded) {
         STAT_UPDATE(gpuBuffers, (int)gpu::Context::getBufferGPUCount());
         STAT_UPDATE(gpuBufferMemory, (int)BYTES_TO_MB(gpu::Context::getBufferGPUMemSize()));
         STAT_UPDATE(gpuTextures, (int)gpu::Context::getTextureGPUCount());
@@ -457,7 +436,7 @@ void Stats::updateStats(bool force) {
     // Incoming packets
     QLocale locale(QLocale::English);
     auto voxelPacketsToProcess = qApp->getOctreePacketProcessor().packetsToProcessCount();
-    if (expanded) {
+    if (_expanded) {
         std::stringstream octreeStats;
         QString packetsString = locale.toString((int)voxelPacketsToProcess);
         QString maxString = locale.toString((int)_recentMaxPackets);
@@ -482,7 +461,7 @@ void Stats::updateStats(bool force) {
     STAT_UPDATE(serverElements, (int)totalNodes);
     STAT_UPDATE(localElements, (int)OctreeElement::getNodeCount());
 
-    if (expanded || force) {
+    if (_expanded || force) {
         STAT_UPDATE(serverInternal, (int)totalInternal);
         STAT_UPDATE(serverLeaves, (int)totalLeaves);
         // Local Voxels
@@ -536,7 +515,7 @@ void Stats::updateStats(bool force) {
     }
 
 
-    bool performanceTimerShouldBeActive = Menu::getInstance()->isOptionChecked(MenuOption::Stats) && expanded;
+    bool performanceTimerShouldBeActive = Menu::getInstance()->isOptionChecked(MenuOption::Stats) && _expanded;
     if (performanceTimerShouldBeActive != PerformanceTimer::isActive()) {
         PerformanceTimer::setActive(performanceTimerShouldBeActive);
     }
@@ -594,7 +573,7 @@ void Stats::updateStats(bool force) {
         emit timingExpandedChanged();
     }
 
-    if (expanded && performanceTimerShouldBeActive) {
+    if (_expanded && performanceTimerShouldBeActive) {
         if (!_showGameUpdateStats) {
             _showGameUpdateStats = true;
         }
@@ -680,38 +659,3 @@ void Stats::display(
 
 
 */
-
-void Stats::addLiveReader(int delta) {
-    if (_liveReaders.fetch_add(delta, std::memory_order_relaxed) + delta < 0) {
-        _liveReaders.store(0, std::memory_order_relaxed);
-    }
-}
-
-void Stats::emitAllChanged() {
-    // every property's changed signal, so the panel re-reads the members a silent pass changed
-    const QMetaObject* meta = metaObject();
-    for (int i = Stats::staticMetaObject.propertyOffset(); i < meta->propertyCount(); ++i) {
-        QMetaProperty property = meta->property(i);
-        if (property.hasNotifySignal()) {
-            property.notifySignal().invoke(this);
-        }
-    }
-}
-
-QVariantMap Stats::snapshot() {
-    QVariantMap map;
-    const QMetaObject* meta = metaObject();
-    for (int i = Stats::staticMetaObject.propertyOffset(); i < meta->propertyCount(); ++i) {
-        QMetaProperty property = meta->property(i);
-        QVariant value = property.read(this);
-        if (value.userType() == QMetaType::QVector3D) {
-            auto v = value.value<QVector3D>();
-            value = QVariantMap{ { "x", v.x() }, { "y", v.y() }, { "z", v.z() } };
-        } else if (value.userType() == QMetaType::QVector2D) {
-            auto v = value.value<QVector2D>();
-            value = QVariantMap{ { "x", v.x() }, { "y", v.y() } };
-        }
-        map[QString::fromLatin1(property.name())] = value;
-    }
-    return map;
-}
