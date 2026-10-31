@@ -29,6 +29,7 @@
 #include <PhysicsCollisionGroups.h>
 #include <Profile.h>
 #include <SharedUtil.h>
+#include <FrameTrace.h>
 
 #include "CharacterController.h"
 #include "JoltLayers.h"
@@ -670,6 +671,23 @@ void PhysicsEngine::stepSimulation() {
     // still reads fresh positions, and nothing is ever shown ahead of what was simulated.
     ObjectMotionState::setLeftoverTime(_accumulatedTime);
     _hasOutgoingChanges = true;
+
+    // the substeps-per-frame histogram behind the Stats line (kept always) and the frame trace's physics columns
+    // (item 4 of team/performance/INSTRUMENTS-PLAN.md): the substeps this update ran, where between the last
+    // substep's start and end this frame presents the bodies, and the paced clock's lead on the wall clock
+    if (now - _substepWindowStart >= USECS_PER_SECOND) {
+        for (int i = 0; i < 4; i++) {
+            _substepCountsLastSecond[i] = _substepCounts[i];
+            _substepCounts[i] = 0;
+        }
+        _substepWindowStart = now;
+    }
+    _substepCounts[glm::min(numSubsteps, 3)]++;
+    if (FrameTrace::enabled()) {
+        FrameTrace::set("physics.substeps", (double)numSubsteps);
+        FrameTrace::set("physics.alpha", ObjectMotionState::getPresentationAlpha());
+        FrameTrace::set("physics.lead_ms", getPacedClockLeadMs());
+    }
 
     if (numSubsteps > 0) {
         if (_debugDrawMode != PhysicsDebugDraw::DRAW_NOTHING) {
