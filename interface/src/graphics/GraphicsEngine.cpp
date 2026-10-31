@@ -287,6 +287,8 @@ void GraphicsEngine::render_performFrame() {
     ViewFrustum viewFrustum;
 
     bool isStereo;
+    uint64_t traceFrame = 0;
+    uint64_t mainFrameUsecs = 0;
     glm::mat4  stereoEyeOffsets[2];
     glm::mat4  stereoEyeProjections[2];
 
@@ -303,6 +305,8 @@ void GraphicsEngine::render_performFrame() {
         eyeToWorld = _appRenderArgs._eyeToWorld;
         sensorToWorld = _appRenderArgs._sensorToWorld;
         isStereo = _appRenderArgs._isStereo;
+        traceFrame = _appRenderArgs._traceFrame;
+        mainFrameUsecs = _appRenderArgs._mainFrameUsecs;
         for_each_eye([&](Eye eye) {
             stereoEyeOffsets[eye] = _appRenderArgs._eyeOffsets[eye];
             stereoEyeProjections[eye] = _appRenderArgs._eyeProjections[eye];
@@ -438,6 +442,8 @@ void GraphicsEngine::render_performFrame() {
 
     auto frame = getGPUContext()->endFrame();
     frame->frameIndex = _renderFrameCount;
+    frame->traceFrame = traceFrame;
+    frame->mainTime = mainFrameUsecs;
     frame->framebuffer = finalFramebuffer;
     frame->framebufferRecycler = [](const gpu::FramebufferPointer& framebuffer) {
         auto frameBufferCache = DependencyManager::get<FramebufferCache>();
@@ -451,6 +457,7 @@ void GraphicsEngine::render_performFrame() {
         PROFILE_RANGE(render, "/pluginOutput");
         PerformanceTimer perfTimer("pluginOutput");
         _renderLoopCounter.increment();
+        frame->buildTime = usecTimestampNow() - lastPaintBegin;   // the render thread's build of this frame
         displayPlugin->submitFrame(frame);
     }
 

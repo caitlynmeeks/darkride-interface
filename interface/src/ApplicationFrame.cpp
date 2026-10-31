@@ -275,6 +275,13 @@ void setupCpuMonitorThread() {
 
 void Application::idle() {
     PerformanceTimer perfTimer("idle");
+    // the main thread's frame time, for the refresh governor's fit (RefreshRateManager): the whole of idle, whichever
+    // way it returns
+    struct IdleClock {
+        uint64_t start;
+        std::atomic<uint64_t>& out;
+        ~IdleClock() { out = usecTimestampNow() - start; }
+    } idleClock { usecTimestampNow(), _lastIdleDurationUsecs };
     // the frame trace (FrameTrace.h; team/performance/INSTRUMENTS-PLAN.md item 1): this frame's record opened, so
     // everything the frame does can write its numbers to it; off, one atomic load
     FrameTrace::beginFrame();
@@ -898,6 +905,37 @@ void Application::update(float deltaTime) {
     }
 }
 
+bool Application::isRideInView() {
+    auto myAvatar = getMyAvatar();
+    if (myAvatar && (!myAvatar->getParentID().isNull() || myAvatar->isSeated())) {
+        return true;   // riding or seated myself
+    }
+    auto entities = getEntities();
+    if (entities && usecTimestampNow() - entities->getLastMovingAssemblyInViewTime() < USECS_PER_SECOND) {
+        return true;   // a vehicle, a train car, a frame or a platform moving in the view
+    }
+    // another avatar riding (parented to an entity) in the view; once a second, a copy of the avatar table
+    auto avatarManager = DependencyManager::get<AvatarManager>();
+    if (!avatarManager) {
+        return false;
+    }
+    const auto& views = getConicalViews();
+    const float AVATAR_RADIUS = 1.0f;
+    for (const auto& avatar : avatarManager->getHashCopy()) {
+        if (!avatar || avatar->getParentID().isNull()) {
+            continue;
+        }
+        const glm::vec3 position = avatar->getWorldPosition();
+        for (const auto& view : views) {
+            const glm::vec3 relative = position - view.getPosition();
+            if (view.intersects(relative, glm::length(relative), AVATAR_RADIUS)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void Application::updateRenderArgs(float deltaTime) {
     _graphicsEngine.editRenderArgs([this, deltaTime](AppRenderArgs& appRenderArgs) {
         PerformanceTimer perfTimer("editRenderArgs");
@@ -933,6 +971,9 @@ void Application::updateRenderArgs(float deltaTime) {
                 lodManager->getBoundaryLevelAdjust(), lodManager->getLODHalfAngleTan(), RenderArgs::DEFAULT_RENDER_MODE,
                 RenderArgs::MONO, RenderArgs::DEFERRED, RenderArgs::RENDER_DEBUG_NONE);
             appRenderArgs._renderArgs._scene = getMain3DScene();
+            appRenderArgs._traceFrame = FrameTrace::currentFrame();
+            appRenderArgs._mainFrameUsecs = _lastIdleDurationUsecs.load();
+            FrameTrace::set("governor.half", getRefreshRateManager().isHalfRate() ? 1.0 : 0.0);
             appRenderArgs._renderArgs._impostorAngleHalfTanSq = lodManager->getImpostorAngleHalfTanSq();
             appRenderArgs._renderArgs._impostorDebug = lodManager->getImpostorDebug();
             appRenderArgs._renderArgs._impostorCrossfade = lodManager->getImpostorCrossfade();

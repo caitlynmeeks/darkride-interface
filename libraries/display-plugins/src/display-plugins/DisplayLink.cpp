@@ -8,6 +8,7 @@
 
 #include "DisplayLink.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include <QtCore/QtGlobal>
@@ -33,6 +34,15 @@ DisplayLink& DisplayLink::instance() {
 
 DisplayLink::~DisplayLink() {
     stop();
+}
+
+bool DisplayLink::isQuiet(int64_t nowNs) const {
+    static const int64_t QUIET_NS = 500000000;
+    if (!_running) {
+        return false;
+    }
+    int64_t last = std::max(_lastCallbackNs.load(), _startedNs.load());
+    return last > 0 && nowNs - last > QUIET_NS;
 }
 
 bool DisplayLink::nextRefresh(int64_t nowNs, int64_t& refreshNs, int64_t& periodNs) const {
@@ -127,6 +137,7 @@ void DisplayLink::start(uint32_t displayId) {
     }
     _link = link;
     _displayId = id;
+    _startedNs = steadyNowNs();
     _running = true;
     CVTime nominal = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(link);
     double nominalHz = (!(nominal.flags & kCVTimeIsIndefinite) && nominal.timeValue > 0) ? (double)nominal.timeScale / (double)nominal.timeValue : 0.0;
