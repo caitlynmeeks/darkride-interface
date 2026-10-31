@@ -65,7 +65,7 @@ public:
         int slowBuildFrames { 0 };      // whose render-thread build took over 70 % of a refresh
         int maxMainUs { 0 };
         int maxBuildUs { 0 };
-        int slowExecutes { 0 };         // presents whose own work (the present less its swap) took over 70 % of a refresh
+        int slowExecutes { 0 };         // presents whose own work (the present less its swap) took over half a refresh (its real budget at full rate)
         int maxExecuteUs { 0 };
         float gpuMs { 0.0f };           // the GPU's frame time as last averaged
         int64_t rolledAtNs { 0 };       // when the second ended, on std::chrono::steady_clock; 0 before the first second
