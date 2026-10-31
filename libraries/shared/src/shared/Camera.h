@@ -15,6 +15,8 @@
 #include "../RegisteredMetaTypes.h"
 #include "../ViewFrustum.h"
 
+#include <atomic>
+
 enum CameraMode
 {
     CAMERA_MODE_NULL = -1,
@@ -61,6 +63,21 @@ public:
 
     const glm::mat4& getProjection() const { return _projection; }
     void setProjection(const glm::mat4& projection);
+
+    // Who placed the camera (team/performance/INSTRUMENTS-PLAN.md, item 11): the engine composes every desktop mode's
+    // pose on the game loop inside ViewState::updateCamera, in a Placing scope; a pose setter called outside that
+    // scope is a script's (Camera.position from a script's thread, on that thread's clock, a frame off at random),
+    // noted until the frame trace reads it each frame (its cam.source column). A flag, not a count: a script's set
+    // that lands while updateCamera itself runs is taken for the engine's, so a script's camera is missed now and
+    // then, never reported falsely (no engine code places the camera outside ViewState::updateCamera).
+    class Placing {
+    public:
+        Placing(Camera& camera) : _camera(camera) { _camera._placing = true; }
+        ~Placing() { _camera._placing = false; }
+    private:
+        Camera& _camera;
+    };
+    bool takeSetOutside() { return _setOutside.exchange(false); }
 
     QVariantMap getViewFrustum();
 
@@ -208,6 +225,10 @@ private:
     bool _isKeepLookingAt{ false };
     glm::vec3 _lookingAt;
     bool _disableLookAt{ false };
+
+    void noteSetter() { if (!_placing) { _setOutside = true; } }   // a pose set outside updateCamera's scope
+    std::atomic<bool> _placing{ false };
+    std::atomic<bool> _setOutside{ false };
 };
 
 #endif // hifi_Camera_h

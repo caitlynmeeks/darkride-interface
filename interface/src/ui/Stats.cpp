@@ -129,6 +129,12 @@ void Stats::updateStats(bool force) {
     STAT_UPDATE(avatarCount, avatarManager->size() - 1);
     STAT_UPDATE(heroAvatarCount, avatarManager->getNumHeroAvatars());
     STAT_UPDATE(physicsObjectCount, qApp->getNumCollisionObjects());
+    {   // the camera against the vehicle, the last whole second's (item 11)
+        const ViewState& viewState = qApp->getViewState();
+        STAT_UPDATE(cameraRideStepMaxMm, viewState.getCameraRideStepMaxMm());
+        STAT_UPDATE(cameraStepMinMm, viewState.getCameraStepMinMm());
+        STAT_UPDATE(cameraStepMaxMm, viewState.getCameraStepMaxMm());
+    }
     STAT_UPDATE(updatedAvatarCount, avatarManager->getNumAvatarsUpdated());
     STAT_UPDATE(updatedHeroAvatarCount, avatarManager->getNumHeroAvatarsUpdated());
     STAT_UPDATE(notUpdatedAvatarCount, avatarManager->getNumAvatarsNotUpdated());

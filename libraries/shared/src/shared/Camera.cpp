@@ -153,11 +153,13 @@ void Camera::decompose() {
 }
 
 void Camera::setTransform(const glm::mat4& transform) {
+    noteSetter();
     _transform = transform;
     decompose();
 }
 
 void Camera::setPosition(const glm::vec3& position) {
+    noteSetter();
     _position = position;
     recompose();
     if (_isKeepLookingAt) {
@@ -166,6 +168,7 @@ void Camera::setPosition(const glm::vec3& position) {
 }
 
 void Camera::setOrientation(const glm::quat& orientation) {
+    noteSetter();
     _orientation = orientation;
     recompose();
     if (_isKeepLookingAt) {

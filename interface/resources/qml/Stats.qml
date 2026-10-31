@@ -89,6 +89,10 @@ Item {
                         text: "Bypass Priority Sorting: " + root.bypassPrioritySorting;
                     }
                     StatText {
+                        visible: root.expanded
+                        text: "Camera vs vehicle: step in the car max " + root.cameraRideStepMaxMm.toFixed(1) + " mm (last second); world step min/max " + root.cameraStepMinMm.toFixed(1) + "/" + root.cameraStepMaxMm.toFixed(1) + " mm"
+                    }
+                    StatText {
                         text: "Game Loop Rate (CPU): " + root.gameLoopRate
                     }
                     StatText {

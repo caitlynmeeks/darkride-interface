@@ -511,6 +511,9 @@ class Stats : public QQuickItem {
     STATS_PROPERTY(QStringList, frameTraceLines, QStringList())
     STATS_PROPERTY(int, heroAvatarCount, 0)
     STATS_PROPERTY(int, physicsObjectCount, 0)
+    STATS_PROPERTY(float, cameraRideStepMaxMm, 0)
+    STATS_PROPERTY(float, cameraStepMinMm, 0)
+    STATS_PROPERTY(float, cameraStepMaxMm, 0)
     STATS_PROPERTY(int, updatedAvatarCount, 0)
     STATS_PROPERTY(int, updatedHeroAvatarCount, 0)
     STATS_PROPERTY(int, notUpdatedAvatarCount, 0)
@@ -836,6 +839,12 @@ signals:
      * @returns {Signal}
      */
     void physicsObjectCountChanged();
+
+    // the camera against the vehicle, the last whole second's (item 11): the camera's max step in the ridden
+    // entity's frame and its min and max world step, in mm
+    void cameraRideStepMaxMmChanged();
+    void cameraStepMinMmChanged();
+    void cameraStepMaxMmChanged();
 
     /**jsdoc
      * Triggered when the value of the <code>updatedAvatarCount</code> property changes.

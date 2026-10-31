@@ -86,6 +86,13 @@ public:
     float allowedBoomLength(const glm::vec3& pivot, const glm::vec3& wanted, const QVector<QUuid>& ignore,
                             glm::vec3* clearPivot = nullptr, QUuid* holder = nullptr) const;
 
+    // the last whole second's camera steps (mm; item 11, traceCamera): the max in the ride's frame (0 when not
+    // riding) and the min and max in the world (a camera mode switch or a teleport is one big step in that
+    // second's max)
+    float getCameraRideStepMaxMm() const { return _cameraRideStepMaxLastSecond; }
+    float getCameraStepMinMm() const { return glm::max(0.0f, _cameraStepMinLastSecond); }
+    float getCameraStepMaxMm() const { return _cameraStepMaxLastSecond; }
+
 private:
     void addSecondaryCameraView();   // the secondary camera's frustum among the conical views (was updateSecondaryCameraViewFrustum)
     // camera collision for the third-person boom (View > Camera Collision): from the pivot toward where the camera
@@ -122,6 +129,21 @@ private:
     bool _chaseHeldIn{ false };
     uint32_t _chaseVersion{ 0 };
     bool _chaseValid{ false };
+    // the camera against the ride, kept every frame (item 11): the camera's last position in the ridden entity's
+    // frame and that entity, its last world position, and the running second's max step in the ride's frame and
+    // min/max world step (mm; the window being filled, then the last whole second's, for the Stats panel)
+    void traceCamera();
+    QUuid _cameraRideLast;
+    glm::vec3 _cameraRideLastLocal{ 0.0f };
+    glm::vec3 _cameraLastPosition{ 0.0f };
+    bool _cameraLastValid{ false };
+    float _cameraRideStepMax{ 0.0f };
+    float _cameraStepMin{ -1.0f };
+    float _cameraStepMax{ 0.0f };
+    float _cameraRideStepMaxLastSecond{ 0.0f };
+    float _cameraStepMinLastSecond{ -1.0f };
+    float _cameraStepMaxLastSecond{ 0.0f };
+    uint64_t _cameraWindowStart{ 0 };
 };
 
 #endif // hifi_ViewState_h

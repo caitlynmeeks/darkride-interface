@@ -64,7 +64,9 @@ def read_frame_trace(results):
                                "veh": tuple(number(r["ride.%s_m" % a]) for a in "xyz"),
                                "vehq": tuple(number(r["ride.q%s" % a]) for a in "wxyz"),
                                "substeps": int(substeps) if substeps is not None else None,
-                               "correction": number(r.get("ride.correction_m")) or 0.0}
+                               "correction": number(r.get("ride.correction_m")) or 0.0,
+                               "ride_step": number(r.get("cam.ride_step_mm")), "step": number(r.get("cam.step_mm")),
+                               "source": number(r.get("cam.source"))}
     return [rows[k] for k in sorted(rows)]
 
 
@@ -122,6 +124,15 @@ def main(results):
             cm, cam_dev, cx, steps, corr, len(phase.get("renderTrace") or []), repeated))
         print("%-13s camera-to-kart distance change per frame: mean %.1f mm, max %.1f mm; first frames' camera steps (mm): %s" % (
             "", dm, dx, " ".join("%.0f" % c for c in cam_steps[:24])))
+        # the engine's own columns (item 11): the camera's step in the kart's frame (0 with the camera fixed in the
+        # kart's frame, whatever the kart does), its world step and who placed it
+        ride_steps = [r["ride_step"] for r in frames if r["ride_step"] is not None]
+        engine_steps = [r["step"] for r in frames if r["step"] is not None]
+        scripted = sum(1 for r in frames if r["source"])
+        if ride_steps and engine_steps:
+            rm, rr, rx = stats(ride_steps)
+            print("%-13s engine: camera step in the kart's frame (cam.ride_step_mm) mean %.2f max %.2f mm of %d; world step (cam.step_mm) min %.1f max %.1f mm; script-set camera (cam.source) %d of %d frames" % (
+                "", rm, rx, len(ride_steps), min(engine_steps), max(engine_steps), scripted, len(frames)))
 
 
 if __name__ == "__main__":
