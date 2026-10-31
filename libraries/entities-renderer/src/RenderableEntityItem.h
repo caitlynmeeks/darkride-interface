@@ -61,6 +61,15 @@ public:
 
     const uint64_t& getUpdateTime() const { return _updateTime; }
 
+    // The render-update budget's staleness stamps, kept by EntityTreeRenderer::updateChangedEntities (the
+    // instruments plan, item 2): the frame this renderable was first left over by the time budget, 0 while it is
+    // drawn as its entity is; and how many frames late its last refresh came (0 when it came the frame the entity
+    // changed). Main thread only; the inspector shows them for the selected entity.
+    uint64_t getDeferredSinceFrame() const { return _deferredSinceFrame; }
+    void setDeferredSinceFrame(uint64_t frame) { _deferredSinceFrame = frame; }
+    uint32_t getLastLateFrames() const { return _lastLateFrames; }
+    void setLastLateFrames(uint32_t frames) { _lastLateFrames = frames; }
+
     virtual void addMaterial(graphics::MaterialLayer material, const std::string& parentMaterialName);
     virtual void removeMaterial(graphics::MaterialPointer material, const std::string& parentMaterialName);
 
@@ -206,6 +215,8 @@ protected:
     uint64_t _fadeStartTime{ usecTimestampNow() };
     uint64_t _updateTime{ 0 }; // used when sorting/throttling render updates
     uint64_t _staticUpdateTime{ 0 }; 
+    uint64_t _deferredSinceFrame { 0 };
+    uint32_t _lastLateFrames { 0 };
 
 
     bool _isFading { EntityTreeRenderer::getEntitiesShouldFadeFunction()() };

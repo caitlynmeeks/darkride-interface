@@ -12,6 +12,7 @@
 #include "EntityTreeRenderer.h"
 
 #include <glm/gtx/quaternion.hpp>
+#include <algorithm>
 #include <queue>
 
 #include <QEventLoop>
@@ -19,6 +20,7 @@
 #include <QScriptSyntaxCheckResult>
 #include <QThreadPool>
 #include <QSet>
+#include <QStringList>
 
 #include <shared/QtHelpers.h>
 #include <AbstractScriptingServicesInterface.h>
@@ -458,6 +460,28 @@ void EntityTreeRenderer::addPendingEntities(const render::ScenePointer& scene, r
     }
 }
 
+// the staleness stamps (the inspector's "frames behind" and the deferred-age counter): a refresh clears the wait and
+// records how late it came, in frames
+static void markRenderableRefreshed(const EntityRendererPointer& renderable, uint64_t frame) {
+    uint64_t since = renderable->getDeferredSinceFrame();
+    renderable->setLastLateFrames(since ? (uint32_t)(frame - since) : 0u);
+    renderable->setDeferredSinceFrame(0);
+}
+
+int EntityTreeRenderer::getRenderUpdateFramesBehind(const EntityItemID& id) const {
+    EntityRendererPointer renderable = renderableForEntityId(id);
+    if (!renderable) {
+        return -1;
+    }
+    uint64_t since = renderable->getDeferredSinceFrame();
+    return since ? (int)(_renderUpdateFrame - since + 1) : 0;
+}
+
+int EntityTreeRenderer::getRenderUpdateLastLateFrames(const EntityItemID& id) const {
+    EntityRendererPointer renderable = renderableForEntityId(id);
+    return renderable ? (int)renderable->getLastLateFrames() : -1;
+}
+
 void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene, render::Transaction& transaction) {
     PROFILE_RANGE_EX(simulation_physics, "ChangeInScene", 0xffff00ff, (uint64_t)_changedEntities.size());
     PerformanceTimer pt("change");
@@ -465,6 +489,8 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
     _changedEntitiesGuard.withWriteLock([&] {
         changedEntities.swap(_changedEntities);
     });
+    const uint64_t frame = ++_renderUpdateFrame;
+    _prevNumCarriedEntityUpdates = 0;
     // The parts a moving entity carries (a vehicle's walls and rails, a frame's pieces: its children and their
     // children) land here every frame, told by the parent's locationChanged, and went through the time budget below
     // with the rest of the world. In a heavy world the budget runs out; the big parent under the camera ranks high in
@@ -525,9 +551,11 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
             bool changed = renderable->entityHasChanged();
             renderable->getEntity()->setNeedsRenderUpdate(true);
             renderable->updateInScene(scene, transaction, changed);
+            markRenderableRefreshed(renderable, frame);
             slowest = std::max(slowest, usecTimestampNow() - start);
             refreshed++;
         }
+        _prevNumCarriedEntityUpdates = (int)refreshed;
         // TIVOLI_UPDATE_DIAG in the environment: a line a second with the count and the cost (a Box part's refresh
         // measured about a millisecond on the budget's pass, performance 2026-10-31, when it should be microseconds)
         static const bool CARRIED_DIAG = QProcessEnvironment::systemEnvironment().contains("TIVOLI_UPDATE_DIAG");
@@ -599,9 +627,11 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
                 if (renderable != nullptr) {                    
                     renderable->getEntity()->setNeedsRenderUpdate(true);
                     renderable->updateInScene(scene, transaction);
+                    markRenderableRefreshed(renderable, frame);
                 }
             }
         }
+        _prevNumPriorityEntityUpdates = (int)_priorityRenderablesToUpdate.size();
 
         if (expectedUpdateCost < MAX_UPDATE_RENDERABLES_TIME_BUDGET) { 
             PROFILE_RANGE_EX(simulation_physics, "UpdateRenderables", 0xffff00ff, (uint64_t)_renderablesToUpdate.size());
@@ -617,10 +647,13 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
                     bool changed = renderable->entityHasChanged();
                     renderable->getEntity()->setNeedsRenderUpdate(true);
                     renderable->updateInScene(scene, transaction, changed);
+                    markRenderableRefreshed(renderable, frame);
                 }
             }
 
             _prevNumEntityUpdates = _renderablesToUpdate.size();
+            _prevNumDeferredEntityUpdates = 0;
+            _prevOldestDeferredFrames = 0;
             size_t numRenderables = _prevNumEntityUpdates + 1;  // add one to avoid divide by zero
             _renderablesToUpdate.clear();
             float cost = (float)(usecTimestampNow() - updateStart) / (float)(numRenderables); // compute average per-renderable update cost
@@ -679,17 +712,51 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
                     if (renderable != nullptr) {
                         renderable->getEntity()->setNeedsRenderUpdate(true);
                         renderable->updateInScene(scene, transaction);
+                        markRenderableRefreshed(renderable, frame);
                     }
                     _renderablesToUpdate.erase(renderable);
                 }
 
-                // TIVOLI_UPDATE_DIAG in the environment: a log line a second while the budget leaves renderables over
+                // the ones left for the next frame are stamped with the frame they were first left over, so their
+                // age in frames is known (the counters, the inspector's frames behind, the log line); a loop over
+                // the leftovers only, and only when the budget ran out
+                int oldestFrames = 0;
+                for (const auto& renderable : _renderablesToUpdate) {
+                    if (renderable->getDeferredSinceFrame() == 0) {
+                        renderable->setDeferredSinceFrame(frame);
+                    }
+                    oldestFrames = std::max(oldestFrames, (int)(frame - renderable->getDeferredSinceFrame() + 1));
+                }
+                _prevNumDeferredEntityUpdates = (int)_renderablesToUpdate.size();
+                _prevOldestDeferredFrames = oldestFrames;
+
+                // TIVOLI_UPDATE_DIAG in the environment: a log line a second while the budget leaves renderables over,
+                // naming the ones left over (the oldest first, at most a dozen) with their age in frames
                 static const bool UPDATE_DIAG = QProcessEnvironment::systemEnvironment().contains("TIVOLI_UPDATE_DIAG");
                 static uint64_t lastUpdateDiag = 0;
                 if (UPDATE_DIAG && !_renderablesToUpdate.empty() && updateStart - lastUpdateDiag > USECS_PER_SECOND) {
                     lastUpdateDiag = updateStart;
-                    qCDebug(entitiesrenderer) << "renderable updates:" << _renderablesToUpdate.size() << "of"
-                        << sortedRenderables.size() << "left for the next frame (budget" << timeBudget << "us)";
+                    std::vector<EntityRendererPointer> leftovers(_renderablesToUpdate.begin(), _renderablesToUpdate.end());
+                    std::sort(leftovers.begin(), leftovers.end(), [](const EntityRendererPointer& a, const EntityRendererPointer& b) {
+                        return a->getDeferredSinceFrame() < b->getDeferredSinceFrame();
+                    });
+                    const size_t MAX_NAMED = 12;
+                    QStringList named;
+                    for (size_t i = 0; i < leftovers.size() && i < MAX_NAMED; i++) {
+                        const EntityItemPointer& entity = leftovers[i]->getEntity();
+                        QString name = entity->getName();
+                        if (name.isEmpty()) {
+                            name = entity->getID().toString().mid(1, 8);
+                        }
+                        named << QString("%1 (%2, %3 frames)").arg(name, EntityTypes::getEntityTypeName(entity->getType()))
+                            .arg(frame - leftovers[i]->getDeferredSinceFrame() + 1);
+                    }
+                    if (leftovers.size() > MAX_NAMED) {
+                        named << QString("and %1 more").arg(leftovers.size() - MAX_NAMED);
+                    }
+                    qCDebug(entitiesrenderer).noquote() << "renderable updates:" << _renderablesToUpdate.size() << "of"
+                        << sortedRenderables.size() << "left for the next frame (budget" << timeBudget << "us), oldest"
+                        << oldestFrames << "frames:" << named.join(", ");
                 }
 
                 // compute average per-renderable update cost
@@ -701,6 +768,18 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
             }
         }
         MeshPartPayload::sceneIsReady = true;
+    }
+
+    // the maxima over the last whole second, for a Stats line that holds still (a per-frame value flickers)
+    _maxDeferredThisSecond = std::max(_maxDeferredThisSecond, _prevNumDeferredEntityUpdates);
+    _maxDeferredFramesThisSecond = std::max(_maxDeferredFramesThisSecond, _prevOldestDeferredFrames);
+    const uint64_t now = usecTimestampNow();
+    if (now - _countersSecondStart >= USECS_PER_SECOND) {
+        _countersSecondStart = now;
+        _maxDeferredLastSecond = _maxDeferredThisSecond;
+        _maxDeferredFramesLastSecond = _maxDeferredFramesThisSecond;
+        _maxDeferredThisSecond = 0;
+        _maxDeferredFramesThisSecond = 0;
     }
 }
 
@@ -782,6 +861,7 @@ void EntityTreeRenderer::updateAvatarChildren() {
     _changedEntitiesGuard.withWriteLock([&] {
         changedEntities.swap(_changedEntities);
     });
+    _prevNumAvatarChildUpdates = 0;
     if (changedEntities.empty()) {
         return;
     }
@@ -820,8 +900,10 @@ void EntityTreeRenderer::updateAvatarChildren() {
             bool changed = renderable->entityHasChanged();
             renderable->getEntity()->setNeedsRenderUpdate(true);
             renderable->updateInScene(scene, transaction, changed);
+            markRenderableRefreshed(renderable, _renderUpdateFrame);
         }
         scene->enqueueTransaction(transaction);
+        _prevNumAvatarChildUpdates = (int)underAvatars.size();
     }
 }
 
