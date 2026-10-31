@@ -47,6 +47,12 @@ html, body {
     padding: 8px 0;
 }
 
+/* the station list in Jost a size up from Webamp's 9 px: at 1x, 9 px Jost's small x-height closed up its letters
+   (mary, 10-31); 10 px matches classic 9 px Arial's and fits the 13 px rows */
+html body #webamp .playlist-tracks .track-cell {
+    font-size: 10px;
+}
+
 /* Webamp's two windows, stacked; its height follows the panel's (radio.js) */
 #player {
     position: relative;

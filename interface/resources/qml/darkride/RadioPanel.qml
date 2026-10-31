@@ -45,6 +45,29 @@ Rectangle {
         }
     }
 
+    // a file the page asks for (Load a skin…, the player's own Play File): the app's file dialog (Window.browseAsync, as
+    // the Avatar panel's pictures), its answer handed back to the page's request
+    property var fileRequest: null
+    Connections {
+        target: typeof Window !== "undefined" ? Window : null
+        function onBrowseChanged(filename) {
+            var request = root.fileRequest;
+            if (!request) {
+                return;   // another panel's dialog
+            }
+            root.fileRequest = null;
+            try {
+                if (filename) {
+                    request.dialogAccept([filename]);
+                } else {
+                    request.dialogReject();
+                }
+            } catch (error) {
+                // the radio was closed while the dialog was open
+            }
+        }
+    }
+
     // the player's own close box and its Exit close the radio
     Component.onCompleted: {
         console.log("Radio: made; docked:", docked, "panels:", typeof Panels !== "undefined" ? Panels.names() : "none",
@@ -95,6 +118,18 @@ Rectangle {
             // no browser menu (Back, Reload, Inspect): the player has its own
             onContextMenuRequested: function (request) {
                 request.accepted = true;
+            }
+            onFileDialogRequested: function (request) {
+                request.accepted = true;
+                if (root.fileRequest || typeof Window === "undefined") {
+                    request.dialogReject();
+                    return;
+                }
+                root.fileRequest = request;
+                var skin = request.acceptedMimeTypes.join(" ").indexOf("wsz") >= 0;
+                console.log("Radio: a file dialog for", skin ? "a skin" : "a sound file");
+                Window.browseAsync(skin ? "Load a skin" : "Play a file", "",
+                    skin ? "Classic skins (*.wsz *.zip)" : "Sound files (*.mp3 *.ogg *.wav *.flac *.m4a *.aac)");
             }
             onJavaScriptDialogRequested: function (request) {
                 request.accepted = true;
