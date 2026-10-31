@@ -766,8 +766,8 @@ public slots:
 
     /**jsdoc
      * Takes the frame trace's records: the column names first, then one row per frame, oldest first, in that order (a
-     * cell is a number, a string, or null where the frame has no value). The records are cleared; the trace stays on or
-     * off as it was.
+     * cell is a number, a string, or undefined where the frame has no value: test it with <code>cell == null</code>).
+     * The records are cleared in the same step; the trace stays on or off as it was.
      * @function Test.takeFrameTrace
      * @returns {Array<Array<number|string>>} [columns, row, row, ...].
      */

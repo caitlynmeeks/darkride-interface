@@ -255,9 +255,10 @@ QStringList columns() {
     return names;
 }
 
-QList<QVariantList> rows() {
-    State& s = state();
-    std::lock_guard<std::mutex> lock(s.mutex);
+namespace {
+
+// the rows, under the caller's lock
+QList<QVariantList> rowsLocked(State& s) {
     QList<QVariantList> out;
     out.reserve((int)s.count);
     eachRecord(s, [&](const Record& record) {
@@ -269,6 +270,25 @@ QList<QVariantList> rows() {
         }
         out << row;
     });
+    return out;
+}
+
+} // namespace
+
+QList<QVariantList> rows() {
+    State& s = state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    return rowsLocked(s);
+}
+
+QList<QVariantList> take() {
+    State& s = state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    QList<QVariantList> out = rowsLocked(s);
+    s.count = 0;
+    s.next = 0;
+    s.summary.clear();
+    s.summaryTime = 0;
     return out;
 }
 

@@ -1199,10 +1199,9 @@ QVariantList TestScriptingInterface::takeFrameTrace() {
         header << column;
     }
     list << QVariant(header);
-    for (const QVariantList& row : FrameTrace::rows()) {
+    for (const QVariantList& row : FrameTrace::take()) {
         list << QVariant(row);
     }
-    FrameTrace::clear();
     return list;
 }
 

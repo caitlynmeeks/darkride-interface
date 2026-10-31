@@ -108,6 +108,17 @@ void FrameTraceTests::stopKeepsRecordsAndClearDropsThem() {
     QCOMPARE(FrameTrace::frames(), 0);
     QVERIFY(FrameTrace::rows().isEmpty());
     QVERIFY(FrameTrace::columns().contains("test.a"));   // the names stay, so a later CSV's columns hold still
+    // take: the rows and the clear in one step
+    FrameTrace::start(8);
+    FrameTrace::beginFrame();
+    FrameTrace::set("test.a", 3.0);
+    FrameTrace::beginFrame();
+    const auto taken = FrameTrace::take();
+    QCOMPARE(taken.size(), 2);
+    QCOMPARE(taken[0][column].toDouble(), 3.0);
+    QCOMPARE(FrameTrace::frames(), 0);
+    QVERIFY(FrameTrace::enabled());   // still on
+    FrameTrace::stop();
 }
 
 void FrameTraceTests::dumpWritesCsv() {
