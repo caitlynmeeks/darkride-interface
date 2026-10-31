@@ -967,6 +967,7 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
                 }
                 _lastFrame = _currentFrame.get();
             });
+            refreshRateController->notePresentedFrame(_presentedNewFrame);
             // Execute the frame rendering commands
             PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
             _gpuContext->executeFrame(_currentFrame);

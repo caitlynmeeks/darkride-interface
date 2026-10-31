@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <atomic>
+#include <mutex>
 
 class QThread;
 
@@ -36,6 +37,30 @@ public:
     // lost one (DisplayPlugin::presented carries it to the game loop)
     uint64_t getSlotIndex() const { return _slotIndex; }
 
+    // The present cadence's counters (team/performance/INSTRUMENTS-PLAN.md, item 3): a few integers the present
+    // thread keeps per present and rolls over once a second, so any thread can read what the last whole second's
+    // presents looked like (one short lock per read). Paid every present: a dozen integer operations.
+    struct CadenceCounters {
+        int displayRefreshRate { 0 };   // Hz: the display link's measured rate while it runs, else the screen's
+        int presents { 0 };             // presents in the second
+        int onOneRefresh { 0 };         // in phase, one refresh after the last present
+        int onTwoRefreshes { 0 };       // two refreshes after the last: a frame shown twice, or a present every second refresh
+        int onThreeRefreshes { 0 };
+        int onMoreRefreshes { 0 };
+        int unpaced { 0 };              // on the free schedule (no refresh signal, or a target that is no whole fraction of the display's rate), with vsync, or in an HMD
+        int late { 0 };                 // arrived after their slot: the present before overran it
+        int maxLateUs { 0 };            // the worst of them
+        int repeated { 0 };             // showed the frame before again (no new frame was ready)
+        int64_t rolledAtNs { 0 };       // when the second ended, on std::chrono::steady_clock; 0 before the first second
+    };
+    CadenceCounters getCadenceCounters() const;
+    // the present under way, for the frame trace (present thread): refreshes since the last present (0 off the
+    // display's phase) and how late it came past its slot, in microseconds (0 when on time)
+    int getPresentRefreshes() const { return _presentRefreshes; }
+    int getPresentLateUs() const { return _presentLateUs; }
+    // the present thread says whether the present under way shows a new frame; a held one counts as repeated
+    void notePresentedFrame(bool newFrame);
+
     void clockStartTime() { _startTime = std::chrono::high_resolution_clock::now(); }
     void clockEndTime() { _endTime = std::chrono::high_resolution_clock::now(); }
     // Paces the presents, waiting precisely for the next slot (a coarse sleep, then a spin for the last fraction of
@@ -49,6 +74,7 @@ public:
     // all; an HMD never sleeps.
     std::chrono::nanoseconds sleepThreadIfNeeded(QThread* thread, bool isHmd, bool vsync = false);
 private:
+    void countPresent(int64_t nowNs, int refreshes, int lateUs, int displayRate);
     std::chrono::time_point<std::chrono::high_resolution_clock> _startTime { std::chrono::high_resolution_clock::now() };
     std::chrono::time_point<std::chrono::high_resolution_clock> _endTime { std::chrono::high_resolution_clock::now() };
     std::atomic<int64_t> _refreshRateLimitPeriod { 50 };
@@ -66,7 +92,13 @@ private:
     bool _scheduled { false };
     std::chrono::nanoseconds _scheduledPeriod { 0 };
     std::chrono::steady_clock::time_point _nextPresent;
-
+    // the cadence counters: the second being counted (present thread only) and the last whole second (under the lock)
+    CadenceCounters _cadenceCounting;
+    CadenceCounters _cadenceLastSecond;
+    int64_t _cadenceSecondStartNs { 0 };
+    mutable std::mutex _cadenceMutex;
+    int _presentRefreshes { 0 };
+    int _presentLateUs { 0 };
 };
 
 #endif

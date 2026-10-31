@@ -73,11 +73,61 @@ float RefreshRateController::getPacedPeriodSeconds() const {
     return (period >= MIN_PERIOD_NS && period <= MAX_PERIOD_NS) ? (float)period * 1.0e-9f : 0.0f;
 }
 
+void RefreshRateController::countPresent(int64_t nowNs, int refreshes, int lateUs, int displayRate) {
+    _presentRefreshes = refreshes;
+    _presentLateUs = lateUs;
+    CadenceCounters& counting = _cadenceCounting;
+    counting.presents++;
+    counting.displayRefreshRate = displayRate;
+    if (refreshes <= 0) {
+        counting.unpaced++;
+    } else if (refreshes == 1) {
+        counting.onOneRefresh++;
+    } else if (refreshes == 2) {
+        counting.onTwoRefreshes++;
+    } else if (refreshes == 3) {
+        counting.onThreeRefreshes++;
+    } else {
+        counting.onMoreRefreshes++;
+    }
+    if (lateUs > 0) {
+        counting.late++;
+        counting.maxLateUs = std::max(counting.maxLateUs, lateUs);
+    }
+    if (_cadenceSecondStartNs == 0) {
+        _cadenceSecondStartNs = nowNs;
+    }
+    const int64_t SECOND_NS = 1000000000LL;
+    if (nowNs - _cadenceSecondStartNs >= SECOND_NS) {
+        counting.rolledAtNs = nowNs;
+        {
+            std::lock_guard<std::mutex> lock(_cadenceMutex);
+            _cadenceLastSecond = counting;
+        }
+        counting = CadenceCounters();
+        _cadenceSecondStartNs = nowNs;
+    }
+}
+
+void RefreshRateController::notePresentedFrame(bool newFrame) {
+    if (!newFrame) {
+        _cadenceCounting.repeated++;
+    }
+}
+
+RefreshRateController::CadenceCounters RefreshRateController::getCadenceCounters() const {
+    std::lock_guard<std::mutex> lock(_cadenceMutex);
+    return _cadenceLastSecond;
+}
+
 std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thread, bool isHmd, bool vsync) {
     using namespace std::chrono;
+    auto now = steady_clock::now();
+    int64_t nowNs = duration_cast<nanoseconds>(now.time_since_epoch()).count();
     if (isHmd) {
         _scheduled = false;
         _slotIndex++;
+        countPresent(nowNs, 0, 0, _displayRefreshRate);
         return nanoseconds(0);
     }
     // With vsync the swap waits for the display's refresh: a sleep on top of it only beats against the refreshes.
@@ -86,11 +136,10 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
     if (vsync && _displayRefreshRate > 0 && getRefreshRateLimitPeriod() >= _displayRefreshRate) {
         _scheduled = false;
         _slotIndex++;
+        countPresent(nowNs, 0, 0, _displayRefreshRate);
         return nanoseconds(0);
     }
     auto period = nanoseconds(_refreshRateLimitPeriod);
-    auto now = steady_clock::now();
-    int64_t nowNs = duration_cast<nanoseconds>(now.time_since_epoch()).count();
     int64_t refreshNs = 0;
     int64_t refreshPeriodNs = 0;
     // In phase with the display when the target is the display's own rate, or a whole fraction of it (72 or 48 on a
@@ -140,6 +189,9 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         // the intervals this slot is on from the last (one as a rule; a lost refresh counts)
         int64_t advanced = _lastSlotNs > 0 ? (slot - _lastSlotNs + refreshPeriodNs / 2) / refreshPeriodNs : 1;
         _slotIndex += (uint64_t)std::max<int64_t>(1, advanced);
+        // the counters: a present after its slot overran the one before (it presents at once, in this interval)
+        countPresent(nowNs, (int)std::max<int64_t>(1, advanced), nowNs > slot ? (int)((nowNs - slot) / 1000) : 0,
+                     refreshPeriodNs > 0 ? (int)((1000000000LL + refreshPeriodNs / 2) / refreshPeriodNs) : (int)_displayRefreshRate);
         _lastSlotNs = slot;
         _nextPresent = steady_clock::time_point(nanoseconds(slot));   // in the past for an overrun: no wait
         _scheduled = false;   // the free schedule restarts from now if the link goes quiet
@@ -154,6 +206,10 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         // presents land in their slots again; likewise when the schedule starts or the rate changes.
         static const int RESUME_PACED_PRESENTS = 8;
         bool restart = !_scheduled || period != _scheduledPeriod || now >= _nextPresent + period;
+        // the counters: off the display's phase; late when the schedule restarts because a present overran its period
+        int64_t lateNs = (_scheduled && period == _scheduledPeriod && now >= _nextPresent + period) ?
+            duration_cast<nanoseconds>(now - _nextPresent).count() : 0;
+        countPresent(nowNs, 0, (int)(lateNs / 1000), _displayRefreshRate);
         if (restart) {
             _scheduled = true;
             _scheduledPeriod = period;
