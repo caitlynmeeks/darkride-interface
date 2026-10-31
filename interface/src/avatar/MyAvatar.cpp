@@ -28,6 +28,7 @@
 #include <shared/QtHelpers.h>
 #include <scripting/HMDScriptingInterface.h>
 #include <AccountManager.h>
+#include <FrameTrace.h>
 #include <AddressManager.h>
 #include <AudioClient.h>
 #include <ClientTraitsHandler.h>
@@ -3029,7 +3030,61 @@ void MyAvatar::harvestResultsFromPhysicsSimulation(float deltaTime) {
     }
     _bodySensorMatrix = _follow.postPhysicsUpdate(*this, _bodySensorMatrix);
 
+    traceCarry(inFrame);
     updateFrameMembership();
+}
+
+// The carry, as this frame has it (team/performance/INSTRUMENTS-PLAN.md, item 5): while the avatar is carried by a
+// frame (standing on a monorail car, a deck) or by a parent that is not a frame (a seat), the parent (carry.frame),
+// the avatar's position in the parent's coordinates (carry.local_x/y/z_m, the pose the renderer composes with the
+// parent's) and its step since the last frame (carry.step_mm: 0 standing still, whatever the frame does); in a frame,
+// how far the frame's presented pose is from its simulated one this frame (carry.lead_mm: the presentation's
+// interpolation, PHYSICS.md 4.x); and the follow helper's displacement of the body while it is active (follow.dx_m:
+// HMD only). Read from inside the frame loop, after the harvest: a script's reads of the same numbers come from
+// another thread, a frame off at random, and show glitches that are not there (physics, 2026-10-31). The counter
+// behind the Stats line (getCarryStepMaxMm) is kept whenever the avatar is carried; the rest only with the trace on.
+void MyAvatar::traceCarry(bool inFrame) {
+    QUuid parentID = getParentID();
+    if (parentID.isNull()) {
+        _carryLastParent = QUuid();
+        _carryStepMax = 0.0f;
+        _carryStepMaxLastSecond = 0.0f;
+        return;
+    }
+    glm::vec3 local = getLocalPosition();
+    bool sameParent = parentID == _carryLastParent;
+    float stepMm = sameParent ? glm::distance(local, _carryLastLocal) * 1000.0f : 0.0f;
+    _carryLastLocal = local;
+    _carryLastParent = parentID;
+    uint64_t now = usecTimestampNow();
+    if (now - _carryWindowStart >= USECS_PER_SECOND) {
+        _carryStepMaxLastSecond = _carryStepMax;
+        _carryStepMax = 0.0f;
+        _carryWindowStart = now;
+    }
+    _carryStepMax = glm::max(_carryStepMax, stepMm);
+    if (!FrameTrace::enabled()) {
+        return;
+    }
+    FrameTrace::setText("carry.frame", parentID.toString());
+    FrameTrace::set("carry.local_x_m", local.x);
+    FrameTrace::set("carry.local_y_m", local.y);
+    FrameTrace::set("carry.local_z_m", local.z);
+    if (sameParent) {
+        FrameTrace::set("carry.step_mm", stepMm);
+    }
+    PhysicsEnginePointer engine = _characterController.getPhysicsEngine();
+    if (inFrame && engine) {
+        glm::vec3 presented, simulated, linearVelocity, angularVelocity;
+        glm::quat rotation;
+        if (engine->getFrameTransform(parentID, presented, rotation, linearVelocity, angularVelocity, false) &&
+                engine->getFrameTransform(parentID, simulated, rotation, linearVelocity, angularVelocity, true)) {
+            FrameTrace::set("carry.lead_mm", glm::distance(presented, simulated) * 1000.0f);
+        }
+    }
+    if (_follow.isActive()) {
+        FrameTrace::set("follow.dx_m", glm::length(_characterController.getFollowLinearDisplacement()));
+    }
 }
 
 void MyAvatar::nextLocalAttitude(const glm::vec3& position, const glm::quat& orientation, const glm::vec3& velocity) {
@@ -7498,7 +7553,6 @@ glm::vec3 MyAvatar::getCameraEyesPosition(float deltaTime) {
     const glm::vec3 lookFront = _lookAtYaw * Vectors::FRONT;
     const glm::vec3 lookFrontInBody = glm::inverse(getWorldOrientation()) * lookFront;
     float frontOffset = glm::dot(defaultEyesToEyesVector, lookFront);
-    float lookingDown = glm::dot(_lookAtPitch * Vectors::FRONT, -avatarUpVector);
 
     bool isLanding = false;
     // When jumping the camera should follow the real eye on the Y coordenate
@@ -7511,6 +7565,7 @@ glm::vec3 MyAvatar::getCameraEyesPosition(float deltaTime) {
         // none of it looking level, all of it from 30 deg down: the everyday view stays where it was, without the
         // head's sway as you sprint (3.5 cm) or its lurch as you stop (6 cm) (walk-camera-test, 10-29)
         const float FULL_FRONT_OFFSET_DEGREES = 30.0f;
+        float lookingDown = glm::dot(_lookAtPitch * Vectors::FRONT, -avatarUpVector);
         float followEyes = glm::clamp(lookingDown / glm::sin(glm::radians(FULL_FRONT_OFFSET_DEGREES)), 0.0f, 1.0f);
         frontOffset *= followEyes;
         const float WAIT_TO_LAND_TIME = 1.0f;
@@ -7534,41 +7589,6 @@ glm::vec3 MyAvatar::getCameraEyesPosition(float deltaTime) {
     }
     _cameraEyesOffset = _cameraEyesOffset + (cameraOffset - _cameraEyesOffset) * min(1.0f, tau * timeScale);
     glm::vec3 estimatedCameraPosition = defaultEyesPosition + getWorldOrientation() * _cameraEyesOffset;
-
-    // The hidden head shrinks to the Head joint (CauterizedModel) and the neck's skin folds up to that point. Looking
-    // steeply down, the view's bottom edge reaches back past straight down, and from a camera high above the point it
-    // comes into view: walking carries the head 5-7 cm below the standing eye height the camera keeps (Caity's check of
-    // the 1.1.1 build, 10-30), more so with a wide field of view. So the camera steps forward along the heading until
-    // the point is behind that edge: at once, and easing back over a second or so, which holds it nearly steady through
-    // the steps of a walk. It looks at the ground then, so the step isn't seen
-    float clearance = 0.0f;
-    glm::vec3 headPosition;
-    int headIndex = _skeletonModel->getRig().indexOfJoint("Head");
-    if (lookingDown > 0.0f && _skeletonModel->getJointPositionInWorldFrame(headIndex, headPosition)) {
-        const glm::mat4& projection = qApp->getCamera().getProjection();
-        float halfFieldOfView = projection[1][1] > 0.0f ? atanf(1.0f / projection[1][1]) : 0.0f;
-        const float MARGIN_DEGREES = 5.0f;
-        const float MAX_PAST_STRAIGHT_DOWN_DEGREES = 60.0f;
-        float pastStraightDown = glm::min(asinf(glm::min(lookingDown, 1.0f)) + halfFieldOfView +
-                                          glm::radians(MARGIN_DEGREES) - 0.5f * PI,
-                                          glm::radians(MAX_PAST_STRAIGHT_DOWN_DEGREES));
-        if (pastStraightDown > 0.0f) {
-            const float MARGIN = 0.02f;   // meters, at the avatar's own scale
-            glm::vec3 headToCamera = estimatedCameraPosition - headPosition;
-            clearance = glm::dot(headToCamera, avatarUpVector) * tanf(pastStraightDown) + MARGIN * getModelScale() -
-                        glm::dot(headToCamera, lookFront);
-            const float MAX_CLEARANCE = 0.5f;
-            clearance = glm::clamp(clearance, 0.0f, MAX_CLEARANCE * getModelScale());
-        }
-    }
-    const float CLEARANCE_EASE_BACK_TIME = 0.5f;   // seconds; it rises at once
-    if (clearance >= _cameraHeadClearance) {
-        _cameraHeadClearance = clearance;
-    } else {
-        float easeBack = 1.0f - expf(-deltaTime / CLEARANCE_EASE_BACK_TIME);
-        _cameraHeadClearance += (clearance - _cameraHeadClearance) * easeBack;
-    }
-    estimatedCameraPosition += _cameraHeadClearance * lookFront;
     return estimatedCameraPosition;
 }
 
