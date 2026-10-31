@@ -24,6 +24,7 @@
 #endif
 
 #include "DisplayLink.h"
+#include "Logging.h"
 
 namespace {
     // Sleeps about this long. On Windows the plain sleep keeps to the system timer's resolution (a millisecond at
@@ -109,6 +110,32 @@ void RefreshRateController::countPresent(int64_t nowNs, int refreshes, int lateU
     }
 }
 
+void RefreshRateController::logSchedule(bool inPhase, int refreshesPerPresent, int targetRate, int displayRate, bool linkRunning) {
+    _inPhase = inPhase;
+    // the display's measured rate wanders by a hertz; a change of schedule, target or whole hertz is worth a line,
+    // not the wander (rounded to the nearest 5 Hz for the comparison)
+    int displayRateRounded = ((displayRate + 2) / 5) * 5;
+    if ((int)inPhase == _loggedInPhase && refreshesPerPresent == _loggedRefreshesPerPresent &&
+        targetRate == _loggedTargetRate && displayRateRounded == _loggedDisplayRate) {
+        return;
+    }
+    _loggedInPhase = (int)inPhase;
+    _loggedRefreshesPerPresent = refreshesPerPresent;
+    _loggedTargetRate = targetRate;
+    _loggedDisplayRate = displayRateRounded;
+    if (inPhase) {
+        qCDebug(displayPlugins).nospace() << "Present pacing: in phase with display " << DisplayLink::instance().displayId()
+            << " at " << displayRate << " Hz, a present every " << refreshesPerPresent
+            << (refreshesPerPresent == 1 ? " refresh" : " refreshes") << " (target " << targetRate << " Hz)";
+    } else {
+        const char* why = !linkRunning ? "no display link" :
+            (displayRate > 0 && targetRate > 0 && targetRate < displayRate && displayRate % targetRate != 0) ?
+                "the target is no whole fraction of the display's rate" : "the display link is quiet";
+        qCDebug(displayPlugins).nospace() << "Present pacing: on the free schedule at " << targetRate << " Hz (display "
+            << DisplayLink::instance().displayId() << " at " << displayRate << " Hz): " << why;
+    }
+}
+
 void RefreshRateController::notePresentedFrame(bool newFrame) {
     if (!newFrame) {
         _cadenceCounting.repeated++;
@@ -190,8 +217,9 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         int64_t advanced = _lastSlotNs > 0 ? (slot - _lastSlotNs + refreshPeriodNs / 2) / refreshPeriodNs : 1;
         _slotIndex += (uint64_t)std::max<int64_t>(1, advanced);
         // the counters: a present after its slot overran the one before (it presents at once, in this interval)
-        countPresent(nowNs, (int)std::max<int64_t>(1, advanced), nowNs > slot ? (int)((nowNs - slot) / 1000) : 0,
-                     refreshPeriodNs > 0 ? (int)((1000000000LL + refreshPeriodNs / 2) / refreshPeriodNs) : (int)_displayRefreshRate);
+        const int measuredRate = refreshPeriodNs > 0 ? (int)((1000000000LL + refreshPeriodNs / 2) / refreshPeriodNs) : (int)_displayRefreshRate;
+        countPresent(nowNs, (int)std::max<int64_t>(1, advanced), nowNs > slot ? (int)((nowNs - slot) / 1000) : 0, measuredRate);
+        logSchedule(true, refreshesPerPresent, targetRate, measuredRate, true);
         _lastSlotNs = slot;
         _nextPresent = steady_clock::time_point(nanoseconds(slot));   // in the past for an overrun: no wait
         _scheduled = false;   // the free schedule restarts from now if the link goes quiet
@@ -210,6 +238,7 @@ std::chrono::nanoseconds RefreshRateController::sleepThreadIfNeeded(QThread* thr
         int64_t lateNs = (_scheduled && period == _scheduledPeriod && now >= _nextPresent + period) ?
             duration_cast<nanoseconds>(now - _nextPresent).count() : 0;
         countPresent(nowNs, 0, (int)(lateNs / 1000), _displayRefreshRate);
+        logSchedule(false, refreshesPerPresent, targetRate, _displayRefreshRate, DisplayLink::instance().isRunning());
         if (restart) {
             _scheduled = true;
             _scheduledPeriod = period;

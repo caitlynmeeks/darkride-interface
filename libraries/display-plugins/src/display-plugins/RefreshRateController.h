@@ -60,6 +60,8 @@ public:
     int getPresentLateUs() const { return _presentLateUs; }
     // the present thread says whether the present under way shows a new frame; a held one counts as repeated
     void notePresentedFrame(bool newFrame);
+    // whether the presents are in phase with the display's refreshes (the slots) or on the free schedule
+    bool isInPhase() const { return _inPhase; }
 
     void clockStartTime() { _startTime = std::chrono::high_resolution_clock::now(); }
     void clockEndTime() { _endTime = std::chrono::high_resolution_clock::now(); }
@@ -75,6 +77,8 @@ public:
     std::chrono::nanoseconds sleepThreadIfNeeded(QThread* thread, bool isHmd, bool vsync = false);
 private:
     void countPresent(int64_t nowNs, int refreshes, int lateUs, int displayRate);
+    // a log line when the schedule, the target or the display's rate changes (present thread)
+    void logSchedule(bool inPhase, int refreshesPerPresent, int targetRate, int displayRate, bool linkRunning);
     std::chrono::time_point<std::chrono::high_resolution_clock> _startTime { std::chrono::high_resolution_clock::now() };
     std::chrono::time_point<std::chrono::high_resolution_clock> _endTime { std::chrono::high_resolution_clock::now() };
     std::atomic<int64_t> _refreshRateLimitPeriod { 50 };
@@ -99,6 +103,12 @@ private:
     mutable std::mutex _cadenceMutex;
     int _presentRefreshes { 0 };
     int _presentLateUs { 0 };
+    std::atomic<bool> _inPhase { false };
+    // what the last log line said (present thread only)
+    int _loggedInPhase { -1 };
+    int _loggedRefreshesPerPresent { 0 };
+    int _loggedTargetRate { 0 };
+    int _loggedDisplayRate { 0 };
 };
 
 #endif
