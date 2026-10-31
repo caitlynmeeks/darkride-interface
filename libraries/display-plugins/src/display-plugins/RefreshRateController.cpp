@@ -146,23 +146,28 @@ void RefreshRateController::notePresentedFrame(bool newFrame) {
     }
 }
 
-void RefreshRateController::noteNewFrame(int latencyUs) {
+void RefreshRateController::noteNewFrame(int mainUs, int buildUs) {
     CadenceCounters& counting = _cadenceCounting;
     counting.newFrames++;
-    counting.maxFrameLatencyUs = std::max(counting.maxFrameLatencyUs, latencyUs);
-    // slow: over 70 % of one refresh of the display (the governor's room for the present and the flush)
+    counting.maxMainUs = std::max(counting.maxMainUs, mainUs);
+    counting.maxBuildUs = std::max(counting.maxBuildUs, buildUs);
+    // slow: over 70 % of one refresh of the display (the room a stage needs in a pipelined frame)
     const int displayRate = _displayRefreshRate;
-    if (displayRate > 0 && latencyUs > 700000 / displayRate) {
-        counting.slowNewFrames++;
+    const int slowUs = displayRate > 0 ? 700000 / displayRate : 0;
+    if (slowUs > 0 && mainUs > slowUs) {
+        counting.slowMainFrames++;
+    }
+    if (slowUs > 0 && buildUs > slowUs) {
+        counting.slowBuildFrames++;
     }
 }
 
-void RefreshRateController::notePresentCost(int presentUs, float gpuMs) {
+void RefreshRateController::notePresentCost(int executeUs, float gpuMs) {
     CadenceCounters& counting = _cadenceCounting;
-    counting.maxPresentUs = std::max(counting.maxPresentUs, presentUs);
+    counting.maxExecuteUs = std::max(counting.maxExecuteUs, executeUs);
     const int displayRate = _displayRefreshRate;
-    if (displayRate > 0 && presentUs > 500000 / displayRate) {
-        counting.slowPresents++;
+    if (displayRate > 0 && executeUs > 700000 / displayRate) {
+        counting.slowExecutes++;
     }
     counting.gpuMs = gpuMs;
 }

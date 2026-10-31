@@ -648,10 +648,14 @@ void Display::setDisplayPlugin(DisplayPluginPointer newDisplayPlugin) {
             sample.presents = c.presents;
             sample.repeated = c.repeated;
             sample.onTwoOrMoreRefreshes = c.onTwoRefreshes + c.onThreeRefreshes + c.onMoreRefreshes;
+            sample.onOneRefresh = c.onOneRefresh;
             sample.newFrames = c.newFrames;
-            sample.slowNewFrames = c.slowNewFrames;
-            sample.maxPresentUs = c.maxPresentUs;
-            sample.slowPresents = c.slowPresents;
+            sample.slowMainFrames = c.slowMainFrames;
+            sample.slowBuildFrames = c.slowBuildFrames;
+            sample.slowExecutes = c.slowExecutes;
+            sample.maxMainUs = c.maxMainUs;
+            sample.maxBuildUs = c.maxBuildUs;
+            sample.maxExecuteUs = c.maxExecuteUs;
             sample.gpuMs = c.gpuMs;
             sample.rolledAtNs = c.rolledAtNs;
             return sample;

@@ -57,15 +57,17 @@ public:
         int late { 0 };                 // arrived after their slot: the present before overran it
         int maxLateUs { 0 };            // the worst of them
         int repeated { 0 };             // showed the frame before again (no new frame was ready)
-        // the frames' fit, what the cadence governor's return reads (RefreshRateManager): of the new frames shown,
-        // how many took longer than 70 % of a refresh from the present that asked for them to the render thread's
-        // hand-over; the longest; the longest present; the GPU's frame time as last averaged
+        // the frames' fit, what the cadence governor's return reads (RefreshRateManager): each stage's own work
+        // against 70 % of one refresh of the display, never its waits (with vsync the swap waits for the refresh, and
+        // a gate that counted the wait parked a session at half rate for good: performance's ride, 2026-10-31)
         int newFrames { 0 };
-        int slowNewFrames { 0 };
-        int maxFrameLatencyUs { 0 };
-        int maxPresentUs { 0 };
-        int slowPresents { 0 };         // presents that took over half a refresh
-        float gpuMs { 0.0f };
+        int slowMainFrames { 0 };       // whose main-thread frame took over 70 % of a refresh
+        int slowBuildFrames { 0 };      // whose render-thread build took over 70 % of a refresh
+        int maxMainUs { 0 };
+        int maxBuildUs { 0 };
+        int slowExecutes { 0 };         // presents whose own work (the present less its swap) took over 70 % of a refresh
+        int maxExecuteUs { 0 };
+        float gpuMs { 0.0f };           // the GPU's frame time as last averaged
         int64_t rolledAtNs { 0 };       // when the second ended, on std::chrono::steady_clock; 0 before the first second
     };
     CadenceCounters getCadenceCounters() const;
@@ -75,10 +77,10 @@ public:
     int getPresentLateUs() const { return _presentLateUs; }
     // the present thread says whether the present under way shows a new frame; a held one counts as repeated
     void notePresentedFrame(bool newFrame);
-    // a new frame's latency (microseconds from the start of the present before to the render thread's hand-over),
-    // and the present's own cost with the GPU's frame time, from the present thread
-    void noteNewFrame(int latencyUs);
-    void notePresentCost(int presentUs, float gpuMs);
+    // a new frame's own work (the main thread's frame and the render thread's build, microseconds, stamped on the
+    // gpu::Frame), and the present's own work (the present less its swap) with the GPU's frame time; present thread
+    void noteNewFrame(int mainUs, int buildUs);
+    void notePresentCost(int executeUs, float gpuMs);
     // whether the presents are in phase with the display's refreshes (the slots) or on the free schedule
     bool isInPhase() const { return _inPhase; }
     // the refresh the present under way is due for, on std::chrono::steady_clock (nanoseconds); 0 off the phase

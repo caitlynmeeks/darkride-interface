@@ -112,18 +112,23 @@ public:
         int presents { 0 };
         int repeated { 0 };
         int onTwoOrMoreRefreshes { 0 };
+        int onOneRefresh { 0 };
         int newFrames { 0 };
-        int slowNewFrames { 0 };
-        int maxPresentUs { 0 };
-        int slowPresents { 0 };
+        int slowMainFrames { 0 };
+        int slowBuildFrames { 0 };
+        int slowExecutes { 0 };
+        int maxMainUs { 0 };
+        int maxBuildUs { 0 };
+        int maxExecuteUs { 0 };
         float gpuMs { 0.0f };
         int64_t rolledAtNs { 0 };
     };
     void setCadenceSource(std::function<CadenceSample()> source) { _cadenceSource = source; }
     bool isHalfRate() const { return _halfRate; }
     int getGovernorHoldSeconds() const { return _governorHoldSeconds; }
-    // one line for the Stats panel: "full rate" / "half rate (72 of 144 Hz), back after 5 s of fitting frames (2 so far)"
-    QString getGovernorStatus() const;
+    // one line for the Stats panel: "full rate" / "half rate (72 of 144 Hz), back after 5 s of fitting frames (2 so far)";
+    // rebuilt once a second by the tick, so a reader every frame only copies it
+    const QString& getGovernorStatus() const { return _governorStatus; }
     static const int MIN_GOVERNED_DISPLAY_RATE = 100;
 
     // A cap for what is on the desktop's screen, in Hz, 0 for none; Application::update sets it each frame. The sign-in
@@ -169,7 +174,11 @@ private:
     std::shared_ptr<QTimer> _inactiveTimer { std::make_shared<QTimer>() };
 
     void governorTick();
+    void updateGovernorStatus();
+    void governorDiag(const CadenceSample& sample) const;
     bool governable(int displayRate) const;
+    QString _governorStatus { "full rate" };
+    int _governorGraceSeconds { 0 };      // seconds after a change of target that carry no verdict (a mixed second)
     std::function<CadenceSample()> _cadenceSource;
     std::shared_ptr<QTimer> _governorTimer { std::make_shared<QTimer>() };
     bool _halfRate { false };
