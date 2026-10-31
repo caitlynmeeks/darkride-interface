@@ -220,13 +220,69 @@
                                 refuse("That skin is too big to open.");
                             }
                             openedZip = zipData instanceof Blob ? zipData : new Blob([zipData]);
-                            return zip;
+                            return inflateWithin(zip);
                         });
                     });
                 };
             },
         });
     };
+
+    // the same caps again while each file inflates: a zip's own sizes can lie, and inflating doesn't hold to them
+    // (security, 10-31); a skin over them doesn't go on (the middleware below)
+    var tooBigToOpen = false;
+    var READ_TYPES = ["text", "string", "uint8array", "arraybuffer", "blob"];
+    function inflateWithin(zip) {
+        var used = 0;
+        tooBigToOpen = false;
+        Object.keys(zip.files).forEach(function (fileName) {
+            var entry = zip.files[fileName];
+            entry.async = function (type) {
+                if (READ_TYPES.indexOf(type) < 0) {
+                    return Promise.reject(new Error("the radio doesn't read a skin's files as " + type));
+                }
+                return new Promise(function (resolve, reject) {
+                    var parts = [];
+                    var size = 0;
+                    var over = false;
+                    var stream = entry.internalStream("uint8array");
+                    stream.on("data", function (chunk) {
+                        if (over) {
+                            return;
+                        }
+                        size += chunk.length;
+                        used += chunk.length;
+                        if (size > SKIN_MAX_FILE_BYTES || used > SKIN_MAX_UNZIPPED) {
+                            over = true;
+                            tooBigToOpen = true;
+                            stream.pause();
+                            reject(new Error("too big to open"));
+                            return;
+                        }
+                        parts.push(chunk);
+                    }).on("error", function (error) {
+                        if (!over) {
+                            over = true;
+                            reject(error);
+                        }
+                    }).on("end", function () {
+                        if (over) {
+                            return;
+                        }
+                        var bytes = new Uint8Array(size);
+                        var at = 0;
+                        parts.forEach(function (part) {
+                            bytes.set(part, at);
+                            at += part.length;
+                        });
+                        resolve(type === "blob" ? new Blob([bytes]) : type === "uint8array" ? bytes
+                            : type === "arraybuffer" ? bytes.buffer : new TextDecoder("utf-8").decode(bytes));
+                    }).resume();
+                });
+            };
+        });
+        return zip;
+    }
 
     function useBuiltinSkin() {
         loadingBuiltin = true;
@@ -275,6 +331,12 @@
                     if (track) {
                         heard[track.url] = true;
                     }
+                }
+                if (action && action.type === "SET_SKIN_DATA" && tooBigToOpen && !loadingBuiltin) {
+                    tooBigToOpen = false;
+                    openedZip = null;
+                    skinFailed("That skin is too big to open.");
+                    return undefined;
                 }
                 if (action && action.type === "SET_SKIN_DATA") {
                     if (loadingBuiltin) {
@@ -375,14 +437,20 @@
     }
 
     // a stream that won't play here (gone, a format this engine can't play, or a server that doesn't let other sites'
-    // pages play it): said under the player, which stops (make-bundle.py: Webamp would go on to the next station)
+    // pages play it), or one that dropped while playing: said under the player, which stops (make-bundle.py: Webamp
+    // would go on to the next station)
     window.addEventListener("darkrideMediaError", function () {
         var state = webamp.store.getState();
         var id = state.playlist.currentTrack;
         var track = id == null ? null : state.tracks[id];
         webamp.stop();
+        // one that played and dropped (the network, the station) may come back; one that never played here won't
+        if (track && heard[track.url]) {
+            note("The station stopped. Press Play to try again.", true);
+            return;
+        }
         note("That station didn't play here. Try another.", true);
-        if (track && addedNow[track.url] && !heard[track.url]) {
+        if (track && addedNow[track.url]) {
             delete addedNow[track.url];
             webamp.store.dispatch({ type: "REMOVE_TRACKS", ids: [id] });
         }
@@ -547,13 +615,31 @@
         return next();
     }
 
+    // a stream on the listener's own network (this computer, the home network): never from the directory, so a click
+    // there can't send a request into the listener's home (security, 10-31); one typed into Address is the listener's own
+    function onOwnNetwork(url) {
+        var host = new URL(url).hostname.toLowerCase();
+        if (host === "localhost" || /\.(local|localhost)$/.test(host)) {
+            return true;
+        }
+        var v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host);
+        if (v4) {
+            var a = Number(v4[1]);
+            var b = Number(v4[2]);
+            return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+                (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+        }
+        // IPv6: loopback, unique local (fc00::/7), link-local (fe80::/10), and IPv4 inside IPv6
+        return /^\[(::1?|f[cd][0-9a-f]*:.*|fe[89ab][0-9a-f]*:.*|::ffff:.*)\]$/.test(host);
+    }
+
     // a station from the directory's answer, only what the radio shows and plays, or null when this engine can't play it
     function stationFrom(row) {
         if (!row || typeof row !== "object" || Number(row.hls) === 1 || !playable(row.codec)) {
             return null;
         }
         var url = streamAddress(row.url_resolved) || streamAddress(row.url);
-        if (!url) {
+        if (!url || onOwnNetwork(url)) {
             return null;
         }
         var bitrate = Math.round(Number(row.bitrate)) || 0;
