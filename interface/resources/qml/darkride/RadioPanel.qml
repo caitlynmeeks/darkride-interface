@@ -72,7 +72,6 @@ Rectangle {
             settings.localContentCanAccessFileUrls: false
             settings.javascriptCanOpenWindows: false
             settings.pluginsEnabled: false
-            settings.showScrollBars: false
 
             // Support SomaFM and the player's About link: in the system's browser
             onNewViewRequested: function (request) {
