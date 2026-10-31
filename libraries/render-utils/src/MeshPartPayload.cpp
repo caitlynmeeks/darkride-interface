@@ -102,10 +102,25 @@ void MeshPartPayload::updateTransformAndBound(const Transform& transform) {
 
 void MeshPartPayload::addMaterial(graphics::MaterialLayer material) {
     _drawMaterials.push(material);
+    if (!material.material || !material.material->isProcedural()) {
+        _underlyingMaterials.push(material);
+    }
 }
 
 void MeshPartPayload::removeMaterial(graphics::MaterialPointer material) {
     _drawMaterials.remove(material);
+    _underlyingMaterials.remove(material);
+}
+
+void MeshPartPayload::bindUnderlyingMaterial(gpu::Batch& batch) {
+    RenderPipelines::bindUnderlyingMaterial(_underlyingMaterials, batch);
+}
+
+gpu::BufferPointer MeshPartPayload::getProceduralInputs() {
+    if (!_proceduralInputs) {
+        _proceduralInputs = Procedural::makeInputsBuffer();
+    }
+    return _proceduralInputs;
 }
 
 void MeshPartPayload::updateKey(const render::ItemKey& key) {
@@ -227,7 +242,7 @@ void MeshPartPayload::render(RenderArgs* args) {
         glm::vec4 outColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
         outColor = procedural->getColor(outColor);
         const bool forward = DeferredLightingEffect::isForwardLit(args);
-        const ProceduralProgramKey programKey(outColor.a < 1.0f, false, false, forward);
+        const ProceduralProgramKey programKey(outColor.a < 1.0f, false, false, forward, _underlyingMaterials.getCullFaceMode());
         // a shadow pass wants depth alone (see ModelMeshPartPayload::render)
         const bool plainShadow = args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE && !procedural->hasVertexShader();
         if (plainShadow || !enableMaterialProceduralShaders || procedural->compilationFailed(programKey)) {
@@ -239,8 +254,10 @@ void MeshPartPayload::render(RenderArgs* args) {
                 args->_details._materialSwitches++;
             }
         } else {
+            bindUnderlyingMaterial(batch);
             procedural->prepare(batch, _worldFromLocalTransform.getTranslation(), _worldFromLocalTransform.getScale(),
-                                _worldFromLocalTransform.getRotation(), _created, programKey);
+                                _worldFromLocalTransform.getRotation(), _created, programKey,
+                                getProceduralInputs());
             if (forward) {
                 DependencyManager::get<DeferredLightingEffect>()->setupForwardLightingBatch(args, batch);
             }
@@ -669,7 +686,8 @@ void ModelMeshPartPayload::render(RenderArgs* args) {
         glm::vec4 outColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
         outColor = procedural->getColor(outColor);
         const bool forward = DeferredLightingEffect::isForwardLit(args);
-        const ProceduralProgramKey programKey(outColor.a < 1.0f, _shapeKey.isDeformed(), _shapeKey.isDualQuatSkinned(), forward);
+        const ProceduralProgramKey programKey(outColor.a < 1.0f, _shapeKey.isDeformed(), _shapeKey.isDualQuatSkinned(), forward,
+                                              _underlyingMaterials.getCullFaceMode());
         // a shadow pass wants depth alone: a part whose shader only colours its pixels casts its mesh's shadow through
         // the standard shadow pipeline (one pipeline for all such parts, no shader setup a draw); a shader that moves
         // vertices keeps its own program there, so its shadow follows the moved shape. 20 Lightlings' three neon parts
@@ -686,8 +704,10 @@ void ModelMeshPartPayload::render(RenderArgs* args) {
                 args->_details._materialSwitches++;
             }
         } else {
+            bindUnderlyingMaterial(batch);
             procedural->prepare(batch, _worldFromLocalTransform.getTranslation(), _worldFromLocalTransform.getScale(),
-                                _worldFromLocalTransform.getRotation(), _created, programKey);
+                                _worldFromLocalTransform.getRotation(), _created, programKey,
+                                getProceduralInputs());
             if (forward) {
                 DependencyManager::get<DeferredLightingEffect>()->setupForwardLightingBatch(args, batch);
             }

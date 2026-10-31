@@ -1029,6 +1029,13 @@ EntityPropertyFlags EntityItemProperties::getChangedProperties() const {
  * by setting the <code>entityHostType</code> parameter in {@link Entities.addEntity} to <code>"avatar"</code> and set the 
  * entity's <code>parentID</code> property to <code>MyAvatar.SELF_ID</code>. 
  * Material entities render as non-scalable spheres if they don't have their parent set.</p>
+ * <p>A Material entity with no parent can instead apply to every Model entity carrying a tag: set its
+ * <code>userData</code> to <code>{ "applyTo": { "tag": "isTree" } }</code> and it applies to each model with
+ * <code>isTree</code> set to <code>true</code> in the extras of any of its glTF objects (a Blender custom property), or
+ * in its own <code>userData</code>, which decides where it names the tag (<code>{ "isTree": false }</code> leaves one
+ * model out), on the parts <code>parentMaterialName</code> names (<code>"all"</code>, say), at its
+ * <code>priority</code>. It does not render as a sphere then. With a parent it applies to the parent alone, as
+ * always. Domain and local entities only: an avatar entity's tag is left aside.</p>
  *
  * @typedef {object} Entities.EntityProperties-Material
  * @property {Vec3} dimensions=0.1,0.1,0.1 - Used when <code>materialMappingMode == "projected"</code>.

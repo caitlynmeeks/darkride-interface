@@ -44,6 +44,8 @@ struct TexMapArray {
 
 // The material values (at least the material key) must be precisely bitwise accurate
 // to what is provided by the uniform buffer, or the material key has the wrong bits
+// render-utils' ProceduralUnderlyingMaterial.slh copies this buffer's layout and the key's bits below under names of
+// its own (a procedural reads the material beneath it with them): a change here goes there too
 
 struct Material {
     vec4 _emissiveOpacity;

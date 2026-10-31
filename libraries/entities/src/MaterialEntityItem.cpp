@@ -12,6 +12,12 @@
 
 #include "QJsonDocument"
 #include "QJsonArray"
+#include "QJsonObject"
+
+#include <OctreeConstants.h>
+
+// the query cube of a Material entity applied by tag: the whole domain, the same wherever the entity is
+static const AACube WHOLE_DOMAIN_QUERY_AACUBE(glm::vec3(-HALF_TREE_SCALE), (float)TREE_SCALE);
 
 EntityItemPointer MaterialEntityItem::factory(const EntityItemID& entityID, const EntityItemProperties& properties) {
     Pointer entity(new MaterialEntityItem(entityID), [](EntityItem* ptr) { ptr->deleteLater(); });
@@ -261,7 +267,30 @@ void MaterialEntityItem::setParentID(const QUuid& parentID) {
     }
 }
 
+void MaterialEntityItem::setUserData(const QString& value) {
+    EntityItem::setUserData(value);
+    bool hasApplyToTag = value.contains("applyTo") &&
+        !QJsonDocument::fromJson(value.toUtf8()).object().value("applyTo").toObject().value("tag").toString().isEmpty();
+    withWriteLock([&] {
+        _hasApplyToTag = hasApplyToTag;
+    });
+}
+
+bool MaterialEntityItem::appliesByTag() const {
+    // not on an avatar (MaterialEntityRenderer leaves its tag aside)
+    return getParentID().isNull() && !isAvatarEntity() && resultWithReadLock<bool>([&] { return _hasApplyToTag; });
+}
+
 AACube MaterialEntityItem::calculateInitialQueryAACube(bool& success) {
+    // A Material entity applied by tag is small and draws nothing, but the models it applies to can be anywhere: the
+    // entity server sends an entity once it looks big enough from where the client is, so with its own size it reached
+    // only those who came near it, and the trees of everyone else stood still. Its query cube is the whole domain
+    // instead (only where the server files and sends it: its size, picks and drawing are its own). The same cube
+    // wherever it is, so moving it changes nothing and sends nothing
+    if (appliesByTag()) {
+        success = true;
+        return WHOLE_DOMAIN_QUERY_AACUBE;
+    }
     AACube aaCube = EntityItem::calculateInitialQueryAACube(success);
     // A Material entity's queryAACube contains its parent's queryAACube
     auto parent = getParentPointer(success);
@@ -274,6 +303,15 @@ AACube MaterialEntityItem::calculateInitialQueryAACube(bool& success) {
         }
     }
     return aaCube;
+}
+
+bool MaterialEntityItem::queryAACubeNeedsUpdate() const {
+    // a query cube is otherwise only ever grown, when the entity leaves it: the whole domain's comes with a tag (or the
+    // loss of a parent) and goes with it, as the world loads too
+    if (appliesByTag() != (getQueryAACube() == WHOLE_DOMAIN_QUERY_AACUBE)) {
+        return true;
+    }
+    return EntityItem::queryAACubeNeedsUpdate();
 }
 
 void MaterialEntityItem::setHasVertexShader(bool hasVertexShader) {

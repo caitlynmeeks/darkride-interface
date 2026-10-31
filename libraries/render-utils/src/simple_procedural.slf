@@ -43,6 +43,7 @@ layout(location=RENDER_UTILS_ATTR_POSITION_MS) in vec4 _positionMS;
 layout(location=RENDER_UTILS_ATTR_POSITION_ES) in vec4 _positionES;
 layout(location=RENDER_UTILS_ATTR_NORMAL_MS) in vec3 _normalMS;
 layout(location=RENDER_UTILS_ATTR_NORMAL_WS) in vec3 _normalWS;
+layout(location=RENDER_UTILS_ATTR_TANGENT_WS) in vec3 _tangentWS;
 layout(location=RENDER_UTILS_ATTR_COLOR) in vec4 _color;
 layout(location=RENDER_UTILS_ATTR_TEXCOORD01) in vec4 _texCoord01;
 #define _texCoord0 _texCoord01.xy
@@ -55,6 +56,70 @@ layout(location=RENDER_UTILS_ATTR_TEXCOORD01) in vec4 _texCoord01;
 #define _eyePosition _positionES
 
 <@include procedural/ProceduralCommon.slh@>
+
+<@include ProceduralUnderlyingMaterial.slh@>
+LAYOUT(binding=GRAPHICS_TEXTURE_MATERIAL_ALBEDO) uniform sampler2D underlyingAlbedoMap;
+LAYOUT(binding=GRAPHICS_TEXTURE_MATERIAL_NORMAL) uniform sampler2D underlyingNormalMap;
+LAYOUT(binding=PROCEDURAL_TEXTURE_UNDERLYING_ROUGHNESS) uniform sampler2D underlyingRoughnessMap;
+LAYOUT(binding=PROCEDURAL_TEXTURE_UNDERLYING_METALLIC) uniform sampler2D underlyingMetallicMap;
+LAYOUT(binding=PROCEDURAL_TEXTURE_UNDERLYING_OCCLUSION) uniform sampler2D underlyingOcclusionMap;
+
+// the colour (linear) and the opacity: the factors times the albedo map times the vertex colour, as the model shader
+// takes them (a tree generator's untextured parts are coloured by their vertices alone)
+vec4 getUnderlyingAlbedo(vec2 uv) {
+    int key = getUnderlyingKey();
+    vec4 albedo = vec4(mix(vec3(1.0), _underlying._albedoRoughness.rgb, float((key & UNDERLYING_ALBEDO_VAL_BIT) != 0)),
+                       _underlying._emissiveOpacity.a);
+    if ((key & UNDERLYING_ALBEDO_MAP_BIT) != 0) {
+        albedo *= texture(underlyingAlbedoMap, getUnderlyingTexCoord(uv));
+    }
+    return albedo * _color;
+}
+// the roughness, the metallic and the occlusion at uv, the maps and the factors combined as the model shader combines
+// them (an ORM texture comes as all three). The occlusion is read with uv too: a map on the second texture coordinates
+// (a lightmap's) wants _texCoord1, which a procedural is not given
+float getUnderlyingRoughness(vec2 uv) {
+    int key = getUnderlyingKey();
+    float factor = _underlying._albedoRoughness.a;
+    if ((key & UNDERLYING_ROUGHNESS_MAP_BIT) == 0) {
+        return factor;
+    }
+    float fetched = texture(underlyingRoughnessMap, getUnderlyingTexCoord(uv)).r;
+    if ((key & UNDERLYING_ROUGHNESS_FROM_SMOOTHNESS_BIT) != 0) {
+        return 1.0 - (1.0 - factor) * (1.0 - fetched);
+    }
+    return fetched * ((key & UNDERLYING_GLOSSY_VAL_BIT) != 0 ? factor : 1.0);
+}
+float getUnderlyingMetallic(vec2 uv) {
+    int key = getUnderlyingKey();
+    float factor = _underlying._metallicScatteringOpacityCutoffKey.x;
+    if ((key & UNDERLYING_METALLIC_MAP_BIT) == 0) {
+        return factor;
+    }
+    return texture(underlyingMetallicMap, getUnderlyingTexCoord(uv)).r * ((key & UNDERLYING_METALLIC_VAL_BIT) != 0 ? factor : 1.0);
+}
+float getUnderlyingOcclusion(vec2 uv) {
+    if ((getUnderlyingKey() & UNDERLYING_OCCLUSION_MAP_BIT) == 0) {
+        return 1.0;
+    }
+    return mix(1.0, texture(underlyingOcclusionMap, getUnderlyingTexCoord(uv)).r, _underlyingOcclusionStrengthSpare3.x);
+}
+// the world-space normal with the normal map applied, as the model shader applies it, not yet turned to face the
+// viewer (evalFrontOrBackFaceNormal does that). The vertex's own normal where the material has no normal map
+vec3 getUnderlyingNormal(vec2 uv) {
+    vec3 normal = normalize(_normalWS);
+    if ((getUnderlyingKey() & UNDERLYING_NORMAL_MAP_BIT) == 0 || dot(_tangentWS, _tangentWS) < 1.0e-8) {
+        return normal;
+    }
+    vec3 tangent = normalize(_tangentWS);
+    vec3 bitangent = cross(normal, tangent);
+    // unpacked as MaterialTextures.slh's fetchNormalMap unpacks it: two channels from 0..1 to -1..1, the third rebuilt,
+    // swizzled into hifi's tangent space with Y out of the surface (the texel as it is tilts every normal far over)
+    vec2 t = 2.0 * (texture(underlyingNormalMap, getUnderlyingTexCoord(uv)).rg - vec2(0.5));
+    vec3 fetched = vec3(t.x, sqrt(max(0.0, 1.0 - dot(t, t))), t.y);
+    vec3 local = mix(fetched, vec3(0.0, 1.0, 0.0), smoothstep(30.0, 100.0, -_positionES.z));
+    return normalize(bitangent * local.x + normal * local.y + tangent * local.z);
+}
 
 #line 1001
 //PROCEDURAL_BLOCK_BEGIN

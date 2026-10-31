@@ -21,6 +21,7 @@
 #include <GLMHelpers.h>
 #include <NetworkingConstants.h>
 #include <shaders/Shaders.h>
+#include <graphics/ShaderConstants.h>
 
 #include "ShaderConstants.h"
 #include "Logging.h"
@@ -35,6 +36,8 @@ static const QString URL_KEY = "shaderUrl";
 static const QString VERSION_KEY = "version";
 static const QString UNIFORMS_KEY = "uniforms";
 static const QString CHANNELS_KEY = "channels";
+static const QString CULL_FACE_MODE_KEY = "cullFaceMode";
+static const QString CULL_FACE_MODE_UNDERLYING = "underlying";
 
 // Shader replace strings
 static const std::string PROCEDURAL_BLOCK = "//PROCEDURAL_BLOCK";
@@ -42,7 +45,8 @@ static const std::string PROCEDURAL_VERSION = "//PROCEDURAL_VERSION";
 
 bool operator==(const ProceduralData& a, const ProceduralData& b) {
     return ((a.version == b.version) && (a.fragmentShaderUrl == b.fragmentShaderUrl) &&
-            (a.vertexShaderUrl == b.vertexShaderUrl) && (a.uniforms == b.uniforms) && (a.channels == b.channels));
+            (a.vertexShaderUrl == b.vertexShaderUrl) && (a.uniforms == b.uniforms) && (a.channels == b.channels) &&
+            (a.cullFaceMode == b.cullFaceMode) && (a.cullFaceModeUnderlying == b.cullFaceModeUnderlying));
 }
 
 QJsonValue ProceduralData::getProceduralData(const QString& proceduralJson) {
@@ -107,6 +111,15 @@ void ProceduralData::parse(const QJsonObject& proceduralData) {
 
     uniforms = proceduralData[UNIFORMS_KEY].toObject();
     channels = proceduralData[CHANNELS_KEY].toArray();
+
+    {
+        QString mode = proceduralData[CULL_FACE_MODE_KEY].toString();
+        cullFaceModeUnderlying = mode == CULL_FACE_MODE_UNDERLYING;
+        graphics::MaterialKey::CullFaceMode named;
+        if (!cullFaceModeUnderlying && graphics::MaterialKey::getCullFaceModeFromName(mode.toStdString(), named)) {
+            cullFaceMode = named;
+        }
+    }
 }
 
 std::function<void(gpu::StatePointer)> Procedural::opaqueStencil = [](gpu::StatePointer state) {};
@@ -140,6 +153,10 @@ void Procedural::setProceduralData(const ProceduralData& proceduralData) {
         _data.version = proceduralData.version;
         _shaderDirty = true;
     }
+
+    // a pipeline per cull face mode (prepare's drawKey): another just picks another
+    _data.cullFaceMode = proceduralData.cullFaceMode;
+    _data.cullFaceModeUnderlying = proceduralData.cullFaceModeUnderlying;
 
     if (proceduralData.uniforms != _data.uniforms) {
         // If the uniform keys changed, we need to recreate the whole shader to handle the reflection
@@ -263,8 +280,14 @@ bool Procedural::isReady() const {
     return true;
 }
 
+ProceduralProgramKey Procedural::getDrawKey(const ProceduralProgramKey& key) const {
+    ProceduralProgramKey drawKey = key;
+    drawKey.setCullFaceMode(_data.cullFaceModeUnderlying ? key.getCullFaceMode() : _data.cullFaceMode);
+    return drawKey;
+}
+
 bool Procedural::compilationFailed(const ProceduralProgramKey& key) const {
-    auto pipeline = _proceduralPipelines.find(key);
+    auto pipeline = _proceduralPipelines.find(getDrawKey(key));
     return pipeline != _proceduralPipelines.end() && pipeline->second && pipeline->second->getProgram() &&
            pipeline->second->getProgram()->compilationHasFailed();
 }
@@ -274,8 +297,10 @@ void Procedural::prepare(gpu::Batch& batch,
                          const glm::vec3& size,
                          const glm::quat& orientation,
                          const uint64_t& created,
-                         const ProceduralProgramKey key) {
+                         const ProceduralProgramKey key,
+                         const gpu::BufferPointer& inputsBuffer) {
     std::lock_guard<std::mutex> lock(_mutex);
+    _currentInputsBuffer = inputsBuffer ? inputsBuffer : _standardInputsBuffer;
     _entityDimensions = size;
     _entityPosition = position;
     _entityOrientation = glm::mat3_cast(orientation);
@@ -312,7 +337,8 @@ void Procedural::prepare(gpu::Batch& batch,
         _proceduralPipelines.clear();
     }
 
-    auto pipeline = _proceduralPipelines.find(key);
+    const ProceduralProgramKey drawKey = getDrawKey(key);
+    auto pipeline = _proceduralPipelines.find(drawKey);
     bool recompiledShader = false;
     if (pipeline == _proceduralPipelines.end()) {
         gpu::Shader::Source vertexSource;
@@ -369,6 +395,13 @@ void Procedural::prepare(gpu::Batch& batch,
                     reflection->textures["iChannel" + std::to_string(i)] = procedural::slot::texture::Channel0 + i;
                 }
                 reflection->uniformBuffers["standardInputsBuffer"] = procedural::slot::buffer::Inputs;
+                // the material beneath (simple_procedural.slf's getUnderlying* functions)
+                reflection->uniformBuffers["underlyingMaterialBuffer"] = graphics::slot::buffer::Material;
+                reflection->textures["underlyingAlbedoMap"] = graphics::slot::texture::MaterialAlbedo;
+                reflection->textures["underlyingNormalMap"] = graphics::slot::texture::MaterialNormal;
+                reflection->textures["underlyingRoughnessMap"] = procedural::slot::texture::UnderlyingRoughness;
+                reflection->textures["underlyingMetallicMap"] = procedural::slot::texture::UnderlyingMetallic;
+                reflection->textures["underlyingOcclusionMap"] = procedural::slot::texture::UnderlyingOcclusion;
             }
         }
 
@@ -393,7 +426,12 @@ void Procedural::prepare(gpu::Batch& batch,
         gpu::ShaderPointer fragmentShader = gpu::Shader::createPixel(fragmentSource);
         gpu::ShaderPointer program = gpu::Shader::createProgram(vertexShader, fragmentShader);
 
-        _proceduralPipelines[key] = gpu::Pipeline::create(program, key.isTransparent() ? _transparentState : _opaqueState);
+        gpu::StatePointer state = key.isTransparent() ? _transparentState : _opaqueState;
+        if (drawKey.getCullFaceMode() != graphics::MaterialKey::CULL_NONE) {
+            state = std::make_shared<gpu::State>(state->getValues());
+            state->setCullMode((gpu::State::CullMode)drawKey.getCullFaceMode());
+        }
+        _proceduralPipelines[drawKey] = gpu::Pipeline::create(program, state);
 
         _lastCompile = usecTimestampNow();
         if (_firstCompile == 0) {
@@ -403,14 +441,15 @@ void Procedural::prepare(gpu::Batch& batch,
         recompiledShader = true;
     }
 
-    batch.setPipeline(recompiledShader ? _proceduralPipelines[key] : pipeline->second);
+    batch.setPipeline(recompiledShader ? _proceduralPipelines[drawKey] : pipeline->second);
 
-    bool recreateUniforms = _shaderDirty || _uniformsDirty || recompiledShader || _prevKey != key;
+    // by the draw key: an underlying cull mode it does not use leaves its uniforms as they are from part to part
+    bool recreateUniforms = _shaderDirty || _uniformsDirty || recompiledShader || _prevKey != drawKey;
     if (recreateUniforms) {
         setupUniforms();
     }
 
-    _prevKey = key;
+    _prevKey = drawKey;
     _shaderDirty = _uniformsDirty = false;
 
     for (auto lambda : _uniforms) {
@@ -539,9 +578,13 @@ void Procedural::setupUniforms() {
             }
         }
 
-        _standardInputsBuffer->setSubData(0, _standardInputs);
-        batch.setUniformBuffer(procedural::slot::buffer::Inputs, _standardInputsBuffer, 0, sizeof(StandardInputs));
+        _currentInputsBuffer->setSubData(0, _standardInputs);
+        batch.setUniformBuffer(procedural::slot::buffer::Inputs, _currentInputsBuffer, 0, sizeof(StandardInputs));
     });
+}
+
+gpu::BufferPointer Procedural::makeInputsBuffer() {
+    return std::make_shared<gpu::Buffer>(sizeof(StandardInputs), nullptr);
 }
 
 glm::vec4 Procedural::getColor(const glm::vec4& entityColor) const {

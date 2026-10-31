@@ -19,6 +19,7 @@
 #include <render/DrawTask.h>
 #include <shaders/Shaders.h>
 #include <graphics/ShaderConstants.h>
+#include <procedural/ShaderConstants.h>
 
 #include "render-utils/ShaderConstants.h"
 #include "StencilMaskPass.h"
@@ -833,3 +834,21 @@ bool RenderPipelines::bindMaterials(graphics::MultiMaterial& multiMaterial, gpu:
     }
 }
 
+void RenderPipelines::bindUnderlyingMaterial(graphics::MultiMaterial& multiMaterial, gpu::Batch& batch) {
+    if (multiMaterial.shouldUpdate()) {
+        updateMultiMaterial(multiMaterial);
+    }
+    batch.setUniformBuffer(gr::Buffer::Material, multiMaterial.getSchemaBuffer());
+    auto textures = multiMaterial.getTextureTable()->getTextures();
+    batch.setResourceTexture(gr::Texture::MaterialAlbedo, textures[gr::Texture::MaterialAlbedo]);
+    batch.setResourceTexture(gr::Texture::MaterialNormal, textures[gr::Texture::MaterialNormal]);
+    batch.setResourceTexture(procedural::slot::texture::UnderlyingRoughness, textures[gr::Texture::MaterialRoughness]);
+    batch.setResourceTexture(procedural::slot::texture::UnderlyingMetallic, textures[gr::Texture::MaterialMetallic]);
+    batch.setResourceTexture(procedural::slot::texture::UnderlyingOcclusion, textures[gr::Texture::MaterialOcclusion]);
+}
+
+void RenderPipelines::bindDefaultUnderlyingMaterial(gpu::Batch& batch) {
+    // no layers: the default schema, whose key names no maps, so none is read
+    static graphics::MultiMaterial nothingBeneath;
+    bindUnderlyingMaterial(nothingBeneath, batch);
+}

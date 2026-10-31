@@ -74,6 +74,12 @@ public:
     void setMaterialMappingRot(float materialMappingRot);
 
     AACube calculateInitialQueryAACube(bool& success) override;
+    bool queryAACubeNeedsUpdate() const override;
+
+    // with no parent and { "applyTo": { "tag": ... } } in its userData it applies to every model with the tag, wherever
+    // they are (EntityTreeRenderer::setTaggedMaterial)
+    void setUserData(const QString& value) override;
+    bool appliesByTag() const;
 
     void setHasVertexShader(bool hasVertexShader);
 
@@ -113,6 +119,7 @@ private:
     QString _materialData;
 
     bool _hasVertexShader { false };
+    bool _hasApplyToTag { false };   // parsed once from userData
 
 };
 

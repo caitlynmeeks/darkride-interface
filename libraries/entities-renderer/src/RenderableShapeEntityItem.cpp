@@ -575,6 +575,7 @@ void ShapeEntityRenderer::doRender(RenderArgs* args) {
         outColor = procedural->getColor(outColor);
         outColor.a *= procedural->isFading() ? Interpolate::calculateFadeRatio(procedural->getFadeStartTime()) : 1.0f;
         const bool forward = DeferredLightingEffect::isForwardLit(args);
+        RenderPipelines::bindDefaultUnderlyingMaterial(batch);
         procedural->prepare(batch, _position, _dimensions, _orientation, _created,
                             ProceduralProgramKey(outColor.a < 1.0f, false, false, forward));
         if (forward) {

@@ -1,0 +1,56 @@
+<!
+//  ProceduralUnderlyingMaterial.slh
+//
+//  Distributed under the Apache License, Version 2.0.
+//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+!>
+<@if not PROCEDURAL_UNDERLYING_MATERIAL_SLH@>
+<@def PROCEDURAL_UNDERLYING_MATERIAL_SLH@>
+
+<@include graphics/ShaderConstants.h@>
+
+// THE MATERIAL BENEATH (a procedural on a model part; MeshPartPayload::bindUnderlyingMaterial): the model's own
+// material, or what the layers below this one give, merged as they draw without it, so that a shader on top can move
+// the surface or tint it and keep its textures (one Material entity over many different models). The albedo and
+// normal maps, the roughness, metallic and occlusion maps (simple_procedural.slf; an ORM texture is all three) and the
+// material's values. Not the emissive or scattering maps: no texture unit is free for them.
+// On anything but a model part (a shape, a Material entity's own sphere) these read the defaults. The values here,
+// for both stages; those read from the maps are simple_procedural.slf's.
+// Named apart from graphics/Material.slh's so that no procedural's own names clash with them.
+struct UnderlyingMaterial {
+    vec4 _emissiveOpacity;
+    vec4 _albedoRoughness;
+    vec4 _metallicScatteringOpacityCutoffKey;
+};
+LAYOUT_STD140(binding=GRAPHICS_BUFFER_MATERIAL) uniform underlyingMaterialBuffer {
+    UnderlyingMaterial _underlying;
+    mat4 _underlyingTexcoordTransform0;
+    mat4 _underlyingTexcoordTransform1;
+    vec4 _underlyingLightmapMaterialParams;
+    vec4 _underlyingOcclusionStrengthSpare3;
+};
+
+// graphics::MaterialKey's bits, as graphics/Material.slh has them
+const int UNDERLYING_ALBEDO_VAL_BIT = 0x00000004;
+const int UNDERLYING_OPACITY_MASK_MAP_BIT = 0x00000040;
+const int UNDERLYING_METALLIC_VAL_BIT = 0x00000008;
+const int UNDERLYING_GLOSSY_VAL_BIT = 0x00000010;
+const int UNDERLYING_EMISSIVE_MAP_BIT = 0x00000800;
+const int UNDERLYING_ALBEDO_MAP_BIT = 0x00001000;
+const int UNDERLYING_METALLIC_MAP_BIT = 0x00002000;
+const int UNDERLYING_ROUGHNESS_MAP_BIT = 0x00004000;
+const int UNDERLYING_NORMAL_MAP_BIT = 0x00008000;
+const int UNDERLYING_OCCLUSION_MAP_BIT = 0x00010000;
+const int UNDERLYING_ROUGHNESS_FROM_SMOOTHNESS_BIT = 0x00100000;
+
+int getUnderlyingKey() { return floatBitsToInt(_underlying._metallicScatteringOpacityCutoffKey.w); }
+// the texture coordinates the maps are read with: uv (the mesh's first, _texCoord0) through the material's transform
+vec2 getUnderlyingTexCoord(vec2 uv) { return (_underlyingTexcoordTransform0 * vec4(uv, 0.0, 1.0)).st; }
+// cut out below the cutoff (glTF's MASK: leaves, say, where the bark is opaque)
+bool isUnderlyingMasked() { return (getUnderlyingKey() & UNDERLYING_OPACITY_MASK_MAP_BIT) != 0; }
+float getUnderlyingOpacityCutoff() { return _underlying._metallicScatteringOpacityCutoffKey.z; }
+// the emissive factor; none where it comes with a map (whose unit is a channel's), as the factor alone would glow
+vec3 getUnderlyingEmissive() {
+    return (getUnderlyingKey() & UNDERLYING_EMISSIVE_MAP_BIT) != 0 ? vec3(0.0) : _underlying._emissiveOpacity.rgb;
+}
+<@endif@>

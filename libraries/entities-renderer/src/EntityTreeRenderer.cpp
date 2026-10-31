@@ -771,6 +771,7 @@ void EntityTreeRenderer::update(bool simulate) {
             if (scene) { // ->getTransactionQueueSize() > 0) {
                 render::Transaction transaction;
                 addPendingEntities(scene, transaction);
+                recheckTaggedMaterials();
                 updateChangedEntities(scene, transaction);
                 updateDeferredModelMeshes(scene, transaction);
                 scene->enqueueTransaction(transaction);
@@ -1771,6 +1772,43 @@ std::function<bool(const QUuid&, graphics::MaterialLayer, const std::string&)> E
 std::function<bool(const QUuid&, graphics::MaterialPointer, const std::string&)> EntityTreeRenderer::_removeMaterialFromEntityOperator = nullptr;
 std::function<bool(const QUuid&, graphics::MaterialLayer, const std::string&)> EntityTreeRenderer::_addMaterialToAvatarOperator = nullptr;
 std::function<bool(const QUuid&, graphics::MaterialPointer, const std::string&)> EntityTreeRenderer::_removeMaterialFromAvatarOperator = nullptr;
+
+std::mutex EntityTreeRenderer::_taggedMaterialsLock;
+EntityTreeRenderer::TaggedMaterials EntityTreeRenderer::_taggedMaterials;
+std::atomic<uint32_t> EntityTreeRenderer::_taggedMaterialsVersion { 0 };
+
+void EntityTreeRenderer::setTaggedMaterial(const QUuid& materialEntityID, const TaggedMaterial& material) {
+    std::lock_guard<std::mutex> lock(_taggedMaterialsLock);
+    _taggedMaterials.erase(materialEntityID);
+    _taggedMaterials.emplace(materialEntityID, material);
+    _taggedMaterialsVersion++;
+}
+
+void EntityTreeRenderer::removeTaggedMaterial(const QUuid& materialEntityID) {
+    std::lock_guard<std::mutex> lock(_taggedMaterialsLock);
+    if (_taggedMaterials.erase(materialEntityID) > 0) {
+        _taggedMaterialsVersion++;
+    }
+}
+
+EntityTreeRenderer::TaggedMaterials EntityTreeRenderer::getTaggedMaterials(uint32_t& version) {
+    std::lock_guard<std::mutex> lock(_taggedMaterialsLock);
+    version = _taggedMaterialsVersion;
+    return _taggedMaterials;
+}
+
+void EntityTreeRenderer::recheckTaggedMaterials() {
+    uint32_t version = _taggedMaterialsVersion;
+    if (version == _seenTaggedMaterialsVersion) {
+        return;
+    }
+    _seenTaggedMaterialsVersion = version;
+    for (const auto& entry : _entitiesInScene) {
+        if (entry.second && entry.second->getEntity() && entry.second->getEntity()->getType() == EntityTypes::Model) {
+            onEntityChanged(entry.first);
+        }
+    }
+}
 
 bool EntityTreeRenderer::addMaterialToEntity(const QUuid& entityID, graphics::MaterialLayer material, const std::string& parentMaterialName) {
     if (_addMaterialToEntityOperator) {
