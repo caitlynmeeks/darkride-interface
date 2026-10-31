@@ -196,7 +196,7 @@ public:
                         if (newPlugin) {
                             bool hasVsync = false;
                             QThread::setPriority(newPlugin->getPresentPriority());
-                            bool wantVsync = newPlugin->wantVsync();
+                            bool wantVsync = newPlugin->vsyncApplies();
 #if defined(Q_OS_MACOS)
                             newPlugin->swapBuffers();
 #endif
@@ -206,6 +206,9 @@ public:
 #endif
                             hasVsync = gl::getSwapInterval() != 0;
                             qCDebug(displayPlugins) << "Vsync enabled:" << hasVsync;
+                            if (newPlugin->wantVsync() && !wantVsync) {
+                                qCDebug(displayPlugins) << "Vsync: the setting is on, but the display link paces the presents in phase with the display: the swap does not wait";
+                            }
 
                             newPlugin->setVsyncEnabled(hasVsync);
                             newPlugin->_vsyncApplied = wantVsync;
@@ -871,15 +874,24 @@ void OpenGLDisplayPlugin::tracePresent(uint64_t startPresent) {
     }
 }
 
+bool OpenGLDisplayPlugin::vsyncApplies() const {
+    static const bool forced = !qgetenv("TIVOLI_VSYNC").isEmpty();
+    return wantVsync() && (forced || !DisplayLink::instance().isRunning());
+}
+
 void OpenGLDisplayPlugin::applyVsync() {
-    bool wanted = wantVsync();
+    bool wanted = vsyncApplies();
     if (wanted == _vsyncApplied) {
         return;
     }
     _vsyncApplied = wanted;
     gl::setSwapInterval(wanted ? 1 : 0);
     bool hasVsync = gl::getSwapInterval() != 0;
-    qCDebug(displayPlugins) << "Vsync" << (wanted ? "on" : "off") << "asked for at run time; enabled:" << hasVsync;
+    if (wantVsync() && !wanted) {
+        qCDebug(displayPlugins) << "Vsync: the setting is on, but the display link paces the presents in phase with the display: the swap does not wait; enabled:" << hasVsync;
+    } else {
+        qCDebug(displayPlugins) << "Vsync" << (wanted ? "on" : "off") << "asked for at run time; enabled:" << hasVsync;
+    }
     _vsyncEnabled = hasVsync;
 }
 
