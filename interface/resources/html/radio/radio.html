@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  radio.html
+  interface/resources/html/radio
+
+  The Radio panel's page (qml/darkride/RadioPanel.qml): internet radio in a classic skin player (Webamp, MIT), wearing
+  Darkride's own skin (mary's), with SomaFM's stations, any stream address, and the player's own skins. Each listener's
+  app plays the stream straight from the station.
+
+  Copyright 2026 Darkride.
+
+  Distributed under the MIT License.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Radio</title>
+<link rel="stylesheet" href="radio.css">
+</head>
+<body>
+<main id="radio">
+    <div id="player"></div>
+    <div id="controls">
+        <form id="address" autocomplete="off">
+            <input id="address-field" type="text" placeholder="Any stream address (or .pls, .m3u)" spellcheck="false"
+                aria-label="Stream address">
+            <button type="submit">Play</button>
+        </form>
+        <div class="row">
+            <button id="load-skin" type="button" title="A classic .wsz skin from your computer">Load a skin…</button>
+            <button id="reset-skin" type="button">Reset to Darkride</button>
+        </div>
+        <div class="row">
+            <span class="credit">Radio from SomaFM</span>
+            <a id="support" href="https://somafm.com/support/" target="_blank" rel="noopener">Support SomaFM</a>
+        </div>
+        <p id="note" role="status" hidden></p>
+    </div>
+    <input id="skin-file" type="file" accept=".wsz,.zip" hidden>
+</main>
+<script src="webamp.darkride.min.js"></script>
+<script src="darkride-skin.js"></script>
+<script src="stations.js"></script>
+<script src="radio.js"></script>
+</body>
+</html>

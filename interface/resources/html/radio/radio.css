@@ -1,0 +1,136 @@
+/*
+  radio.css
+  interface/resources/html/radio
+
+  The Radio page's own parts around the player, in the colours of Darkride's radio skin (mary's: night-navy enamel,
+  brass trim, cream keys, cyan readouts).
+
+  Copyright 2026 Darkride.
+
+  Distributed under the MIT License.
+*/
+
+/* Jost Medium (SIL OFL 1.1, fonts/OFL.txt): the station list's font (the skin's pledit.txt asks for "Jost") */
+@font-face {
+    font-family: "Jost";
+    src: url("fonts/Jost-500-Medium.ttf") format("truetype");
+    font-weight: 100 900;
+}
+
+:root {
+    --navy: #0c1022;
+    --well: #050814;
+    --raised: #141a33;
+    --hover: #1b2140;
+    --brass: #b8893a;
+    --cream: #f4e4c1;
+    --cyan: #00afff;
+    --dim: #8a90a8;
+    --coral: #ff8a65;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--navy);
+    color: var(--cream);
+    font: 500 11px/1.35 Jost, Futura, "Avenir Next", Arial, sans-serif;
+}
+
+#radio {
+    box-sizing: border-box;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+}
+
+/* Webamp's two windows, stacked; its height follows the panel's (radio.js) */
+#player {
+    position: relative;
+    flex: none;
+    width: 275px;
+    height: 232px;
+}
+/* until the player's first skin is in, so nothing unskinned shows */
+#player.waiting {
+    visibility: hidden;
+}
+
+#controls {
+    flex: none;
+    width: 275px;
+    user-select: none;
+}
+
+#address, .row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+#address-field {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    height: 22px;
+    padding: 0 6px;
+    background: var(--well);
+    color: var(--cyan);
+    border: 1px solid var(--brass);
+    border-radius: 2px;
+    font: inherit;
+    outline: none;
+    user-select: text;
+}
+#address-field::placeholder {
+    color: var(--dim);
+}
+#address-field:focus {
+    border-color: var(--cream);
+}
+
+button, #support {
+    flex: none;
+    box-sizing: border-box;
+    height: 22px;
+    padding: 0 8px;
+    background: var(--raised);
+    color: var(--cream);
+    border: 1px solid var(--brass);
+    border-radius: 2px;
+    font: inherit;
+    line-height: 20px;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+button:hover, #support:hover {
+    background: var(--hover);
+}
+button:active, #support:active {
+    background: var(--well);
+}
+.row button {
+    flex: 1;
+}
+
+.credit {
+    flex: 1;
+    min-width: 0;
+    color: var(--dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#note {
+    margin: 6px 0 0;
+    color: var(--dim);
+}
+#note.problem {
+    color: var(--coral);
+}
