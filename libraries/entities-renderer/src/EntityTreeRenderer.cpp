@@ -639,7 +639,11 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
              }
              else 
              {
-                 _renderablesToUpdate.insert(renderable);
+                 // a change can come in for an entity whose renderer is gone (deleted, or the last world's after a
+                 // world change: the renderer's request is queued) or not made yet; as the branch above, no null
+                 if (renderable) {
+                     _renderablesToUpdate.insert(renderable);
+                 }
              }
             
         }
@@ -746,6 +750,9 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
                     }
                     _renderablesToUpdate.erase(renderable);
                 }
+                // a null is never sorted, so it was never erased above: drop it before the leftovers are read (the
+                // loop below crashed on one, 2026-10-31) and counted
+                _renderablesToUpdate.erase(EntityRendererPointer());
 
                 // the ones left for the next frame are stamped with the frame they were first left over, so their
                 // age in frames is known (the counters, the inspector's frames behind, the log line); a loop over
