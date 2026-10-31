@@ -165,8 +165,12 @@ void RefreshRateController::noteNewFrame(int mainUs, int buildUs) {
 void RefreshRateController::notePresentCost(int executeUs, float gpuMs) {
     CadenceCounters& counting = _cadenceCounting;
     counting.maxExecuteUs = std::max(counting.maxExecuteUs, executeUs);
+    // slow: over half a refresh of the display. The present thread's own budget at the full rate is about half a
+    // refresh, not 70 % of one: its slot is 2 ms into the interval and the flush's tail takes the end (performance's
+    // measurements of 2026-10-20 and 10-31), so an execute over half a refresh is a miss at 144 while it is nothing
+    // at 72, and a gate at 70 % returned from Port Amarelle's quiet spots only to drop again when the camera turned
     const int displayRate = _displayRefreshRate;
-    if (displayRate > 0 && executeUs > 700000 / displayRate) {
+    if (displayRate > 0 && executeUs > 500000 / displayRate) {
         counting.slowExecutes++;
     }
     counting.gpuMs = gpuMs;

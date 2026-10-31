@@ -349,10 +349,11 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
         << (_governorProbeSecondsLeft > 0 ? ", probe" : "");
 }
 
-void RefreshRateManager::resetInactiveTimer() {
+void RefreshRateManager::resetInactiveTimer(bool deliberate) {
     if (_uxMode == RefreshRateManager::UXMode::DESKTOP) {
         auto regime = getRefreshRateRegime();
-        if (regime == RefreshRateRegime::FOCUS_ACTIVE || regime == RefreshRateRegime::FOCUS_INACTIVE) {
+        if (regime == RefreshRateRegime::FOCUS_ACTIVE || regime == RefreshRateRegime::FOCUS_INACTIVE ||
+            (deliberate && regime == RefreshRateRegime::UNFOCUS)) {
             _inactiveTimer->start();
             setRefreshRateRegime(RefreshRateManager::RefreshRateRegime::FOCUS_ACTIVE);
         }

@@ -145,7 +145,10 @@ public:
     // query the refresh rate target at the specified combination
     int queryRefreshRateTarget(RefreshRateProfile profile, RefreshRateRegime regime, UXMode uxMode) const;
 
-    void resetInactiveTimer();
+    // an input ends the rest (FOCUS_INACTIVE -> FOCUS_ACTIVE); a deliberate one (a button, a key, the wheel: not a mouse
+    // move on the way to another app) also ends the unfocused regime, since macOS delivers a right click to a window
+    // without activating it (Caity, 2026-10-31: the camera turned at 30 fps after a right click back into the window)
+    void resetInactiveTimer(bool deliberate = false);
     void toggleInactive();
 
     // The resting rate (Display-based's FocusInactive, RESTING_RATE): after INACTIVE_TIMER_LIMIT with no input and this
