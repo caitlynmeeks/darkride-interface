@@ -160,7 +160,15 @@ void TrackSimulation::adoptState(Train& train, const TrackEntityItem& track, con
             << train.follower.state().s << "m, speed" << train.follower.state().speed << ", dwell" << train.follower.state().dwellRemaining
             << "; residual" << residual << (std::fabs(residual) > SNAP_DISTANCE ? "(snapped)" : "(blended)");
     }
-    if (!train.running || !std::isfinite(residual) || std::fabs(residual) > SNAP_DISTANCE) {
+    bool snapped = !std::isfinite(residual) || std::fabs(residual) > SNAP_DISTANCE;
+    if (train.running) {
+        // a running train's correction, counted and into the frame trace (item 6): the rate a small residual closes at
+        // (CLOSE_RATE, or less for one under a substep's worth), a desync's over BLEND_TIME, a snap's nothing
+        float size = std::isfinite(residual) ? std::fabs(residual) : 0.0f;
+        float closing = snapped ? 0.0f : (size <= BLEND_DISTANCE ? glm::min(size / PHYSICS_ENGINE_FIXED_SUBSTEP, CLOSE_RATE) : size / BLEND_TIME);
+        _corrections.note(size, closing, snapped);
+    }
+    if (!train.running || snapped) {
         residual = 0.0f;
     }
     train.residual = residual;

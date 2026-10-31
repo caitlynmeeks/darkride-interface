@@ -34,11 +34,15 @@
 #include <EntityItem.h>
 #include <TrackCurve.h>
 #include <TrackFollower.h>
+#include "CorrectionCounters.h"
 
 class TrackEntityItem;
 
 class TrackSimulation {
 public:
+    // the server-state corrections, counted (item 6 of the instruments plan): for the Stats line
+    const CorrectionCounters& getCorrectionCounters() const { return _corrections; }
+
     // a train state the server wants published on its Track entity
     struct Publication {
         QUuid trackID;
@@ -82,6 +86,7 @@ public:
     static quint64 substepDomainTime();
 
 private:
+    CorrectionCounters _corrections;
     struct Train {
         uint32_t version { 0 };   // the Track entity's property version the curve was built from
         TrackCurve curve;

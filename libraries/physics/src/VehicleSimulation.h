@@ -70,6 +70,7 @@
 #include <Jolt/Core/Reference.h>
 #include <Jolt/Physics/Body/BodyID.h>
 
+#include "CorrectionCounters.h"
 #include <AirshipModel.h>
 #include <AircraftModel.h>
 #include <EntityItem.h>
@@ -158,6 +159,9 @@ public:
     void fillState(EntityMotionState* state, EntityItemProperties& properties);
     // this process is driving the vehicle from local controls (the driver's seat here, or it owns the vehicle)
     bool isLocalDriver(EntityMotionState* state) const;
+
+    // the server-state corrections, counted (item 6 of the instruments plan): for the Stats line
+    const CorrectionCounters& getCorrectionCounters() const { return _corrections; }
 
     struct Stats {
         int vehicles { 0 };
@@ -378,6 +382,7 @@ private:
     bool _serverless { false };
     std::map<EntityMotionState*, Vehicle> _vehicles;
     std::map<QUuid, EntityMotionState*> _byEntity;
+    CorrectionCounters _corrections;
     std::deque<Snapshot> _snapshots;
     std::mutex _inputMutex;
     Stats _stats;
