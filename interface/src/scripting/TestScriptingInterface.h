@@ -774,6 +774,24 @@ public slots:
     Q_INVOKABLE QVariantList takeFrameTrace();
 
     /**jsdoc
+     * Keeps the Stats values current while the Stats panel is hidden (the instruments plan, item 8). Normally they
+     * freeze unless the panel is shown; while any reader is on, the cheap ones (rates, counts, the mixers' rates, the
+     * render counters, the frame trace lines) update every frame, silently, and the expanded-only texts and the
+     * timers stay off. <code>true</code> adds a reader and <code>false</code> removes one: pair the calls.
+     * @function Test.statsLive
+     * @param {boolean} on - Whether this script reads live values.
+     */
+    Q_INVOKABLE void statsLive(bool on);
+
+    /**jsdoc
+     * Every Stats value by property name, read in the same frame on the main thread (vectors as {x, y, z}). Live
+     * only while the panel is shown or a reader is on (Test.statsLive).
+     * @function Test.statsSnapshot
+     * @returns {object} The values by name.
+     */
+    Q_INVOKABLE QVariantMap statsSnapshot();
+
+    /**jsdoc
      * Starts or stops recording the display's refreshes (macOS: the display link's callbacks, each with the instant
      * of the refresh it announces). Starting clears what was recorded.
      * @function Test.traceRefreshes

@@ -57,6 +57,7 @@
 #include "ui/DockTitleBar.h"
 #include "ui/QmlDock.h"
 #include "ui/StandAloneJSConsole.h"
+#include "ui/Stats.h"
 #include "ui/WindowLayout.h"
 #include "ui/Popup.h"
 #include "ui/Skins.h"
@@ -1203,6 +1204,25 @@ QVariantList TestScriptingInterface::takeFrameTrace() {
         list << QVariant(row);
     }
     return list;
+}
+
+void TestScriptingInterface::statsLive(bool on) {
+    if (auto stats = Stats::getInstance()) {
+        stats->addLiveReader(on ? 1 : -1);
+    }
+}
+
+QVariantMap TestScriptingInterface::statsSnapshot() {
+    QVariantMap map;
+    auto stats = Stats::getInstance();
+    if (!stats) {
+        return map;
+    }
+    if (QThread::currentThread() != stats->thread()) {
+        QMetaObject::invokeMethod(stats, [&map, stats] { map = stats->snapshot(); }, Qt::BlockingQueuedConnection);
+        return map;
+    }
+    return stats->snapshot();
 }
 
 void TestScriptingInterface::traceRefreshes(bool on) {
