@@ -490,13 +490,9 @@ void Stats::updateStats(bool force) {
     // the second rolls (the counters change once a second, so the string is built about once a second)
     {
         static const auto cadenceCounters = OpenGLDisplayPlugin::getCadenceCountersOperator();
-        static int64_t lastRolledAtNs = -1;
         RefreshRateController::CadenceCounters c = cadenceCounters();
         QString cadence;
-        if (c.rolledAtNs == lastRolledAtNs) {
-            cadence = _presentCadence;   // the same second as last time: nothing to rebuild (performance's review)
-        } else if (c.presents > 0) {
-            lastRolledAtNs = c.rolledAtNs;
+        if (c.presents > 0) {
             const int inPhase = c.presents - c.onFreeSchedule - c.withVsync - c.inHmd;
             QString schedule = c.inHmd > 0 ? "HMD" : c.withVsync > 0 ? "vsync" :
                 inPhase >= c.onFreeSchedule ? "in phase" : "free schedule";
@@ -507,8 +503,8 @@ void Stats::updateStats(bool force) {
             if (c.late > 0) {
                 cadence += QString(" (max %1 ms)").arg(c.maxLateUs / 1000.0, 0, 'f', 1);
             }
-            cadence += QString("; of %1 frames slow: main %2, build %3; execute slow %4; GPU %5 ms")
-                .arg(c.newFrames).arg(c.slowMainFrames).arg(c.slowBuildFrames).arg(c.slowExecutes).arg(c.gpuMs, 0, 'f', 1);
+            cadence += QString("; frames slow %1 of %2, presents slow %3, GPU %4 ms")
+                .arg(c.slowNewFrames).arg(c.newFrames).arg(c.slowPresents).arg(c.gpuMs, 0, 'f', 1);
         }
         STAT_UPDATE(presentCadence, cadence);
         STAT_UPDATE(refreshGovernor, refreshRateManager.getGovernorStatus());
