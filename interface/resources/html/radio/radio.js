@@ -294,7 +294,7 @@
             setTimeout(function () { reject(new Error("timeout")); }, FETCH_TIMEOUT_MS);
         })]);
     }
-    // the first stream in a .pls or .m3u
+    // the first stream in a .pls or .m3u, and its title when the file gives one
     function readPlaylist(address) {
         return withTimeout(fetch(address, { credentials: "omit" })).then(function (response) {
             if (!response.ok) {
@@ -302,15 +302,23 @@
             }
             return response.text();
         }).then(function (text) {
-            text = text.slice(0, PLAYLIST_MAX_BYTES);
-            var lines = text.split(/\r?\n/);
-            for (var i = 0; i < lines.length; i++) {
-                var line = lines[i].trim().replace(/^File\d+=/i, "");
-                if (/^https?:\/\//i.test(line)) {
-                    return line;
+            var lines = text.slice(0, PLAYLIST_MAX_BYTES).split(/\r?\n/);
+            var found = { url: "", title: "" };
+            lines.forEach(function (line) {
+                line = line.trim();
+                var named = /^(?:Title1=|#EXTINF:[^,]*,)(.+)$/i.exec(line);
+                if (named && !found.title) {
+                    found.title = named[1].trim().slice(0, 80);
                 }
+                line = line.replace(/^File\d+=/i, "");
+                if (/^https?:\/\//i.test(line) && !found.url) {
+                    found.url = line;
+                }
+            });
+            if (!found.url) {
+                throw new Error("no stream");
             }
-            throw new Error("no stream");
+            return found;
         });
     }
 
@@ -328,9 +336,12 @@
             return;
         }
         var title = address.hostname + (address.pathname.length > 1 ? address.pathname : "");
-        var stream = /\.(pls|m3u)$/i.test(address.pathname) ? readPlaylist(address.href) : Promise.resolve(address.href);
+        var stream = /\.(pls|m3u)$/i.test(address.pathname) ? readPlaylist(address.href)
+            : Promise.resolve({ url: address.href, title: "" });
         note("Tuning in…");
-        stream.then(function (url) {
+        stream.then(function (found) {
+            var url = found.url;
+            title = found.title || title;
             var trackWith = function () {
                 var state = webamp.store.getState();
                 return state.playlist.trackOrder.find(function (id) { return state.tracks[id].url === url; });
