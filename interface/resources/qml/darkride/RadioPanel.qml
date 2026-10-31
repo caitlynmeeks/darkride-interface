@@ -31,8 +31,8 @@ Rectangle {
     readonly property url pageUrl: "qrc:///html/radio/radio.html"
     // a dock on the desktop: alive while the panel is open (shown, or tabbed behind another); else (the tablet, the bar's
     // window) while shown
-    readonly property bool docked: typeof Panels !== "undefined" && Panels.names().indexOf("Radio") >= 0
-        && !(typeof HMD !== "undefined" && HMD.active)
+    readonly property bool docked: (typeof Panels !== "undefined" && Panels.names().indexOf("Radio") >= 0 &&
+        !(typeof HMD !== "undefined" && HMD.active))
     property bool panelOpen: typeof Panels !== "undefined" && Panels.isOpen("Radio")
     readonly property bool live: docked ? panelOpen : visible
 
@@ -46,6 +46,11 @@ Rectangle {
     }
 
     // the player's own close box and its Exit close the radio
+    Component.onCompleted: {
+        console.log("Radio: made; docked:", docked, "panels:", typeof Panels !== "undefined" ? Panels.names() : "none",
+            "headset:", typeof HMD !== "undefined" ? HMD.active : "none", "open:", panelOpen);
+    }
+
     function closeRadio() {
         console.log("Radio: the player's close box; docked:", docked);
         if (docked) {
