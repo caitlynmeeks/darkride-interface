@@ -72,6 +72,17 @@ export class Buttons {
 			Script.resourcesPath() + "qml/darkride/ExplorePanel.qml",
 			"big",
 		);
+		// radio: Darkride's Radio panel (qml/darkride/RadioPanel.qml): internet radio in a classic skin player (Webamp),
+		// SomaFM's stations, any stream address, the player's own skins
+		this.buttonManager.addQmlButton(
+			"Radio",
+			"icons/bar/radio.svg",
+			"#ff9800", // orange 500
+			9,
+			Script.resourcesPath() + "qml/darkride/RadioPanel.qml",
+			"small",
+		);
+
 		// CTRL+L behaviour
 		const mapping = Controller.newMapping(this.exploreMappingName);
 		mapping
