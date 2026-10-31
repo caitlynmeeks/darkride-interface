@@ -81,9 +81,10 @@ public:
     // from the pivot toward where the camera wants to be it can stand without going into what would stop you, seeing
     // through the ignored entities and their children; the whole length when nothing is in the way or the option is
     // off. On the main thread (the physics' queries). clearPivot, when given, is set to the pivot moved out of what the
-    // probe overlaps there, and the length is then measured from it.
+    // probe overlaps there, and the length is then measured from it. holder, when given, is set to the entity that
+    // stopped the probe (the frame trace's boom.holder), null when nothing did.
     float allowedBoomLength(const glm::vec3& pivot, const glm::vec3& wanted, const QVector<QUuid>& ignore,
-                            glm::vec3* clearPivot = nullptr) const;
+                            glm::vec3* clearPivot = nullptr, QUuid* holder = nullptr) const;
 
 private:
     void addSecondaryCameraView();   // the secondary camera's frustum among the conical views (was updateSecondaryCameraViewFrustum)

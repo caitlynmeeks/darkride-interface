@@ -112,6 +112,9 @@ public:
     // substep cap dropped; counted while the world idles too), and how many steps there have been: what moves beside
     // the physics each frame (the avatar's turn) steps by it, to keep to the world's clock (GitHub #15)
     float getLastSteppedTime() const { return _lastSteppedTime; }
+    // how far the paced clock is ahead of the wall clock, in ms (negative: behind): the Stats panel's present cadence
+    // line and the frame trace (team/performance/INSTRUMENTS-PLAN.md, items 3 and 4); 0 while the presents are not paced
+    float getPacedClockLeadMs() const { return _presentPeriod > 0.0f ? _pacedClockLead * 1000.0f : 0.0f; }
     uint64_t getStepCount() const { return _stepCount; }
     void harvestPerformanceStats();
     void printPerformanceStatsToFile(const QString& filename);
