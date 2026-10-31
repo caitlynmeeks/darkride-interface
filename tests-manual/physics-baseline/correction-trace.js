@@ -31,13 +31,13 @@
     }
 
     function check() {
+        var written = RESULTS ? Test.dumpFrameTrace(RESULTS + "/correction-trace.csv") : -1;   // before take, which empties the ring
         var trace = Test.takeFrameTrace();
         var columns = trace.length ? trace[0] : [];
         var rows = trace.slice(1);
         var index = {};
         columns.forEach(function (name, i) { index[name] = i; });
         var missing = COLUMNS.filter(function (name) { return index[name] === undefined; });
-        var written = RESULTS ? Test.dumpFrameTrace(RESULTS + "/correction-trace.csv") : -1;
         log(rows.length + " frames traced, " + columns.length + " columns, " + written + " rows dumped");
         if (missing.length) {
             finish("FAIL columns missing: " + missing.join(" "));
@@ -95,6 +95,7 @@
         log("boarding at " + JSON.stringify(pose.position));
     }
 
+    function isNull(id) { return !id || /^\{?0{8}-0{4}-0{4}-0{4}-0{12}\}?$/.test(id); }   // an unparented entity's parent is the null UUID
     function findTrackAndCar() {
         var ids = Entities.findEntities(MyAvatar.position, 5000);
         for (var i = 0; i < ids.length && !track; i++) {
@@ -103,13 +104,14 @@
         if (!track) { return false; }
         for (var j = 0; j < ids.length && !car; j++) {
             var p = Entities.getEntityProperties(ids[j], ["trackID", "parentID"]);
-            if (p.trackID === track && !p.parentID) { car = ids[j]; }
+            if (p.trackID === track && isNull(p.parentID)) { car = ids[j]; }   // the car itself, not a part parented to it
         }
         return !!car;
     }
 
     function start(tries) {
         if (!Window.isPhysicsEnabled() || !findTrackAndCar()) {
+            if (tries % 20 === 10) { log("waiting: physics " + Window.isPhysicsEnabled() + ", track " + track + ", car " + car + ", entities " + Entities.findEntities(MyAvatar.position, 5000).length); }
             if (tries < 120) {
                 after(1, function () { start(tries + 1); });
             } else {
