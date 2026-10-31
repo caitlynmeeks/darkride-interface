@@ -3087,6 +3087,7 @@ void MyAvatar::traceCarry(bool inFrame) {
     }
 }
 
+
 void MyAvatar::nextLocalAttitude(const glm::vec3& position, const glm::quat& orientation, const glm::vec3& velocity) {
     if (isNaN(position) || isNaN(orientation)) {
         qCWarning(interfaceapp) << "Warning -- MyAvatar::nextLocalAttitude got NaN";
@@ -7553,6 +7554,7 @@ glm::vec3 MyAvatar::getCameraEyesPosition(float deltaTime) {
     const glm::vec3 lookFront = _lookAtYaw * Vectors::FRONT;
     const glm::vec3 lookFrontInBody = glm::inverse(getWorldOrientation()) * lookFront;
     float frontOffset = glm::dot(defaultEyesToEyesVector, lookFront);
+    float lookingDown = glm::dot(_lookAtPitch * Vectors::FRONT, -avatarUpVector);
 
     bool isLanding = false;
     // When jumping the camera should follow the real eye on the Y coordenate
@@ -7565,7 +7567,6 @@ glm::vec3 MyAvatar::getCameraEyesPosition(float deltaTime) {
         // none of it looking level, all of it from 30 deg down: the everyday view stays where it was, without the
         // head's sway as you sprint (3.5 cm) or its lurch as you stop (6 cm) (walk-camera-test, 10-29)
         const float FULL_FRONT_OFFSET_DEGREES = 30.0f;
-        float lookingDown = glm::dot(_lookAtPitch * Vectors::FRONT, -avatarUpVector);
         float followEyes = glm::clamp(lookingDown / glm::sin(glm::radians(FULL_FRONT_OFFSET_DEGREES)), 0.0f, 1.0f);
         frontOffset *= followEyes;
         const float WAIT_TO_LAND_TIME = 1.0f;
@@ -7589,6 +7590,41 @@ glm::vec3 MyAvatar::getCameraEyesPosition(float deltaTime) {
     }
     _cameraEyesOffset = _cameraEyesOffset + (cameraOffset - _cameraEyesOffset) * min(1.0f, tau * timeScale);
     glm::vec3 estimatedCameraPosition = defaultEyesPosition + getWorldOrientation() * _cameraEyesOffset;
+
+    // The hidden head shrinks to the Head joint (CauterizedModel) and the neck's skin folds up to that point. Looking
+    // steeply down, the view's bottom edge reaches back past straight down, and from a camera high above the point it
+    // comes into view: walking carries the head 5-7 cm below the standing eye height the camera keeps (Caity's check of
+    // the 1.1.1 build, 10-30), more so with a wide field of view. So the camera steps forward along the heading until
+    // the point is behind that edge: at once, and easing back over a second or so, which holds it nearly steady through
+    // the steps of a walk. It looks at the ground then, so the step isn't seen
+    float clearance = 0.0f;
+    glm::vec3 headPosition;
+    int headIndex = _skeletonModel->getRig().indexOfJoint("Head");
+    if (lookingDown > 0.0f && _skeletonModel->getJointPositionInWorldFrame(headIndex, headPosition)) {
+        const glm::mat4& projection = qApp->getCamera().getProjection();
+        float halfFieldOfView = projection[1][1] > 0.0f ? atanf(1.0f / projection[1][1]) : 0.0f;
+        const float MARGIN_DEGREES = 5.0f;
+        const float MAX_PAST_STRAIGHT_DOWN_DEGREES = 60.0f;
+        float pastStraightDown = glm::min(asinf(glm::min(lookingDown, 1.0f)) + halfFieldOfView +
+                                          glm::radians(MARGIN_DEGREES) - 0.5f * PI,
+                                          glm::radians(MAX_PAST_STRAIGHT_DOWN_DEGREES));
+        if (pastStraightDown > 0.0f) {
+            const float MARGIN = 0.02f;   // meters, at the avatar's own scale
+            glm::vec3 headToCamera = estimatedCameraPosition - headPosition;
+            clearance = glm::dot(headToCamera, avatarUpVector) * tanf(pastStraightDown) + MARGIN * getModelScale() -
+                        glm::dot(headToCamera, lookFront);
+            const float MAX_CLEARANCE = 0.5f;
+            clearance = glm::clamp(clearance, 0.0f, MAX_CLEARANCE * getModelScale());
+        }
+    }
+    const float CLEARANCE_EASE_BACK_TIME = 0.5f;   // seconds; it rises at once
+    if (clearance >= _cameraHeadClearance) {
+        _cameraHeadClearance = clearance;
+    } else {
+        float easeBack = 1.0f - expf(-deltaTime / CLEARANCE_EASE_BACK_TIME);
+        _cameraHeadClearance += (clearance - _cameraHeadClearance) * easeBack;
+    }
+    estimatedCameraPosition += _cameraHeadClearance * lookFront;
     return estimatedCameraPosition;
 }
 

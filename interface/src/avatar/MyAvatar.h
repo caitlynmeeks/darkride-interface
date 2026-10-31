@@ -3251,6 +3251,7 @@ private:
     bool _endSitKeyPressComplete { false };
 
     glm::vec3 _cameraEyesOffset;
+    float _cameraHeadClearance { 0.0f };   // the camera's step forward that keeps the hidden head out of view
     float _landingAfterJumpTime { 0.0f };
 };
 
