@@ -916,6 +916,12 @@ ModalDialogListener* OffscreenUi::fileDialogAsync(const QVariantMap& properties)
             fileDialogListener->onSelectedFileOverride("", file);
             disconnect(fileDialog);
         });
+        // Cancel answers too, with no file, as the tablet's dialog does (its canceled()): a panel waiting on the answer
+        // (Window.browseChanged) otherwise waits for good, and refused its next dialog (the radio's skins, 10-31)
+        connect(fileDialog, &QFileDialog::rejected, [=]() {
+            fileDialogListener->onSelectedFileOverride("", "");
+            disconnect(fileDialog);
+        });
     } else {
         QQuickItem* tabletRoot = tablet->getTabletRoot();
         bool invokeResult =  QMetaObject::invokeMethod(tabletRoot, "fileDialog",

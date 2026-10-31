@@ -121,9 +121,17 @@ Rectangle {
             }
             onFileDialogRequested: function (request) {
                 request.accepted = true;
-                if (root.fileRequest || typeof Window === "undefined") {
+                if (typeof Window === "undefined") {
                     request.dialogReject();
                     return;
+                }
+                // one still waiting (its dialog never answered) gives way: asking again always opens a dialog
+                if (root.fileRequest) {
+                    try {
+                        root.fileRequest.dialogReject();
+                    } catch (error) {
+                        // already answered
+                    }
                 }
                 root.fileRequest = request;
                 var skin = request.acceptedMimeTypes.join(" ").indexOf("wsz") >= 0;
