@@ -276,19 +276,6 @@ private: \
  *     <em>Read-only.</em>
  * @property {string} numNeededEntityUpdates - The total number of entity updates scheduled for last frame.
  *     <em>Read-only.</em>
- * @property {number} numCarriedEntityUpdates - Entities refreshed with their moving parent last frame, outside the
- *     render update's time budget. <em>Read-only.</em>
- * @property {number} numAvatarChildUpdates - Entities under an avatar refreshed last frame, outside the budget.
- *     <em>Read-only.</em>
- * @property {number} numPriorityEntityUpdates - Prioritized entities refreshed last frame. <em>Read-only.</em>
- * @property {number} numDeferredEntityUpdates - Entities the budget left for the next frame. <em>Read-only.</em>
- * @property {number} oldestDeferredEntityUpdate - The longest wait among them, in frames. <em>Read-only.</em>
- * @property {number} maxDeferredEntityUpdates - The most left over in one frame of the last second. <em>Read-only.</em>
- * @property {number} maxDeferredEntityUpdateFrames - The longest wait of the last second, in frames. <em>Read-only.</em>
- * @property {string} presentCadence - The last whole second of presents: the display, its rate, the schedule, the
- *     presents on one, two or three and more refreshes, held frames and late presents. <em>Read-only.</em>
- * @property {string} refreshGovernor - The cadence governor's state: full rate, or half the display's rate and when
- *     it comes back. <em>Read-only.</em>
  * @property {string} timingStats - Details of the average time (ms) spent in and number of calls made to different parts of 
  *     the code. Provided only if <code>timingExpanded</code> is <code>true</code>. Only the top 10 items are provided if 
  *     Developer &gt; Timing &gt; Performance Timer &gt; Only Display Top 10 is enabled.
@@ -596,15 +583,6 @@ class Stats : public QQuickItem {
     STATS_PROPERTY(QString, lodStatus, QString())
     STATS_PROPERTY(int, numEntityUpdates, 0)
     STATS_PROPERTY(int, numNeededEntityUpdates, 0)
-    STATS_PROPERTY(int, numCarriedEntityUpdates, 0)
-    STATS_PROPERTY(int, numAvatarChildUpdates, 0)
-    STATS_PROPERTY(int, numPriorityEntityUpdates, 0)
-    STATS_PROPERTY(int, numDeferredEntityUpdates, 0)
-    STATS_PROPERTY(int, oldestDeferredEntityUpdate, 0)
-    STATS_PROPERTY(int, maxDeferredEntityUpdates, 0)
-    STATS_PROPERTY(int, maxDeferredEntityUpdateFrames, 0)
-    STATS_PROPERTY(QString, presentCadence, QString())
-    STATS_PROPERTY(QString, refreshGovernor, QString())
     STATS_PROPERTY(QString, timingStats, QString())
     STATS_PROPERTY(QString, gameUpdateStats, QString())
     STATS_PROPERTY(int, serverElements, 0)
@@ -1350,17 +1328,6 @@ signals:
      * @returns {Signal}
      */
     void numNeededEntityUpdatesChanged();
-
-    // the render-update budget's counters, the present cadence and the refresh governor (the instruments plan)
-    void numCarriedEntityUpdatesChanged();
-    void numAvatarChildUpdatesChanged();
-    void numPriorityEntityUpdatesChanged();
-    void numDeferredEntityUpdatesChanged();
-    void oldestDeferredEntityUpdateChanged();
-    void maxDeferredEntityUpdatesChanged();
-    void maxDeferredEntityUpdateFramesChanged();
-    void presentCadenceChanged();
-    void refreshGovernorChanged();
 
     /**jsdoc
      * Triggered when the value of the <code>timingStats</code> property changes.

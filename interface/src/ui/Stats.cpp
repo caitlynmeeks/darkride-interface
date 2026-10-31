@@ -26,8 +26,6 @@
 #include <OffscreenUi.h>
 #include <PerfStat.h>
 #include <plugins/DisplayPlugin.h>
-#include <display-plugins/OpenGLDisplayPlugin.h>
-#include <display-plugins/DisplayLink.h>
 #include <PickManager.h>
 
 #include <gl/Context.h>
@@ -469,45 +467,8 @@ void Stats::updateStats(bool force) {
         STAT_UPDATE(localLeaves, (int)OctreeElement::getLeafNodeCount());
         // LOD Details
         STAT_UPDATE(lodStatus, "You can see " + DependencyManager::get<LODManager>()->getLODFeedbackText());
-    }
-
-    // The render-update budget's counters (the instruments plan, item 2): integers kept every frame by the renderer,
-    // so they are read whether or not the panel is expanded (a script reads them too)
-    {
-        auto entityTreeRenderer = DependencyManager::get<EntityTreeRenderer>();
-        STAT_UPDATE(numEntityUpdates, entityTreeRenderer->getPrevNumEntityUpdates());
-        STAT_UPDATE(numNeededEntityUpdates, entityTreeRenderer->getPrevTotalNeededEntityUpdates());
-        STAT_UPDATE(numCarriedEntityUpdates, entityTreeRenderer->getPrevNumCarriedEntityUpdates());
-        STAT_UPDATE(numAvatarChildUpdates, entityTreeRenderer->getPrevNumAvatarChildUpdates());
-        STAT_UPDATE(numPriorityEntityUpdates, entityTreeRenderer->getPrevNumPriorityEntityUpdates());
-        STAT_UPDATE(numDeferredEntityUpdates, entityTreeRenderer->getPrevNumDeferredEntityUpdates());
-        STAT_UPDATE(oldestDeferredEntityUpdate, entityTreeRenderer->getPrevOldestDeferredFrames());
-        STAT_UPDATE(maxDeferredEntityUpdates, entityTreeRenderer->getMaxDeferredEntityUpdatesLastSecond());
-        STAT_UPDATE(maxDeferredEntityUpdateFrames, entityTreeRenderer->getMaxDeferredFramesLastSecond());
-    }
-
-    // The present cadence's last whole second (item 3) and the refresh governor's state: one line each, rebuilt when
-    // the second rolls (the counters change once a second, so the string is built about once a second)
-    {
-        static const auto cadenceCounters = OpenGLDisplayPlugin::getCadenceCountersOperator();
-        RefreshRateController::CadenceCounters c = cadenceCounters();
-        QString cadence;
-        if (c.presents > 0) {
-            const int inPhase = c.presents - c.onFreeSchedule - c.withVsync - c.inHmd;
-            QString schedule = c.inHmd > 0 ? "HMD" : c.withVsync > 0 ? "vsync" :
-                inPhase >= c.onFreeSchedule ? "in phase" : "free schedule";
-            cadence = QString("Presents: %1/s, display %2 at %3 Hz, %4; on 1 refresh %5, on 2: %6, on 3+: %7; held %8; late %9")
-                .arg(c.presents).arg(DisplayLink::instance().displayId()).arg(c.displayRefreshRate).arg(schedule)
-                .arg(c.onOneRefresh).arg(c.onTwoRefreshes).arg(c.onThreeRefreshes + c.onMoreRefreshes)
-                .arg(c.repeated).arg(c.late);
-            if (c.late > 0) {
-                cadence += QString(" (max %1 ms)").arg(c.maxLateUs / 1000.0, 0, 'f', 1);
-            }
-            cadence += QString("; frames slow %1 of %2, presents slow %3, GPU %4 ms")
-                .arg(c.slowNewFrames).arg(c.newFrames).arg(c.slowPresents).arg(c.gpuMs, 0, 'f', 1);
-        }
-        STAT_UPDATE(presentCadence, cadence);
-        STAT_UPDATE(refreshGovernor, refreshRateManager.getGovernorStatus());
+        STAT_UPDATE(numEntityUpdates, DependencyManager::get<EntityTreeRenderer>()->getPrevNumEntityUpdates());
+        STAT_UPDATE(numNeededEntityUpdates, DependencyManager::get<EntityTreeRenderer>()->getPrevTotalNeededEntityUpdates());
     }
 
 

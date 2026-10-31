@@ -114,14 +114,6 @@ Item {
                         visible: root.stutterrate != -1;
                     }
                     StatText {
-                        visible: root.presentCadence.length > 0
-                        text: root.presentCadence
-                    }
-                    StatText {
-                        visible: root.refreshGovernor.length > 0
-                        text: "Refresh governor: " + root.refreshGovernor
-                    }
-                    StatText {
                         text: "Missed Frame Count: " + root.appdropped;
                         visible: root.appdropped > 0;
                     }
@@ -485,15 +477,7 @@ Item {
                     }
                     StatText {
                         visible: root.expanded
-                        text: "Entity updates: budgeted " + root.numEntityUpdates + " / " + root.numNeededEntityUpdates +
-                            ", carried " + root.numCarriedEntityUpdates + ", avatar " + root.numAvatarChildUpdates +
-                            ", priority " + root.numPriorityEntityUpdates;
-                    }
-                    StatText {
-                        visible: root.expanded
-                        text: "    left over " + root.numDeferredEntityUpdates + " (oldest " + root.oldestDeferredEntityUpdate +
-                            " frames); last second: max " + root.maxDeferredEntityUpdates + " left over, " +
-                            root.maxDeferredEntityUpdateFrames + " frames";
+                        text: "Entity Updates: " + root.numEntityUpdates + " / " + root.numNeededEntityUpdates;
                     }
                 }
             }
