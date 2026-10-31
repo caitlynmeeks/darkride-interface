@@ -81,6 +81,8 @@ public:
     void notePresentCost(int presentUs, float gpuMs);
     // whether the presents are in phase with the display's refreshes (the slots) or on the free schedule
     bool isInPhase() const { return _inPhase; }
+    // the refresh the present under way is due for, on std::chrono::steady_clock (nanoseconds); 0 off the phase
+    int64_t getPresentDeadlineNs() const { return _lastDeadlineNs; }
 
     void clockStartTime() { _startTime = std::chrono::high_resolution_clock::now(); }
     void clockEndTime() { _endTime = std::chrono::high_resolution_clock::now(); }
@@ -112,6 +114,7 @@ private:
     // the schedule (present thread only)
     uint64_t _presentCount { 0 };
     int64_t _lastSlotNs { 0 };   // the last locked slot: the next is in a later interval
+    int64_t _lastDeadlineNs { 0 };   // the refresh the present in the last slot is due for
     bool _scheduled { false };
     std::chrono::nanoseconds _scheduledPeriod { 0 };
     std::chrono::steady_clock::time_point _nextPresent;

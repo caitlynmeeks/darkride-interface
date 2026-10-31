@@ -32,6 +32,9 @@ namespace gpu {
         /// usecTimestampNow() when the render thread handed the frame to the display plugin (the present cadence's
         /// frame latency: how long after the present that asked for it the frame was ready)
         uint64_t submitTime{ 0 };
+        /// the frame trace's record of the game-loop frame this frame was built for (FrameTrace::currentFrame when
+        /// the render args were taken), so the present thread writes its columns to the right frame; 0 = none
+        uint64_t traceFrame{ 0 };
         /// The view matrix used for rendering the frame, only applicable for HMDs
         Mat4 view;
         /// The sensor pose used for rendering the frame, only applicable for HMDs

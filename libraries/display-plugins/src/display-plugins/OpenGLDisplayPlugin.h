@@ -187,6 +187,7 @@ protected:
     std::vector<PresentSample> _presentTrace;
     bool _presentedNewFrame{ false };           // this present's frame was not shown before
     uint64_t _previousPresentStart{ 0 };        // the start of the present before this one (present thread)
+    int _tracePresentRefreshes{ 0 };            // refreshes the current gpu frame has been shown for, for the trace
     uint32_t _lastSwapUsecs{ 0 };               // how long the last swap took (the wait for the display, with vsync)
     QMetaObject::Connection _screenConnection;  // the window's screen change restarts the display link
     QMetaObject::Connection _visibilityConnection;  // minimizing the window stops it, showing it starts it

@@ -55,6 +55,7 @@
 #include "Logging.h"
 #include "RefreshRateController.h"
 #include "DisplayLink.h"
+#include <FrameTrace.h>
 
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
@@ -1026,6 +1027,18 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
                 refreshRateController->noteNewFrame(asked > 0 && _currentFrame->submitTime > asked ?
                     (int)(_currentFrame->submitTime - asked) : 0);
             }
+            if (FrameTrace::enabled()) {
+                // the frame trace's present columns, in the record of the game-loop frame this gpu frame came from:
+                // the gpu frame's index (the join with Test.takePresentTrace), the refreshes the frame has been shown
+                // for (summed over held presents), whether it was held, and how late this present came past its slot
+                const uint64_t traceFrame = _currentFrame->traceFrame;
+                const int refreshes = refreshRateController->getPresentRefreshes();
+                _tracePresentRefreshes = _presentedNewFrame ? refreshes : _tracePresentRefreshes + refreshes;
+                FrameTrace::set(traceFrame, "render.frame", (double)_currentFrame->frameIndex);
+                FrameTrace::set(traceFrame, "present.refreshes", (double)_tracePresentRefreshes);
+                FrameTrace::set(traceFrame, "present.repeat", _presentedNewFrame ? 0.0 : 1.0);
+                FrameTrace::set(traceFrame, "present.late_us", (double)refreshRateController->getPresentLateUs());
+            }
             // Execute the frame rendering commands
             PROFILE_RANGE_EX(render, "execute", 0xff00ff00, frameId)
             _gpuContext->executeFrame(_currentFrame);
@@ -1098,6 +1111,15 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     _movingAveragePresent.addSample((float)presentUsecs);
     refreshRateController->notePresentCost((int)presentUsecs, _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
     _previousPresentStart = startPresent;
+    if (FrameTrace::enabled() && _currentFrame) {
+        // how long before the refresh this present's picture was due the present returned; negative when it missed
+        const int64_t deadlineNs = refreshRateController->getPresentDeadlineNs();
+        if (deadlineNs > 0) {
+            const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            FrameTrace::set(_currentFrame->traceFrame, "present.slack_us", (double)(deadlineNs - nowNs) / 1000.0);
+        }
+    }
 }
 
 float OpenGLDisplayPlugin::newFramePresentRate() const {
