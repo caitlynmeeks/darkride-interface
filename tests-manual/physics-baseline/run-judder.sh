@@ -24,7 +24,7 @@ SERVERLESS=false
 [ "$PORT" = "serverless" ] && SERVERLESS=true
 { echo "var JUDDER_CONFIG = { camera: \"$CAMERA\", serverless: $SERVERLESS, results: \"$R\" };"
   cat "${KART_RIG:-$D/kart-rig.js}" "$D/judder.js"; } > "$R/judder-test.js"
-rm -f "$R"/frame-trace-*.csv
+find "$R" -maxdepth 1 -name "frame-trace-*.csv" -delete   # not a glob: zsh stops on an unmatched one (a fresh results dir)
 export HIFI_METAVERSE_URL=${HIFI_METAVERSE_URL:-https://vr.darkride.ai}
 URL="hifi://localhost:$PORT"
 [ "$PORT" = "serverless" ] && URL="file://$D/world.json"
