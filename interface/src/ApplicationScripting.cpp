@@ -79,6 +79,7 @@
 #include "avatar/AvatarThumbnails.h"
 #include "ui/MetaverseRequests.h"
 #include "ui/Panels.h"
+#include "ui/RadioSkinPicker.h"
 #include "chat/FriendsScriptingInterface.h"
 #include "ui/Skins.h"
 #include "ui/SystemToolbar.h"
@@ -138,6 +139,9 @@ void Application::onDesktopRootContextCreated(QQmlContext* surfaceContext) {
     // the window's panels by name: a dock panel's page (made in this context, ui/QmlDock.cpp) asks whether it's open
     // (the radio plays on while tabbed behind another) and closes itself
     surfaceContext->setContextProperty("Panels", DependencyManager::get<Panels>().data());
+    // the Radio panel's Load a skin…: a file the person picks in the app's dialog, as bytes for its page (panels only,
+    // never world scripts)
+    surfaceContext->setContextProperty("RadioSkins", new RadioSkinPicker(surfaceContext));
     _fileDownload = new FileScriptingInterface(engine);
     surfaceContext->setContextProperty("File", _fileDownload);
     connect(_fileDownload, &FileScriptingInterface::unzipResult, &_assetImport, &AssetImport::handleUnzip);
