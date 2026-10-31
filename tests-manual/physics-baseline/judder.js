@@ -28,6 +28,9 @@
     var SERVERLESS = config.serverless !== false;
     var RESULTS = config.results || "";
     var FRAME_TRACE = typeof Test.frameTrace === "function";
+    if (typeof Menu !== "undefined") {   // shadows on, as Caity rides (a fresh walled config starts with them off)
+        Menu.setIsOptionChecked("Shadows", true);
+    }
     var SIT_ANIMATION_URL = "https://s3-us-west-1.amazonaws.com/hifi-content/clement/production/animations/sitting_idle.fbx";
     var LIFETIME = 300;
     var FLOOR_FRICTION = 0.9;
