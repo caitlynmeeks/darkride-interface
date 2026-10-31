@@ -7,10 +7,9 @@
 //  opens it (tivoli-scripts' ButtonManager.addQmlButton): on the desktop a dock panel (Panels' "Radio"), in a headset
 //  the tablet. On the desktop the page lives from the panel's opening until it's closed, so the music goes on with the
 //  panel tabbed behind another, through Build mode and a re-dock; it's torn down when the radio is closed (a web page
-//  is a 100-200 MB process with its audio: performance, 10-30). Twice the size once the panel has the room, so the
-//  skin's pixels stay sharp. The page gets no engine API: it plays streams straight from the stations, opens its links
-//  (Support SomaFM) in the system's browser, and keeps what it remembers (volume, the player's own stations and skin)
-//  in its own web profile.
+//  is a 100-200 MB process with its audio: performance, 10-30). The page gets no engine API: it plays streams straight
+//  from the stations, opens its links (Support SomaFM) in the system's browser, and keeps what it remembers (volume,
+//  the player's own stations and skin) in its own web profile.
 //
 //  Copyright 2026 Darkride.
 //
@@ -291,6 +290,9 @@ Rectangle {
                     placeholderText: "A station's name, or a kind of music"
                     maximumLength: 80
                     onAccepted: root.find()
+                    // Return is the field's: not on to the app, where it opens Chat (windowz, 10-31)
+                    Keys.onReturnPressed: { root.find(); event.accepted = true; }
+                    Keys.onEnterPressed: { root.find(); event.accepted = true; }
                 }
                 PanelButton {
                     id: findButton
@@ -379,7 +381,9 @@ Rectangle {
                 anchors.rightMargin: 6 * Theme.unit
                 height: parent.height
                 placeholderText: "Any stream address (or .pls, .m3u)"
-                onAccepted: root.playAddress()
+                // Return is the field's: not on to the app, where it opens Chat (windowz, 10-31)
+                Keys.onReturnPressed: { root.playAddress(); event.accepted = true; }
+                Keys.onEnterPressed: { root.playAddress(); event.accepted = true; }
             }
             PanelButton {
                 id: playButton
@@ -443,8 +447,8 @@ Rectangle {
                 view.url = root.pageUrl;
             }
             backgroundColor: "#0c1022"   // the page's own background (radio.css --navy), behind it while it loads
-            // the skin's pixels at a whole size: twice once both of the player's windows fit twice
-            zoomFactor: width >= 600 && height >= 500 ? 2 : 1
+            // always 1x: switching to 2x when a dock made the panel big froze the page's picture on Windows (Chrome 83)
+            // while the music played on (windowz, 10-31); classic skins are drawn for 1x anyway
 
             profile: WebEngineProfile {
                 storageName: "DarkrideRadio"
