@@ -103,9 +103,11 @@
     // takes them (darkrideRadioApi.takeEvents) ----
 
     var events = [];
+    var recent = [];   // the last few, not taken: for checks (the kit reads them without taking the panel's)
     var eventCount = 0;
     function tell(event) {
         events.push(event);
+        recent = recent.slice(-19).concat([event]);
         document.title = "Radio: events " + (++eventCount);
     }
     // a line under the controls instead of the browser's alert boxes
@@ -760,6 +762,9 @@
             var taken = events;
             events = [];
             return JSON.stringify(taken);
+        },
+        recentEvents: function () {
+            return JSON.stringify(recent);
         },
         playAddress: function (text) {
             playAddress(String(text || ""));
