@@ -5,11 +5,12 @@
 //  Darkride's Radio panel: internet radio in a classic skin player, the page html/radio/radio.html (Webamp wearing
 //  Darkride's own skin; SomaFM's stations, any stream address, the player's own .wsz skins). The bar's Radio button
 //  opens it (tivoli-scripts' ButtonManager.addQmlButton): on the desktop a dock panel (Panels' "Radio"), in a headset
-//  the tablet. On the desktop the page lives while the panel is open, so the music goes on with the panel tabbed behind
-//  another; it's torn down when the radio is closed (a web page is a 100-200 MB process with its audio: performance,
-//  10-30). Twice the size once the panel has the room, so the skin's pixels stay sharp. The page gets no engine API:
-//  it plays streams straight from the stations, opens its links (Support SomaFM) in the system's browser, and keeps
-//  what it remembers (volume, the player's own stations and skin) in its own web profile.
+//  the tablet. On the desktop the page lives from the panel's opening until it's closed, so the music goes on with the
+//  panel tabbed behind another, through Build mode and a re-dock; it's torn down when the radio is closed (a web page
+//  is a 100-200 MB process with its audio: performance, 10-30). Twice the size once the panel has the room, so the
+//  skin's pixels stay sharp. The page gets no engine API: it plays streams straight from the stations, opens its links
+//  (Support SomaFM) in the system's browser, and keeps what it remembers (volume, the player's own stations and skin)
+//  in its own web profile.
 //
 //  Copyright 2026 Darkride.
 //
@@ -34,7 +35,20 @@ Rectangle {
     readonly property bool docked: (typeof Panels !== "undefined" && Panels.names().indexOf("Radio") >= 0 &&
         !(typeof HMD !== "undefined" && HMD.active))
     property bool panelOpen: typeof Panels !== "undefined" && Panels.isOpen("Radio")
-    readonly property bool live: docked ? panelOpen : visible
+    // docked, the radio is on from the panel's first showing until it's closed (its close box, the player's, the bar's
+    // button: QmlDock calls panelClosed()); a hide that isn't a close (Build mode's own layout, a re-dock, a tab behind
+    // another) keeps the page and its music (Caity's hand test 10-31: Build mode stopped the radio)
+    property bool on: false
+    onPanelOpenChanged: {
+        if (panelOpen) {
+            on = true;
+        }
+    }
+    function panelClosed() {
+        console.log("Radio: closed");
+        on = false;
+    }
+    readonly property bool live: docked ? on : visible
 
     Connections {
         target: typeof Panels !== "undefined" ? Panels : null
@@ -70,6 +84,7 @@ Rectangle {
 
     // the player's own close box and its Exit close the radio
     Component.onCompleted: {
+        on = panelOpen;
         console.log("Radio: made; docked:", docked, "panels:", typeof Panels !== "undefined" ? Panels.names() : "none",
             "headset:", typeof HMD !== "undefined" ? HMD.active : "none", "open:", panelOpen);
     }
