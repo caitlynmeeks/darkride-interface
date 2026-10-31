@@ -226,9 +226,6 @@ void RenderShadowMap::run(const render::RenderContextPointer& renderContext, con
     }
 
     auto& cascade = shadow->getCascade(_cascadeIndex);
-    if (cascade.isHeld()) {
-        return;   // waiting for its turn: the map and its matrix stay as they were (RenderShadowSetup)
-    }
     auto& fbo = cascade.framebuffer;
 
     RenderArgs* args = renderContext->args;
@@ -259,6 +256,14 @@ void RenderShadowMap::run(const render::RenderContextPointer& renderContext, con
         }
     }
     std::sort(_casterIds.begin(), _casterIds.end());
+    // A far cascade waiting for its turn (RenderShadowSetup) keeps its map and matrix as they were, unless one of its
+    // casters changed since it was drawn: then it is drawn again now, with the frustum it holds, so a moving caster's
+    // shadow moves every frame wherever it falls. Until 2026-10-31 the hold was unconditional, and the monorail car's
+    // shadow on the rail, in a far cascade with a low sun, moved every other frame while the car moved every frame
+    // (Caity: "the shadow beneath the carriage is juddering real bad"). The saving stays for a still scene.
+    if (cascade.isHeld() && !castersChanged) {
+        return;
+    }
     if (shadow->isCacheCascades() && _drawn && !castersChanged && view == _drawnView && projection == _drawnProjection &&
             _casterIds == _drawnCasters) {
         return;
