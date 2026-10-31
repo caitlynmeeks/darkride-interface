@@ -192,6 +192,8 @@ protected:
     QMetaObject::Connection _screenConnection;  // the window's screen change restarts the display link
     QMetaObject::Connection _visibilityConnection;  // minimizing the window stops it, showing it starts it
     QTimer* _linkWatchdog { nullptr };          // every 2 s: the link follows the window's display and restarts when quiet
+    int _linkQuietRestarts { 0 };               // restarts for a quiet link in a row; after the first that did not help, one a minute
+    int64_t _linkNextRestartNs { 0 };
     QThread* _presentThread{ nullptr };
     std::queue<gpu::FramePointer> _newFrameQueue;
     RateCounter<200> _droppedFrameRate;

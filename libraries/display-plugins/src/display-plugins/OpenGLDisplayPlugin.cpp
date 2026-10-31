@@ -443,7 +443,7 @@ bool OpenGLDisplayPlugin::activate() {
                 _linkWatchdog->setTimerType(Qt::VeryCoarseTimer);
             }
             _linkWatchdog->disconnect();
-            connect(_linkWatchdog, &QTimer::timeout, this, [window, displayUnderWindow] {
+            connect(_linkWatchdog, &QTimer::timeout, this, [this, window, displayUnderWindow] {
                 QWindow::Visibility visibility = window->visibility();
                 if (visibility == QWindow::Minimized || visibility == QWindow::Hidden) {
                     return;
@@ -460,11 +460,30 @@ bool OpenGLDisplayPlugin::activate() {
                 } else if (wanted && wanted != link.displayId()) {
                     reason = "the window is on another display";
                 }
-                if (reason) {
-                    qCDebug(displayPlugins) << "Display link: restarted on display" << wanted << "(was" << link.displayId() << "):" << reason;
-                    link.stop();
-                    link.start(wanted);
+                if (!reason) {
+                    _linkQuietRestarts = 0;   // running and refreshing on the window's display
+                    _linkNextRestartNs = 0;
+                    return;
                 }
+                // a display that is asleep, or a link that is stuck, stays quiet after a restart too: after the first
+                // restart that did not help, one more try a minute, said once (performance's review, 2026-10-31)
+                const bool quietAgain = link.isQuiet(nowNs) && _linkQuietRestarts > 0;
+                if (quietAgain) {
+                    if (nowNs < _linkNextRestartNs) {
+                        return;
+                    }
+                    _linkNextRestartNs = nowNs + 60 * 1000000000LL;
+                    if (_linkQuietRestarts == 1) {
+                        qCDebug(displayPlugins) << "Display link: still quiet after a restart on display" << wanted << "; trying again once a minute";
+                    }
+                    _linkQuietRestarts++;
+                } else {
+                    qCDebug(displayPlugins) << "Display link: restarted on display" << wanted << "(was" << link.displayId() << "):" << reason;
+                    _linkQuietRestarts = link.isQuiet(nowNs) ? 1 : 0;
+                    _linkNextRestartNs = 0;
+                }
+                link.stop();
+                link.start(wanted);
             });
             _linkWatchdog->start();
         }

@@ -934,6 +934,7 @@ void Application::updateRenderArgs(float deltaTime) {
                 RenderArgs::MONO, RenderArgs::DEFERRED, RenderArgs::RENDER_DEBUG_NONE);
             appRenderArgs._renderArgs._scene = getMain3DScene();
             appRenderArgs._traceFrame = FrameTrace::currentFrame();
+            FrameTrace::set("governor.half", getRefreshRateManager().isHalfRate() ? 1.0 : 0.0);
             appRenderArgs._renderArgs._impostorAngleHalfTanSq = lodManager->getImpostorAngleHalfTanSq();
             appRenderArgs._renderArgs._impostorDebug = lodManager->getImpostorDebug();
             appRenderArgs._renderArgs._impostorCrossfade = lodManager->getImpostorCrossfade();
