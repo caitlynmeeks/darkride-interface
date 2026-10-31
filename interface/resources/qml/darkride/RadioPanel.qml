@@ -447,8 +447,10 @@ Rectangle {
                 view.url = root.pageUrl;
             }
             backgroundColor: "#0c1022"   // the page's own background (radio.css --navy), behind it while it loads
-            // always 1x: switching to 2x when a dock made the panel big froze the page's picture on Windows (Chrome 83)
-            // while the music played on (windowz, 10-31); classic skins are drawn for 1x anyway
+            // the skin's pixels at a whole size: twice once both of the player's windows fit twice; on Windows always 1x,
+            // where the switch to 2x froze the page's picture (its web engine is Chrome 83) while the music played on
+            // (windowz, 10-31)
+            zoomFactor: Qt.platform.os !== "windows" && width >= 600 && height >= 500 ? 2 : 1
 
             profile: WebEngineProfile {
                 storageName: "DarkrideRadio"
