@@ -465,6 +465,79 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
     _changedEntitiesGuard.withWriteLock([&] {
         changedEntities.swap(_changedEntities);
     });
+    // The parts a moving entity carries (a vehicle's walls and rails, a frame's pieces: its children and their
+    // children) land here every frame, told by the parent's locationChanged, and went through the time budget below
+    // with the rest of the world. In a heavy world the budget runs out; the big parent under the camera ranks high in
+    // the priority sort and is refreshed every frame while a thin part ranks low and is refreshed every few frames,
+    // so it is drawn one to four frames behind the body it rides and snaps forward (Port Amarelle's monorail car, a
+    // wall creeping 2-3 px a frame then jumping 10 px, several times a second; performance, 2026-10-31: "6 of 8 left
+    // for the next frame" every second of the ride). They are refreshed here, outside the budget, as
+    // updateAvatarChildren does for what an avatar carries: a changed entity with a changed ancestor, and that
+    // ancestor with it, so the parts and the body move as one. The budget stays for the rest (models and textures
+    // arriving). A time ceiling of their own keeps a pathological mover (thousands of parts) from taking the frame:
+    // past it the rest go back on the budget, as before.
+    std::vector<EntityRendererPointer> carried;
+    if (changedEntities.size() > 1) {
+        const int MAX_ANCESTORS = 8;
+        std::unordered_set<EntityItemID> carriedIds;
+        for (const EntityItemID& entityId : changedEntities) {
+            EntityItemPointer entity = getEntity(entityId);
+            if (!entity) {
+                continue;
+            }
+            QUuid parentID = entity->getParentID();
+            for (int depth = 0; depth < MAX_ANCESTORS && !parentID.isNull(); ++depth) {
+                if (changedEntities.count(EntityItemID(parentID))) {
+                    carriedIds.insert(entityId);
+                    carriedIds.insert(EntityItemID(parentID));
+                    break;
+                }
+                EntityItemPointer parent = getEntity(parentID);
+                if (!parent) {
+                    break;
+                }
+                parentID = parent->getParentID();
+            }
+        }
+        for (const EntityItemID& entityId : carriedIds) {
+            EntityItemPointer entity = getEntity(entityId);
+            if (entity && !entity->isDead()) {
+                if (EntityRendererPointer renderable = renderableForEntityId(entityId)) {
+                    carried.push_back(renderable);
+                }
+            }
+            changedEntities.erase(entityId);
+        }
+    }
+    if (!carried.empty()) {
+        PROFILE_RANGE_EX(simulation_physics, "UpdateCarriedChildren", 0xffff00ff, (uint64_t)carried.size());
+        const uint64_t MAX_CARRIED_TIME_US = 3000;
+        const uint64_t carriedStart = usecTimestampNow();
+        size_t refreshed = 0;
+        uint64_t slowest = 0;
+        for (const EntityRendererPointer& renderable : carried) {
+            if (refreshed > 0 && usecTimestampNow() - carriedStart > MAX_CARRIED_TIME_US) {
+                changedEntities.insert(renderable->getEntity()->getID());   // back on the budget
+                continue;
+            }
+            const uint64_t start = usecTimestampNow();
+            // as the budget's pass does it (the change stamp before the forced update: the shadow cache)
+            bool changed = renderable->entityHasChanged();
+            renderable->getEntity()->setNeedsRenderUpdate(true);
+            renderable->updateInScene(scene, transaction, changed);
+            slowest = std::max(slowest, usecTimestampNow() - start);
+            refreshed++;
+        }
+        // TIVOLI_UPDATE_DIAG in the environment: a line a second with the count and the cost (a Box part's refresh
+        // measured about a millisecond on the budget's pass, performance 2026-10-31, when it should be microseconds)
+        static const bool CARRIED_DIAG = QProcessEnvironment::systemEnvironment().contains("TIVOLI_UPDATE_DIAG");
+        static uint64_t lastCarriedDiag = 0;
+        if (CARRIED_DIAG && carriedStart - lastCarriedDiag > USECS_PER_SECOND) {
+            lastCarriedDiag = carriedStart;
+            qCDebug(entitiesrenderer) << "carried updates:" << refreshed << "of" << carried.size() << "refreshed outside the budget in"
+                << (usecTimestampNow() - carriedStart) << "us, slowest" << slowest << "us;" << changedEntities.size() << "other changed";
+        }
+    }
     // bool selectionPriority = false;
 
     // the renderables the last frame's time budget left over stay for this one, as High Fidelity had it (the sort below
