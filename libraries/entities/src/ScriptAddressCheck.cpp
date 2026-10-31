@@ -22,15 +22,14 @@ namespace {
 // ScriptCache::getScriptContents' pattern for code written into the value
 const QRegularExpression INLINE_FUNCTION { R"(\(function\([a-z]?[\w,]*\){)" };
 
-// A step up a folder, as a whole path step. The client swaps some address prefixes for folders of its own before it
-// reads the address (ResourceManager::normalizeURL), so a step up could leave that folder for any file on the computer.
+// A step up a folder, as a whole path step: refused, raw or percent-encoded.
 const QRegularExpression PARENT_STEP { R"(/\.\.(/|\?|#|$))" };
 
-// The default avatar's folder: the app answers for it from its own resources (MyAvatar::useBuiltInDefaultAvatar).
+// Addresses the app answers from its own files (MyAvatar's built-in avatar).
 const QString BUILT_IN_AVATAR_HOST = "cdn.darkride.ai";
 const QString BUILT_IN_AVATAR_PATH = "/avatars/";
 
-// Names that resolve to this computer, well known as such; others can't be told from here.
+// Well-known names that resolve to loopback addresses; others can't be told from here.
 const QStringList LOOPBACK_NAMES { "localhost", "localtest.me", "lvh.me", "vcap.me", "localho.st", "nip.io", "sslip.io",
                                    "xip.io" };
 
@@ -140,21 +139,21 @@ QString hostRefusal(const QUrl& url) {
     }
     for (const QString& name : LOOPBACK_NAMES) {
         if (host == name || host.endsWith("." + name)) {
-            return "a name for this computer";
+            return "a reserved host name";
         }
     }
     if (host.endsWith(".local") || host.endsWith(".localhost")) {
-        return "a name on the home network";
+        return "a reserved host name";
     }
-    // a public name always has a domain; a single name is looked up on the home network
+    // a single-label host, or one whose last label starts with a digit, must be a public IPv4 address
     const QString lastLabel = host.section('.', -1);
     if (!host.contains('.') || lastLabel.isEmpty() || lastLabel[0].isDigit()) {
         quint32 address = 0;
         if (!parseIPv4(host, address)) {
-            return host.contains('.') ? "a host that is neither a name nor an address" : "a name on the home network";
+            return host.contains('.') ? "a host that is neither a name nor an address" : "a single-label host";
         }
         if (!isPublicIPv4(address)) {
-            return "a private or local address";
+            return "a private or loopback address";
         }
     }
     return QString();
@@ -180,7 +179,7 @@ QString refusalReason(const QString& value) {
     const QString scheme = url.scheme();
     const bool web = scheme == "http" || scheme == "https";
     if (!web && scheme != "atp" && scheme != "tea") {
-        return scheme.isEmpty() ? "no scheme (a file on the visitor's computer)" : "the scheme '" + scheme + "'";
+        return "an address kind not on the list (" + (scheme.isEmpty() ? QString("no scheme") : QString(scheme + ":")) + ")";
     }
 
     const QString decoded = decodedFully(value);
@@ -188,7 +187,7 @@ QString refusalReason(const QString& value) {
         return "a backslash";
     }
     if (value.contains(PARENT_STEP) || decoded.contains(PARENT_STEP)) {
-        return "a step up a folder (..)";
+        return "a step up a folder";
     }
 
     if (web) {

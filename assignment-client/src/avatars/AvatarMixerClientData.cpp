@@ -25,10 +25,10 @@
 
 #include "AvatarMixerWorker.h"
 
-// An entity an avatar carries shows on everyone's screen and runs its script in everyone's app, as one from the entity
-// server does, so the same rules hold: a Web entity whose address isn't a web page's, and any entity whose script or
-// server scripts the entity server wouldn't keep (ScriptAddressCheck), is never passed on. Its data is read from a
-// zero-padded copy; a Web entity is passed on only when it reads cleanly.
+// An entity an avatar carries holds to the same rules as the entity server's, for everyone: a Web entity whose address
+// isn't a web page's, and any entity whose script or server scripts aren't on the same allow-list as the entity
+// server's (ScriptAddressCheck), is never passed on. Its data is read from a zero-padded copy and passed on only when it
+// reads cleanly.
 static const int READ_PADDING = 1 << 20;
 
 namespace {
@@ -84,8 +84,7 @@ static CarriedRefusal refusalForCarriedEntity(const QByteArray& data) {
                     : CarriedRefusal { "an address that isn't a web page's", entity->getSourceUrl().left(200) };
             }
         } else {
-            // read past the data (a string's length running over it), the scripts read here from the zero padding may
-            // not be what an app reads from its own memory: refused (security, 10-30)
+            // an entity of any type whose read runs past its data (a string's length running over it) is refused
             auto entity = std::make_shared<CommonPropertiesReader>(EntityItemID(id));
             int bytesRead = entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
             if (bytesRead > 0 && bytesRead <= data.size()) {

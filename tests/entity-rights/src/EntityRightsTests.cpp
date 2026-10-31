@@ -276,16 +276,16 @@ void EntityRightsTests::testCertificateClaims() {
     QCOMPARE(brought->getCertificateID(), QString("an old certificate"));
 }
 
-// An entity's script and server scripts hold no value the app would load from the visitor's computer or home network
-// (ScriptAddressCheck), from anyone, a world's editors too: an add comes in without it, an edit keeps the entity's own
-// and goes back out, and a saved world's entity loads without it.
+// An entity's script and server scripts hold to ScriptAddressCheck's allow-list, from anyone, a world's editors too: an
+// add comes in without a refused value, an edit keeps the entity's own and goes back out, and a saved world's entity
+// loads without it.
 void EntityRightsTests::testScriptAddresses() {
     World world;
     Senders senders;
     const QString web = "https://files.darkride.ai/someone/scripts/seat.js";
     const QString code = "(function() { this.preload = function(id) {}; })";
-    const QString local = "file:///Users/someone/.ssh/id_rsa";
-    const QString appScripts = "/~/system/controllers/controllerScripts.js";
+    const QString local = "file:///tmp/a.js";
+    const QString appScripts = "/~/x.js";
     const QString loopback = "http://0x7f.1/x.js";
 
     EntityItemProperties add = World::newBox();

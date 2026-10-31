@@ -1756,9 +1756,8 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                 }
             }
 
-            // an entity's script runs in the app of everyone near it, its server scripts on the entity script server: nobody,
-            // owners and script servers too, gives it one that would load a file from the visitor's computer or reach their
-            // own machine or home network (ScriptAddressCheck). An add comes in without it; an edit keeps the entity's own.
+            // an entity's script and server scripts hold to the same allow-list as the avatar mixer (ScriptAddressCheck), for
+            // everyone, owners and script servers too. An add comes in without a refused one; an edit keeps the entity's own.
             auto refusedScripts = [&](QString& refusal) {
                 bool script = (isAdd || properties.scriptChanged()) &&
                     !(refusal = script_address::refusalReason(properties.getScript())).isEmpty();
@@ -3079,8 +3078,7 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
             properties.setSourceUrl(QString());
         }
 
-        // nor a script the app would load from the visitor's computer or home network: a saved world's entity comes in
-        // without it
+        // nor a script or server scripts off ScriptAddressCheck's allow-list: a saved world's entity comes in without them
         if (getIsServer()) {
             QString refusal = script_address::refusalReason(properties.getScript());
             if (!refusal.isEmpty()) {
