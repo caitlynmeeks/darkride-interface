@@ -72,6 +72,9 @@ private: \
   * @property {boolean} bypassPrioritySorting - Whether or not the game loop spends CPU prioritizing what to draw, boolean.
  *     <em>Read-only.</em>
  * @property {number} gameLoopRate - The rate at which the game loop is running, in Hz.
+ * @property {string[]} frameTraceLines - The frame trace's columns, one line each with the newest finished frame's value
+ *     and the number's maximum over the last second, while the trace is on or holds records (Test.frameTrace).
+ *     <em>Read-only.</em>
  *     <em>Read-only.</em>
  * @property {number} refreshRateTarget - The current target refresh rate, in Hz, per the current <code>refreshRateMode</code> 
  *     and <code>refreshRateRegime</code> if in desktop mode; a higher rate if in VR mode. 
@@ -505,6 +508,7 @@ class Stats : public QQuickItem {
     STATS_PROPERTY(QString, refreshRateMode, QString())
     STATS_PROPERTY(QString, refreshRateRegime, QString())
     STATS_PROPERTY(QString, uxMode, QString())
+    STATS_PROPERTY(QStringList, frameTraceLines, QStringList())
     STATS_PROPERTY(int, heroAvatarCount, 0)
     STATS_PROPERTY(int, physicsObjectCount, 0)
     STATS_PROPERTY(int, updatedAvatarCount, 0)
@@ -817,6 +821,7 @@ signals:
      * @returns {Signal}
      */
     void uxModeChanged();
+    void frameTraceLinesChanged();
 
     /**jsdoc
      * Triggered when the value of the <code>heroAvatarCount</code> property changes.
