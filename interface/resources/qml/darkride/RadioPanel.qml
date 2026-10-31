@@ -47,6 +47,7 @@ Rectangle {
 
     // the player's own close box and its Exit close the radio
     function closeRadio() {
+        console.log("Radio: the player's close box; docked:", docked);
         if (docked) {
             Panels.close("Radio");
         }

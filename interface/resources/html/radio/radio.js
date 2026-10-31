@@ -308,7 +308,8 @@
                 line = line.trim();
                 var named = /^(?:Title1=|#EXTINF:[^,]*,)(.+)$/i.exec(line);
                 if (named && !found.title) {
-                    found.title = named[1].trim().slice(0, 80);
+                    // "SomaFM: DEF CON Radio (#1): Music for Hacking." reads "SomaFM: DEF CON Radio"
+                    found.title = named[1].replace(/\s*\(#\d+\).*$/, "").trim().slice(0, 80);
                 }
                 line = line.replace(/^File\d+=/i, "");
                 if (/^https?:\/\//i.test(line) && !found.url) {
