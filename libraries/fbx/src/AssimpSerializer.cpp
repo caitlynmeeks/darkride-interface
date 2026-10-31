@@ -874,6 +874,10 @@ void AssimpSerializer::processGltfExtras(const hifi::ByteArray& data) {
     auto materialExtras = getExtrasByName(gltf["materials"].toArray());
     for (auto& material : hfmModel->materials) {
         material.extras = materialExtras.value(material.name);
+        // our own extra, as in material JSON: "keep" lights back faces with the normal as it comes (foliage cards)
+        if (material._material && material.extras.value("doubleSidedNormals").toString() == "keep") {
+            material._material->setKeepBackFaceNormal(true);
+        }
     }
 }
 

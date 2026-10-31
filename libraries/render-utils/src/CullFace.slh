@@ -22,12 +22,18 @@ vec3 evalFrontOrBackFaceNormal(vec3 normal) {
 // frame) the surface's own slope from the position's screen derivatives, which faces the viewer whatever the face's
 // winding. normalize alone gives NaN there: the forward path keeps a NaN in its float colour and the bloom spreads it
 // into a block; the deferred path's G-buffer only turned it to zero
-vec3 evalSafeFrontOrBackFaceNormal(vec3 normal, vec3 worldPos) {
+// keepBackFace leaves a back face's normal as it comes (a material's KEEP_BACK_FACE_NORMAL_BIT): foliage cards whose
+// normals point out of the canopy light alike on both sides, as the same cards doubled with reversed winding did
+vec3 evalSafeFrontOrBackFaceNormal(vec3 normal, vec3 worldPos, bool keepBackFace) {
     vec3 faceNormal = cross(dFdx(worldPos), dFdy(worldPos));
     float len = length(normal);
     float faceLen = length(faceNormal);
     vec3 fallback = (faceLen > 0.0) ? faceNormal / faceLen : vec3(0.0, 1.0, 0.0);
-    return (len > 1.0e-6) ? evalFrontOrBackFaceNormal(normal / len) : fallback;
+    return (len > 1.0e-6) ? (keepBackFace ? normal / len : evalFrontOrBackFaceNormal(normal / len)) : fallback;
+}
+
+vec3 evalSafeFrontOrBackFaceNormal(vec3 normal, vec3 worldPos) {
+    return evalSafeFrontOrBackFaceNormal(normal, worldPos, false);
 }
 
 // the same where no position is at hand to take the slope from: a degenerate normal points up
