@@ -156,6 +156,7 @@ private:
     void setOpen(const QString& name, bool open);
     void styleTabs();   // the tabs of panels docked together, in the skin's colours
     QString screenSlotFor(const QString& name) const;
+    void takeScreenSlot(const QString& slot, QQuickItem* host);   // screenSlotReady's, a turn later
     bool putOnScreen(const QString& name);   // the page into its slot, if the screen is up
     void showDockPages();   // the pages in docks shown, or hidden while the headset is on (nobody sees the docks then)
     void displayChanged();   // the headset on or off

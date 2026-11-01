@@ -61,11 +61,24 @@ Rectangle {
 
     // the surface's pixels per layout pixel: vr sizes the surface from its own degrees-per-pixel number, the panels are
     // laid out in their own pixels (Panels.screenSlotSize), so a page is laid out at its size and drawn this much bigger
-    readonly property real pageScale: {
+    property real pageScale: 1
+    function updateScale() {
         var layout = Panels.screenSlotSize(slot);
-        return layout.width > 0 ? Math.max(1, width / layout.width) : 1;
+        var scale = layout.width > 0 ? Math.max(1, width / layout.width) : 1;
+        if (scale !== pageScale) {
+            pageScale = scale;
+            content.layoutPages();
+        }
     }
-    onPageScaleChanged: content.layoutPages()
+    onWidthChanged: updateScale()
+    Connections {
+        target: Panels
+        function onScreenSlotSizeChanged(changed) {
+            if (changed === root.slot) {
+                root.updateScale();
+            }
+        }
+    }
 
     Item {
         id: content
@@ -94,11 +107,13 @@ Rectangle {
     readonly property bool inWindow: root.Window.window !== null
     onInWindowChanged: {
         if (inWindow) {
+            updateScale();
             Panels.screenSlotReady(slot, root);
         }
     }
     Component.onCompleted: {
         if (inWindow) {
+            updateScale();
             Panels.screenSlotReady(slot, root);
         }
     }

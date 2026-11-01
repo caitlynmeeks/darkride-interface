@@ -367,6 +367,13 @@ void Panels::change(const QString& name, Change how) {
         if (putOnScreen(name)) {
             return;
         }
+        // the radio turned on while the screen is up and has no right slot yet: on now (its page hears it's open),
+        // and vr makes the slot from the size, which moves it in (screenSlotReady)
+        if (name == RADIO && qmlDock && qmlDock->makePage()) {
+            setOpen(RADIO, true);
+            emit screenSlotSizeChanged(SLOT_RIGHT);
+            return;
+        }
     }
     // tabbed behind another, a docked panel is still visible to Qt, moved out of sight (QWidgetAnimator)
     const bool inSight = panel->isVisible() && !panel->visibleRegion().isEmpty();
@@ -421,6 +428,13 @@ void Panels::setScreenWindowCheck(std::function<bool(QQuickWindow*)> check) {
 }
 
 void Panels::screenSlotReady(const QString& slot, QQuickItem* host) {
+    // the slot's QML is made while the Web entity's renderer holds its lock (buildWebSurface), which vr's window check
+    // takes too: the slot is taken on the next turn of the event loop, and no page moves in under that lock
+    QPointer<QQuickItem> guarded(host);
+    QMetaObject::invokeMethod(this, [this, slot, guarded] { takeScreenSlot(slot, guarded); }, Qt::QueuedConnection);
+}
+
+void Panels::takeScreenSlot(const QString& slot, QQuickItem* host) {
     if (slot != SLOT_LEFT && slot != SLOT_MIDDLE && slot != SLOT_RIGHT) {
         return;
     }
@@ -492,8 +506,11 @@ QSize Panels::screenSlotSize(const QString& slot) const {
         return QSize(MIDDLE_WIDTH, SLOT_HEIGHT);
     }
     if (slot == SLOT_RIGHT) {
+        // while the radio is on (from its first showing until it's closed), moved in yet or not: vr makes the slot
+        // from this, and the radio moves in once it's there
         auto radio = qobject_cast<QmlDock*>(_docks.value(RADIO).data());
-        return radio && radio->isAway() ? QSize(320, 640) : QSize();
+        QQuickItem* page = radio ? radio->panel() : nullptr;
+        return page && page->property("on").toBool() ? QSize(320, 640) : QSize();
     }
     return QSize();
 }
