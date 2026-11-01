@@ -8,6 +8,18 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: RenderShadowSetup::run (the far cascades' turns and holds), RenderShadowCascadeSetup::run (a waiting
+// cascade culled by the frustum it holds) and RenderShadowMap::run (the cache check; a waiting cascade redrawn only
+// when one of its casters moved or left).
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
 
 #include "RenderShadowTask.h"
 
@@ -209,6 +221,7 @@ static void adjustNearFar(const AABox& inShapeBounds, ViewFrustum& shadowFrustum
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void RenderShadowMap::run(const render::RenderContextPointer& renderContext, const Inputs& inputs) {
     assert(renderContext->args);
     assert(renderContext->args->hasViewFrustum());
@@ -434,6 +447,7 @@ void RenderShadowSetup::setSlopeBias(int cascadeIndex, float value) {
     _bias[cascadeIndex]._slope = value;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void RenderShadowSetup::run(const render::RenderContextPointer& renderContext, const Input& input, Output& output) {
     // Abort all jobs if not casting shadows
     auto lightStage = renderContext->_scene->getStage<LightStage>();
@@ -575,6 +589,7 @@ void RenderShadowSetup::run(const render::RenderContextPointer& renderContext, c
 
 const std::array<float, SHADOW_CASCADE_MAX_COUNT> RenderShadowCascadeSetup::DEFAULT_MIN_CASTER_TEXELS {{ 24.0f, 24.0f, 48.0f, 48.0f }};
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void RenderShadowCascadeSetup::run(const render::RenderContextPointer& renderContext, const Inputs& input, Outputs& output) {
     const auto shadowFrame = input;
 

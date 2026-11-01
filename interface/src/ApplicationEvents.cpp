@@ -12,6 +12,17 @@
 //
 //  Distributed under the MIT License.
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: Application::eventFilter's refresh-regime lines (a click, key or wheel ends the unfocused regime through
+// resetInactiveTimer; the return from minimized).
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
 
 #ifdef _WIN32
 // winsock2.h before anything includes Windows.h, which would pull in the old winsock.h
@@ -216,6 +227,7 @@ bool Application::event(QEvent* event) {
     return QApplication::event(event);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 bool Application::eventFilter(QObject* object, QEvent* event) {
     auto eventType = event->type();
 

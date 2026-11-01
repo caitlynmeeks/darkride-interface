@@ -7,6 +7,18 @@
 //  Modified by Caitlyn Meeks on 12/25/19
 //  Copyright 2019 Tivoli Cloud VR
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: updateChangedEntities, the render-update budget's counters and getters (getPrevNumEntityUpdates through
+// getLastMovingAssemblyInViewTime) and the members the budget keeps (_avgRenderableUpdateCost through
+// _priorityRenderablesToUpdate).
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
 
 #ifndef hifi_EntityTreeRenderer_h
 #define hifi_EntityTreeRenderer_h
@@ -197,6 +209,7 @@ public:
     static bool addMaterialToAvatar(const QUuid& avatarID, graphics::MaterialLayer material, const std::string& parentMaterialName);
     static bool removeMaterialFromAvatar(const QUuid& avatarID, graphics::MaterialPointer material, const std::string& parentMaterialName);
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     int getPrevNumEntityUpdates() const { return _prevNumEntityUpdates; }
     int getPrevTotalNeededEntityUpdates() const { return _prevTotalNeededEntityUpdates; }
 
@@ -257,6 +270,7 @@ protected:
 
 private:
     void addPendingEntities(const render::ScenePointer& scene, render::Transaction& transaction);
+    // FROZEN (vehicle path): see the note at the top of this file.
     void updateChangedEntities(const render::ScenePointer& scene, render::Transaction& transaction);
     EntityRendererPointer renderableForEntity(const EntityItemPointer& entity) const { return renderableForEntityId(entity->getID()); }
     render::ItemID renderableIdForEntity(const EntityItemPointer& entity) const { return renderableIdForEntityId(entity->getID()); }
@@ -350,6 +364,7 @@ private:
     const uint64_t ZONE_CHECK_INTERVAL = USECS_PER_MSEC * 1000; // ~100hz
     const float ZONE_CHECK_DISTANCE = 0.001f;
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     float _avgRenderableUpdateCost { 0.0f };
 
     ReadWriteLockable _changedEntitiesGuard;

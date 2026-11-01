@@ -15,6 +15,19 @@
 //
 //  Distributed under the MIT License.
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: Application::isRideInView (a ride in view keeps the full rate while the window is unfocused) and, in
+// Application::idle, the frame trace's FrameTrace::beginFrame() and its frame.dt_ms / frame.idle_ms columns. The rest
+// of the frame loop here (idle, update, updateRenderArgs) shares the vehicle's per-frame time: a change to it counts as
+// touching the vehicle path.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
 
 #include "Application.h"
 #include "graphics/RenderEventHandler.h"
@@ -273,6 +286,7 @@ void setupCpuMonitorThread() {
 
 #endif
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void Application::idle() {
     PerformanceTimer perfTimer("idle");
     // the main thread's frame time, for the refresh governor's fit (RefreshRateManager): the whole of idle, whichever
@@ -905,6 +919,7 @@ void Application::update(float deltaTime) {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 bool Application::isRideInView() {
     auto myAvatar = getMyAvatar();
     if (myAvatar && (!myAvatar->getParentID().isNull() || myAvatar->isSeated())) {

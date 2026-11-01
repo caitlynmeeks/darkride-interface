@@ -5,6 +5,19 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the present thread's loop (PresentThread::run, with the GL lock's handoff), the display link's start and
+// watch in activate, present, vsyncApplies and applyVsync (the Vsync setting inert while the display link paces),
+// getPresentPeriod (the paced clock physics steps by), the refresh-rate and cadence operators, and the rate counters.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 #include "OpenGLDisplayPlugin.h"
 
 #include <atomic>
@@ -144,6 +157,7 @@ public:
         _context->moveToThread(this);
     }
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     virtual void run() override {
         PROFILE_SET_THREAD_NAME("Present Thread");
 
@@ -352,6 +366,7 @@ private:
     std::shared_ptr<RefreshRateController> _refreshRateController { nullptr };
 };
 
+// FROZEN (vehicle path): see the note at the top of this file.
 bool OpenGLDisplayPlugin::activate() {
     if (!_cursorsData.size()) {
         auto& cursorManager = Cursor::Manager::instance();
@@ -944,11 +959,13 @@ void OpenGLDisplayPlugin::tracePresent(uint64_t startPresent) {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 bool OpenGLDisplayPlugin::vsyncApplies() const {
     static const bool forced = !qgetenv("TIVOLI_VSYNC").isEmpty();
     return wantVsync() && (forced || !DisplayLink::instance().isRunning());
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void OpenGLDisplayPlugin::applyVsync() {
     bool wanted = vsyncApplies();
     if (wanted == _vsyncApplied) {
@@ -1019,6 +1036,7 @@ void OpenGLDisplayPlugin::holdPresents(int milliseconds) {
     presentHoldUntilMs.store(milliseconds > 0 ? presentSteadyMs() + milliseconds : 0, std::memory_order_relaxed);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& refreshRateController) {
     auto frameId = (uint64_t)presentCount();
     PROFILE_RANGE_EX(render, __FUNCTION__, 0xffffff00, frameId)
@@ -1160,18 +1178,22 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float OpenGLDisplayPlugin::newFramePresentRate() const {
     return _newFrameRate.rate();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float OpenGLDisplayPlugin::droppedFrameRate() const {
     return _droppedFrameRate.rate();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float OpenGLDisplayPlugin::presentRate() const {
     return _presentRate.rate();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float OpenGLDisplayPlugin::getPresentPeriod() const {
     // paced by the controller unless the swap paces (vsync, an HMD)
     if (isHmd() || _vsyncEnabled || !DependencyManager::isSet<PresentThread>()) {
@@ -1180,6 +1202,7 @@ float OpenGLDisplayPlugin::getPresentPeriod() const {
     return DependencyManager::get<PresentThread>()->getRefreshRateController()->getPacedPeriodSeconds();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 std::function<void(int, int)> OpenGLDisplayPlugin::getRefreshRateOperator() {
     return [](int targetRefreshRate, int displayRefreshRate) {
         auto refreshRateController = DependencyManager::get<PresentThread>()->getRefreshRateController();
@@ -1188,6 +1211,7 @@ std::function<void(int, int)> OpenGLDisplayPlugin::getRefreshRateOperator() {
     };
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 std::function<RefreshRateController::CadenceCounters()> OpenGLDisplayPlugin::getCadenceCountersOperator() {
     return []() -> RefreshRateController::CadenceCounters {
         if (!DependencyManager::isSet<PresentThread>()) {
@@ -1197,11 +1221,13 @@ std::function<RefreshRateController::CadenceCounters()> OpenGLDisplayPlugin::get
     };
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void OpenGLDisplayPlugin::resetPresentRate() {
     // FIXME
     // _presentRate = RateCounter<100>();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float OpenGLDisplayPlugin::renderRate() const {
     return _renderRate.rate();
 }
