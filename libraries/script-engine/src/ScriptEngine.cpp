@@ -2094,7 +2094,9 @@ QVariantMap ScriptEngine::fetchModuleSource(const QString& modulePath, const boo
     using UrlMap = QMap<QUrl, QString>;
     auto scriptCache = DependencyManager::get<ScriptCache>();
     QVariantMap req;
-    if (networkRuled()) {
+    // one of the app's own scripts (canonical, inside its scripts folder) is no request to the network
+    const bool appModule = QUrl(modulePath).isLocalFile() && ScriptNetworkPolicy::isAppScript(QUrl(modulePath));
+    if (networkRuled() && !appModule) {
         // the network rule for a script's own requests: a module's download is a request too (a JSON module comes
         // back to the script as data)
         QString reason;
@@ -2326,12 +2328,15 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
                                 + "outside of original entity script" + sandbox.toString());
         } else {
             QString reason;
-            if (networkRuled() && !ScriptNetworkPolicy::decideBlocking(thisURL, ruledOrigin(currentScriptOrigin()), reason, worldIsLocal())) {
+            // one of the app's own scripts (canonical, inside its scripts folder) is no request to the network
+            const bool appScript = thisURL.isLocalFile() && ScriptNetworkPolicy::isAppScript(thisURL);
+            if (networkRuled() && !appScript &&
+                !ScriptNetworkPolicy::decideBlocking(thisURL, ruledOrigin(currentScriptOrigin()), reason, worldIsLocal())) {
                 // the network rule for a script's own requests: an include's download is a request too
                 scriptWarningMessage(ScriptNetworkPolicy::refusalLine(currentScriptOrigin(), thisURL, reason));
                 continue;
             }
-            if (networkRuled()) {
+            if (networkRuled() && !appScript) {
                 // and its download goes to the address judged (each hop judged again)
                 DependencyManager::get<ScriptCache>()->ruleFetch(thisURL, ruledOrigin(currentScriptOrigin()), worldIsLocal());
             }

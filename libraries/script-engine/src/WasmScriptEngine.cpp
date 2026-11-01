@@ -1454,7 +1454,8 @@ QVariantMap WasmScriptEngine::resolveInclude(const QString& file, const QString&
         result["reason"] = "outside of original entity script " + sandbox.toString();
         return result;
     }
-    if (networkRuled()) {
+    // one of the app's own scripts (canonical, inside its scripts folder) is no request to the network
+    if (networkRuled() && !(thisURL.isLocalFile() && ScriptNetworkPolicy::isAppScript(thisURL))) {
         // the network rule for a script's own requests: an include's download is a request too
         const QUrl origin = ruledOrigin(sandbox.isEmpty() ? currentScriptOrigin() : sandbox);
         QString reason;
@@ -1526,7 +1527,8 @@ QVariantMap WasmScriptEngine::resolveModule(const QString& moduleId, const QStri
             return fail("path is not a file: " + url.toLocalFile());
         }
     }
-    if (networkRuled()) {
+    // one of the app's own scripts (canonical, inside its scripts folder) is no request to the network
+    if (networkRuled() && !(url.isLocalFile() && ScriptNetworkPolicy::isAppScript(url))) {
         // the network rule for a script's own requests: a module's download is a request too (a JSON module comes
         // back to the script as data)
         const QUrl origin = ruledOrigin(sandbox.isEmpty() ? currentScriptOrigin() : sandbox);
@@ -1567,7 +1569,10 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
             reason = "a file of this machine outside the script's own place";
         }
     }
-    if (reason.isEmpty() && networkRuled() && !ScriptNetworkPolicy::decideBlocking(target, ruledOrigin(origin), reason, worldIsLocal())) {
+    // one of the app's own scripts (canonical, inside its scripts folder) is no request to the network
+    const bool appScript = target.isLocalFile() && ScriptNetworkPolicy::isAppScript(target);
+    if (reason.isEmpty() && networkRuled() && !appScript &&
+        !ScriptNetworkPolicy::decideBlocking(target, ruledOrigin(origin), reason, worldIsLocal())) {
         // the network rule for a script's own requests
     }
     if (!reason.isEmpty()) {
@@ -1579,7 +1584,7 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
     if (forceDownload) {
         scriptCache->deleteScript(url);
     }
-    if (networkRuled()) {
+    if (networkRuled() && !appScript) {
         // the download goes to the address judged (each hop judged again)
         scriptCache->ruleFetch(target, ruledOrigin(origin), worldIsLocal());
     }
