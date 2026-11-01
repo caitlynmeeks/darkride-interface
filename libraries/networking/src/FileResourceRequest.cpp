@@ -49,12 +49,19 @@ void FileResourceRequest::doSend() {
     }
 
 
+    const QString requestedFilename = filename;
+
     // Allow platform specific versions of files loaded out of a resource cache via file://
     {
         QString originalFilename = filename;
         QFileSelector fileSelector;
         fileSelector.setExtraSelectors(FileUtils::getFileSelectors());
         filename = fileSelector.select(filename);
+    }
+
+    // the selector turns a file in the root folder into //name, which isn't what was asked: keep the name as asked
+    if (isNetworkPath(_url, filename) && !isNetworkPath(_url, requestedFilename)) {
+        filename = requestedFilename;
     }
 
     if (_url.scheme() != URL_SCHEME_QRC && isNetworkPath(_url, filename)) {

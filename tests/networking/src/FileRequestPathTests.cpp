@@ -23,6 +23,8 @@ void FileRequestPathTests::networkPaths_data() {
     QTest::newRow("two encoded backslashes") << "file:///%5C%5Chost/share/x.js" << true;
     QTest::newRow("encoded slash") << "file:///%2Fhost/share/x.js" << true;
     QTest::newRow("a device path") << "file:///%5C%5C?%5CUNC%5Chost%5Cshare" << true;
+    QTest::newRow("the root folder") << "file:///" << false;
+    QTest::newRow("a file in the root folder") << "file:///x.js" << false;
     QTest::newRow("a local file") << "file:///Users/someone/x.js" << false;
     QTest::newRow("a Windows drive") << "file:///C:/Users/someone/x.js" << false;
     QTest::newRow("a local name with a backslash inside") << "file:///Users/some%5Cone/x.js" << false;
