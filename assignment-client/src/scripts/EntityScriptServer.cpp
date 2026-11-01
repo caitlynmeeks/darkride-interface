@@ -635,6 +635,12 @@ void EntityScriptServer::sendStatsPacket() {
 }
 
 void EntityScriptServer::handleOctreePacket(QSharedPointer<ReceivedMessage> message, SharedNodePointer senderNode) {
+    // World data is taken only from the world's own entity server: the node list's check names the sending node, not
+    // its type. A piggybacked packet inherits its carrier's sender.
+    if (!senderNode || senderNode->getType() != NodeType::EntityServer) {
+        return;
+    }
+
     auto packetType = message->getType();
 
     if (packetType == PacketType::OctreeStats) {
