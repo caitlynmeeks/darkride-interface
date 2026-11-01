@@ -16,11 +16,13 @@
 #include <QtCore/QDebug>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
+#include <QtCore/QCoreApplication>
 // #include <QWebEngineProfile>
 
 #include <SettingHandle.h>
 #include <NetworkingConstants.h>
 #include <AccountManager.h>
+#include <PathUtils.h>
 
 #include "ContextAwareProfile.h"
 #include <BuildInfo.h>
@@ -32,29 +34,37 @@
 
 namespace {
 
+    // requests to the metaverse itself, exactly: its scheme and host
     bool isAuthableTivoliURL(const QUrl& url) {
         auto metaverseServerURL = NetworkingConstants::METAVERSE_SERVER_URL();
-        static const QStringList TIVOLI_HOSTS = {
-            metaverseServerURL.toString(),
-            "tivolicloud.com",
-        };
-        const auto& scheme = url.scheme();
-        const auto& host = url.host();
-
-        return (
-            (scheme == "https" && TIVOLI_HOSTS.contains(host)) ||
-            (
-                scheme == metaverseServerURL.scheme() &&
-                host == metaverseServerURL.host()
-            )
-        );
+        return url.scheme() == metaverseServerURL.scheme() &&
+            url.host().compare(metaverseServerURL.host(), Qt::CaseInsensitive) == 0;
     }
 
+    // pages that are part of Darkride: its resources, or files in its install or default scripts folders
     bool isFirstPartySafe(const QUrl& url) {
-        return (
-            url.isLocalFile() ||
-            url.host().compare("things.tivolicloud.com") == 0
-        );
+        // a request with no page behind it has an empty first-party URL, which QUrl counts as relative
+        if (url.isEmpty() || url.isRelative()) {
+            return false;
+        }
+        if (PathUtils::isAppResourceUrl(url)) {
+            return true;
+        }
+        if (!url.isLocalFile() || !url.host().isEmpty()) {
+            return false;
+        }
+        QString path = QFileInfo(url.toLocalFile()).canonicalFilePath();
+        if (path.isEmpty()) {
+            return false;
+        }
+        for (const QString& folder : { QCoreApplication::applicationDirPath(),
+                                       PathUtils::defaultScriptsLocation().toLocalFile() }) {
+            QString root = QFileInfo(folder).canonicalFilePath();
+            if (!root.isEmpty() && path.startsWith(root + "/", Qt::CaseInsensitive)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool isScript(const QString filename) {

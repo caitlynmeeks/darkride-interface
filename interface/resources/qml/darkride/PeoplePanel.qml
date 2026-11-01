@@ -516,6 +516,13 @@ Page {
                         : "Couldn't read the profile. Try again in a moment.";
                     return;
                 }
+                // the profile is the account asked about, or it isn't shown (as users-cache.ts and WorldChat.cpp)
+                if (!answer || typeof answer.username !== "string"
+                        || answer.username.toLowerCase() !== asked.toLowerCase()) {
+                    data = null;
+                    status = "Couldn't read the profile. Try again in a moment.";
+                    return;
+                }
                 data = answer;
                 status = "";
             });
