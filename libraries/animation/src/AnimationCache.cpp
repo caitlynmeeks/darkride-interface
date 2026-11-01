@@ -100,7 +100,9 @@ void AnimationReader::run() {
             // Parse directly from the QNetworkReply
             HFMModel::Pointer hfmModel;
 
-            auto serializer = DependencyManager::get<ModelFormatRegistry>()->getSerializerForMediaType(_data, _url, "");
+            // an agent's stop can destroy the registry while this job is on its way
+            auto registry = DependencyManager::get<ModelFormatRegistry>();
+            auto serializer = registry ? registry->getSerializerForMediaType(_data, _url, "") : nullptr;
             if (serializer) {
                 hfmModel = serializer->read(_data, QVariantHash(), _url.path());
             } else {

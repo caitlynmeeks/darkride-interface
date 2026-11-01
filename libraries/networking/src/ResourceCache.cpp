@@ -912,6 +912,15 @@ void Resource::handleDownloadProgress(uint64_t bytesReceived, uint64_t bytesTota
 }
 
 void Resource::handleReplyFinished() {
+    if (!DependencyManager::isSet<ResourceCacheSharedItems>()) {
+        // Shutting down (see ResourceCache::requestCompleted): what a reader needs to parse this may be gone too
+        if (_request) {
+            _request->disconnect(this);
+            _request->deleteLater();
+            _request = nullptr;
+        }
+        return;
+    }
     if (!_request || _request != sender()) {
         // This can happen in the edge case that a request is timed out, but a `finished` signal is emitted before it is deleted.
         qWarning(networking) << "Received signal Resource::handleReplyFinished from ResourceRequest that is not the current"
