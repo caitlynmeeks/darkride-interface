@@ -23,6 +23,7 @@
 #include <QtCore/QSet>
 #include <QtCore/QSize>
 
+#include <atomic>
 #include <functional>
 
 #include <DependencyManager.h>
@@ -140,6 +141,13 @@ public:
     /// "down" or "parked" (hiding is releaseScreenSlots); "tablet shown" for scripts follows it
     void setScreenState(const QString& state);
     QString screenState() const { return _screenState; }
+    /**jsdoc
+     * Whether the VR screen is up (in the headset it stands for the tablet in toolbar mode: tabletUI.js leaves its
+     * "shown" alone while it is).
+     * @function Panels.isScreenUp
+     * @returns {boolean} <code>true</code> while the VR screen is up.
+     */
+    Q_INVOKABLE bool isScreenUp() const { return _screenUp; }
     /// every page back in its dock (hidden while the headset is on), the slots forgotten: before vr deletes them
     void releaseScreenSlots();
     /// test builds only (DARKRIDE_SCREEN_TEST_SLOTS): a test script's releaseScreenSlots, before it deletes its slots
@@ -157,6 +165,10 @@ signals:
      * @returns {Signal}
      */
     void openChanged(const QString& name, bool open);
+
+    /// the layout's been restored after sign-in: panels can be made from now on (vr's warm-up makes the screen's pages
+    /// ahead, makeNextScreenPage, once this has come)
+    void restored();
 
     /// a VR screen slot's size changed (the right one folds while the radio is off), or the screen's state did
     void screenSlotSizeChanged(const QString& slot);
@@ -206,7 +218,8 @@ private:
     QPointer<QQuickItem> _tabletHolder;   // a hidden item on the desktop's QML that keeps the window out of sight
     QSizeF _tabletLoaderSize;
     bool _tabletOnScreen { false };
-    bool _screenDialogOnly { false };   // the screen is up only for a world's dialog: the middle slot, no page in it
+    bool _screenDialogOnly { false };
+    std::atomic<bool> _screenUp { false };   // _screenState set, for scripts' threads (isScreenUp)   // the screen is up only for a world's dialog: the middle slot, no page in it
     QString _tabletLabel { "Apps" };
 };
 

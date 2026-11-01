@@ -310,6 +310,7 @@ void Panels::restore() {
         dock(HIERARCHY);
         dock(INSPECTOR);
     });
+    emit restored();
 }
 
 void Panels::resetDocks() {
@@ -514,11 +515,13 @@ void Panels::leaveDialogOnly() {
         return;   // the slot fills as it comes (takeScreenSlot)
     }
     host->setProperty("dialogOnly", false);
+    bool put;
     if (!_middleTabs.isEmpty() && _middleTabs.last() == TABLET_TAB) {
-        putTabletOnScreen();
+        put = putTabletOnScreen();
     } else {
-        putOnScreen(_middleTabs.isEmpty() ? MIDDLE_FIRST : _middleTabs.last());
+        put = putOnScreen(_middleTabs.isEmpty() ? MIDDLE_FIRST : _middleTabs.last());
     }
+    qCDebug(interfaceapp) << "Panels: the screen whole again, its middle page put" << put;
 }
 
 bool Panels::makeNextScreenPage() {
@@ -664,6 +667,7 @@ QSize Panels::screenSlotSize(const QString& slot) const {
 void Panels::setScreenState(const QString& state) {
     if ((state == "down" || state == "parked") && state != _screenState) {
         _screenState = state;
+        _screenUp = true;
         // a screen up only for a world's dialog isn't the tablet shown (vr's HMD.showTablet follows the same rule)
         if (!_screenDialogOnly) {
             reportScreenShown(true);
@@ -716,6 +720,7 @@ void Panels::releaseScreenSlots() {
     }
     if (!_screenState.isEmpty()) {
         _screenState.clear();
+        _screenUp = false;
         reportScreenShown(false);
         emit screenStateChanged(_screenState);
     }
@@ -963,6 +968,9 @@ void Panels::setOpen(const QString& name, bool open) {
         QMutexLocker lock(&_openMutex);
         if (_open.contains(name) == open) {
             return;
+        }
+        if (!_screenSlots.isEmpty()) {
+            qCDebug(interfaceapp) << "Panels: open" << name << open << "(the screen up)";
         }
         if (open) {
             _open.insert(name);
