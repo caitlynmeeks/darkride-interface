@@ -116,6 +116,7 @@ public:
         std::function<bool(const QMetaObject*, const QByteArray&)> deniesMethod;
         std::function<bool(const QMetaObject*, const QByteArray&)> deniesPropertyWrite;
         std::function<bool(const QMetaObject*, const QByteArray&)> deniesPropertyRead;
+        std::function<bool(const QMetaObject*, const QByteArray&)> deniesSignal;   // unset: an allowed class's every signal
         std::function<QString(const QString&, const QString&)> refusalLine;
     };
     void setMemberGate(MemberGate gate) { _gate = std::move(gate); }

@@ -608,9 +608,9 @@ bool HostInterface::allowed(const QMetaObject* meta, const QMetaMethod& method) 
     if (!gated(meta)) {
         return true;
     }
-    // a signal is connected to, not called; the gate's word on it is the class's
+    // a signal is connected to, not called (callable() keeps it out of calls)
     if (method.methodType() == QMetaMethod::Signal) {
-        return classAllowed(meta);
+        return classAllowed(meta) && !(_gate.deniesSignal && _gate.deniesSignal(meta, method.name()));
     }
     return classAllowed(meta) && !_gate.deniesMethod(meta, method.name());
 }
@@ -638,6 +638,13 @@ QVariantMap HostInterface::gatedDescription(const QMetaObject* meta, QVariantMap
         }
     }
     description["methods"] = methods;
+    QVariantList signalList;
+    for (const QVariant& entry : description.value("signals").toList()) {
+        if (!_gate.deniesSignal || !_gate.deniesSignal(meta, entry.toMap().value("name").toString().toUtf8())) {
+            signalList.append(entry);
+        }
+    }
+    description["signals"] = signalList;
     QVariantList properties;
     for (const QVariant& entry : description.value("properties").toList()) {
         QVariantMap property = entry.toMap();
@@ -1064,6 +1071,22 @@ int HostInterface::connect(ObjectTable::Handle handle, const QString& signal, QS
     if (gated(object->metaObject()) && !classAllowed(object->metaObject())) {
         error = refuse(object->metaObject(), signal.toUtf8());
         return 0;
+    }
+    if (gated(object->metaObject()) && _gate.deniesSignal) {
+        // the signal the relay would join, by whichever name it is given (its name, its signature, its index)
+        const QMetaObject* meta = object->metaObject();
+        int index = -1;
+        if (signal.startsWith('#')) {
+            index = signal.mid(1).toInt();
+        } else if (signal.contains('(')) {
+            index = meta->indexOfSignal(QMetaObject::normalizedSignature(signal.toUtf8().constData()).constData());
+        }
+        const QByteArray name = (index >= 0 && index < meta->methodCount()) ? meta->method(index).name()
+                                                                              : signal.toUtf8();
+        if (_gate.deniesSignal(meta, name)) {
+            error = refuse(meta, name);
+            return 0;
+        }
     }
     return _relay.connect(object, signal, [this](int connection, const QVariantList& arguments) {
         QString deliveryError;

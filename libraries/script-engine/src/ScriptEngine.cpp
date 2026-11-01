@@ -1133,6 +1133,7 @@ GuardedObjectClass* ScriptEngine::guardClass() {
         gate.deniesMethod = &ScriptApiPolicy::deniesMethod;
         gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
         gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
+        gate.deniesSignal = &ScriptApiPolicy::deniesSignal;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
         _guardClass = std::make_unique<GuardedObjectClass>(this, std::move(gate));
     }

@@ -539,6 +539,7 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         gate.deniesMethod = &ScriptApiPolicy::deniesMethod;
         gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
         gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
+        gate.deniesSignal = &ScriptApiPolicy::deniesSignal;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
         instance->host->setMemberGate(std::move(gate));
     }
