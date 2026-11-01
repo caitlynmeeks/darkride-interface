@@ -202,7 +202,12 @@ void VrScreen::dialogOnlyDone() {
 void VrScreen::faceHead() {
     updateHead();
     auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
-    _yaw = yawOf(avatar->getHMDSensorOrientation() * glm::vec3(0.0f, 0.0f, -1.0f));
+    glm::quat orientation = avatar->getHMDSensorOrientation();
+    if (!qApp->isHMDMode()) {
+        // Desktop tests (DARKRIDE_VR_SCREEN): there's no head pose, so the camera stands in for it
+        orientation = glm::inverse(glmExtractRotation(avatar->getSensorToWorldMatrix())) * qApp->getCamera().getOrientation();
+    }
+    _yaw = yawOf(orientation * glm::vec3(0.0f, 0.0f, -1.0f));
     _pitch = DEFAULT_PITCH_DEGREES;
 }
 
@@ -340,7 +345,9 @@ void VrScreen::movePieces() {
 }
 
 void VrScreen::updateHead() {
-    _head = DependencyManager::get<AvatarManager>()->getMyAvatar()->getHMDSensorPosition();
+    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    _head = qApp->isHMDMode() ? avatar->getHMDSensorPosition()
+        : transformPoint(glm::inverse(avatar->getSensorToWorldMatrix()), qApp->getCamera().getPosition());
 }
 
 void VrScreen::slotSizeChanged(const QString& slot) {
