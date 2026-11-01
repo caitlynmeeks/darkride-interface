@@ -5,6 +5,18 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the declarations of the present path (see OpenGLDisplayPlugin.cpp) and the members it keeps (the vsync
+// state, the display link's watch, the rate counters).
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 #pragma once
 
 #include "DisplayPlugin.h"
@@ -48,8 +60,10 @@ public:
     // These must be final to ensure proper ordering of operations
     // between the main thread and the presentation thread
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     // (the target rate, the display's own rate)
     static std::function<void(int, int)> getRefreshRateOperator();
+    // FROZEN (vehicle path): see the note at the top of this file.
     // the present cadence's last whole second, for the refresh governor and the Stats line (any thread)
     static std::function<RefreshRateController::CadenceCounters()> getCadenceCountersOperator();
     // A test knob: every present costs this many microseconds more, busy-waited, as a heavy scene's would (the
@@ -83,6 +97,7 @@ public:
     virtual bool setDisplayTexture(const QString& name) override;
     virtual bool onDisplayTextureReset() { return false; };
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     float presentRate() const override;
 
     void resetPresentRate() override;
@@ -110,6 +125,7 @@ public:
         static const int forced = qgetenv("TIVOLI_VSYNC").isEmpty() ? -1 : (qgetenv("TIVOLI_VSYNC") != "0" ? 1 : 0);
         return forced < 0 ? _vsyncWanted.load() : (forced != 0);
     }
+    // FROZEN (vehicle path): see the note at the top of this file.
     // whether the swap is to wait for the refresh now: wanted, and no display link pacing the presents. A forced
     // TIVOLI_VSYNC=1 applies even under the link: a measurement knob that reproduces the 2026-10-31 14:40 state (the
     // cadence governor blind under the swap's wait, the presents off the paced clock), never a way to turn vsync on.
@@ -117,6 +133,7 @@ public:
     void setVsyncEnabled(bool vsyncEnabled) { _vsyncEnabled = vsyncEnabled; }
     bool isVsyncEnabled() const override { return _vsyncEnabled; }
     void setVsyncWanted(bool wanted) override { _vsyncWanted = wanted; }
+    // FROZEN (vehicle path): see the note at the top of this file.
     float getPresentPeriod() const override;
     void setPresentTracing(bool on) override;
     std::vector<PresentSample> takePresentTrace() override;
@@ -178,8 +195,10 @@ protected:
 
     void withOtherThreadContext(std::function<void()> f) const;
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     void present(const std::shared_ptr<RefreshRateController>& refreshRateController);
     virtual void swapBuffers();
+    // FROZEN (vehicle path): see the note at the top of this file.
     // present thread only, the context current: sets the swap interval to what is wanted when that changed
     void applyVsync();
     // present thread only, after the swap: records this present when the trace is on
@@ -187,6 +206,7 @@ protected:
 
     void render(std::function<void(gpu::Batch& batch)> f);
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     std::atomic<bool> _vsyncEnabled{ false };   // what the swap does (the driver's answer)
     std::atomic<bool> _vsyncWanted{ false };    // the setting
     bool _vsyncApplied{ false };                // what the present thread last asked the driver for
@@ -204,6 +224,7 @@ protected:
     int64_t _linkNextRestartNs { 0 };
     QThread* _presentThread{ nullptr };
     std::queue<gpu::FramePointer> _newFrameQueue;
+    // FROZEN (vehicle path): see the note at the top of this file.
     RateCounter<200> _droppedFrameRate;
     RateCounter<200> _newFrameRate;
     RateCounter<200> _presentRate;

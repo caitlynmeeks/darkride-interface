@@ -2,6 +2,18 @@
 //  RenderableEntityItem.h
 //  interface/src
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the render-update budget's stamps: getUpdateTime (the budget's sort reads it), the deferred-since and
+// late-frames stamps (getDeferredSinceFrame, setDeferredSinceFrame, getLastLateFrames, setLastLateFrames) and their
+// members.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
 
 
 #ifndef hifi_RenderableEntityItem_h
@@ -59,8 +71,10 @@ public:
     virtual bool addToScene(const ScenePointer& scene, Transaction& transaction) final;
     virtual void removeFromScene(const ScenePointer& scene, Transaction& transaction);
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     const uint64_t& getUpdateTime() const { return _updateTime; }
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     // The render-update budget's staleness stamps, kept by EntityTreeRenderer::updateChangedEntities (the
     // instruments plan, item 2): the frame this renderable was first left over by the time budget, 0 while it is
     // drawn as its entity is; and how many frames late its last refresh came (0 when it came the frame the entity
@@ -213,8 +227,10 @@ protected:
     QUuid _changeHandlerId;
     ItemID _renderItemID{ Item::INVALID_ITEM_ID };
     uint64_t _fadeStartTime{ usecTimestampNow() };
+    // FROZEN (vehicle path): see the note at the top of this file.
     uint64_t _updateTime{ 0 }; // used when sorting/throttling render updates
     uint64_t _staticUpdateTime{ 0 }; 
+    // FROZEN (vehicle path): see the note at the top of this file.
     uint64_t _deferredSinceFrame { 0 };
     uint32_t _lastLateFrames { 0 };
 

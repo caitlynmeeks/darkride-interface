@@ -8,6 +8,16 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the LightStage::Shadow and Shadow::Cascade functions (the cascades' frusta and matrices).
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
 
 #include "LightStage.h"
 
@@ -75,20 +85,24 @@ LightStage::Shadow::Schema::Schema() {
     maxDistance = 20.0f;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 LightStage::Shadow::Cascade::Cascade() : 
     _frustum{ std::make_shared<ViewFrustum>() },
     _minDistance{ 0.0f },
     _maxDistance{ 20.0f } {
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 const glm::mat4& LightStage::Shadow::Cascade::getView() const {
     return _frustum->getView();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 const glm::mat4& LightStage::Shadow::Cascade::getProjection() const {
     return _frustum->getProjection();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float LightStage::Shadow::Cascade::computeFarDistance(const ViewFrustum& viewFrustum, const Transform& shadowViewInverse,
                                                       float left, float right, float bottom, float top, float viewMaxShadowDistance) const {
     // Far distance should be extended to the intersection of the infinitely extruded shadow frustum 
@@ -124,6 +138,7 @@ float LightStage::Shadow::Cascade::computeFarDistance(const ViewFrustum& viewFru
     return far;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 LightStage::Shadow::Shadow(graphics::LightPointer light, unsigned int cascadeCount) : 
     _light{ light } {
     cascadeCount = std::min(cascadeCount, (unsigned int)SHADOW_CASCADE_MAX_COUNT);
@@ -158,6 +173,7 @@ LightStage::Shadow::Shadow(graphics::LightPointer light, unsigned int cascadeCou
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void LightStage::Shadow::setLight(graphics::LightPointer light) {
     _light = light;
     if (light) {
@@ -165,6 +181,7 @@ void LightStage::Shadow::setLight(graphics::LightPointer light) {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void LightStage::Shadow::setMaxDistance(float value) {
     static const auto MINIMUM_MAXDISTANCE = 1e-3f;
 
@@ -228,6 +245,7 @@ void LightStage::Shadow::setMaxDistance(float value) {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void LightStage::Shadow::setKeylightFrustum(const ViewFrustum& viewFrustum,
                                             float nearDepth, float farDepth) {
     assert(nearDepth < farDepth);
@@ -255,6 +273,7 @@ void LightStage::Shadow::setKeylightFrustum(const ViewFrustum& viewFrustum,
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void LightStage::Shadow::setKeylightCascadeFrustum(unsigned int cascadeIndex, const ViewFrustum& viewFrustum,
                                             float nearDepth, float farDepth) {
     assert(nearDepth < farDepth);
@@ -348,6 +367,7 @@ void LightStage::Shadow::setKeylightCascadeFrustum(unsigned int cascadeIndex, co
     schemaCascade.reprojection = _biasMatrix * ortho * shadowViewInverse.getMatrix();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void LightStage::Shadow::setKeylightCascadeBias(unsigned int cascadeIndex, float constantBias, float slopeBias) {
     auto& schema = _schemaBuffer.edit<Schema>();
     auto& schemaCascade = schema.cascades[cascadeIndex];
@@ -355,6 +375,7 @@ void LightStage::Shadow::setKeylightCascadeBias(unsigned int cascadeIndex, float
     schemaCascade.slopeBias = slopeBias;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void LightStage::Shadow::setCascadeFrustum(unsigned int cascadeIndex, const ViewFrustum& shadowFrustum) {
     assert(cascadeIndex < _cascades.size());
     const Transform view{ shadowFrustum.getView() };
