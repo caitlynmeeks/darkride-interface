@@ -31,7 +31,7 @@
 namespace {
     const QString FILES_API_PATH = "/api/user/files";
     const QStringList PICTURE_SUFFIXES { "png", "jpg", "jpeg", "webp", "bmp", "gif", "tga", "tif", "tiff", "ktx", "exr", "hdr" };
-    const QStringList MODEL_SUFFIXES { "fbx", "obj", "gltf", "glb", "dae", "3ds", "stl", "ply", "usdz", "usd", "usda" };
+    const QStringList MODEL_SUFFIXES { "fbx", "obj", "gltf", "glb", "vrm", "dae", "3ds", "stl", "ply", "usdz", "usd", "usda" };
     const QStringList SOUND_SUFFIXES { "wav", "mp3", "ogg", "flac", "aac", "m4a" };
     const QStringList SCRIPT_SUFFIXES { "js", "mjs", "qml", "wasm" };
 
