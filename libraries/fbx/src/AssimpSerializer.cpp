@@ -20,6 +20,7 @@
 #include <hfm/ModelFormatLogging.h>
 
 #include <assimp/Importer.hpp>
+#include <assimp/importerdesc.h>
 #include <assimp/LogStream.hpp>
 #include <assimp/DefaultLogger.hpp>
 #include <assimp/postprocess.h>
@@ -41,6 +42,61 @@
 // disabled because it causes crashes with Assimp::DefaultLogger::WriteToStreams
 // #define ENABLE_ASSIMP_LOGGING
 
+namespace {
+    // The model formats Darkride reads through Assimp: the common ones for worlds and avatars. Assimp has importers for
+    // dozens more, many old and little used; content from anywhere only reaches these. (FBX and OBJ have their own
+    // serializers.) Add a format here to support it. A VRM is a binary glTF: the Assimp built here reads it as a .glb,
+    // and newer ones also list .vrm.
+    const QStringList& allowedExtensions() {
+        static const QStringList ALLOWED_EXTENSIONS = { "gltf", "glb", "vrm", "dae", "3ds", "ply", "stl" };
+        return ALLOWED_EXTENSIONS;
+    }
+
+    // While a model is read, only the importers for those formats stay registered with the Importer reading it. Assimp
+    // picks an importer by the extension it is given and, when none claims it, by the file's first bytes, from every
+    // importer it was built with; the others are set aside for the read, so whatever the file holds only these see it.
+    // They go back before the Importer ends: it owns and deletes them, and UnregisterLoader only takes one off its list.
+    class AllowedImportersOnly {
+    public:
+        explicit AllowedImportersOnly(Assimp::Importer& importer) : _importer(importer) {
+            for (size_t i = importer.GetImporterCount(); i-- > 0;) {
+                const aiImporterDesc* info = importer.GetImporterInfo(i);
+                if (info && isAllowed(info->mFileExtensions)) {
+                    continue;
+                }
+                Assimp::BaseImporter* other = importer.GetImporter(i);
+                if (other && importer.UnregisterLoader(other) == AI_SUCCESS) {
+                    _setAside.push_back(other);
+                }
+            }
+        }
+        ~AllowedImportersOnly() {
+            for (Assimp::BaseImporter* other : _setAside) {
+                _importer.RegisterLoader(other);
+            }
+        }
+        AllowedImportersOnly(const AllowedImportersOnly&) = delete;
+        AllowedImportersOnly& operator=(const AllowedImportersOnly&) = delete;
+
+    private:
+        // an importer's extensions, space separated ("gltf glb")
+        static bool isAllowed(const char* extensions) {
+            if (!extensions) {
+                return false;
+            }
+            for (const QString& ext : QString(extensions).split(' ', Qt::SkipEmptyParts)) {
+                if (allowedExtensions().contains(ext.toLower())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        Assimp::Importer& _importer;
+        std::vector<Assimp::BaseImporter*> _setAside;
+    };
+}
+
 MediaType AssimpSerializer::getMediaType() const {
     MediaType mediaType;
 
@@ -48,16 +104,10 @@ MediaType AssimpSerializer::getMediaType() const {
     aiString aiExts;
     importer.GetExtensionList(aiExts);
 
-    // The model formats Darkride reads through Assimp: the common ones for worlds and avatars. Assimp has importers for
-    // dozens more, many old and little used; content from anywhere only reaches these. (FBX and OBJ have their own
-    // serializers.) Add a format here to support it. A VRM is a binary glTF: the Assimp built here reads it as a .glb,
-    // and newer ones also list .vrm.
-    static const QStringList ALLOWED_EXTENSIONS = { "gltf", "glb", "vrm", "dae", "3ds", "ply", "stl" };
-
     auto exts = QString(aiExts.C_Str()).split(";");
     for (QString anyExt : exts) {
         QString ext = anyExt.replace("*.", "");
-        if (!ALLOWED_EXTENSIONS.contains(ext.toLower())) continue;
+        if (!allowedExtensions().contains(ext.toLower())) continue;
 
         // qDebug(modelformat) << "Available format:" << ext; 
         mediaType.extensions.push_back(ext.toStdString());
@@ -1186,6 +1236,7 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
 
     Assimp::Importer importer;
     importer.SetIOHandler(new TivoliIOSystem(url));
+    AllowedImportersOnly allowedImportersOnly(importer);
     
     // we don't support lights and cameras over models
     importer.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS, aiComponent_LIGHTS | aiComponent_CAMERAS);
