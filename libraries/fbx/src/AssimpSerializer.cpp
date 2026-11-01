@@ -113,6 +113,13 @@ MediaType AssimpSerializer::getMediaType() const {
         mediaType.extensions.push_back(ext.toStdString());
         // mediaType.webMediaTypes.push_back("");
     }
+    // a VRM avatar is a binary glTF: listed here when the Assimp built here reads .glb but does not name .vrm itself, and
+    // read as a .glb (read)
+    auto& extensions = mediaType.extensions;
+    if (std::find(extensions.begin(), extensions.end(), "glb") != extensions.end() &&
+        std::find(extensions.begin(), extensions.end(), "vrm") == extensions.end()) {
+        extensions.push_back("vrm");
+    }
 
     return mediaType;
 }
@@ -1216,6 +1223,11 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
 
     // what follows the last dot, as the format registry chose this reader by: Blender's Tree.001.glb is a "glb"
     ext = QFileInfo(url.path()).suffix();
+    // a VRM is a binary glTF (glTF 2.0 with VRM's own extensions, which the reader leaves aside): it is read as a .glb,
+    // with glTF's materials and extras
+    if (ext.compare("vrm", Qt::CaseInsensitive) == 0) {
+        ext = "glb";
+    }
 
     // qCDebug(modelformat) << "AssimpSerializer::read url"<<url<<ext;
 
