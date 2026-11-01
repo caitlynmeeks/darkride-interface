@@ -42,6 +42,8 @@ public:
     /// the menu button: up in front of you, or hidden
     void toggle();
     void show();
+    /// up and in front of you wherever it was (a dialog that needs you). Main thread.
+    void showInFront();
     void hide();
     bool isShown() const { return _shown; }
 
@@ -58,6 +60,7 @@ private:
     void deletePiece(Piece piece);
     void movePieces();
     void updateHead();
+    void faceHead();
     void slotSizeChanged(const QString& slot);
     void entityDeleted(const EntityItemID& id);
     void displayChanged();

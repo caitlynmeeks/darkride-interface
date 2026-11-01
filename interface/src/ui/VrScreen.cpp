@@ -133,11 +133,7 @@ void VrScreen::show() {
         connect(entities.data(), &EntityScriptingInterface::mousePressOnEntity, this, &VrScreen::mousePressed),
         connect(entities.data(), &EntityScriptingInterface::mouseReleaseOnEntity, this, &VrScreen::mouseReleased)
     };
-    updateHead();
-    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
-    const glm::vec3 facing = avatar->getHMDSensorOrientation() * glm::vec3(0.0f, 0.0f, -1.0f);
-    _yaw = yawOf(facing);
-    _pitch = DEFAULT_PITCH_DEGREES;
+    faceHead();
     _shown = true;
 
     const Arrangement places = arrangement();
@@ -150,6 +146,24 @@ void VrScreen::show() {
     tellState();
     DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(true);
     qCDebug(interfaceapp) << "VR screen: shown, yaw" << _yaw;
+}
+
+void VrScreen::showInFront() {
+    if (!_shown) {
+        show();
+        return;
+    }
+    endDrag();
+    faceHead();
+    movePieces();
+    tellState();
+}
+
+void VrScreen::faceHead() {
+    updateHead();
+    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    _yaw = yawOf(avatar->getHMDSensorOrientation() * glm::vec3(0.0f, 0.0f, -1.0f));
+    _pitch = DEFAULT_PITCH_DEGREES;
 }
 
 void VrScreen::hide() {
