@@ -168,6 +168,7 @@ private:
     QHash<QString, QPointer<QQuickItem>> _screenSlots;
     QString _screenState;
     QStringList _middleTabs;   // the middle slot's panels, the front one last
+    QSet<QString> _hiddenForScreen;   // docks that were showing when their page moved to the screen
 };
 
 #endif // hifi_Panels_h
