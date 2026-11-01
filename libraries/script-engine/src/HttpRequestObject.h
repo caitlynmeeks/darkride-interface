@@ -27,6 +27,8 @@
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
 
+#include <ScriptNetworkPolicy.h>
+
 class ScriptEngine;
 
 class HttpRequestObject : public QObject {
@@ -104,6 +106,8 @@ private:
     void abortRequest();
     /// Ends the request as refused by the network rule: a failed request, with the reason in the log.
     void refuse(const QString& reason);
+    /// A ruled request's redirect: the next hop judged and pinned as the first was.
+    void followRedirect(int status);
 
     QNetworkRequest _request;
     QNetworkReply* _reply { nullptr };
@@ -125,6 +129,12 @@ private:
     bool _ruled { false };
     bool _worldIsLocal { false };   // the world the script is judged in (ScriptEngine::worldIsLocal), when it made the request
     bool _deciding { false };    // the network rule is still judging (a name lookup)
+    // a ruled request goes to the address the rule checked, each hop judged again: the hop's address by its name, the
+    // judgement it went out under, and how many redirects it has followed
+    QUrl _hopUrl;
+    ScriptNetworkPolicy::Decision _decision;
+    bool _byHand { false };
+    int _redirects { 0 };
     int _generation { 0 };       // abort() moves it on, so a judgement that comes late is dropped
     std::function<void(const QString&)> _logger;
 };

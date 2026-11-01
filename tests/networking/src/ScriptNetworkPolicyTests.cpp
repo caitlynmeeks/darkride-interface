@@ -8,6 +8,10 @@
 //
 
 #include "ScriptNetworkPolicyTests.h"
+#include <QtNetwork/QNetworkRequest>
+#include <QtNetwork/QNetworkReply>
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QHostInfo>
 
 #include <QtCore/QDir>
 #include <QtCore/QEventLoop>
@@ -243,4 +247,70 @@ void ScriptNetworkPolicyTests::appScripts() {
     QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl("https://example.invalid/scripts/x.js")));
     QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl("http://127.0.0.1/x.js")));
     QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl()));
+}
+
+void ScriptNetworkPolicyTests::testRequestsGoToTheCheckedAddress() {
+    // a name's answers: all public, the first is the address; one private among them refuses the name
+    const QHostAddress publicV4("93.184.216.34"), publicV6("2606:2800:220:1::1");
+    ScriptNetworkPolicy::Decision decision = ScriptNetworkPolicy::checkAddresses({ publicV4, publicV6 });
+    QVERIFY(decision.allowed);
+    QCOMPARE(decision.address, publicV4);
+    QVERIFY(!ScriptNetworkPolicy::checkAddresses({ publicV4, QHostAddress("127.0.0.1") }).allowed);
+    QVERIFY(!ScriptNetworkPolicy::checkAddresses({ publicV6, QHostAddress("::ffff:192.168.1.1") }).allowed);
+    QVERIFY(!ScriptNetworkPolicy::checkAddresses({ QHostAddress("fe80::1") }).allowed);
+
+    // pinned: the address in the URL, the name in the Host header (with a port that isn't the default) and for the
+    // certificate and the handshake's name
+    QNetworkRequest https(QUrl("https://example.com:8443/a?b=1"));
+    ScriptNetworkPolicy::pin(https, decision);
+    QCOMPARE(https.url().toString(), QString("https://93.184.216.34:8443/a?b=1"));
+    QCOMPARE(https.rawHeader("Host"), QByteArray("example.com:8443"));
+    QCOMPARE(https.peerVerifyName(), QString("example.com"));
+    ScriptNetworkPolicy::Decision v6 = ScriptNetworkPolicy::checkAddresses({ publicV6 });
+    QNetworkRequest http(QUrl("http://example.com/"));
+    ScriptNetworkPolicy::pin(http, v6);
+    QCOMPARE(http.url().toString(), QString("http://[2606:2800:220:1::1]/"));
+    QCOMPARE(http.rawHeader("Host"), QByteArray("example.com"));
+    QVERIFY(http.peerVerifyName().isEmpty());
+    // an address, a refusal, or a judgement without a lookup leave the request as it is
+    QNetworkRequest literal(QUrl("http://93.184.216.34/"));
+    ScriptNetworkPolicy::pin(literal, decision);
+    QCOMPARE(literal.url().toString(), QString("http://93.184.216.34/"));
+    QVERIFY(!literal.hasRawHeader("Host"));
+    QNetworkRequest unjudged(QUrl("https://example.com/"));
+    ScriptNetworkPolicy::pin(unjudged, ScriptNetworkPolicy::Decision());
+    QCOMPARE(unjudged.url().toString(), QString("https://example.com/"));
+}
+
+void ScriptNetworkPolicyTests::testPinnedNameIsCheckedOnEveryRequest() {
+    // two requests to one address, the second under a name its certificate doesn't carry: the connection the first
+    // left open is not reused for it, and its certificate check fails (the connection cache is keyed on the name)
+    const QHostInfo info = QHostInfo::fromName("example.com");
+    if (info.error() != QHostInfo::NoError || info.addresses().isEmpty()) {
+        QSKIP("no network");
+    }
+    const ScriptNetworkPolicy::Decision decision = ScriptNetworkPolicy::checkAddresses(info.addresses());
+    QVERIFY(decision.allowed);
+    QNetworkAccessManager manager;
+    auto fetch = [&manager](QNetworkRequest request) {
+        QNetworkReply* reply = manager.get(request);
+        QEventLoop loop;
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(15000, &loop, &QEventLoop::quit);
+        loop.exec();
+        const QNetworkReply::NetworkError error = reply->isFinished() ? reply->error() : QNetworkReply::TimeoutError;
+        reply->deleteLater();
+        return error;
+    };
+    QNetworkRequest good(QUrl("https://example.com/"));
+    ScriptNetworkPolicy::pin(good, decision);
+    const QNetworkReply::NetworkError first = fetch(good);
+    if (first == QNetworkReply::TimeoutError || first == QNetworkReply::HostNotFoundError) {
+        QSKIP("example.com not reachable");
+    }
+    QCOMPARE(first, QNetworkReply::NoError);
+    QNetworkRequest wrong(QUrl("https://example.com/"));
+    ScriptNetworkPolicy::pin(wrong, decision);
+    wrong.setPeerVerifyName("not-example.invalid");
+    QCOMPARE(fetch(wrong), QNetworkReply::SslHandshakeFailedError);
 }

@@ -78,6 +78,7 @@ private:
     QUrl _requestedUrl;
     QUrl _origin;
     bool _ruled { false };
+    bool _refused { false };   // it connected to an address the rule refuses: nothing it sends is delivered
     bool _worldIsLocal { false };   // the world the script is judged in (ScriptEngine::worldIsLocal), when it opened the socket
     std::function<void(const QString&)> _logger;
 };

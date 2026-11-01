@@ -24,8 +24,8 @@ WebSocketClass::WebSocketClass(QScriptEngine* engine, QString url) :
 {
     initialize();
     if (auto scriptEngine = qobject_cast<ScriptEngine*>(engine)) {
-        _origin = scriptEngine->currentScriptOrigin();
-        _ruled = scriptEngine->isClientSide();
+        _origin = scriptEngine->ruledOrigin(scriptEngine->currentScriptOrigin());
+        _ruled = scriptEngine->networkRuled();
         _worldIsLocal = scriptEngine->worldIsLocal();
     }
     const QUrl target(url);
@@ -196,6 +196,9 @@ void WebSocketClass::handleOnError(QAbstractSocket::SocketError error) {
  * @property {string} data - The message content.
  */
 void WebSocketClass::handleOnMessage(const QString& message) {
+    if (_refused) {
+        return;
+    }
     if (_onMessageEvent.isFunction()) {
         QScriptValueList args;
         QScriptValue arg = _engine->newObject();
@@ -216,6 +219,7 @@ void WebSocketClass::handleOnOpen() {
             scriptEngine->scriptWarningMessage(ScriptNetworkPolicy::refusalLine(_origin, _webSocket->requestUrl(),
                 "it connected to an address on this machine or its network (" + _webSocket->peerAddress().toString() + ")"));
         }
+        _refused = true;
         handleOnError(QAbstractSocket::SocketAccessError);
         _webSocket->close(QWebSocketProtocol::CloseCodePolicyViolated, "not allowed by the network rule");
         return;

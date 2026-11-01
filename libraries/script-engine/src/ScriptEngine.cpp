@@ -236,6 +236,9 @@ ScriptEngine::ScriptEngine(Context context, const QString& scriptContents, const
     _arrayBufferClass(new ArrayBufferClass(this)),
     _assetScriptingInterface(new AssetScriptingInterface(this))
 {
+    // held for the engine's life: what the agent's scripts include later never changes it
+    _agentScriptIsLocal = _context == AGENT_SCRIPT &&
+                          (fileNameString.isEmpty() || ScriptNetworkPolicy::isLocalOrigin(QUrl(fileNameString)));
     switch (_context) {
         case Context::CLIENT_SCRIPT:
             _type = Type::CLIENT;
@@ -651,7 +654,17 @@ bool ScriptEngine::entityScriptsMayBeLocal() const {
 }
 
 bool ScriptEngine::worldIsLocal() const {
+    if (!isClientSide()) {
+        return false;   // a server is in no world of a visitor's
+    }
     return _context == ENTITY_CLIENT_SCRIPT ? entityScriptsMayBeLocal() : ScriptNetworkPolicy::isWorldLocal();
+}
+
+QUrl ScriptEngine::ruledOrigin(const QUrl& origin) const {
+    if (isClientSide() || !ScriptNetworkPolicy::isLocalOrigin(origin)) {
+        return origin;
+    }
+    return QUrl(_context == AGENT_SCRIPT ? "about:agent" : "about:entity-server");
 }
 
 QUrl ScriptEngine::effectiveSandbox(const QUrl& sandbox) const {
@@ -2081,11 +2094,11 @@ QVariantMap ScriptEngine::fetchModuleSource(const QString& modulePath, const boo
     using UrlMap = QMap<QUrl, QString>;
     auto scriptCache = DependencyManager::get<ScriptCache>();
     QVariantMap req;
-    if (isClientSide()) {
+    if (networkRuled()) {
         // the network rule for a script's own requests: a module's download is a request too (a JSON module comes
         // back to the script as data)
         QString reason;
-        if (!ScriptNetworkPolicy::decideBlocking(QUrl(modulePath), currentScriptOrigin(), reason, worldIsLocal())) {
+        if (!ScriptNetworkPolicy::decideBlocking(QUrl(modulePath), ruledOrigin(currentScriptOrigin()), reason, worldIsLocal())) {
             scriptWarningMessage(ScriptNetworkPolicy::refusalLine(currentScriptOrigin(), QUrl(modulePath), reason));
             req["url"] = modulePath;
             req["status"] = "Refused";
@@ -2311,7 +2324,7 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
                                 + "outside of original entity script" + sandbox.toString());
         } else {
             QString reason;
-            if (isClientSide() && !ScriptNetworkPolicy::decideBlocking(thisURL, currentScriptOrigin(), reason, worldIsLocal())) {
+            if (networkRuled() && !ScriptNetworkPolicy::decideBlocking(thisURL, ruledOrigin(currentScriptOrigin()), reason, worldIsLocal())) {
                 // the network rule for a script's own requests: an include's download is a request too
                 scriptWarningMessage(ScriptNetworkPolicy::refusalLine(currentScriptOrigin(), thisURL, reason));
                 continue;

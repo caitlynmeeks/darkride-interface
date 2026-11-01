@@ -237,6 +237,7 @@ private:
     QString _binaryType;
     QUrl _origin;                // where the script making the connection came from
     bool _ruled { false };       // whether the network rule for a script's own requests holds here (a person's client)
+    bool _refused { false };     // it connected to an address the rule refuses: nothing it sends is delivered
     bool _worldIsLocal { false };    // the world the script is judged in (ScriptEngine::worldIsLocal), when it opened the socket
 
     void initialize();

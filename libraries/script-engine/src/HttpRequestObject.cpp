@@ -69,6 +69,9 @@ void HttpRequestObject::send(const QVariant& data) {
     if (data.isValid() && !data.isNull()) {
         _sendData = data.type() == QVariant::ByteArray ? data.toByteArray() : data.toString().toUtf8();
     }
+    _hopUrl = _url;
+    _redirects = 0;
+    _decision = ScriptNetworkPolicy::Decision();
     if (!_ruled) {
         doSend();
     } else {
@@ -81,6 +84,7 @@ void HttpRequestObject::send(const QVariant& data) {
             }
             if (decision.allowed) {
                 _deciding = false;
+                _decision = decision;
                 doSend();
                 return;
             }
@@ -117,41 +121,19 @@ void HttpRequestObject::refuse(const QString& reason) {
 
 void HttpRequestObject::doSend() {
     DependencyManager::get<ResourceRequestObserver>()->update(_url, -1, "HttpRequestObject::doSend");
-    const bool ruled = _ruled && ScriptNetworkPolicy::applies(_origin, _worldIsLocal);
-    if (ruled) {
-        // a redirect is judged as the request was
-        _request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
-        _request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::UserVerifiedRedirectPolicy);
+    _byHand = _ruled && ScriptNetworkPolicy::applies(_origin, _worldIsLocal);
+    QNetworkRequest request = _request;
+    request.setUrl(_hopUrl);
+    if (_byHand) {
+        // to the address the rule checked and no other (no second lookup of the name); a redirect comes back here,
+        // judged and pinned as the request was
+        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+        ScriptNetworkPolicy::pin(request, _decision);
     }
-    _reply = NetworkAccessManager::getInstance().sendCustomRequest(_request, _method.toLatin1(), _sendData);
+    _reply = NetworkAccessManager::getInstance().sendCustomRequest(request, _method.toLatin1(), _sendData);
     connect(_reply, &QNetworkReply::finished, this, &HttpRequestObject::onFinished);
     connect(_reply, &QNetworkReply::downloadProgress, this, &HttpRequestObject::onDownloadProgress);
-    if (ruled) {
-        QNetworkReply* reply = _reply;
-        connect(reply, &QNetworkReply::redirected, this, [this, reply](const QUrl& url) {
-            if (reply->url().scheme().toLower() == "https" && url.scheme().toLower() != "https") {
-                // a secure request stays secure
-                if (_logger) {
-                    _logger(ScriptNetworkPolicy::refusalLine(_origin, url, "a redirect from https to a plain address"));
-                }
-                reply->abort();
-                return;
-            }
-            ScriptNetworkPolicy::decide(url, _origin, this, [this, reply, url](const ScriptNetworkPolicy::Decision& decision) {
-                if (_reply != reply) {
-                    return;
-                }
-                if (decision.allowed) {
-                    emit reply->redirectAllowed();
-                    return;
-                }
-                if (_logger) {
-                    _logger(ScriptNetworkPolicy::refusalLine(_origin, url, decision.reason + " (a redirect)"));
-                }
-                reply->abort();
-            }, _worldIsLocal);
-        });
-    }
     if (_timeout > 0) {
         _timer.start(_timeout);
     }
@@ -159,6 +141,10 @@ void HttpRequestObject::doSend() {
 
 void HttpRequestObject::onDownloadProgress(qint64 received, qint64 total) {
     Q_UNUSED(total);
+    if (_byHand && _reply && _reply->hasRawHeader("Location") &&
+        _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() / 100 == 3) {
+        return;     // a redirect's body is not the response
+    }
     if (_readyState == OPENED && received > 0) {
         setReadyState(HEADERS_RECEIVED);
         setReadyState(LOADING);
@@ -174,6 +160,12 @@ void HttpRequestObject::onTimeout() {
 }
 
 void HttpRequestObject::onFinished() {
+    const int status = _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (_byHand && (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) &&
+        _reply->hasRawHeader("Location")) {
+        followRedirect(status);
+        return;
+    }
     _timer.stop();
     _errorCode = _reply->error();
     _lastStatus = _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -199,6 +191,45 @@ void HttpRequestObject::onFinished() {
     _sendData.clear();
     setReadyState(DONE);
     emit requestComplete();
+}
+
+void HttpRequestObject::followRedirect(int status) {
+    // relative to the hop's address by its name, not the address it was pinned to
+    const QUrl next = _hopUrl.resolved(QUrl::fromEncoded(_reply->rawHeader("Location")));
+    QNetworkReply* reply = _reply;
+    disconnect(reply, nullptr, this, nullptr);
+    _reply = nullptr;
+    reply->deleteLater();
+    QString reason;
+    if (++_redirects > _request.maximumRedirectsAllowed()) {
+        reason = "too many redirects";
+    } else if (_hopUrl.scheme().toLower() == "https" && next.scheme().toLower() != "https") {
+        reason = "a redirect from https to a plain address";   // a secure request stays secure
+    }
+    if (!reason.isEmpty()) {
+        _hopUrl = next;
+        refuse(reason);
+        return;
+    }
+    if (status == 303 || ((status == 301 || status == 302) && _method.toUpper() == "POST")) {
+        _method = "GET";        // as browsers do
+        _sendData.clear();
+    }
+    _hopUrl = next;
+    _deciding = true;
+    const int generation = ++_generation;
+    ScriptNetworkPolicy::decide(next, _origin, this, [this, generation, next](const ScriptNetworkPolicy::Decision& decision) {
+        if (generation != _generation) {
+            return;
+        }
+        _deciding = false;
+        if (!decision.allowed) {
+            refuse(decision.reason + " (a redirect)");
+            return;
+        }
+        _decision = decision;
+        doSend();
+    }, _worldIsLocal);
 }
 
 void HttpRequestObject::abort() {
@@ -257,7 +288,7 @@ HttpRequestFactory::HttpRequestFactory(ScriptEngine* engine) : QObject(engine), 
 HttpRequestObject* HttpRequestFactory::createRequest(const QString& origin) {
     auto request = new HttpRequestObject(this);
     if (_engine) {
-        request->setOrigin(_engine->verifiedScriptOrigin(origin), _engine->isClientSide(), _engine->worldIsLocal());
+        request->setOrigin(_engine->ruledOrigin(_engine->verifiedScriptOrigin(origin)), _engine->networkRuled(), _engine->worldIsLocal());
         QPointer<ScriptEngine> engine(_engine);
         request->setLogger([engine](const QString& line) {
             if (engine) {
