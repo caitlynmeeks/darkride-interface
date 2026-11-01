@@ -794,9 +794,14 @@ void MyAvatar::update(float deltaTime) {
     glm::vec3 halfBoundingBoxDimensions(_characterController.getCapsuleRadius(), _characterController.getCapsuleHalfHeight(), _characterController.getCapsuleRadius());
     // This might not be right! Isn't the capsule local offset in avatar space? -HRS 5/26/17
     halfBoundingBoxDimensions += _characterController.getCapsuleLocalOffset();
-    QMetaObject::invokeMethod(audio, "setAvatarBoundingBoxParameters",
-        Q_ARG(glm::vec3, (getWorldPosition() - halfBoundingBoxDimensions)),
-        Q_ARG(glm::vec3, (halfBoundingBoxDimensions*2.0f)));
+    // posted to the audio thread as a functor: by the method's name, each glm::vec3 argument would be copied through
+    // Qt 5's global metatype registry, whose lock loader threads can hold up for seconds (dropped, as before, if the
+    // audio client is gone first)
+    const glm::vec3 boundingBoxCorner = getWorldPosition() - halfBoundingBoxDimensions;
+    const glm::vec3 boundingBoxScale = halfBoundingBoxDimensions * 2.0f;
+    QMetaObject::invokeMethod(audio, [audio, boundingBoxCorner, boundingBoxScale] {
+        audio->setAvatarBoundingBoxParameters(boundingBoxCorner, boundingBoxScale);
+    });
 
     simulate(deltaTime, true);
 
