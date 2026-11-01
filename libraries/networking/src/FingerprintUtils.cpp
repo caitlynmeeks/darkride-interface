@@ -13,6 +13,9 @@
 #include "NetworkLogging.h"
 
 #include <QDebug>
+#include <QMessageAuthenticationCode>
+#include <QRandomGenerator>
+#include <QStringList>
 
 #include <SettingHandle.h>
 #include <SettingManager.h>
@@ -80,6 +83,54 @@ QString FingerprintUtils::getMachineFingerprintString() {
 
     return uuidString;
 
+}
+
+// Under "private/", which ScriptSettingsInterface refuses to scripts from the network.
+const QString FingerprintUtils::DOMAIN_ID_SECRET_KEY = "private/domainIdSecret";
+
+// What domains are told is keyed with this: a random secret kept on this computer, not the machine fingerprint.
+static QByteArray domainIdSecret() {
+    static const QByteArray secret = [] {
+        const int SECRET_BYTES = 32;
+        const bool canKeep = DependencyManager::isSet<Setting::Manager>();
+        QByteArray value;
+        if (canKeep) {
+            Settings settings;
+            value = QByteArray::fromHex(settings.value(FingerprintUtils::DOMAIN_ID_SECRET_KEY).toString().toLatin1());
+        }
+        if (value.size() != SECRET_BYTES) {
+            value.resize(SECRET_BYTES);
+            QRandomGenerator::system()->fillRange(reinterpret_cast<quint32*>(value.data()), SECRET_BYTES / sizeof(quint32));
+            if (canKeep) {
+                Settings settings;
+                settings.setValue(FingerprintUtils::DOMAIN_ID_SECRET_KEY, QString::fromLatin1(value.toHex()));
+            }
+        }
+        return value;
+    }();
+    return secret;
+}
+
+static QByteArray domainDigest(const QString& domain, const QByteArray& purpose) {
+    return QMessageAuthenticationCode::hash(purpose + "|" + domain.trimmed().toLower().toUtf8(), domainIdSecret(),
+                                            QCryptographicHash::Sha256);
+}
+
+QUuid FingerprintUtils::getDomainFingerprint(const QString& domain) {
+    QByteArray digest = domainDigest(domain, "fingerprint").left(16);
+    digest[6] = (char)((digest[6] & 0x0f) | 0x50);  // a name-based UUID (version 5 layout)
+    digest[8] = (char)((digest[8] & 0x3f) | 0x80);
+    return QUuid::fromRfc4122(digest);
+}
+
+QString FingerprintUtils::getDomainHardwareAddress(const QString& domain) {
+    QByteArray digest = domainDigest(domain, "hardware-address").left(6);
+    digest[0] = (char)((digest[0] & 0xfc) | 0x02);  // a locally administered, unicast address
+    QStringList parts;
+    for (char byte : digest) {
+        parts << QString("%1").arg((uchar)byte, 2, 16, QChar('0')).toUpper();
+    }
+    return parts.join(":");
 }
 
 QUuid FingerprintUtils::getMachineFingerprint() {

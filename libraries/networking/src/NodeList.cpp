@@ -416,30 +416,11 @@ void NodeList::sendDomainServerCheckIn() {
             QByteArray protocolVersionSig = protocolVersionsSignature();
             packetStream.writeBytes(protocolVersionSig.constData(), protocolVersionSig.size());
 
-            // if possible, include the MAC address for the current interface in our connect request
-            QString hardwareAddress;
-            for (auto networkInterface : QNetworkInterface::allInterfaces()) {
-                for (auto interfaceAddress : networkInterface.addressEntries()) {
-                    if (interfaceAddress.ip() == localSockAddr.getAddress()) {
-                        // this is the interface whose local IP matches what we've detected the current IP to be
-                        hardwareAddress = networkInterface.hardwareAddress();
-
-                        // stop checking interfaces and addresses
-                        break;
-                    }
-                }
-
-                // stop looping if this was the current interface
-                if (!hardwareAddress.isEmpty()) {
-                    break;
-                }
-            }
-
-            packetStream << hardwareAddress;
-
-            // now add the machine fingerprint
-            auto accountManager = DependencyManager::get<AccountManager>();
-            packetStream << FingerprintUtils::getMachineFingerprint();
+            // the network-card address and machine fingerprint the domain sees are this computer's own for this domain
+            // (see FingerprintUtils): stable here, different in every other domain
+            const QString domainKey = _domainHandler.getHostname();
+            packetStream << FingerprintUtils::getDomainHardwareAddress(domainKey);
+            packetStream << FingerprintUtils::getDomainFingerprint(domainKey);
 
             platform::json all = platform::getAll();
             platform::json desc;
@@ -449,7 +430,7 @@ void NodeList::sendDomainServerCheckIn() {
             desc[platform::keys::CPUS] = all[platform::keys::CPUS];
             desc[platform::keys::GPUS] = all[platform::keys::GPUS];
             desc[platform::keys::DISPLAYS] = all[platform::keys::DISPLAYS];
-            desc[platform::keys::NICS] = all[platform::keys::NICS];
+            // not the network cards: their addresses would identify this computer to every domain
 
             QByteArray systemInfo(desc.dump().c_str());
             QByteArray compressedSystemInfo = qCompress(systemInfo);
