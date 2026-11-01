@@ -65,7 +65,12 @@ const int REMAKE_DELAY_MS = 500;
 const int WARM_START_DELAY_MS = 0;       // the next turn after entering
 const int WARM_STEP_MS = 150;
 const int WARM_RETRY_MS = 500;           // on a ride or moving: wait until off it and still
-const int WARM_SETTLE_MS = 500;          // back to back: time for the first draws before they're paused
+// The settle step: time for the draws (the pages' first sync in their slots) before the surfaces are paused, in ticks.
+// Nothing shows a kept surface's picture while the screen is hidden, and a surface draws again only once its last
+// picture has been taken (SharedObject::onTimer: one frame queued at a time), so each tick but the last two takes it and
+// gives it back to the texture cache; the last 200 ms leave the newest picture, pages and all, for the first show.
+const int WARM_SETTLE_TICK_MS = 100;
+const int WARM_SETTLE_TICKS = 5;         // 500 ms
 const float WARM_MOVING_SPEED = 0.3f;    // m/s
 const uint64_t MIN_TOGGLE_INTERVAL_USECS = 300 * USECS_PER_MSEC;
 
@@ -586,14 +591,19 @@ void VrScreen::warmStep() {
                 }
             }
         }
-        _warmSettling = true;
-        _warmTimer.start(WARM_SETTLE_MS);
+        startSettling();
         return;
     }
     if (!_warmUnpaused.isEmpty()) {
         if (!_warmSettling) {
-            _warmSettling = true;
-            _warmTimer.start(WARM_SETTLE_MS);
+            startSettling();
+            return;
+        }
+        if (--_warmSettleTicks > 0) {
+            if (_warmSettleTicks > 1) {
+                takeWarmPictures();
+            }
+            _warmTimer.start(WARM_SETTLE_TICK_MS);
             return;
         }
         for (const auto& surface : _warmUnpaused) {
@@ -621,8 +631,26 @@ void VrScreen::slotFilled(const QString& slot) {
     if (!_warmUnpaused.contains(surface)) {
         _warmUnpaused.append(surface);
     }
+    startSettling();
+}
+
+void VrScreen::startSettling() {
     _warmSettling = true;
-    _warmTimer.start(WARM_SETTLE_MS);
+    _warmSettleTicks = WARM_SETTLE_TICKS;
+    takeWarmPictures();
+    _warmTimer.start(WARM_SETTLE_TICK_MS);
+}
+
+void VrScreen::takeWarmPictures() {
+    // the pictures the drawing kept surfaces made, which nothing shows while the screen is hidden: back to the texture
+    // cache, so they draw again (OffscreenSurface::getDiscardLambda is the Web entity renderer's own way to give one back)
+    static const auto giveBack = OffscreenQmlSurface::getDiscardLambda();
+    for (const auto& surface : _warmUnpaused) {
+        OffscreenQmlSurface::TextureAndFence picture;
+        if (surface && surface->fetchTexture(picture)) {
+            giveBack(picture.first, picture.second);
+        }
+    }
 }
 
 void VrScreen::stopKeeping() {

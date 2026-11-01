@@ -91,6 +91,8 @@ private:
     bool warmMustWait() const;
     void warmStep();
     void slotFilled(const QString& slot);
+    void startSettling();
+    void takeWarmPictures();
     void stopKeeping();
 
     void connectOnce();
@@ -139,6 +141,7 @@ private:
     bool _warmBackToBack { false };
     bool _warmPages { false };      // editor-ui's pages still to make ahead
     bool _warmSettling { false };
+    int _warmSettleTicks { 0 };     // the settle step's ticks to go (WARM_SETTLE_TICKS)
     bool _warmAnnounce { false };   // the kept slots still to be announced to Panels (filled with their pages)
     QSharedPointer<OffscreenQmlSurface> _warmLoaded;    // staggered: made; no draw yet while its render thread starts up
     QSharedPointer<OffscreenQmlSurface> _warmDrawing;   // staggered: drawing its first frame; paused at the next step
