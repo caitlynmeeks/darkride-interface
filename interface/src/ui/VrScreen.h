@@ -87,6 +87,8 @@ private:
     /// warm: made ahead, while hidden (its slot leaves telling Panels it's ready to VrScreen, at the show)
     QSharedPointer<OffscreenQmlSurface> makeSurface(const QString& url, bool warm);
     void startWarming();
+    void warmLater();
+    bool warmMustWait() const;
     void warmStep();
     void stopKeeping();
 
@@ -129,11 +131,16 @@ private:
     bool _keeping { false };   // in the headset, or a Desktop test
     QHash<OffscreenQmlSurface*, QString> _surfaceUrls;
     QHash<QString, QSharedPointer<OffscreenQmlSurface>> _kept;
-    // the warm-up at headset entry: one step per timer shot, each blocking the main thread once
+    // the warm-up: back to back at headset entry, staggered later (one step per timer shot, each blocking the main
+    // thread once, never on a ride)
     QTimer _warmTimer;
     QList<Piece> _toWarm;
-    QSharedPointer<OffscreenQmlSurface> _warmLoaded;    // made; no draw yet while its render thread starts up
-    QSharedPointer<OffscreenQmlSurface> _warmDrawing;   // drawing its first frame; paused at the next step
+    bool _warmBackToBack { false };
+    bool _warmPages { false };      // editor-ui's pages still to make ahead
+    bool _warmSettling { false };
+    QSharedPointer<OffscreenQmlSurface> _warmLoaded;    // staggered: made; no draw yet while its render thread starts up
+    QSharedPointer<OffscreenQmlSurface> _warmDrawing;   // staggered: drawing its first frame; paused at the next step
+    QList<QSharedPointer<OffscreenQmlSurface>> _warmUnpaused;   // back to back: drawing; paused at the settle step
     int _warmFps { 0 };
 
     // a drag: only while the bar is held does anything here run per frame

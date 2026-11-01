@@ -57,12 +57,15 @@ const int MIDDLE_MAX_FPS = 90;
 const int SIDE_MAX_FPS = 30;
 const int DRAG_INTERVAL_MS = 11;     // about 90 Hz, only while the bar is held
 const int REMAKE_DELAY_MS = 500;
-// The warm-up at headset entry (the surface pool): after the display's own start, one step per shot. A step makes one
-// surface (~5 ms on the main thread), lets one draw its first frame (the main thread waits ~20 ms for its first sync),
-// or pauses one. Far enough apart that a surface's first draw on its own thread is done before the next one's sync.
-const int WARM_START_DELAY_MS = 2000;
+// The warm-up (the surface pool; performance's placement, 11-01 20:3x). At headset entry it runs back to back, a step
+// per event-loop turn, inside the entry's own gap: the runtime shows its transition until our first frame. A step makes
+// one surface (~7-19 ms on the main thread, its first sync ~35 ms follows on its own) or one page (editor-ui's, ~50-70
+// ms). What comes later (the pages after sign-in, the radio's slot) is staggered instead, one step per WARM_STEP_MS, and
+// never while the avatar rides or stands in a moving frame (the vehicle rule: nothing new shares a ride's frame).
+const int WARM_START_DELAY_MS = 0;       // the next turn after entering
 const int WARM_STEP_MS = 150;
-const int WARM_RETRY_MS = 500;       // moving (a ride, or walking with the stick): wait until still
+const int WARM_RETRY_MS = 500;           // on a ride or moving: wait until off it and still
+const int WARM_SETTLE_MS = 500;          // back to back: time for the first draws before they're paused
 const float WARM_MOVING_SPEED = 0.3f;    // m/s
 const uint64_t MIN_TOGGLE_INTERVAL_USECS = 300 * USECS_PER_MSEC;
 
@@ -275,8 +278,8 @@ void VrScreen::hide() {
     _changing = false;
     DependencyManager::get<Keyboard>()->setRaised(false);
     DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(false);
-    if (_keeping && (!_toWarm.isEmpty() || _warmLoaded || _warmDrawing)) {
-        _warmTimer.start(WARM_STEP_MS);
+    if (_keeping && (!_toWarm.isEmpty() || _warmLoaded || _warmDrawing || !_warmUnpaused.isEmpty())) {
+        warmLater();
     }
     qCDebug(interfaceapp) << "VR screen: hidden";
 }
@@ -421,6 +424,7 @@ QSharedPointer<OffscreenQmlSurface> VrScreen::takeSurface(const QString& url) {
     if (surface == _warmDrawing) {
         _warmDrawing.reset();
     }
+    _warmUnpaused.removeAll(surface);
     // A slot tells Panels it's ready as its QML is made, which for a warm one was while the screen was hidden (refused).
     // It's the screen's now: Panels takes it on the next turn, by when the Web entity's renderer holds this surface.
     if (Panels::isScreenSlotUrl(url)) {
@@ -458,9 +462,25 @@ bool VrScreen::keepSurface(const QSharedPointer<OffscreenQmlSurface>& surface) {
 }
 
 void VrScreen::startWarming() {
+    connectOnce();
     _keeping = true;
     _toWarm = { Middle, Left, Bar, Right };
+    _warmBackToBack = true;
+    _warmPages = true;
     _warmTimer.start(warmStartDelay());
+}
+
+void VrScreen::warmLater() {
+    // staggered from here on; the timer may be running already
+    _warmBackToBack = false;
+    if (_keeping && !_shown && !_warmTimer.isActive()) {
+        _warmTimer.start(WARM_STEP_MS);
+    }
+}
+
+bool VrScreen::warmMustWait() const {
+    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    return !avatar->getParentID().isNull() || glm::length(avatar->getWorldVelocity()) > WARM_MOVING_SPEED;
 }
 
 void VrScreen::warmStep() {
@@ -471,11 +491,11 @@ void VrScreen::warmStep() {
         _warmDrawing->pause();
         _warmDrawing.reset();
     }
-    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
-    if (glm::length(avatar->getWorldVelocity()) > WARM_MOVING_SPEED) {
+    if (!_warmBackToBack && warmMustWait()) {
         _warmTimer.start(WARM_RETRY_MS);
         return;
     }
+    const int step = _warmBackToBack ? 0 : WARM_STEP_MS;
     if (_warmLoaded) {
         // its render thread has started up by now, off the main thread: its first draw (the main thread waits for the
         // first sync only)
@@ -483,7 +503,7 @@ void VrScreen::warmStep() {
         _warmLoaded->setMaxFps(_warmFps);
         _warmDrawing = _warmLoaded;
         _warmLoaded.reset();
-        _warmTimer.start(WARM_STEP_MS);
+        _warmTimer.start(step);
         return;
     }
     const Arrangement places = arrangement();
@@ -496,16 +516,44 @@ void VrScreen::warmStep() {
         if (_kept.contains(spec.url)) {
             continue;
         }
-        qCDebug(interfaceapp) << "VR screen: warm-up: making" << spec.name << surfaceSize(spec);
+        qCDebug(interfaceapp) << "VR screen: warm-up: making" << spec.name << surfaceSize(spec)
+                              << (_warmBackToBack ? "(at entry)" : "(staggered)");
         auto surface = makeSurface(spec.url, true);
-        surface->setMaxFps(0);   // no draw while its render thread starts up
         surface->resize(surfaceSize(spec));
         _kept.insert(spec.url, surface);
-        _warmLoaded = surface;
-        _warmFps = spec.fps;
-        _warmTimer.start(WARM_STEP_MS);
+        if (_warmBackToBack) {
+            // drawn as soon as its render thread is up; paused once they've all had time (the settle step)
+            surface->setMaxFps(spec.fps);
+            _warmUnpaused.append(surface);
+        } else {
+            surface->setMaxFps(0);   // no draw while its render thread starts up: the next step allows it
+            _warmLoaded = surface;
+            _warmFps = spec.fps;
+        }
+        _warmTimer.start(step);
         return;
     }
+    // then the pages the first show will move in, one per step (editor-ui's: People, then the middle's front panel),
+    // so the first show doesn't make them (~50-70 ms each). None before sign-in: Panels' restore brings them later
+    if (_warmPages && DependencyManager::get<Panels>()->makeNextScreenPage()) {
+        _warmTimer.start(step);
+        return;
+    }
+    _warmPages = false;
+    if (!_warmUnpaused.isEmpty()) {
+        if (!_warmSettling) {
+            _warmSettling = true;
+            _warmTimer.start(WARM_SETTLE_MS);
+            return;
+        }
+        for (const auto& surface : _warmUnpaused) {
+            if (surface && _kept.values().contains(surface)) {
+                surface->pause();
+            }
+        }
+        _warmUnpaused.clear();
+    }
+    _warmSettling = false;
     qCDebug(interfaceapp) << "VR screen: surfaces warm:" << _kept.size();
 }
 
@@ -515,6 +563,9 @@ void VrScreen::stopKeeping() {
     _toWarm.clear();
     _warmLoaded.reset();
     _warmDrawing.reset();
+    _warmUnpaused.clear();
+    _warmSettling = false;
+    _warmPages = false;
     for (auto it = _kept.cbegin(); it != _kept.cend(); ++it) {
         _surfaceUrls.remove(it.value().data());
     }
@@ -556,7 +607,19 @@ void VrScreen::updateHead() {
 }
 
 void VrScreen::slotSizeChanged(const QString& slot) {
-    if (!_shown || _dialogOnly || slot != SLOT_RIGHT) {
+    if (slot != SLOT_RIGHT) {
+        return;
+    }
+    if (!_shown) {
+        // the radio turned on while the screen's hidden: its slot's surface is made ahead too, staggered
+        if (_keeping && DependencyManager::get<Panels>()->screenSlotSize(SLOT_RIGHT).isValid() && !_kept.contains(SLOT_RIGHT_URL) &&
+            !_toWarm.contains(Right)) {
+            _toWarm.append(Right);
+            warmLater();
+        }
+        return;
+    }
+    if (_dialogOnly) {
         return;
     }
     // the radio on or off: the right slot's entity comes and goes, and nothing else moves. By the time it's off, its
