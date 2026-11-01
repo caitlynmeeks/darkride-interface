@@ -27,6 +27,7 @@
 namespace {
     const QString REVIEW_QML = "dialogs/SavedScriptsReview.qml";
     const int DESKTOP_WAIT_MS = 250;
+    const QString UPLOADS_HOST = "files.vr.darkride.ai";
 
     // what an address is, as its main line: the site as a browser reads it (QUrl drops anything before an '@') and the
     // file's name; for this computer's files, the folder and the file. Never the address's own start, which whoever
@@ -38,7 +39,14 @@ namespace {
             const QFileInfo info(url.toLocalFile());
             return info.dir().dirName() + "/" + info.fileName();
         }
+        // Darkride's own file server holds anyone's uploads: whose, by the account its path starts with (security)
         const QString host = url.host();
+        if (host.compare(UPLOADS_HOST, Qt::CaseInsensitive) == 0 || url.scheme() == "tea") {
+            // tea://<account>/<path> names it first; the file server's addresses, in their path's first folder
+            const QString account = url.scheme() == "tea" ? host : url.path().section('/', 0, 0, QString::SectionSkipEmpty);
+            const bool named = !account.isEmpty() && account != file;
+            return (named ? "uploaded by " + account : "uploaded on " + UPLOADS_HOST) + " \u2014 " + file;
+        }
         if (!host.isEmpty()) {
             return file.isEmpty() ? host : host + " \u2014 " + file;
         }

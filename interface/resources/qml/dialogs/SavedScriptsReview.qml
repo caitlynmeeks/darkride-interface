@@ -89,6 +89,8 @@ ModalWindow {
                     delegate: Column {
                         width: parent ? parent.width : 0
                         AlertCheck {
+                            width: parent.width
+                            elide: Text.ElideMiddle   // the file's name, at the end, stays in sight
                             text: modelData.main
                             checked: false
                             onToggled: {

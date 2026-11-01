@@ -16,6 +16,7 @@ QQC2.CheckBox {
     id: check
 
     property real unit: 1
+    property int elide: Text.ElideRight   // given a width, a long label is cut rather than running out of the alert
     readonly property AlertLook look: AlertLook {}
 
     padding: 0
@@ -67,6 +68,7 @@ QQC2.CheckBox {
         leftPadding: check.indicator.width + check.spacing
         text: check.text
         textFormat: Text.PlainText
+        elide: check.elide
         font: check.font
         color: check.enabled ? check.look.text : check.look.dimText
         verticalAlignment: Text.AlignVCenter
