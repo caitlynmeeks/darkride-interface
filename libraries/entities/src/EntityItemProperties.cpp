@@ -272,7 +272,8 @@ QString EntityItemProperties::getComponentModeAsString(uint32_t mode) {
 }
 
 inline void addZoneCullingComponentMode(QHash<QString, ZoneCullingComponentMode>& lookup, ZoneCullingComponentMode mode) {
-    lookup[ZoneCullingModeHelpers::getNameForZoneCullingComponentMode(mode)] = mode;
+    // the lookup lowercases what it is given, so the key is lowercase too: "outsideNoLoad" has capitals, the others none
+    lookup[ZoneCullingModeHelpers::getNameForZoneCullingComponentMode(mode).toLower()] = mode;
 }
 const QHash<QString, ZoneCullingComponentMode> stringToZoneCullingComponentMode = [] {
     QHash<QString, ZoneCullingComponentMode> toReturn;
