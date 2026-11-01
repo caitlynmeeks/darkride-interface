@@ -61,6 +61,7 @@ class ScrubSpinBox : public QDoubleSpinBox {
 public:
     explicit ScrubSpinBox(QWidget* parent = nullptr);
     void showMixed();
+    void showMark(const QString& text);   // a word in place of the value (as the mixed mark): "auto" for unset
     bool isMixedShown() const { return _mixed; }
     // something has been typed since the value was last shown
     bool isTyping() const { return lineEdit()->isModified(); }
