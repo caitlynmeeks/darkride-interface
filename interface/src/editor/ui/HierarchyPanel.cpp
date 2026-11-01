@@ -45,7 +45,8 @@ namespace {
     const QColor ICON_UNUSABLE(210, 210, 210, 35);      // a lock or scripts that can't be changed here
     const qreal ICON_PEN = 1.2;
 
-    const QString CLICK_HOW = "\nClick: with everything under it. Alt-click: this one alone.";
+    const QString CLICK_HOW = "\nClick: with everything under it. Alt-click: this one alone. Drag along the column to "
+                              "set every row you pass the same way.";
 
     // the icons, drawn as Apple's symbols are, in lines of one weight: an eye (struck through: hidden here), the
     // pointer's arrow (struck through: clicks pass it by), a padlock (shut and filled: locked) and curly braces for
