@@ -938,6 +938,11 @@ void Panels::tabletWindowShownChanged() {
 }
 
 void Panels::tabletScreenChanged(const QVariant& type, const QVariant& url) {
+    // an empty address is the tablet clearing its content (its first show stops its old page), not a page: no tab, and
+    // the tab already there keeps its name (vr 11-01: it added an empty "Apps" tab at the screen's first show)
+    if (url.toString().isEmpty()) {
+        return;
+    }
     // the tab says what the tablet shows: chat, a world's page by its site, an app by its name
     const QUrl address(url.toString());
     QString label = address.host().startsWith("chat.") ? "Chat" : address.host();
