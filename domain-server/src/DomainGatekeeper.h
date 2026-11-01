@@ -104,7 +104,14 @@ private:
     using ICEPeerID = QUuid;
     QHash<ConnectingNodeID, ICEPeerID> _nodeToICEPeerIDs;
     
-    QHash<QString, QUuid> _connectionTokenHash;
+    // The sign-in challenge given to each username (lower case), and when: see CONNECTION_TOKEN_LIFETIME_USECS.
+    struct ConnectionToken {
+        QUuid token;
+        quint64 issuedUsecs { 0 };
+    };
+    QUuid liveConnectionToken(const QString& lowerUsername);
+    QHash<QString, ConnectionToken> _connectionTokenHash;
+    quint64 _lastConnectionTokenSweepUsecs { 0 };
 
     // the word "optimistic" below is used for keys that we request during user connection before the user has
     // had a chance to upload a new public key

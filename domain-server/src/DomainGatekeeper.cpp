@@ -409,7 +409,7 @@ SharedNodePointer DomainGatekeeper::processAgentConnectRequest(const NodeConnect
 
     QString verifiedUsername; // if this remains empty, consider this an anonymous connection attempt
     if (!username.isEmpty()) {
-        const QUuid& connectionToken = _connectionTokenHash.value(username.toLower());
+        const QUuid connectionToken = liveConnectionToken(username.toLower());
 
         if (usernameSignature.isEmpty() || connectionToken.isNull()) {
             // user is attempting to prove their identity to us, but we don't have enough information
@@ -570,7 +570,7 @@ bool DomainGatekeeper::verifyUserSignature(const QString& username,
     QByteArray publicKeyArray = publicKeyPair.first;
     bool isOptimisticKey = publicKeyPair.second;
 
-    const QUuid& connectionToken = _connectionTokenHash.value(lowerUsername);
+    const QUuid connectionToken = liveConnectionToken(lowerUsername);
 
     if (!publicKeyArray.isEmpty() && !connectionToken.isNull()) {
         // if we do have a public key for the user, check for a signature match
@@ -597,7 +597,7 @@ bool DomainGatekeeper::verifyUserSignature(const QString& username,
 
                 // free up the public key and remove connection token before we return
                 RSA_free(rsaPublicKey);
-                _connectionTokenHash.remove(username);
+                _connectionTokenHash.remove(lowerUsername);
 
                 return true;
 
@@ -765,12 +765,40 @@ void DomainGatekeeper::sendConnectionDeniedPacket(const QString& reason, const H
     DependencyManager::get<LimitedNodeList>()->sendPacket(std::move(connectionDeniedPacket), senderSockAddr);
 }
 
+// A sign-in challenge is good for this long: time for a client to sign it and retry while its public key comes from the
+// metaverse. A client that's too late is sent a new one.
+static const quint64 CONNECTION_TOKEN_LIFETIME_USECS = 30 * USECS_PER_SECOND;
+
+QUuid DomainGatekeeper::liveConnectionToken(const QString& lowerUsername) {
+    auto it = _connectionTokenHash.find(lowerUsername);
+    if (it == _connectionTokenHash.end()) {
+        return QUuid();
+    }
+    if (usecTimestampNow() - it->issuedUsecs > CONNECTION_TOKEN_LIFETIME_USECS) {
+        _connectionTokenHash.erase(it);
+        return QUuid();
+    }
+    return it->token;
+}
+
 void DomainGatekeeper::sendConnectionTokenPacket(const QString& username, const HifiSockAddr& senderSockAddr) {
+    const quint64 now = usecTimestampNow();
+
+    // challenges nobody answered, so names sent once and never again don't pile up
+    if (now - _lastConnectionTokenSweepUsecs > CONNECTION_TOKEN_LIFETIME_USECS) {
+        _lastConnectionTokenSweepUsecs = now;
+        for (auto it = _connectionTokenHash.begin(); it != _connectionTokenHash.end();) {
+            it = now - it->issuedUsecs > CONNECTION_TOKEN_LIFETIME_USECS ? _connectionTokenHash.erase(it) : it + 1;
+        }
+    }
+
     // get the existing connection token or create a new one
-    QUuid& connectionToken = _connectionTokenHash[username.toLower()];
+    const QString lowerUsername = username.toLower();
+    QUuid connectionToken = liveConnectionToken(lowerUsername);
 
     if (connectionToken.isNull()) {
         connectionToken = QUuid::createUuid();
+        _connectionTokenHash.insert(lowerUsername, { connectionToken, now });
     }
 
     // setup a static connection token packet
