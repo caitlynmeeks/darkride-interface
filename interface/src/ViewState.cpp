@@ -13,6 +13,20 @@
 //
 //  Distributed under the MIT License.
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: these functions, the cameras (every camera mode is part of the vehicle): updateCamera (first person,
+//   first person look at, look at, third person, selfie, mirror, entity, independent and the headset),
+//   collideCameraBoom, allowedBoomLength, updateChaseCamera, traceCamera, each with everything it calls on the
+//   vehicle's path.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #include "ViewState.h"
 
@@ -51,6 +65,7 @@ static std::shared_ptr<MyAvatar> getMyAvatar() {
     return DependencyManager::get<AvatarManager>()->getMyAvatar();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // The camera and the ride (team/performance/INSTRUMENTS-PLAN.md, items 7 and 11), at the end of updateCamera, so the
 // camera and the ride are the frame's own pair. Into the frame trace (FrameTrace) when it is on: the camera as this
 // frame shows it (cam.x/y/z_m, cam.qw/qx/qy/qz, cam.mode), who placed it (cam.source: 0 the engine in updateCamera,
@@ -329,6 +344,7 @@ void ViewState::addSecondaryCameraView() {
     _conicalViews.push_back(secondaryViewFrustum);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void ViewState::updateCamera(RenderArgs& renderArgs, float deltaTime) {
     PROFILE_RANGE(render, __FUNCTION__);
     PerformanceTimer perfTimer("updateCamera");
@@ -517,6 +533,7 @@ private:
     const QSet<QUuid>& _ignored;
 };
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float ViewState::allowedBoomLength(const glm::vec3& pivot, const glm::vec3& wanted, const QVector<QUuid>& ignore,
                                    glm::vec3* clearPivot, QUuid* holder) const {
     if (clearPivot) {
@@ -589,6 +606,7 @@ float ViewState::allowedBoomLength(const glm::vec3& pivot, const glm::vec3& want
     return glm::clamp(fraction, 0.0f, 1.0f) * (clearPivot ? startLength : wantedLength);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 glm::vec3 ViewState::collideCameraBoom(const glm::vec3& pivot, const glm::vec3& wanted, float deltaTime) {
     const float EASE_OUT_TIME = 0.12f;   // s, the time constant of the way back out: 95 % in about 0.35 s
     glm::vec3 boom = wanted - pivot;
@@ -639,6 +657,7 @@ glm::vec3 ViewState::collideCameraBoom(const glm::vec3& pivot, const glm::vec3& 
     return start + (boom / wantedLength) * _boomLength;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // The chase camera behind an entity (Camera.setChaseTarget; vehicles.js's for the vehicle you drive), worked out every
 // frame from the entity as this frame draws it. vehicles.js placed it from its own update, on the script's thread at 60
 // a second, so on a 144 Hz display the camera stood still for two frames in three and then jumped: steps of 0, 23 and

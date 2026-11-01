@@ -5,6 +5,19 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: these functions, the physics server's train: run, step, publishTrainStates, handleOctreePacket (its
+//   query: tracks, vehicles, collidable things, Terrain), measureStreamAge, handleVehicleInput, each with everything
+//   it calls on the vehicle's path.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #include "PhysicsServer.h"
 
@@ -61,6 +74,7 @@ PhysicsServer::PhysicsServer(ReceivedMessage& message) : ThreadedAssignment(mess
 PhysicsServer::~PhysicsServer() {
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void PhysicsServer::run() {
     ThreadedAssignment::commonInit(PHYSICS_SERVER_LOGGING_NAME, NodeType::PhysicsServer);
 
@@ -130,6 +144,7 @@ void PhysicsServer::run() {
     qCInfo(physics) << "physics-server running: the trains on the tracks are driven from here (PHYSICS.md round 5)";
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void PhysicsServer::step() {
     if (!_running) {
         return;
@@ -226,6 +241,7 @@ void PhysicsServer::step() {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // The trains' states go out as ordinary edits of their Track entities, stamped with the domain time of the substep
 // they describe; the entity server relays them to every client, which runs the follower on from there.
 void PhysicsServer::publishTrainStates() {
@@ -289,6 +305,7 @@ void PhysicsServer::updateTerrains() {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // A driver's inputs for a vehicle, to apply one per substep; only the one in the driver's seat is heard.
 void PhysicsServer::handleVehicleInput(QSharedPointer<ReceivedMessage> message, SharedNodePointer senderNode) {
     if (!senderNode || !_entitySimulation) {
@@ -389,6 +406,7 @@ void PhysicsServer::sendStatsPacket() {
     addPacketStatsAndSendStatsPacket(statsObject);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void PhysicsServer::handleOctreePacket(QSharedPointer<ReceivedMessage> message, SharedNodePointer senderNode) {
     auto packetType = message->getType();
     qint64 receiveTime = message->getFirstPacketReceiveTime();
@@ -443,6 +461,7 @@ QString PhysicsServer::describeEntityServerConnection() {
     return "udt: no connection sampled";
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // How late the entity server's stream is when this server reads it: the flight by the packet's stamp (the entity
 // server's clock, skew-corrected) and the wait in this process's queue by the socket's receive time. A packet a second
 // late is logged at once (one line a second); the ten-second line carries the window's maxima.
