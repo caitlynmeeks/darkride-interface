@@ -201,6 +201,9 @@ class UsersCache {
 				return;
 			}
 			if (json == null || typeof json.username != "string") return;
+			// the profile is the account asked about, or it isn't used (a name the world reports can't borrow
+			// another account's mark)
+			if (json.username.toLowerCase() != username.toLowerCase()) return;
 
 			const bot = json.kind === "bot";
 			const ai = !bot && (json.kind === "ai" || json.ai === true);
