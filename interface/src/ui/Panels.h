@@ -141,6 +141,8 @@ public:
     /// test builds only (DARKRIDE_SCREEN_TEST_SLOTS): a test script's releaseScreenSlots, before it deletes its slots
     Q_INVOKABLE void testReleaseScreenSlots();
     Q_INVOKABLE void testSetScreenState(const QString& state);   // test builds only, as testReleaseScreenSlots
+    /// test builds only: the middle slot's dialogs ("" = what's there), "tick" the newest's "no more" tick, "cancel" it
+    Q_INVOKABLE QString testScreenDialog(const QString& action);
 
 signals:
     /**jsdoc
@@ -178,6 +180,12 @@ private:
     bool putTabletOnScreen();
     void takeTabletOffScreen();
     void hideTabletWindow(bool hide);
+    // a dialog in the headset brings the screen up in front of the visitor (vr's showInFront); a world's dialog brings
+    // up only the middle slot, with no page in it (the rules for a world's dialogs: ui/WorldDialogs.h), until the
+    // dialog is answered or the screen is wanted whole
+    void dialogShown(QQuickItem* dialog);
+    void screenDialogGone();
+    void leaveDialogOnly();
 
     bool _restored { false };   // none opens before the layout's restore (after sign-in)
     QHash<QString, QPointer<QDockWidget>> _docks;
@@ -194,6 +202,7 @@ private:
     QPointer<QQuickItem> _tabletHolder;   // a hidden item on the desktop's QML that keeps the window out of sight
     QSizeF _tabletLoaderSize;
     bool _tabletOnScreen { false };
+    bool _screenDialogOnly { false };   // the screen is up only for a world's dialog: the middle slot, no page in it
     QString _tabletLabel { "Apps" };
 };
 

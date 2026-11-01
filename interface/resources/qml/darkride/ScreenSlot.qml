@@ -22,7 +22,9 @@ Rectangle {
     property string slot: ""
     property var tabs: []   // the middle slot's panels, the one in front last (Panels sets it)
     property var labels: ({})   // a tab's words where they aren't its name (the tablet's: what it shows)
-    readonly property bool hasTabs: slot === "middle"
+    // up only for a world's dialog (Panels sets it): no tabs and no page, only the dialog (security's terms)
+    property bool dialogOnly: false
+    readonly property bool hasTabs: slot === "middle" && !dialogOnly
 
     color: Theme.background
 
@@ -84,6 +86,7 @@ Rectangle {
     Item {
         id: content
         objectName: "content"
+        visible: !root.dialogOnly
         anchors { left: parent.left; right: parent.right; top: tabRow.bottom; bottom: parent.bottom }
         // a page in it is laid out at its own size and scaled up to fill it; Qt Quick text stays sharp scaled, and a
         // panel with a web view counter-scales it (its screenScale) so the page's picture has the pixels
@@ -117,18 +120,25 @@ Rectangle {
         transformOrigin: Item.TopLeft
     }
 
-    // the surface puts the item in its window after the item is made: Panels checks that window
+    // the surface puts the item in its window after the item is made: Panels checks that window. A warm surface (vr
+    // makes the slots' surfaces ahead and keeps them paused while the screen is hidden: context property
+    // screenSlotWarm) doesn't announce itself; vr's VrScreen announces it as the screen shows
+    readonly property bool warm: typeof screenSlotWarm !== "undefined" && !!screenSlotWarm
     readonly property bool inWindow: root.Window.window !== null
     onInWindowChanged: {
         if (inWindow) {
             updateScale();
-            Panels.screenSlotReady(slot, root);
+            if (!warm) {
+                Panels.screenSlotReady(slot, root);
+            }
         }
     }
     Component.onCompleted: {
         if (inWindow) {
             updateScale();
-            Panels.screenSlotReady(slot, root);
+            if (!warm) {
+                Panels.screenSlotReady(slot, root);
+            }
         }
     }
 

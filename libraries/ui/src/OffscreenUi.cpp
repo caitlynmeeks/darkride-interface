@@ -322,7 +322,13 @@ private slots:
 };
 
 QQuickItem* OffscreenUi::createMessageBox(Icon icon, const QString& title, const QString& text, QMessageBox::StandardButtons buttons, QMessageBox::StandardButton defaultButton) {
-    QVariantMap map;
+    return createMessageBox(icon, title, text, buttons, defaultButton, QVariantMap());
+}
+
+QQuickItem* OffscreenUi::createMessageBox(Icon icon, const QString& title, const QString& text,
+                                          QMessageBox::StandardButtons buttons, QMessageBox::StandardButton defaultButton,
+                                          const QVariantMap& properties) {
+    QVariantMap map = properties;
     map.insert("title", title);
     map.insert("text", text);
     map.insert("icon", icon);
@@ -799,13 +805,31 @@ void OffscreenUi::setDialogHost(QQuickItem* host) {
         }
     }
     _dialogHost = host;
+    // and the ones waiting on the desktop come over to the new host: a dialog that brought the screen up was made
+    // before the screen's middle slot was there (the slot's surface loads on a later turn)
+    _shownDialogs.removeAll(QPointer<QQuickItem>());
+    if (_dialogHost && _desktop) {
+        for (const QPointer<QQuickItem>& dialog : _shownDialogs) {
+            if (dialog && dialog->parentItem() == _desktop) {
+                dialog->setParentItem(_dialogHost);
+            }
+        }
+    }
 }
 
 QQuickItem* OffscreenUi::placeDialog(QQuickItem* dialog) {
-    // only the desktop's own dialogs (the tablet in toolbar mode); the old tablet's stay on it
-    if (dialog && _dialogHost && _desktop && dialog->parentItem() == _desktop) {
-        dialog->setParentItem(_dialogHost);   // the host lays it out at its slot's scale (ScreenSlot.qml)
+    if (!dialog) {
+        return dialog;
     }
+    // only the desktop's own dialogs (the tablet in toolbar mode); the old tablet's stay on it
+    if (_desktop && dialog->parentItem() == _desktop) {
+        _shownDialogs.removeAll(QPointer<QQuickItem>());
+        _shownDialogs.append(dialog);
+        if (_dialogHost) {
+            dialog->setParentItem(_dialogHost);   // the host lays it out at its slot's scale (ScreenSlot.qml)
+        }
+    }
+    emit dialogShown(dialog);
     return dialog;
 }
 

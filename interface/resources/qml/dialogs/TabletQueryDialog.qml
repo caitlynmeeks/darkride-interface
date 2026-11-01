@@ -43,6 +43,10 @@ TabletModalWindow {
 
     property var buttonTexts: ({})
     property bool monospace: false
+    // a world's script's prompt, as QueryDialog's (interface's ui/WorldDialogs.h)
+    property string world: ""
+    property bool offerBlock: false
+    readonly property bool blockWorld: blockCheck.checked
 
     property bool keyboardEnabled: false
     property bool keyboardRaised: false
@@ -68,6 +72,7 @@ TabletModalWindow {
         height: implicitHeight
         title: root.title
         text: root.label
+        world: root.world
         buttons: StandardButtons.list(StandardButtons.OK | StandardButtons.CANCEL, StandardButtons.OK, 0, root.buttonTexts)
         onClicked: {
             if (value === StandardButtons.OK) {
@@ -90,6 +95,25 @@ TabletModalWindow {
             unit: panel.unit
             visible: !!root.items
             model: root.items ? root.items : []
+        }
+
+        Text {
+            visible: root.world !== ""
+            width: parent.width
+            text: "Darkride never asks for your password in a world's dialog."
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: panel.worldAmber
+            font.pixelSize: 11 * panel.unit
+        }
+
+        AlertCheck {
+            id: blockCheck
+            objectName: "blockWorldCheck"
+            unit: panel.unit
+            visible: root.offerBlock
+            width: parent.width
+            text: "Don't let this world show more dialogs"
         }
     }
 
