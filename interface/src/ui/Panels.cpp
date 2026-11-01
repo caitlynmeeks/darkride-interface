@@ -36,6 +36,18 @@ namespace {
     const QString PEOPLE_TAB = "io.darkride.peoplePanel.tab";
     const int PROFILE_TAB = 2;
     // Build mode's own, there only while it's on
+    const QString RADIO = "Radio";
+
+    // the Radio only floats on Windows; DARKRIDE_RADIO_FLOATS=1 (the environment, which no world reaches) tries it
+    // elsewhere, for tests
+    bool radioFloatsOnly() {
+#ifdef Q_OS_WIN
+        return true;
+#else
+        return qEnvironmentVariableIsSet("DARKRIDE_RADIO_FLOATS");
+#endif
+    }
+
     const QString HIERARCHY = "Entities";   // Build mode's Hierarchy panel (Caity, 10-27: "Entities")
     const QString INSPECTOR = "Inspector";
 
@@ -198,6 +210,17 @@ QDockWidget* Panels::dock(const QString& name) {
             window->addDockWidget(Qt::RightDockWidgetArea, made);
             made->setFloating(true);
             placeFloating(made, window, QSize(panel.width, panel.height));
+        }
+        // the Radio's page isn't drawn docked on some Windows graphics cards (the dock showed the 3D view instead,
+        // 11-01): there it always floats, a saved docked place included (Caity 17:4x, "switch it to floating now")
+        if (name == RADIO && radioFloatsOnly()) {
+            made->setAllowedAreas(Qt::NoDockWidgetArea);
+            made->setFeatures(made->features() & ~QDockWidget::DockWidgetFloatable);   // no double-click back in
+            if (!made->isFloating()) {
+                made->setFloating(true);
+                placeFloating(made, window, QSize(panel.width, panel.height));
+            }
+            qCDebug(interfaceapp) << "Panels: the Radio floats here, and doesn't dock";
         }
         WindowLayout::instance()->watch(made);
         _docks[name] = made;
