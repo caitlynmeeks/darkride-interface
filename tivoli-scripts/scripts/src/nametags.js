@@ -16,9 +16,9 @@ export function initNametags(showSelf) {
 	// the resident's word and its host (AI-FIRST-CLIENT.md §10.2)
 	function nametagURL(nametag, glyph) {
 		return AccountServices.metaverseServerURL+"/api/user/"+
-			nametag.username+
-			"/nametag?"+ (glyph > 0 ? nametag.stamp + "." + (nametag.frameTry || 0) : nametag.stamp) +
-			"&glyph="+ glyph +
+			encodeURIComponent(nametag.username)+
+			"/nametag?"+ encodeURIComponent(glyph > 0 ? nametag.stamp + "." + (nametag.frameTry || 0) : nametag.stamp) +
+			"&glyph="+ encodeURIComponent(glyph) +
 			(nametag.admin?"&admin":"")+
 			(nametag.connection=="friend"?"&friend":"");
 	}
@@ -135,10 +135,11 @@ export function initNametags(showSelf) {
 		delete nametags[id];
 	}
 
-	// the account the world checked when this avatar connected (usersCache), else the name it shows
-	function nameOf(id, localUser) {
+	// the account the world checked when this avatar connected (usersCache), else none: the tag stays hidden. Never the
+	// name it shows, which anyone can set
+	function nameOf(id) {
 		var known = usersCache.get(id);
-		return known ? known.username : localUser.displayName;
+		return known ? known.username : "";
 	}
 
 	function updateUserLocal(id) {
@@ -155,7 +156,7 @@ export function initNametags(showSelf) {
 		if (nametag==undefined) {
 			// add nametag
 			addNametag(id, {
-				username: nameOf(id, localUser),
+				username: nameOf(id),
 				avatarURL: AccountServices.metaverseServerURL+"/api/user/-/image",
 				connection: null,
 				admin: false,
@@ -163,7 +164,7 @@ export function initNametags(showSelf) {
 		} else {
 			// update nametag
 			updateNametag(nametag, {
-				username: nameOf(id, localUser)
+				username: nameOf(id)
 			});
 		}
 
