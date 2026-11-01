@@ -382,5 +382,8 @@ void AssimpSkinTests::testMorphTargetPastVertices() {
         return anyShape;
     };
     QVERIFY(check(1, "good target (vertex 1 of 4)"));   // the same path with a sound index comes through
-    check(9, "bad target (vertex 9 of 4)");              // refused, or sanitized: either way nothing to read past
+    // refused, or sanitized: either way nothing to read past. Assimp 5.0 refuses both itself ("Sparse accessor index 9
+    // is out of range"); the cases stay so an Assimp upgrade gets the same check (security, 2026-11-01)
+    check(9, "bad target (vertex 9 of 4)");
+    check(60000, "bad target (vertex 60000 of 4)");
 }
