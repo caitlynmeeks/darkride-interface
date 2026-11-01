@@ -9,6 +9,7 @@
 
 #include "ScriptSettingsInterface.h"
 
+#include <SettingKey.h>
 #include <QtCore/QStringList>
 
 #include <ScriptEngine.h>
@@ -33,13 +34,16 @@ ScriptSettingsInterface::ScriptSettingsInterface(ScriptEngine* engine) : QObject
     connect(SettingsScriptingInterface::getInstance(), &SettingsScriptingInterface::valueChanged, this,
             [this](const QString& setting, const QVariant& value) {
                 // a setting a script may not read, it doesn't hear change either
-                if (!refuses(setting)) {
+                if (!refuses(setting) && !Setting::neverToScripts(setting)) {
                     emit valueChanged(setting, value);
                 }
             });
 }
 
-bool ScriptSettingsInterface::isProtected(const QString& setting) {
+bool ScriptSettingsInterface::isProtected(const QString& written) {
+    // the key as it is stored: QSettings drops the slashes at either end, joins doubled ones, and Windows reads '\\'
+    // as '/'
+    const QString setting = Setting::normalizedKey(written);
     for (const QString& exact : PROTECTED_EXACT) {
         if (setting.compare(exact, Qt::CaseInsensitive) == 0) {
             return true;
@@ -56,6 +60,16 @@ bool ScriptSettingsInterface::isProtected(const QString& setting) {
         }
     }
     return false;
+}
+
+QString ScriptSettingsInterface::ruledKey(const QString& setting) const {
+    // a script held to the rule reads and writes the key it was judged by, as it is stored; any other script's key
+    // goes on as it was written
+    if (!_engine || !_engine->isClientSide() ||
+        !ScriptNetworkPolicy::applies(_engine->currentScriptOrigin(), _engine->worldIsLocal())) {
+        return setting;
+    }
+    return Setting::normalizedKey(setting);
 }
 
 bool ScriptSettingsInterface::refuses(const QString& setting) const {
@@ -81,21 +95,44 @@ bool ScriptSettingsInterface::refusesRead(const QString& setting) {
     return true;
 }
 
-QVariant ScriptSettingsInterface::getValue(const QString& setting) {
+bool ScriptSettingsInterface::refusesAlways(const QString& setting) {
+    if (!Setting::neverToScripts(setting)) {
+        return false;
+    }
+    if (_engine && !_refusedReads.contains(setting)) {
+        _refusedReads.insert(setting);
+        _engine->scriptWarningMessage(QString("No script may read or change the setting \"%1\".").arg(setting.left(200)));
+    }
+    return true;
+}
+
+QVariant ScriptSettingsInterface::getValue(const QString& written) {
+    if (refusesAlways(written)) {
+        return QVariant();
+    }
+    const QString setting = ruledKey(written);
     if (refusesRead(setting)) {
         return QVariant();
     }
     return SettingsScriptingInterface::getInstance()->getValue(setting);
 }
 
-QVariant ScriptSettingsInterface::getValue(const QString& setting, const QVariant& defaultValue) {
+QVariant ScriptSettingsInterface::getValue(const QString& written, const QVariant& defaultValue) {
+    if (refusesAlways(written)) {
+        return defaultValue;
+    }
+    const QString setting = ruledKey(written);
     if (refusesRead(setting)) {
         return defaultValue;
     }
     return SettingsScriptingInterface::getInstance()->getValue(setting, defaultValue);
 }
 
-void ScriptSettingsInterface::setValue(const QString& setting, const QVariant& value) {
+void ScriptSettingsInterface::setValue(const QString& written, const QVariant& value) {
+    if (refusesAlways(written)) {
+        return;
+    }
+    const QString setting = ruledKey(written);
     if (refuses(setting)) {
         const QUrl origin = _engine->currentScriptOrigin();
         _engine->scriptWarningMessage(QString("%1 may not change the setting \"%2\": a script from the network does not change "

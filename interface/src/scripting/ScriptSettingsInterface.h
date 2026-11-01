@@ -41,6 +41,8 @@ signals:
     void valueChanged(const QString& setting, const QVariant& value);
 
 private:
+    QString ruledKey(const QString& setting) const;
+    bool refusesAlways(const QString& setting);
     bool refuses(const QString& setting) const;
     /// refuses() for a read, with the refusal logged once per setting.
     bool refusesRead(const QString& setting);
