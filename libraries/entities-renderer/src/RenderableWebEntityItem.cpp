@@ -66,6 +66,15 @@ static QTouchDevice& touchDevice() { return _touchDevice; }
 #endif
 
 QStringList WebEntityRenderer::_trustedQmlUrls;
+QSet<QUuid> WebEntityRenderer::_appSurfaces;
+
+void WebEntityRenderer::setAppSurface(const QUuid& entityID, bool appSurface) {
+    if (appSurface) {
+        _appSurfaces.insert(entityID);
+    } else {
+        _appSurfaces.remove(entityID);
+    }
+}
 
 // a web page's address: what a Web entity that is not the app's own may show
 static bool isWebPageUrl(const QString& urlString) {
@@ -380,15 +389,19 @@ void WebEntityRenderer::doRender(RenderArgs* args) {
 
 void WebEntityRenderer::buildWebSurface(const EntityItemPointer& entity, const QString& newSourceURL) {
     
+    const bool appSurface = _appSurfaces.contains(entity->getID());
     auto entityTreeRenderer = DependencyManager::get<EntityTreeRenderer>();
-    if (entityTreeRenderer->getDisableWebEntities()) return;
+    if (!appSurface && entityTreeRenderer->getDisableWebEntities()) return;
 
-    if (_currentWebCount >= MAX_CONCURRENT_WEB_VIEWS) {
+    if (!appSurface && _currentWebCount >= MAX_CONCURRENT_WEB_VIEWS) {
         qWarning() << "Too many concurrent web views to create new view";
         return;
     }
 
-    ++_currentWebCount;
+    _countedWebView = !appSurface;
+    if (_countedWebView) {
+        ++_currentWebCount;
+    }
     WebEntityRenderer::acquireWebSurface(newSourceURL, _contentType == ContentType::HtmlContent, _webSurface, _cachedWebSurface);
     _fadeStartTime = usecTimestampNow();
     _webSurface->resume();
@@ -418,7 +431,10 @@ void WebEntityRenderer::destroyWebSurface() {
         _contentType = ContentType::NoContent;
 
         if (webSurface) {
-            --_currentWebCount;
+            if (_countedWebView) {
+                --_currentWebCount;
+                _countedWebView = false;
+            }
             WebEntityRenderer::releaseWebSurface(webSurface, _cachedWebSurface, _connections);
         }
     });
