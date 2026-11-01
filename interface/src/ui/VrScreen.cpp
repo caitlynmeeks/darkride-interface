@@ -86,6 +86,17 @@ VrScreen::VrScreen() {
         auto screen = DependencyManager::get<VrScreen>();
         return screen && screen->ownsWindow(window);
     });
+    Panels::setScreenShowInFront(
+        [](bool dialogOnly) {
+            if (auto screen = DependencyManager::get<VrScreen>()) {
+                screen->showInFront(dialogOnly);
+            }
+        },
+        [] {
+            if (auto screen = DependencyManager::get<VrScreen>()) {
+                screen->dialogOnlyDone();
+            }
+        });
     // HMD.openTablet and closeTablet: apps call them to bring up what they've just opened
     connect(DependencyManager::get<HMDScriptingInterface>().data(), &HMDScriptingInterface::showTabletChanged, this, [this](bool show) {
         if (!isOn() || show == _shown) {
