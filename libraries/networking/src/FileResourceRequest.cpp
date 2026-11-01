@@ -24,6 +24,14 @@
 #include "ResourceManager.h"
 #include "NetworkingConstants.h"
 
+bool FileResourceRequest::isNetworkPath(const QUrl& url, const QString& filename) {
+    // Files on this computer only: a file URL naming another machine (a network share) isn't opened. Either slash counts,
+    // so a backslash where the host goes is one too.
+    QString path = filename;
+    path.replace('\\', '/');
+    return !url.host().isEmpty() || path.startsWith("//");
+}
+
 void FileResourceRequest::doSend() {
     auto statTracker = DependencyManager::get<StatTracker>();
     statTracker->incrementStat(STAT_FILE_REQUEST_STARTED);
@@ -49,11 +57,7 @@ void FileResourceRequest::doSend() {
         filename = fileSelector.select(filename);
     }
 
-    // files on this computer only: a file URL naming another machine (a network share) isn't opened
-    bool isNetworkPath = _url.scheme() != URL_SCHEME_QRC &&
-        (!_url.host().isEmpty() || filename.startsWith("//") || filename.startsWith("\\\\"));
-
-    if (isNetworkPath) {
+    if (_url.scheme() != URL_SCHEME_QRC && isNetworkPath(_url, filename)) {
         qCWarning(networking) << "Not opening a network path as a file:" << _url.toDisplayString();
         _result = ResourceRequest::AccessDenied;
     } else if (!_byteRange.isValid()) {
