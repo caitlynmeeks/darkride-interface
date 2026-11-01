@@ -10,6 +10,7 @@
 
 #include <QtCore/QVariant>
 #include <GLMHelpers.h>
+#include <ScriptCaller.h>
 #include <shared/QtHelpers.h>
 
 #include "Application.h"
@@ -42,9 +43,13 @@ void PointerScriptingInterface::setIncludeItemsVector(unsigned int uid, const QV
 unsigned int PointerScriptingInterface::createPointer(const PickQuery::PickType& type, const QVariant& properties) {
     // Interaction with managers should always happen on the main thread
     if (QThread::currentThread() != qApp->thread()) {
-        unsigned int result;
-        BLOCKING_INVOKE_METHOD(this, "createPointer", Q_RETURN_ARG(unsigned int, result), Q_ARG(PickQuery::PickType, type), Q_ARG(QVariant, properties));
-        return result;
+        // the pointer's visuals are local entities made on the main thread: they record the caller as their maker, a
+        // world's script or the visitor's side (ScriptCaller)
+        const bool byWorld = ScriptCaller::isWorld();
+        return BLOCKING_INVOKE(this, [&] {
+            ScriptCaller::WorldScope caller(byWorld);
+            return createPointer(type, properties);
+        });
     }
 
     QVariantMap propertyMap = properties.toMap();
