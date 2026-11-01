@@ -35,6 +35,7 @@
 #include "avatar/AvatarManager.h"
 #include "ClientOptions.h"
 #include "InterfaceLogging.h"
+#include "ui/SavedScriptsReview.h"
 #include "ui/Skins.h"
 #include "editor/Editor.h"
 #include "ui/SystemToolbar.h"
@@ -197,6 +198,8 @@ void SignInGate::resumeAfterLoginDialogActionTaken() {
         } else {
             scriptEngines->loadScripts();
         }
+        // the saved scripts from the network wait for the visitor's word once (security #30)
+        SavedScriptsReview::showPending();
     }
 
     auto accountManager = DependencyManager::get<AccountManager>();
