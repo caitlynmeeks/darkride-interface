@@ -134,6 +134,7 @@ public:
     void releaseScreenSlots();
     /// test builds only (DARKRIDE_SCREEN_TEST_SLOTS): a test script's releaseScreenSlots, before it deletes its slots
     Q_INVOKABLE void testReleaseScreenSlots();
+    Q_INVOKABLE void testSetScreenState(const QString& state);   // test builds only, as testReleaseScreenSlots
 
 signals:
     /**jsdoc
@@ -161,6 +162,7 @@ private:
     void showDockPages();   // the pages in docks shown, or hidden while the headset is on (nobody sees the docks then)
     void displayChanged();   // the headset on or off
     void showHiddenForScreen();   // the docks the screen hid, showing again
+    void reportScreenShown(bool shown);   // the system tablet's tabletShown, for scripts, follows the screen
 
     bool _restored { false };   // none opens before the layout's restore (after sign-in)
     QHash<QString, QPointer<QDockWidget>> _docks;

@@ -19,12 +19,14 @@
 
 #include <gl/GLHelpers.h>
 #include <shared/QtHelpers.h>
+#include <ui/TabletScriptingInterface.h>
 #include <MainWindow.h>
 #include <OffscreenUi.h>
 #include <SettingHandle.h>
 
 #include "Application.h"
 #include "CodeEditor.h"
+#include "ApplicationConstants.h"
 #include "InterfaceLogging.h"
 #include "PanelTheme.h"
 #include "QmlDock.h"
@@ -518,7 +520,17 @@ QSize Panels::screenSlotSize(const QString& slot) const {
 void Panels::setScreenState(const QString& state) {
     if ((state == "down" || state == "parked") && state != _screenState) {
         _screenState = state;
+        reportScreenShown(true);
         emit screenStateChanged(state);
+    }
+}
+
+void Panels::reportScreenShown(bool shown) {
+    // scripts ask the system tablet whether it's shown (a world's air-draw stops drawing while it is): the screen now
+    auto tablets = DependencyManager::get<TabletScriptingInterface>();
+    QObject* tablet = tablets ? tablets->getTablet(SYSTEM_TABLET) : nullptr;
+    if (tablet && tablet->property("tabletShown").toBool() != shown) {
+        tablet->setProperty("tabletShown", shown);
     }
 }
 
@@ -551,6 +563,7 @@ void Panels::releaseScreenSlots() {
     }
     if (!_screenState.isEmpty()) {
         _screenState.clear();
+        reportScreenShown(false);
         emit screenStateChanged(_screenState);
     }
 }
@@ -564,6 +577,17 @@ void Panels::testReleaseScreenSlots() {
         return;
     }
     releaseScreenSlots();
+}
+
+void Panels::testSetScreenState(const QString& state) {
+    if (!qEnvironmentVariableIsSet("DARKRIDE_SCREEN_TEST_SLOTS")) {
+        return;
+    }
+    if (QThread::currentThread() != thread()) {
+        BLOCKING_INVOKE_METHOD(this, "testSetScreenState", Q_ARG(QString, state));
+        return;
+    }
+    setScreenState(state);
 }
 
 void Panels::displayChanged() {
