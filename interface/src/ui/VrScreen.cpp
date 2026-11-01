@@ -152,6 +152,7 @@ void VrScreen::connectOnce() {
     }
     _connected = true;
     connect(DependencyManager::get<Panels>().data(), &Panels::screenSlotSizeChanged, this, &VrScreen::slotSizeChanged);
+    connect(DependencyManager::get<Panels>().data(), &Panels::screenSlotFilled, this, &VrScreen::slotFilled);
     // the pages can't be made before sign-in: once Panels has restored, the ones still missing, staggered
     connect(DependencyManager::get<Panels>().data(), &Panels::restored, this, [this] {
         if (_keeping) {
@@ -276,8 +277,13 @@ void VrScreen::hide() {
     for (const QMetaObject::Connection& connection : _entityConnections) {
         disconnect(connection);
     }
-    // the pages first: a page's host dying would take the page with it
-    DependencyManager::get<Panels>()->releaseScreenSlots();
+    // the pages first. While the surfaces are kept (in the headset) the pages stay in their slots, unseen, so the next
+    // show only resumes them; otherwise they go home before their hosts die
+    if (_keeping) {
+        DependencyManager::get<Panels>()->hideScreenSlots();
+    } else {
+        DependencyManager::get<Panels>()->releaseScreenSlots();
+    }
     _changing = true;
     for (int piece = 0; piece < PIECE_COUNT; ++piece) {
         deletePiece((Piece)piece);
@@ -292,7 +298,17 @@ void VrScreen::hide() {
 }
 
 bool VrScreen::ownsWindow(QQuickWindow* window) const {
-    if (!window || !_shown) {
+    if (!window) {
+        return false;
+    }
+    // a kept slot surface, hidden or shown: in the headset the pages stay in them while the screen is hidden. Only
+    // surfaces VrScreen made are here, never a world's Web entity
+    for (auto it = _surfaceUrls.cbegin(); it != _surfaceUrls.cend(); ++it) {
+        if (Panels::isScreenSlotUrl(it.value()) && it.key()->getWindow() == window) {
+            return true;
+        }
+    }
+    if (!_shown) {
         return false;
     }
     auto entities = qApp->getEntities();
@@ -471,6 +487,7 @@ bool VrScreen::keepSurface(const QSharedPointer<OffscreenQmlSurface>& surface) {
 void VrScreen::startWarming() {
     connectOnce();
     _keeping = true;
+    _warmAnnounce = true;
     _toWarm = { Middle, Left, Bar, Right };
     _warmBackToBack = true;
     _warmPages = true;
@@ -480,6 +497,7 @@ void VrScreen::startWarming() {
 void VrScreen::warmLater() {
     // staggered from here on; the timer may be running already
     _warmBackToBack = false;
+    _warmAnnounce = true;
     if (_keeping && !_shown && !_warmTimer.isActive()) {
         _warmTimer.start(WARM_STEP_MS);
     }
@@ -547,6 +565,21 @@ void VrScreen::warmStep() {
         return;
     }
     _warmPages = false;
+    if (_warmAnnounce) {
+        // the kept slots to Panels, which fills them with their pages on the next turn (screenSlotFilled): their first
+        // sync with the pages happens now, before the settle step pauses them
+        _warmAnnounce = false;
+        auto panels = DependencyManager::get<Panels>();
+        for (auto it = _kept.cbegin(); it != _kept.cend(); ++it) {
+            QQuickItem* root = Panels::isScreenSlotUrl(it.key()) ? it.value()->getRootItem() : nullptr;
+            if (root) {
+                panels->screenSlotReady(root->property("slot").toString(), root);
+            }
+        }
+        _warmSettling = true;
+        _warmTimer.start(WARM_SETTLE_MS);
+        return;
+    }
     if (!_warmUnpaused.isEmpty()) {
         if (!_warmSettling) {
             _warmSettling = true;
@@ -564,8 +597,33 @@ void VrScreen::warmStep() {
     qCDebug(interfaceapp) << "VR screen: surfaces warm:" << _kept.size();
 }
 
+void VrScreen::slotFilled(const QString& slot) {
+    if (_shown || !_keeping) {
+        return;
+    }
+    const QString url = slot == "left" ? SLOT_LEFT_URL : slot == "middle" ? SLOT_MIDDLE_URL : slot == SLOT_RIGHT ? SLOT_RIGHT_URL : QString();
+    auto surface = _kept.value(url);
+    if (!surface) {
+        return;
+    }
+    // a page moved into a hidden slot: drawn once now, so its first sync there isn't at the show, then paused again
+    surface->resume();
+    if (!_warmUnpaused.contains(surface)) {
+        _warmUnpaused.append(surface);
+    }
+    _warmSettling = true;
+    _warmTimer.start(WARM_SETTLE_MS);
+}
+
 void VrScreen::stopKeeping() {
+    // the pages kept in the slots go home before their surfaces go (the headset off, or quitting)
+    if (_keeping) {
+        if (auto panels = DependencyManager::get<Panels>()) {
+            panels->releaseScreenSlots();
+        }
+    }
     _keeping = false;
+    _warmAnnounce = false;
     _warmTimer.stop();
     _toWarm.clear();
     _warmLoaded.reset();
