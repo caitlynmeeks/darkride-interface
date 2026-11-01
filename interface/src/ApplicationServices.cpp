@@ -94,6 +94,7 @@
 #include "ui/PanelTheme.h"
 #include "ui/CodeEditor.h"
 #include "ui/Panels.h"
+#include "ui/VrScreen.h"
 #include "chat/FriendsScriptingInterface.h"
 #include "scripting/HMDScriptingInterface.h"
 #include "scripting/KeyboardScriptingInterface.h"
@@ -309,6 +310,7 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
     DependencyManager::set<Panels>();              // the window's panels by name (ui/Panels.h)
     DependencyManager::set<CodeEditor>();          // the Code panel's document (ui/CodeEditor.h), after Build mode's
     DependencyManager::set<MakeDock>();            // the Make dock's one object (make/MakeDock.h), after MakeLink's
+    DependencyManager::set<VrScreen>();            // the VR screen's headset side (ui/VrScreen.h)
     PanelTheme::registerWithQml();
 
 
