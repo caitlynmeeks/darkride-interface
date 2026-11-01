@@ -360,8 +360,13 @@ void AssimpSkinTests::testUnpaddedJsonChunk() {
 // or empty), never one the blend or the baker would read past. A good target, for the same path, must come through.
 void AssimpSkinTests::testMorphTargetPastVertices() {
     AssimpSerializer serializer;
+    // "Smile" is no standard blendshape name: the model's own shapes are kept only when the .fst asks for them
+    hifi::VariantHash mapping;
+    mapping.insert("ownBlendshapes", "true");
+    // QVERIFY and QCOMPARE return void on failure, so the lambda gathers what doesn't hold and the test checks it after
+    QStringList broken;
     auto check = [&](uint16_t index, const char* what) {
-        HFMModel::Pointer model = serializer.read(makeMorphTargetGlb(index), hifi::VariantHash(), hifi::URL("file:///morph-test.glb"));
+        HFMModel::Pointer model = serializer.read(makeMorphTargetGlb(index), mapping, hifi::URL("file:///morph-test.glb"));
         if (!model) {
             qDebug() << what << ": the reader refused the file";
             return false;
@@ -369,11 +374,15 @@ void AssimpSkinTests::testMorphTargetPastVertices() {
         bool anyShape = false;
         for (const hfm::Mesh& mesh : model->meshes) {
             for (const hfm::Blendshape& shape : mesh.blendshapes) {
-                QCOMPARE(shape.vertices.size(), shape.indices.size());
-                QVERIFY(shape.normals.isEmpty() || shape.normals.size() == shape.indices.size());
-                QVERIFY(shape.tangents.isEmpty() || shape.tangents.size() == shape.indices.size());
+                if (shape.vertices.size() != shape.indices.size() ||
+                    !(shape.normals.isEmpty() || shape.normals.size() == shape.indices.size()) ||
+                    !(shape.tangents.isEmpty() || shape.tangents.size() == shape.indices.size())) {
+                    broken << QString("%1: a blendshape's lists aren't one per index").arg(what);
+                }
                 for (int vertex : shape.indices) {
-                    QVERIFY(vertex >= 0 && vertex < mesh.vertices.size());
+                    if (vertex < 0 || vertex >= mesh.vertices.size()) {
+                        broken << QString("%1: a blendshape names vertex %2 of %3").arg(what).arg(vertex).arg(mesh.vertices.size());
+                    }
                 }
                 anyShape = anyShape || !shape.indices.isEmpty();
             }
@@ -386,4 +395,5 @@ void AssimpSkinTests::testMorphTargetPastVertices() {
     // is out of range"); the cases stay so an Assimp upgrade gets the same check (security, 2026-11-01)
     check(9, "bad target (vertex 9 of 4)");
     check(60000, "bad target (vertex 60000 of 4)");
+    QVERIFY2(broken.isEmpty(), qPrintable(broken.join("; ")));
 }
