@@ -19,42 +19,83 @@
 #include <EntityTree.h>
 #include <ZoneEntityItem.h>
 #include <WebEntityItem.h>
+#include <ScriptAddressCheck.h>
 
 #include "AvatarLogging.h"
 
 #include "AvatarMixerWorker.h"
 
-// A Web entity an avatar carries shows on everyone's screen, as one from the entity server does, so the same rule holds:
-// one whose address isn't a web page's is never passed on. Its data is read from a zero-padded copy and passed on only
-// when it reads cleanly.
+// An entity an avatar carries holds to the same rules as the entity server's, for everyone: a Web entity whose address
+// isn't a web page's, and any entity whose script or server scripts aren't on the same allow-list as the entity
+// server's (ScriptAddressCheck), is never passed on. Its data is read from a zero-padded copy and passed on only when it
+// reads cleanly.
 static const int READ_PADDING = 1 << 20;
 
-static bool carriesNonWebPageAddress(const QByteArray& data) {
+namespace {
+
+// Reads the properties every entity has, its scripts among them. They come before a type's own in the data
+// (EntityItem::readEntityDataFromBuffer), so they read the same as in the app, whatever the type; a type's own are left.
+class CommonPropertiesReader : public EntityItem {
+public:
+    CommonPropertiesReader(const EntityItemID& entityItemID) : EntityItem(entityItemID) {}
+    ALLOW_INSTANTIATION
+};
+
+// Why a worn entity isn't passed on (empty when it is), and the value refused, for the log.
+struct CarriedRefusal {
+    QString reason;
+    QString value;
+};
+
+CarriedRefusal scriptRefusal(const EntityItem& entity) {
+    for (const QString& script : { entity.getScript(), entity.getServerScripts() }) {
+        QString refusal = script_address::refusalReason(script);
+        if (!refusal.isEmpty()) {
+            return { "a script that has " + refusal, script.left(200) };
+        }
+    }
+    return {};
+}
+
+}
+
+// Why an entity an avatar carries isn't passed on, or an empty reason when it is.
+static CarriedRefusal refusalForCarriedEntity(const QByteArray& data) {
     EntityTypes::EntityType type = EntityTypes::Unknown;
     QUuid id;
     EntityTypes::extractEntityTypeAndID(reinterpret_cast<const unsigned char*>(data.constData()), data.size(), type, id);
-    if (type != EntityTypes::Web) {
-        return false;
-    }
     if (data.size() > AvatarTraits::MAXIMUM_TRAIT_SIZE) {
-        return true;  // more than a client sends
+        return { "more data than an app sends", QString() };
     }
     // one zeroed buffer per worker thread: only the data's own bytes are written, and zeroed again after
     thread_local std::vector<unsigned char> buffer(AvatarTraits::MAXIMUM_TRAIT_SIZE + READ_PADDING, 0);
     memcpy(buffer.data(), data.constData(), data.size());
-    bool refused = true;
+    CarriedRefusal refusal { "data that doesn't read cleanly", QString() };
     try {
-        // read as the clients read it (OtherAvatar), but freed here at once: EntityTypes' factory frees with deleteLater,
+        // read as the apps read it (OtherAvatar), but freed here at once: EntityTypes' factory frees with deleteLater,
         // and this worker thread runs no event loop
-        auto entity = std::make_shared<WebEntityItem>(EntityItemID(id));
         ReadBitstreamToTreeParams args;
-        int bytesRead = entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
-        refused = bytesRead <= 0 || bytesRead > data.size() || !WebEntityItem::isWebPageUrl(entity->getSourceUrl());
+        if (type == EntityTypes::Web) {
+            auto entity = std::make_shared<WebEntityItem>(EntityItemID(id));
+            int bytesRead = entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
+            if (bytesRead > 0 && bytesRead <= data.size()) {
+                refusal = WebEntityItem::isWebPageUrl(entity->getSourceUrl())
+                    ? scriptRefusal(*entity)
+                    : CarriedRefusal { "an address that isn't a web page's", entity->getSourceUrl().left(200) };
+            }
+        } else {
+            // an entity of any type whose read runs past its data (a string's length running over it) is refused
+            auto entity = std::make_shared<CommonPropertiesReader>(EntityItemID(id));
+            int bytesRead = entity->readEntityDataFromBuffer(buffer.data(), data.size(), args);
+            if (bytesRead > 0 && bytesRead <= data.size()) {
+                refusal = scriptRefusal(*entity);
+            }
+        }
     } catch (...) {
         // unreadable: refused
     }
     memset(buffer.data(), 0, data.size());
-    return refused;
+    return refusal;
 }
 
 AvatarMixerClientData::AvatarMixerClientData(const QUuid& nodeID, Node::LocalID nodeLocalID) : NodeData(nodeID, nodeLocalID) {
@@ -260,6 +301,7 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
 
                 if (packetTraitVersion > instanceVersionRef) {
                     if (traitSize == AvatarTraits::DELETED_TRAIT_SIZE) {
+                        _refusedCarriedEntities.erase(instanceID);
                         _avatar->processDeletedTraitInstance(traitType, instanceID);
                         // Mixer doesn't need deleted IDs.
                         _avatar->getAndClearRecentlyRemovedIDs();
@@ -269,14 +311,28 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
                         instanceVersionRef = -packetTraitVersion;
                     } else {
                         QByteArray traitData = message.read(traitSize);
-                        if (traitType == AvatarTraits::AvatarEntity && carriesNonWebPageAddress(traitData)) {
-                            qCDebug(avatars) << "Avatar" << sendingNode.getUUID() << "carries Web entity" << instanceID
-                                << "with an address that isn't a web page's, or that doesn't read cleanly; not passed on";
-                            // nobody else sees it: taken away, as a deleted one, until a version with a web page's address
+                        CarriedRefusal refusal;
+                        if (traitType == AvatarTraits::AvatarEntity) {
+                            refusal = refusalForCarriedEntity(traitData);
+                        }
+                        if (!refusal.reason.isEmpty()) {
+                            static const size_t MAX_REFUSALS_REMEMBERED = 256;  // many ids only log again
+                            if (_refusedCarriedEntities.size() >= MAX_REFUSALS_REMEMBERED) {
+                                _refusedCarriedEntities.clear();
+                            }
+                            // the reason, not the value: a value changed on every update still logs once
+                            QString& lastRefusal = _refusedCarriedEntities[instanceID];
+                            if (lastRefusal != refusal.reason) {
+                                qCDebug(avatars) << "Avatar" << sendingNode.getUUID() << "carries entity" << instanceID
+                                    << "with" << refusal.reason << refusal.value << "; not passed on";
+                                lastRefusal = refusal.reason;
+                            }
+                            // nobody else sees it: taken away, as a deleted one, until a version that passes
                             _avatar->processDeletedTraitInstance(traitType, instanceID);
                             _avatar->getAndClearRecentlyRemovedIDs();
                             instanceVersionRef = -packetTraitVersion;
                         } else {
+                            _refusedCarriedEntities.erase(instanceID);
                             _avatar->processTraitInstance(traitType, instanceID, traitData);
                             instanceVersionRef = packetTraitVersion;
                         }

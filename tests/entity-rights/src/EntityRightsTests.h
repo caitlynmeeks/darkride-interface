@@ -20,6 +20,7 @@ private slots:
     void testEdits();
     void testDeletes();
     void testCertificateClaims();
+    void testScriptAddresses();
 };
 
 #endif  // hifi_EntityRightsTests_h

@@ -201,6 +201,8 @@ private:
     bool _prevRequestsDomainListData{ false };
 
     AvatarTraits::TraitVersions _lastReceivedTraitVersions;
+    // why each worn entity not passed on was refused, so the log says it once, not on every update (performance, 10-30)
+    std::unordered_map<QUuid, QString> _refusedCarriedEntities;
     TraitsCheckTimestamp _lastReceivedTraitsChange;
 
     AvatarTraits::TraitMessageSequence _currentTraitsMessageSequence{ 0 };

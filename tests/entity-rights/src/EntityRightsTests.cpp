@@ -144,31 +144,42 @@ struct World {
         tree->withWriteLock([&] { tree->processEraseMessageDetails(buffer, sender); });
     }
 
-    // an add, as the entity server gets it from a client; the new entity, if it was made
-    EntityItemPointer addFrom(const SharedNodePointer& sender, const QString& certificateID) {
-        EntityItemID id(QUuid::createUuid());
+    // an add's properties, as a client makes them
+    static EntityItemProperties newBox() {
         EntityItemProperties properties;
         properties.setType(EntityTypes::Box);
         properties.setName("new");
         properties.setPosition(glm::vec3(100.0f));
         properties.setDimensions(glm::vec3(0.5f));
         properties.setLifetime(60.0f);
-        properties.setCertificateID(certificateID);
         properties.setLastEdited(usecTimestampNow());
-        QByteArray buffer(NLPacket::maxPayloadSize(PacketType::EntityAdd) * 10, 0);
+        return properties;
+    }
+
+    // an add or an edit, as the entity server gets it from a client; the entity after it, if there is one
+    EntityItemPointer send(const SharedNodePointer& sender, PacketType type, const EntityItemID& id,
+                           EntityItemProperties properties) {
+        QByteArray buffer(NLPacket::maxPayloadSize(type) * 10, 0);
         EntityPropertyFlags didntFit;
-        auto result = EntityItemProperties::encodeEntityEditPacket(PacketType::EntityAdd, id, properties, buffer,
+        auto result = EntityItemProperties::encodeEntityEditPacket(type, id, properties, buffer,
                                                                    properties.getChangedProperties(), didntFit);
         if (result != OctreeElement::COMPLETED) {
-            qWarning() << "the add didn't encode in one go";
+            qWarning() << "the edit didn't encode in one go";
             return EntityItemPointer();
         }
-        ReceivedMessage message(buffer, PacketType::EntityAdd, versionForPacketType(PacketType::EntityAdd), HifiSockAddr());
+        ReceivedMessage message(buffer, type, versionForPacketType(type), HifiSockAddr());
         tree->withWriteLock([&] {
             tree->processEditPacketData(message, reinterpret_cast<const unsigned char*>(buffer.constData()), buffer.size(),
                                         sender);
         });
         return find(id);
+    }
+
+    // an add, as the entity server gets it from a client; the new entity, if it was made
+    EntityItemPointer addFrom(const SharedNodePointer& sender, const QString& certificateID) {
+        EntityItemProperties properties = newBox();
+        properties.setCertificateID(certificateID);
+        return send(sender, PacketType::EntityAdd, EntityItemID(QUuid::createUuid()), properties);
     }
 };
 
@@ -263,4 +274,80 @@ void EntityRightsTests::testCertificateClaims() {
     auto brought = world.addFrom(senders.editor, "an old certificate");
     QVERIFY(brought);
     QCOMPARE(brought->getCertificateID(), QString("an old certificate"));
+}
+
+// An entity's script and server scripts hold to ScriptAddressCheck's allow-list, from anyone, a world's editors too: an
+// add comes in without a refused value, an edit keeps the entity's own and goes back out, and a saved world's entity
+// loads without it.
+void EntityRightsTests::testScriptAddresses() {
+    World world;
+    Senders senders;
+    const QString web = "https://files.darkride.ai/someone/scripts/seat.js";
+    const QString code = "(function() { this.preload = function(id) {}; })";
+    const QString local = "file:///tmp/a.js";
+    const QString appScripts = "/~/x.js";
+    const QString loopback = "http://0x7f.1/x.js";
+
+    EntityItemProperties add = World::newBox();
+    add.setScript(local);
+    add.setServerScripts(appScripts);
+    auto refused = world.send(senders.editor, PacketType::EntityAdd, EntityItemID(QUuid::createUuid()), add);
+    QVERIFY(refused);
+    QCOMPARE(refused->getScript(), QString());
+    QCOMPARE(refused->getServerScripts(), QString());
+
+    add = World::newBox();
+    add.setScript(web);
+    add.setServerScripts(loopback);
+    auto half = world.send(senders.editor, PacketType::EntityAdd, EntityItemID(QUuid::createUuid()), add);
+    QVERIFY(half);
+    QCOMPARE(half->getScript(), web);
+    QCOMPARE(half->getServerScripts(), QString());
+
+    add = World::newBox();
+    add.setScript(code);
+    add.setServerScripts(web);
+    const EntityItemID scriptedID(QUuid::createUuid());
+    auto scripted = world.send(senders.editor, PacketType::EntityAdd, scriptedID, add);
+    QVERIFY(scripted);
+    QCOMPARE(scripted->getScript(), code);
+    QCOMPARE(scripted->getServerScripts(), web);
+
+    for (const QString& value : { local, appScripts, loopback }) {
+        EntityItemProperties edit;
+        edit.setScript(value);
+        edit.setServerScripts(value);
+        edit.setLastEdited(usecTimestampNow() + 1);
+        auto kept = world.send(senders.editor, PacketType::EntityEdit, scriptedID, edit);
+        QVERIFY(kept);
+        QCOMPARE(kept->getScript(), code);
+        QCOMPARE(kept->getServerScripts(), web);
+        QVERIFY(world.sentBackAfter(scriptedID, edit.getLastEdited()));
+    }
+
+    EntityItemProperties fine;
+    fine.setScript(web);
+    fine.setLastEdited(usecTimestampNow() + 1);
+    QCOMPARE(world.send(senders.editor, PacketType::EntityEdit, scriptedID, fine)->getScript(), web);
+
+    // a saved world
+    const QUuid savedID("{a0000000-0000-0000-0000-0000000000f1}");
+    const QUuid savedWebID("{a0000000-0000-0000-0000-0000000000f2}");
+    QVariantMap position { { "x", 100.0 }, { "y", 100.0 }, { "z", 100.0 } };
+    QVariantMap dimensions { { "x", 0.5 }, { "y", 0.5 }, { "z", 0.5 } };
+    QVariantMap saved { { "id", savedID.toString() }, { "type", "Box" }, { "position", position }, { "dimensions", dimensions },
+                        { "script", appScripts }, { "serverScripts", local } };
+    QVariantMap savedWeb { { "id", savedWebID.toString() }, { "type", "Box" }, { "position", position }, { "dimensions", dimensions },
+                           { "script", web }, { "serverScripts", "atp:/darkside/rover.js" } };
+    QVariantMap map { { "Version", (int)versionForPacketType(PacketType::EntityData) },
+                      { "Entities", QVariantList { saved, savedWeb } } };
+    bool loaded = false;
+    world.tree->withWriteLock([&] { loaded = world.tree->readFromMap(map); });
+    QVERIFY(loaded);
+    QVERIFY(world.find(savedID));
+    QCOMPARE(world.find(savedID)->getScript(), QString());
+    QCOMPARE(world.find(savedID)->getServerScripts(), QString());
+    QVERIFY(world.find(savedWebID));
+    QCOMPARE(world.find(savedWebID)->getScript(), web);
+    QCOMPARE(world.find(savedWebID)->getServerScripts(), QString("atp:/darkside/rover.js"));
 }
