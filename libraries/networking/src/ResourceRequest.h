@@ -102,6 +102,9 @@ public:
 
     void setCacheEnabled(bool value) { _cacheEnabled = value; }
     void setByteRange(ByteRange byteRange) { _byteRange = byteRange; }
+    /// The download is a script's own request, held to the network rule (ScriptNetworkPolicy) by this origin and
+    /// world: an HTTP download then judges each address it goes to and connects only to the checked one.
+    void setNetworkRule(const QUrl& origin, bool worldIsLocal) { _ruled = true; _ruleOrigin = origin; _ruleWorldIsLocal = worldIsLocal; }
 
     static QString toHttpDateString(uint64_t msecsSinceEpoch);
 public slots:
@@ -123,6 +126,9 @@ protected:
     QByteArray _data;
     bool _failOnRedirect { false };
     bool _cacheEnabled { true };
+    bool _ruled { false };
+    QUrl _ruleOrigin;
+    bool _ruleWorldIsLocal { false };
     bool _loadedFromCache { false };
     ByteRange _byteRange;
     bool _rangeRequestSuccessful { false };

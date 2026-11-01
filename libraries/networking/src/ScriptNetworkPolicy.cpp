@@ -19,6 +19,7 @@
 #include <DependencyManager.h>
 #include <PathUtils.h>
 
+#include "NetworkLogging.h"
 #include "NodeList.h"
 
 namespace {
@@ -250,6 +251,7 @@ void ScriptNetworkPolicy::pin(QNetworkRequest& request, const Decision& decision
     }
     url.setHost(decision.address.toString());   // an IPv6 address gets its brackets from QUrl
     request.setUrl(url);
+    qCDebug(networking) << "a script's request to" << name << "pinned to" << decision.address.toString();
     const int port = url.port(-1);
     request.setRawHeader("Host", (port == -1 ? name : name + ":" + QString::number(port)).toUtf8());
     const QString scheme = url.scheme().toLower();

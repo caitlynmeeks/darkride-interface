@@ -1580,6 +1580,10 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
     if (forceDownload) {
         scriptCache->deleteScript(url);
     }
+    if (networkRuled()) {
+        // the download goes to the address judged (each hop judged again)
+        scriptCache->ruleFetch(target, ruledOrigin(origin), worldIsLocal());
+    }
     BatchLoader* loader = new BatchLoader(QList<QUrl>({ QUrl(url) }));
     connect(loader, &BatchLoader::finished, this, [this, url, result](const QMap<QUrl, QString>& data, const QMap<QUrl, QString>& status) {
         if (isStopping()) {

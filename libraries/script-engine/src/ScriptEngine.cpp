@@ -2106,6 +2106,8 @@ QVariantMap ScriptEngine::fetchModuleSource(const QString& modulePath, const boo
             req["success"] = false;
             return req;
         }
+        // and its download goes to the address judged (each hop judged again)
+        scriptCache->ruleFetch(QUrl(modulePath), ruledOrigin(currentScriptOrigin()), worldIsLocal());
     }
     qCDebug(scriptengine_module) << "require.fetchModuleSource: " << QUrl(modulePath).fileName() << QThread::currentThread();
 
@@ -2329,6 +2331,10 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
                 // the network rule for a script's own requests: an include's download is a request too
                 scriptWarningMessage(ScriptNetworkPolicy::refusalLine(currentScriptOrigin(), thisURL, reason));
                 continue;
+            }
+            if (networkRuled()) {
+                // and its download goes to the address judged (each hop judged again)
+                DependencyManager::get<ScriptCache>()->ruleFetch(thisURL, ruledOrigin(currentScriptOrigin()), worldIsLocal());
             }
             // We could also check here for CORS, but we don't yet.
             // It turns out that QUrl.resolve will not change hosts and copy authority, so we don't need to check that here.
