@@ -8,6 +8,17 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: getLookAtRotation, the camera's look direction.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #ifndef hifi_MyAvatar_h
 #define hifi_MyAvatar_h
@@ -1964,6 +1975,7 @@ public:
      */
     Q_INVOKABLE bool setPointAt(const glm::vec3& pointAtTarget);
 
+    // FROZEN (vehicle path): see the note at the top of this file.
     glm::quat getLookAtRotation() { return _lookAtYaw * _lookAtPitch; }
 
     /**jsdoc

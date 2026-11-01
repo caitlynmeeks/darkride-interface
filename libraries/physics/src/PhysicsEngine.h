@@ -8,6 +8,18 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the paced clock's setPresentPeriod, getLastSteppedTime and getPacedClockLeadMs (their bodies are
+//   here).
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #ifndef hifi_PhysicsEngine_h
 #define hifi_PhysicsEngine_h
@@ -104,14 +116,17 @@ public:
     void processTransaction(Transaction& transaction);
 
     void stepSimulation();
+    // FROZEN (vehicle path): see the note at the top of this file.
     // the period the presents are paced at, in seconds, 0 while they are not, and the periods this update covers
     // (the intervals between the present that posted it and the one before; 0 = count them from the wall clock):
     // the paced clock then advances by whole periods (stepSimulation)
     void setPresentPeriod(float seconds, int periods = 0) { _presentPeriod = seconds; _presentPeriods = periods; }
+    // FROZEN (vehicle path): see the note at the top of this file.
     // the time the world moved on in the last stepSimulation, in seconds (the paced clock's step, less any time the
     // substep cap dropped; counted while the world idles too), and how many steps there have been: what moves beside
     // the physics each frame (the avatar's turn) steps by it, to keep to the world's clock (GitHub #15)
     float getLastSteppedTime() const { return _lastSteppedTime; }
+    // FROZEN (vehicle path): see the note at the top of this file.
     // how far the paced clock is ahead of the wall clock, in ms (negative: behind): the Stats panel's present cadence
     // line and the frame trace (team/performance/INSTRUMENTS-PLAN.md, items 3 and 4); 0 while the presents are not paced
     float getPacedClockLeadMs() const { return _presentPeriod > 0.0f ? _pacedClockLead * 1000.0f : 0.0f; }
