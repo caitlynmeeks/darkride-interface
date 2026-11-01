@@ -42,6 +42,8 @@ public:
     static const QString& resourcesUrl();
     static QUrl resourcesUrl(const QString& relative);
     static const QString& resourcesPath();
+    // Whether a URL names Darkride's own resources: relative, qrc:, or a local file in the resources folder
+    static bool isAppResourceUrl(const QUrl& url);
     static const QString& qmlBaseUrl();
     static QUrl expandToLocalDataAbsolutePath(const QUrl& fileUrl);
     static QUrl qmlUrl(const QString& relative);

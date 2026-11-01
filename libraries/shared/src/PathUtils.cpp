@@ -96,6 +96,23 @@ const QString& PathUtils::resourcesPath() {
     return staticResourcePath;
 }
 
+bool PathUtils::isAppResourceUrl(const QUrl& url) {
+    if (url.isRelative() || url.scheme() == "qrc") {
+        return true;
+    }
+    if (!url.isLocalFile() || !url.host().isEmpty()) {
+        return false;
+    }
+    // a local file counts only inside the resources folder (a developer build's source tree), after resolving ".."
+    const QString& resources = resourcesPath();
+    if (resources.startsWith(":")) {
+        return false;
+    }
+    QString root = QFileInfo(resources).canonicalFilePath();
+    QString path = QFileInfo(url.toLocalFile()).canonicalFilePath();
+    return !root.isEmpty() && !path.isEmpty() && path.startsWith(root + "/", Qt::CaseInsensitive);
+}
+
 const QString& PathUtils::resourcesUrl() {
     static QString staticResourcePath{ "qrc:///" };
     static std::once_flag once;
