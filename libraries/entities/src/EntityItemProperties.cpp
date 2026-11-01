@@ -279,6 +279,7 @@ const QHash<QString, ZoneCullingComponentMode> stringToZoneCullingComponentMode 
     addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_INHERIT);
     addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_OUTSIDE);
     addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_DISABLED);
+    addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_OUTSIDE_NO_LOAD);
     return toReturn;
 }();
 QString EntityItemProperties::getZoneCullingComponentModeAsString(uint32_t mode) {

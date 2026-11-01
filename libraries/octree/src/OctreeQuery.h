@@ -37,6 +37,7 @@ public:
     void setConicalViews(ConicalViewFrustums views)
         { QMutexLocker lock(&_conicalViewsLock); _conicalViews = views; }
     void clearConicalViews() { QMutexLocker lock(&_conicalViewsLock); _conicalViews.clear(); }
+    ConicalViewFrustums getConicalViews() const { QMutexLocker lock(&_conicalViewsLock); return _conicalViews; }
 
     // getters/setters for JSON filter
     QJsonObject getJSONParameters() { QReadLocker locker { &_jsonParametersLock }; return _jsonParameters; }

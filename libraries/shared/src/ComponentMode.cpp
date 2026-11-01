@@ -49,11 +49,13 @@ QString ComponentModeHelpers::getNameForComponentMode(ComponentMode mode) {
  *     <tr><td><code>"inherit"</code></td><td>Inherits whatever zone culling paroperties are outside this zone.</td></tr>
  *     <tr><td><code>"outside"</code></td><td>Culls everything outside of this + any outer zones.</td></tr>
  *     <tr><td><code>"disabled"</code></td><td>Culls nothing, including overriding outer zone culling..</td></tr>
+ *     <tr><td><code>"outsideNoLoad"</code></td><td>As <code>"outside"</code>, and while you are inside, the world beyond
+ *       the zone is not downloaded either (what was already loaded stays; leaving the zone loads the rest).</td></tr>
  *   </tbody>
  * </table>
  * @typedef {string} Entities.ZoneCullingMode
  */
-const char* zoneCullingModeNames[] = { "inherit", "outside", "disabled" };
+const char* zoneCullingModeNames[] = { "inherit", "outside", "disabled", "outsideNoLoad" };
 
 
 QString ZoneCullingModeHelpers::getNameForZoneCullingComponentMode(ZoneCullingComponentMode mode) {

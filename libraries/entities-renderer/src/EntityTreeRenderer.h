@@ -104,6 +104,8 @@ public:
         glm::vec3 halfDimensions { 0.0f };
         // whether a sphere touches the box: the test in the zone's own frame, so a turned zone culls by its true shape
         bool touches(const glm::vec3& center, float radius) const;
+        // how far the box reaches from a point: the distance to its farthest corner (the load zone's query limit)
+        float reachFrom(const glm::vec3& point) const;
     };
     const ZoneCullState& getZoneCullState() const { return _zoneCullState; }
     // the entities zone culling may hide: the world's own, never the app's local ones, worn ones, or a zone, gizmo,

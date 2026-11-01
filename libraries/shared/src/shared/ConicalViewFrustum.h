@@ -14,6 +14,7 @@
 
 #include <vector>
 
+#include <algorithm>
 #include <glm/glm.hpp>
 
 class AACube;
@@ -40,6 +41,8 @@ public:
     float getAngle() const { return _angle; }
     float getRadius() const { return _radius; }
     float getFarClip() const { return _farClip; }
+    // the view reaches no further than this (the load zone: the client asks the entity server for nothing beyond a zone)
+    void clampFarClip(float farClip) { _farClip = std::min(_farClip, farClip); }
 
     bool isVerySimilar(const ConicalViewFrustum& other) const;
 

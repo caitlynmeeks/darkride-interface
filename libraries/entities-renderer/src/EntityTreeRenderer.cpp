@@ -1109,6 +1109,17 @@ bool EntityTreeRenderer::ZoneCullState::touches(const glm::vec3& center, float r
     return glm::dot(away, away) <= radius * radius;
 }
 
+float EntityTreeRenderer::ZoneCullState::reachFrom(const glm::vec3& point) const {
+    float reach = 0.0f;
+    for (int corner = 0; corner < 8; corner++) {
+        const glm::vec3 local((corner & 1) ? halfDimensions.x : -halfDimensions.x,
+                              (corner & 2) ? halfDimensions.y : -halfDimensions.y,
+                              (corner & 4) ? halfDimensions.z : -halfDimensions.z);
+        reach = glm::max(reach, glm::distance(position + rotation * local, point));
+    }
+    return reach;
+}
+
 bool EntityTreeRenderer::isZoneCullable(const EntityItemPointer& entity) {
     if (!entity || entity->isLocalEntity() || entity->isAvatarEntity()) {
         return false;
@@ -1163,7 +1174,7 @@ void EntityTreeRenderer::updateZoneCullState() {
     // a mode this client does not know (one added later) culls as "outside": a newer world degrades to plain culling
     const bool active = deciding && !_zoneCullingSuspended && mode != ZONE_CULLING_DISABLED;
     const QUuid zoneId = active ? deciding->getID() : QUuid();
-    const bool dontLoad = false; // the load zone (entry 13 (g)) sets it
+    const bool dontLoad = active && mode == ZONE_CULLING_OUTSIDE_NO_LOAD;
     if (zoneId == _zoneCullState.zoneId && active == _zoneCullState.active && dontLoad == _zoneCullState.dontLoad &&
         !_zoneCullDirty) {
         return;
