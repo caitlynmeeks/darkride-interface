@@ -474,6 +474,7 @@ bool Panels::putOnScreen(const QString& name) {
         return false;
     }
     if (qmlDock->isVisible()) {
+        _hiddenForScreen.insert(name);
         qmlDock->hide();   // an empty dock; the page is on the screen
     }
     setOpen(name, true);
@@ -510,11 +511,15 @@ void Panels::releaseScreenSlots() {
         auto qmlDock = qobject_cast<QmlDock*>(it.value().data());
         if (qmlDock && qmlDock->isAway()) {
             qmlDock->moveBack(shown);
-            // on the screen it was open; back in its dock it shows where it was, or stays closed out of the headset
-            setOpen(it.key(), !qmlDock->isHidden());
         }
     }
     _screenSlots.clear();
+    _middleTabs.clear();
+    // out of the headset, the docks that were showing before the screen took their pages show again; in it, they
+    // wait unseen (displayChanged shows them when the headset comes off)
+    if (shown) {
+        showHiddenForScreen();
+    }
     if (!_screenState.isEmpty()) {
         _screenState.clear();
         emit screenStateChanged(_screenState);
@@ -535,10 +540,24 @@ void Panels::testReleaseScreenSlots() {
 void Panels::displayChanged() {
     // leaving the headset, the screen's pages come home first (vr releases them before deleting its slots; this is
     // the fallback)
-    if (!qApp->isHMDMode() && !_screenSlots.isEmpty()) {
-        releaseScreenSlots();
+    if (!qApp->isHMDMode()) {
+        if (!_screenSlots.isEmpty()) {
+            releaseScreenSlots();
+        }
+        showHiddenForScreen();
     }
     showDockPages();
+}
+
+void Panels::showHiddenForScreen() {
+    for (const QString& name : _hiddenForScreen) {
+        QDockWidget* panel = _docks.value(name);
+        auto qmlDock = qobject_cast<QmlDock*>(panel);
+        if (panel && !(qmlDock && qmlDock->isAway())) {
+            panel->show();
+        }
+    }
+    _hiddenForScreen.clear();
 }
 
 void Panels::showDockPages() {

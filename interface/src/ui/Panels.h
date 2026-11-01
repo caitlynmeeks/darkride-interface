@@ -159,6 +159,7 @@ private:
     bool putOnScreen(const QString& name);   // the page into its slot, if the screen is up
     void showDockPages();   // the pages in docks shown, or hidden while the headset is on (nobody sees the docks then)
     void displayChanged();   // the headset on or off
+    void showHiddenForScreen();   // the docks the screen hid, showing again
 
     bool _restored { false };   // none opens before the layout's restore (after sign-in)
     QHash<QString, QPointer<QDockWidget>> _docks;

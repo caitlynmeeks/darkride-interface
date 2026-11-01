@@ -152,7 +152,8 @@ QmlDock::QmlDock(const QString& name, const QUrl& source, QWidget* parent) : QDo
         if (visible) {
             makeContent();
         }
-        if (QQuickItem* page = panel()) {
+        // a page on the VR screen isn't the dock's to show or hide
+        if (QQuickItem* page = _away ? nullptr : panel()) {
             page->setVisible(visible);
         }
     });
