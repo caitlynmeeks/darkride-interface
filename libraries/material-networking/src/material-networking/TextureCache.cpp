@@ -518,6 +518,12 @@ private:
     image::ColorChannel _sourceChannel;
 };
 
+void NetworkTexture::handBackImage(NetworkTexture* networkTexture, const gpu::TexturePointer& texture, int width, int height) {
+    QMetaObject::invokeMethod(networkTexture, [networkTexture, texture, width, height] {
+        networkTexture->setImage(texture, width, height);
+    });
+}
+
 NetworkTexture::~NetworkTexture() {
     if (_ktxHeaderRequest || _ktxMipRequest) {
         if (_ktxHeaderRequest) {
@@ -717,19 +723,13 @@ void NetworkTexture::makeLocalRequest() {
 
     if (!texture) {
         qCDebug(networking).noquote() << "Failed load local KTX from" << path;
-        QMetaObject::invokeMethod(this, "setImage",
-            Q_ARG(gpu::TexturePointer, nullptr),
-            Q_ARG(int, 0),
-            Q_ARG(int, 0));
+        NetworkTexture::handBackImage(this, nullptr, 0, 0);
         return;
     }
 
     _ktxResourceState = PENDING_MIP_REQUEST;
     _lowestKnownPopulatedMip = texture->minAvailableMipLevel();
-    QMetaObject::invokeMethod(this, "setImage",
-        Q_ARG(gpu::TexturePointer, texture),
-        Q_ARG(int, texture->getWidth()),
-        Q_ARG(int, texture->getHeight()));
+    NetworkTexture::handBackImage(this, texture, texture->getWidth(), texture->getHeight());
 
 }
 
@@ -925,10 +925,7 @@ void NetworkTexture::ktxMipRequestFinished() {
                     return;
                 }
 
-                QMetaObject::invokeMethod(resource.data(), "setImage",
-                    Q_ARG(gpu::TexturePointer, texture),
-                    Q_ARG(int, texture->getWidth()),
-                    Q_ARG(int, texture->getHeight()));
+                NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), texture, texture->getWidth(), texture->getHeight());
 
                 QMetaObject::invokeMethod(resource.data(), "startRequestForNextMipLevel");
             });
@@ -1012,19 +1009,13 @@ void NetworkTexture::handleFinishedInitialLoad() {
         auto header = reinterpret_cast<const ktx::Header*>(ktxHeaderData.data());
 
         if (!ktx::checkIdentifier(header->identifier)) {
-            QMetaObject::invokeMethod(resource.data(), "setImage",
-                Q_ARG(gpu::TexturePointer, nullptr),
-                Q_ARG(int, 0),
-                Q_ARG(int, 0));
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         }
 
         auto kvSize = header->bytesOfKeyValueData;
         if (kvSize > (ktxHeaderData.size() - ktx::KTX_HEADER_SIZE)) {
-            QMetaObject::invokeMethod(resource.data(), "setImage",
-                Q_ARG(gpu::TexturePointer, nullptr),
-                Q_ARG(int, 0),
-                Q_ARG(int, 0));
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         }
 
@@ -1032,10 +1023,7 @@ void NetworkTexture::handleFinishedInitialLoad() {
 
         auto imageDescriptors = header->generateImageDescriptors();
         if (imageDescriptors.size() == 0) {
-            QMetaObject::invokeMethod(resource.data(), "setImage",
-                Q_ARG(gpu::TexturePointer, nullptr),
-                Q_ARG(int, 0),
-                Q_ARG(int, 0));
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         }
         auto originalKtxDescriptor = new ktx::KTXDescriptor(*header, keyValues, imageDescriptors);
@@ -1050,10 +1038,7 @@ void NetworkTexture::handleFinishedInitialLoad() {
         std::string hash;
         if (found == keyValues.end() || found->_value.size() != gpu::SOURCE_HASH_BYTES) {
             qWarning("Invalid source hash key found, bailing");
-            QMetaObject::invokeMethod(resource.data(), "setImage",
-                Q_ARG(gpu::TexturePointer, nullptr),
-                Q_ARG(int, 0),
-                Q_ARG(int, 0));
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         } else {
             // at this point the source hash is in binary 16-byte form
@@ -1084,10 +1069,7 @@ void NetworkTexture::handleFinishedInitialLoad() {
             auto memKtx = ktx::KTX::createBare(*header, keyValues);
             if (!memKtx) {
                 qWarning() << " Ktx could not be created, bailing";
-                QMetaObject::invokeMethod(resource.data(), "setImage",
-                    Q_ARG(gpu::TexturePointer, nullptr),
-                    Q_ARG(int, 0),
-                    Q_ARG(int, 0));
+                NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
                 return;
             }
 
@@ -1098,10 +1080,7 @@ void NetworkTexture::handleFinishedInitialLoad() {
             auto& ktxCache = textureCache->_ktxCache;
             if (!memKtx || !(file = ktxCache->writeFile(data, KTXCache::Metadata(filename, length)))) {
                 qCWarning(materialnetworking) << url << " failed to write cache file";
-                QMetaObject::invokeMethod(resource.data(), "setImage",
-                    Q_ARG(gpu::TexturePointer, nullptr),
-                    Q_ARG(int, 0),
-                    Q_ARG(int, 0));
+                NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
                 return;
             }
 
@@ -1133,10 +1112,7 @@ void NetworkTexture::handleFinishedInitialLoad() {
             texture = textureCache->cacheTextureByHash(filename, texture);
         }
 
-        QMetaObject::invokeMethod(resource.data(), "setImage",
-            Q_ARG(gpu::TexturePointer, texture),
-            Q_ARG(int, texture->getWidth()),
-            Q_ARG(int, texture->getHeight()));
+        NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), texture, texture->getWidth(), texture->getHeight());
 
         QMetaObject::invokeMethod(resource.data(), "startRequestForNextMipLevel");
     });
@@ -1346,10 +1322,7 @@ void ImageReader::read() {
         // If we found the texture either because it's in use or via KTX deserialization,
         // set the image and return immediately.
         if (texture) {
-            QMetaObject::invokeMethod(resource.data(), "setImage",
-                                      Q_ARG(gpu::TexturePointer, texture),
-                                      Q_ARG(int, texture->getWidth()),
-                                      Q_ARG(int, texture->getHeight()));
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), texture, texture->getWidth(), texture->getHeight());
             return;
         }
     }
@@ -1371,10 +1344,7 @@ void ImageReader::read() {
         texture = image::processImage(std::move(buffer), _url.toString().toStdString(), _sourceChannel, _maxNumPixels, networkTexture->getTextureType(), shouldCompress, target);
 
         if (!texture) {
-            QMetaObject::invokeMethod(resource.data(), "setImage",
-                                      Q_ARG(gpu::TexturePointer, texture),
-                                      Q_ARG(int, 0),
-                                      Q_ARG(int, 0));
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), texture, 0, 0);
             return;
         }
 
@@ -1403,10 +1373,7 @@ void ImageReader::read() {
         texture = textureCache->cacheTextureByHash(hash, texture);
     }
 
-    QMetaObject::invokeMethod(resource.data(), "setImage",
-                                Q_ARG(gpu::TexturePointer, texture),
-                                Q_ARG(int, texture->getWidth()),
-                                Q_ARG(int, texture->getHeight()));
+    NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), texture, texture->getWidth(), texture->getHeight());
 }
 
 NetworkTexturePointer TextureCache::getResourceTexture(const QUrl& resourceTextureUrl) {
