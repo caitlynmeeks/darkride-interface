@@ -89,10 +89,6 @@ void VrScreen::connectOnce() {
         return;
     }
     _connected = true;
-    auto entities = DependencyManager::get<EntityScriptingInterface>();
-    connect(entities.data(), &EntityScriptingInterface::deletingEntity, this, &VrScreen::entityDeleted);
-    connect(entities.data(), &EntityScriptingInterface::mousePressOnEntity, this, &VrScreen::mousePressed);
-    connect(entities.data(), &EntityScriptingInterface::mouseReleaseOnEntity, this, &VrScreen::mouseReleased);
     connect(DependencyManager::get<Panels>().data(), &Panels::screenSlotSizeChanged, this, &VrScreen::slotSizeChanged);
     connect(qApp, &Application::activeDisplayPluginChanged, this, &VrScreen::displayChanged);
     _wasHeadset = qApp->isHMDMode();
@@ -111,6 +107,13 @@ void VrScreen::show() {
         return;
     }
     connectOnce();
+    // only while shown: a world change deletes thousands of entities, and none of them should reach a hidden screen
+    auto entities = DependencyManager::get<EntityScriptingInterface>();
+    _entityConnections = {
+        connect(entities.data(), &EntityScriptingInterface::deletingEntity, this, &VrScreen::entityDeleted),
+        connect(entities.data(), &EntityScriptingInterface::mousePressOnEntity, this, &VrScreen::mousePressed),
+        connect(entities.data(), &EntityScriptingInterface::mouseReleaseOnEntity, this, &VrScreen::mouseReleased)
+    };
     updateHead();
     auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
     const glm::vec3 facing = avatar->getHMDSensorOrientation() * glm::vec3(0.0f, 0.0f, -1.0f);
@@ -135,6 +138,9 @@ void VrScreen::hide() {
     }
     endDrag();
     _shown = false;
+    for (const QMetaObject::Connection& connection : _entityConnections) {
+        disconnect(connection);
+    }
     // the pages first: a page's host dying would take the page with it
     DependencyManager::get<Panels>()->releaseScreenSlots();
     _changing = true;
@@ -196,7 +202,7 @@ void VrScreen::makePiece(Piece piece, const Arrangement& places) {
     QString url = GRAB_BAR_URL;
     QString name = "VR screen grab bar";
     if (piece != Bar) {
-        pixels = toVec2(panels->screenSlotSize(NAMES[piece]));
+        pixels = glm::round(toVec2(panels->screenSlotSize(NAMES[piece])) * textureScale(degreesPerPixel()));
         url = piece == Left ? SLOT_LEFT_URL : piece == Middle ? SLOT_MIDDLE_URL : SLOT_RIGHT_URL;
         name = QString("VR screen ") + NAMES[piece];
     }

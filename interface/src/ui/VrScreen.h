@@ -74,6 +74,7 @@ private:
     bool _changing { false };   // our own deletes, as against someone else's
     bool _wasHeadset { false };
     std::array<QUuid, PIECE_COUNT> _pieces;
+    std::array<QMetaObject::Connection, 3> _entityConnections;
 
     // the screen's place, in the play space: the head it's arranged around and its turn around that head
     glm::vec3 _head { 0.0f };

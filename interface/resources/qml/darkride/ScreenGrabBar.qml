@@ -11,15 +11,16 @@
 //
 
 import QtQuick 2.15
+import "panel"
 
 Rectangle {
-    color: "#101014"
+    color: Theme.background
 
     Rectangle {
         anchors.centerIn: parent
         width: parent.width * 0.6
         height: parent.height * 0.3
         radius: height / 2
-        color: "#d8d8e0"
+        color: Theme.text
     }
 }

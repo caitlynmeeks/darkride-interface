@@ -32,6 +32,14 @@ const float BAR_GAP = 0.04f;                     // under the middle panel
 // A layout pixel's size by angle sets the type's size. The tablet's is 0.058 degrees (0.525 mm a pixel at about 0.515 m).
 const float DEFAULT_DEGREES_PER_PIXEL = 0.058f;
 
+// A panel's surface has more pixels than its layout, up to what the headset can show: its pixels per degree (Quest 3: 25,
+// rendering's number; Part 2 asks the runtime). Panels scales the page by surface width / layout width.
+const float DEFAULT_PIXELS_PER_DEGREE = 25.0f;
+
+inline float textureScale(float degreesPerPixel, float pixelsPerDegree = DEFAULT_PIXELS_PER_DEGREE) {
+    return std::fmax(1.0f, degreesPerPixel * pixelsPerDegree);
+}
+
 struct Pose {
     glm::vec3 position { 0.0f };
     glm::quat rotation { 1.0f, 0.0f, 0.0f, 0.0f };
