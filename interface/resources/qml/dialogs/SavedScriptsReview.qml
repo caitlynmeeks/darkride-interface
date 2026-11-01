@@ -38,21 +38,15 @@ ModalWindow {
     signal answered(var kept)   // Done: the addresses ticked
 
     // the held scripts' addresses, from the name SavedScriptsReview.cpp gives this dialog's context as it's made
-    property var scripts: typeof savedScriptsHeld !== "undefined" ? savedScriptsHeld : []
+    property var scripts: typeof savedScriptsHeld !== "undefined" ? savedScriptsHeld : []   // { address, main, full }
     property var ticked: ({})
     property int titleWidth: 0  // ModalWindow's own frame sets it while the window is made
-
-    // an address too long for the alert, shortened in the middle (it keeps its site and its file name)
-    function shortened(address) {
-        var MAX = 64;
-        return address.length <= MAX ? address : address.slice(0, 34) + "…" + address.slice(address.length - 28);
-    }
 
     function finish() {
         var kept = [];
         for (var i = 0; i < root.scripts.length; i++) {
-            if (root.ticked[root.scripts[i]]) {
-                kept.push(root.scripts[i]);
+            if (root.ticked[root.scripts[i].address]) {
+                kept.push(root.scripts[i].address);   // the exact address, as held
             }
         }
         root.answered(kept);
@@ -91,13 +85,26 @@ ModalWindow {
                 spacing: 6
                 Repeater {
                     model: root.scripts
-                    delegate: AlertCheck {
-                        text: root.shortened(modelData)
-                        checked: false
-                        onToggled: {
-                            var ticked = root.ticked;
-                            ticked[modelData] = checked;
-                            root.ticked = ticked;
+                    // each: the site and the file as the main line (SavedScriptsReview.cpp), the whole address under it
+                    delegate: Column {
+                        width: parent ? parent.width : 0
+                        AlertCheck {
+                            text: modelData.main
+                            checked: false
+                            onToggled: {
+                                var ticked = root.ticked;
+                                ticked[modelData.address] = checked;
+                                root.ticked = ticked;
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            leftPadding: 18
+                            text: modelData.full
+                            textFormat: Text.PlainText
+                            elide: Text.ElideMiddle
+                            color: Qt.rgba(1, 1, 1, 0.55)
+                            font.pixelSize: 10
                         }
                     }
                 }
