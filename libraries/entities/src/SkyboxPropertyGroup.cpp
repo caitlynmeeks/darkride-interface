@@ -10,6 +10,7 @@
 //
 
 #include "SkyboxPropertyGroup.h"
+#include "EntityContentAddresses.h"
 
 #include <OctreePacketData.h>
 
@@ -146,7 +147,7 @@ int SkyboxPropertyGroup::readEntitySubclassDataFromBuffer(const unsigned char* d
     const unsigned char* dataAt = data;
 
     READ_ENTITY_PROPERTY(PROP_SKYBOX_COLOR, u8vec3Color, setColor);
-    READ_ENTITY_PROPERTY(PROP_SKYBOX_URL, QString, setURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_SKYBOX_URL, setURL, EntityContentAddresses::isOnThisComputer, "skybox.url");
 
     return bytesRead;
 }

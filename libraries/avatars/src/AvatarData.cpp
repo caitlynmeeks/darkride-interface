@@ -12,6 +12,8 @@
 
 #include "AvatarData.h"
 
+#include <ContentAddresses.h>
+
 #include <cstdio>
 #include <map>
 #include <cstring>
@@ -2035,6 +2037,21 @@ glm::quat AvatarData::getOrientationOutbound() const {
     return (getLocalOrientation());
 }
 
+// A received model address (the avatar's own, or an attachment's) that names a file on this computer: in the log
+// once per address, and for an avatar that keeps changing addresses the first three, then every hundredth (the
+// avatar mixer runs this too, for every avatar, and keeps a journal).
+void AvatarData::noteRefusedModelAddress(const QUrl& address) {
+    if (_refusedModelAddress == address) {
+        return;
+    }
+    _refusedModelAddress = address;
+    _refusedModelAddressCount++;
+    if (_refusedModelAddressCount <= 3 || _refusedModelAddressCount % 100 == 0) {
+        qCWarning(avatars) << "Avatar" << getSessionUUID() << "sent a model address that names a file on this"
+                           << "computer; not loaded (" << _refusedModelAddressCount << "so far)";
+    }
+}
+
 void AvatarData::processAvatarIdentity(
     QDataStream& packetStream,
     bool& identityChanged,
@@ -2074,10 +2091,17 @@ void AvatarData::processAvatarIdentity(
         // address, so a blank compared as is would never load a body. The mixer sends our own identity back once
         // when we join, and that blank must not swap our local avatar for the default one.
         const bool ownEcho = isMyAvatar() && identity.skeletonModelURL == getWireSafeSkeletonModelURL();
-        const QUrl incoming = identity.skeletonModelURL.isEmpty() && !isMyAvatar()
-            ? AvatarData::defaultFullAvatarModelUrl() : identity.skeletonModelURL;
+        // Someone else's model address that names a file on this computer is taken as blank (the default avatar);
+        // our own may be a file we chose to wear. A qrc: address is the app's own resource and passes.
+        QUrl received = identity.skeletonModelURL;
+        if (!isMyAvatar() && ContentAddresses::isOnThisComputer(received.toString())) {
+            noteRefusedModelAddress(received);
+            received = QUrl();
+        }
+        const QUrl incoming = received.isEmpty() && !isMyAvatar()
+            ? AvatarData::defaultFullAvatarModelUrl() : received;
         if (!ownEcho && incoming != _skeletonModelURL) {
-            setSkeletonModelURL(identity.skeletonModelURL);
+            setSkeletonModelURL(received);
             identityChanged = true;
             skeletonModelURLChanged = true;
         }
@@ -2102,6 +2126,16 @@ void AvatarData::processAvatarIdentity(
             identityChanged = true;
         }
 
+        // an attachment's model address naming a file on this computer is blanked the same way (the attachment then
+        // has no model); ours stay as set
+        if (!isMyAvatar()) {
+            for (AttachmentData& attachment : identity.attachmentData) {
+                if (ContentAddresses::isOnThisComputer(attachment.modelURL.toString())) {
+                    noteRefusedModelAddress(attachment.modelURL);
+                    attachment.modelURL = QUrl();
+                }
+            }
+        }
         if (identity.attachmentData != _attachmentData) {
             setAttachmentData(identity.attachmentData);
             identityChanged = true;

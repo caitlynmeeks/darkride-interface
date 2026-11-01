@@ -40,6 +40,7 @@
 #include <AbstractScriptingServicesInterface.h>
 #include <AbstractViewStateInterface.h>
 #include <AddressManager.h>
+#include <ScriptNetworkPolicy.h>
 #include <ColorUtils.h>
 #include <FrameTrace.h>
 #include <Model.h>
@@ -380,6 +381,17 @@ void EntityTreeRenderer::init() {
     DomainHandler& domainHandler = DependencyManager::get<NodeList>()->getDomainHandler();
     connect(&domainHandler, &DomainHandler::settingsReceived, this, &EntityTreeRenderer::connectedToDomain);
 
+    // content from this computer is refused from the start, so a world's first packets can't carry it in before the
+    // world is known, and decided again at every domain change. The decision runs right on the domain handler's
+    // thread (direct): entity packets are read on the packet thread, and a decision queued to the main thread could
+    // run after a new world's first packets; the flag is atomic and the decision touches nothing else.
+    entityTree->setRefusesContentFromThisComputer(true);
+    auto decide = &EntityTreeRenderer::updateContentFromThisComputer;
+    connect(&domainHandler, &DomainHandler::connectedToDomain, this, decide, Qt::DirectConnection);
+    connect(&domainHandler, &DomainHandler::settingsReceived, this, decide, Qt::DirectConnection);
+    connect(&domainHandler, &DomainHandler::domainURLChanged, this, decide, Qt::DirectConnection);
+    connect(&domainHandler, &DomainHandler::disconnectedFromDomain, this, decide, Qt::DirectConnection);
+
     if (_wantScripts) resetEntitiesScriptEngine();
 
     forceRecheckEntities(); // setup our state to force checking our inside/outsideness of entities
@@ -389,6 +401,25 @@ void EntityTreeRenderer::init() {
     connect(entityTree.get(), &EntityTree::entityScriptChanging, this, &EntityTreeRenderer::entityScriptChanging, Qt::QueuedConnection);
 
     _zoneCullSkipList.clear();  // in case skiplist from a culling zone in a previous domain remains
+}
+
+void EntityTreeRenderer::updateContentFromThisComputer() {
+    EntityTreePointer entityTree = std::static_pointer_cast<EntityTree>(_tree);
+    if (!entityTree) {
+        return;
+    }
+    const DomainHandler& domainHandler = DependencyManager::get<NodeList>()->getDomainHandler();
+    // between worlds (no address yet) nothing is local; a serverless world file decides for its own tree
+    // (DomainSession::prepareServerlessDomainContents), so this tree keeps refusing while it is the one
+    const bool local = domainHandler.isConnected() && !domainHandler.isServerless() &&
+                       ScriptNetworkPolicy::isWorldLocal();
+    entityTree->setRefusesContentFromThisComputer(!local);
+    const int decision = local ? 0 : 1;
+    if (_contentFromThisComputerLogged.exchange(decision) != decision) {
+        qCDebug(entitiesrenderer) << "Content addresses naming a file on this computer:"
+                                  << (local ? "allowed (a local world)" : "refused (the world isn't local)")
+                                  << domainHandler.getHostname() << domainHandler.getIP().toString();
+    }
 }
 
 void EntityTreeRenderer::connectedToDomain() {

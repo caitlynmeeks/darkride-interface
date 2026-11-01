@@ -19,6 +19,7 @@
 #include <QHash>
 #include <QObject>
 #include <QtCore/QJsonObject>
+#include <QtCore/QStringList>
 
 #include <shared/ReadWriteLockable.h>
 #include <SimpleMovingAverage.h>
@@ -112,6 +113,11 @@ public:
     // set by an entity reader when a field claims more bytes than the packet holds: the rest of the packet is
     // abandoned (EntityItemPropertiesMacros.h, EntityTree::readEntityDataFromBuffer)
     bool readFailed = false;
+    // set by the client's tree when the world isn't local (EntityTree::setRefusesContentFromThisComputer): an entity
+    // reader empties a content address that names a file on this computer and records the property's script name
+    // here for the tree's one-time warning (READ_ENTITY_ADDRESS_PROPERTY)
+    bool refusesContentFromThisComputer = false;
+    QStringList refusedAddresses;
 
     ReadBitstreamToTreeParams(
         bool includeExistsBits = WANT_EXISTS_BITS,

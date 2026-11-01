@@ -27,6 +27,7 @@
 //
 
 #include "ParticleEffectEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <glm/gtx/transform.hpp>
 #include <QtCore/QJsonDocument>
@@ -775,7 +776,8 @@ int ParticleEffectEntityItem::readEntitySubclassDataFromBuffer(const unsigned ch
     const unsigned char* dataAt = data;
 
     READ_ENTITY_PROPERTY(PROP_SHAPE_TYPE, ShapeType, setShapeType);
-    READ_ENTITY_PROPERTY(PROP_COMPOUND_SHAPE_URL, QString, setCompoundShapeURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_COMPOUND_SHAPE_URL, setCompoundShapeURL,
+                                 EntityContentAddresses::isOnThisComputer, "compoundShapeURL");
     READ_ENTITY_PROPERTY(PROP_COLOR, u8vec3Color, setColor);
     READ_ENTITY_PROPERTY(PROP_ALPHA, float, setAlpha);
     withWriteLock([&] {
@@ -785,7 +787,7 @@ int ParticleEffectEntityItem::readEntitySubclassDataFromBuffer(const unsigned ch
         bytesRead += bytesFromPulse;
         dataAt += bytesFromPulse;
     });
-    READ_ENTITY_PROPERTY(PROP_TEXTURES, QString, setTextures);
+    READ_ENTITY_ADDRESSES_PROPERTY(PROP_TEXTURES, setTextures, EntityContentAddresses::clearTextures, "textures");
 
     READ_ENTITY_PROPERTY(PROP_MAX_PARTICLES, quint32, setMaxParticles);
     READ_ENTITY_PROPERTY(PROP_LIFESPAN, float, setLifespan);

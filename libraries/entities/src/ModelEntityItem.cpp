@@ -10,6 +10,7 @@
 //
 
 #include "ModelEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <QtCore/QJsonDocument>
 
@@ -123,11 +124,12 @@ int ModelEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* data,
     bool animationPropertiesChanged = false;
 
     READ_ENTITY_PROPERTY(PROP_SHAPE_TYPE, ShapeType, setShapeType);
-    READ_ENTITY_PROPERTY(PROP_COMPOUND_SHAPE_URL, QString, setCompoundShapeURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_COMPOUND_SHAPE_URL, setCompoundShapeURL,
+                                 EntityContentAddresses::isOnThisComputer, "compoundShapeURL");
     READ_ENTITY_PROPERTY(PROP_COLOR, glm::u8vec3, setColor);
-    READ_ENTITY_PROPERTY(PROP_TEXTURES, QString, setTextures);
+    READ_ENTITY_ADDRESSES_PROPERTY(PROP_TEXTURES, setTextures, EntityContentAddresses::clearTextures, "textures");
 
-    READ_ENTITY_PROPERTY(PROP_MODEL_URL, QString, setModelURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_MODEL_URL, setModelURL, EntityContentAddresses::isOnThisComputer, "modelURL");
     READ_ENTITY_PROPERTY(PROP_MODEL_SCALE, glm::vec3, setModelScale);
     READ_ENTITY_PROPERTY(PROP_JOINT_ROTATIONS_SET, QVector<bool>, setJointRotationsSet);
     READ_ENTITY_PROPERTY(PROP_JOINT_ROTATIONS, QVector<glm::quat>, setJointRotations);

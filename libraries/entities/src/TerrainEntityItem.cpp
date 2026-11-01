@@ -7,6 +7,7 @@
 //
 
 #include "TerrainEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -58,7 +59,8 @@ int TerrainEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* dat
     const unsigned char* dataAt = data;
 
     READ_ENTITY_PROPERTY(PROP_TERRAIN_VOXEL_SIZE, float, setVoxelSize);
-    READ_ENTITY_PROPERTY(PROP_TERRAIN_URL, QString, setTerrainURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_TERRAIN_URL, setTerrainURL,
+                                 EntityContentAddresses::isOnThisComputer, "terrainURL");
     READ_ENTITY_PROPERTY(PROP_TERRAIN_VERSION, uint32_t, setTerrainVersion);
     READ_ENTITY_PROPERTY(PROP_TERRAIN_LAYERS, QString, setTerrainLayers);
 

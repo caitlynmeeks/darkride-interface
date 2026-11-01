@@ -10,6 +10,7 @@
 //
 
 #include "EntityTree.h"
+#include "EntityContentAddresses.h"
 #include <QtCore/QDateTime>
 #include <QtCore/QQueue>
 
@@ -186,6 +187,36 @@ void EntityTree::readBitstreamToTree(const unsigned char* bitstream,
     }
 }
 
+void EntityTree::setRefusesContentFromThisComputer(bool refuses) {
+    if (_refusesContentFromThisComputer.exchange(refuses) != refuses) {
+        QMutexLocker locker(&_refusedAddressesWarnedLock);
+        _refusedAddressesWarned.clear();
+    }
+}
+
+void EntityTree::warnRefusedAddresses(const EntityItemID& entityID, const QStringList& propertyNames) {
+    if (propertyNames.isEmpty()) {
+        return;
+    }
+    _refusedAddressesCount += propertyNames.size();
+    QStringList fresh;
+    {
+        QMutexLocker locker(&_refusedAddressesWarnedLock);
+        const QString id = entityID.toString();
+        for (const QString& name : propertyNames) {
+            const QString key = id + "/" + name;
+            if (!_refusedAddressesWarned.contains(key)) {
+                _refusedAddressesWarned.insert(key);
+                fresh << name;
+            }
+        }
+    }
+    if (!fresh.isEmpty()) {
+        qCWarning(entities) << "Entity" << entityID << ":" << fresh.join(", ")
+                            << "name a file on the builder's computer, not on this one; not loaded";
+    }
+}
+
 int EntityTree::readEntityDataFromBuffer(const unsigned char* data, int bytesLeftToRead, ReadBitstreamToTreeParams& args) {
     const unsigned char* dataAt = data;
     int bytesRead = 0;
@@ -193,6 +224,8 @@ int EntityTree::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
     int expectedBytesPerEntity = EntityItem::expectedBytes();
 
     args.elementsPerPacket++;
+    args.refusesContentFromThisComputer = _refusesContentFromThisComputer.load();
+    args.refusedAddresses.clear();
 
     if (bytesLeftToRead >= (int)sizeof(numberOfEntities)) {
         // read our entities in....
@@ -216,6 +249,10 @@ int EntityTree::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
                     quint64 entityScriptTimestampBefore = entity->getScriptTimestamp();
 
                     bytesForThisEntity = entity->readEntityDataFromBuffer(dataAt, bytesLeftToRead, args);
+                    if (!args.refusedAddresses.isEmpty()) {
+                        warnRefusedAddresses(entityItemID, args.refusedAddresses);
+                        args.refusedAddresses.clear();
+                    }
                     if (args.readFailed) {
                         // a field claimed more than the packet holds: the fields read whole before it stand, the
                         // rest of the packet is abandoned (its cursor can't be trusted)
@@ -253,6 +290,10 @@ int EntityTree::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
                     entity = EntityTypes::constructEntityItem(dataAt, bytesLeftToRead);
                     if (entity) {
                         bytesForThisEntity = entity->readEntityDataFromBuffer(dataAt, bytesLeftToRead, args);
+                        if (!args.refusedAddresses.isEmpty()) {
+                            warnRefusedAddresses(entityItemID, args.refusedAddresses);
+                            args.refusedAddresses.clear();
+                        }
                         if (args.readFailed) {
                             // a new entity whose data passes the end of its packet is not added, and the rest of
                             // the packet is abandoned
@@ -3217,6 +3258,12 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
                 quint64 created = QDateTime::fromString(entityMap["created"].toString().trimmed(), Qt::ISODate).toMSecsSinceEpoch() * 1000;
                 properties.setCreated(created);
             }
+        }
+
+        // a world file from a link, or an import into a world that isn't local: an address naming a file on this
+        // computer is emptied as it would be from the wire
+        if (_refusesContentFromThisComputer.load()) {
+            warnRefusedAddresses(entityItemID, EntityContentAddresses::clearThisComputer(properties));
         }
 
         EntityItemPointer entity = addEntity(entityItemID, properties, isImport);
