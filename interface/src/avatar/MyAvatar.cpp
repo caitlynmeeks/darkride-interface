@@ -1854,14 +1854,26 @@ bool MyAvatar::updateStaleAvatarEntityBlobs() const {
     int32_t numFound = 0;
     for (const auto& id : staleIDs) {
         bool found = false;
+        bool madeByWorld = false;
         EntityItemProperties properties;
         entityTree->withReadLock([&] {
             EntityItemPointer entity = entityTree->findEntityByID(id);
             if (entity) {
-                properties = entity->getProperties();
+                madeByWorld = entity->getLocalOwner() == entity::LocalOwner::WORLD;
+                if (!madeByWorld) {
+                    properties = entity->getProperties();
+                }
                 found = true;
             }
         });
+        if (madeByWorld) {
+            // an avatar entity a world's script made stays out of the cache that every save reads (settings, the
+            // carry-over to the next world, favourites): it is the world's, for while the visitor is there
+            _avatarEntitiesLock.withWriteLock([&] {
+                _cachedAvatarEntityBlobs.remove(id);
+            });
+            continue;
+        }
         if (found) {
             ++numFound;
             QByteArray blob;
@@ -1907,8 +1919,8 @@ AvatarEntityMap MyAvatar::getAvatarEntityData() const {
     });
     for (const auto& entityID : avatarEntityIDs) {
         auto entity = entityTree->findEntityByID(entityID);
-        if (!entity) {
-            continue;
+        if (!entity || entity->getLocalOwner() == entity::LocalOwner::WORLD) {
+            continue;  // a world's avatar entity: not the visitor's to keep
         }
 
         EncodeBitstreamParams params;
@@ -2658,8 +2670,8 @@ QVariantList MyAvatar::getAvatarEntitiesVariant() {
         });
         for (const auto& entityID : avatarEntityIDs) {
             auto entity = entityTree->findEntityByID(entityID);
-            if (!entity) {
-                continue;
+            if (!entity || entity->getLocalOwner() == entity::LocalOwner::WORLD) {
+                continue;  // a world's avatar entity: not the visitor's to keep
             }
             EncodeBitstreamParams params;
             auto desiredProperties = entity->getEntityProperties(params);

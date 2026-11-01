@@ -2488,8 +2488,9 @@ private:
     // What a world's script may do with an entity (security #28). The caller is a world's script when
     // ScriptCaller::isWorld() is true: the script API guards mark each call a world's script makes, on its own thread,
     // so these run at the start of the call, before any hop to another thread. For the app and the visitor's own
-    // scripts they change nothing. A domain entity and a local entity a world's script made are the world's to use;
-    // avatar entities (the visitor's own and other people's) the world may read but not change or send events into;
+    // scripts they change nothing. A domain entity and a local or avatar entity a world's script made are the world's
+    // to use; other avatar entities (the visitor's own and other people's) the world may read but not change or send
+    // events into;
     // any other local entity (the app's, the visitor's own scripts', or one made by a path that recorded no owner) is
     // hidden: the call answers as for an id that doesn't exist. An id that isn't an entity is left to the call.
 public:

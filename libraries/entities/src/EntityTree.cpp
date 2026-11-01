@@ -794,6 +794,10 @@ EntityItemPointer EntityTree::addEntity(const EntityItemID& entityID, const Enti
             // who made it, before anything else can see it: a world's script (the guards mark its calls on its own
             // thread) or the visitor's side (the app, the visitor's own scripts)
             result->setLocalOwner(ScriptCaller::isWorld() ? entity::LocalOwner::WORLD : entity::LocalOwner::VISITOR);
+        } else if (result->isMyAvatarEntity() && ScriptCaller::isWorld()) {
+            // an avatar entity a world's script made (a hat the world hands out) is the world's: it may change it
+            // while the visitor is there, and it is never saved with the visitor's avatar (MyAvatar)
+            result->setLocalOwner(entity::LocalOwner::WORLD);
         }
         // Recurse the tree and store the entity in the correct tree element
         AddEntityOperator theOperator(getThisPointer(), result);

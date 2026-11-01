@@ -33,6 +33,8 @@ private slots:
     void testWorldParents();
     void testWorldEvents();
     void testOwnerKeptOnEdit();
+    void testWorldAvatarEntities();
+    void testWorldClones();
     void cleanupTestCase();
 
 private:

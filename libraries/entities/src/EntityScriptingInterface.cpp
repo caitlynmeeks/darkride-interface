@@ -491,7 +491,8 @@ WorldReach worldReachOf(const EntityItem& entity) {
         case entity::HostType::DOMAIN:
             return WorldReach::FULL;
         case entity::HostType::AVATAR:
-            return WorldReach::READ;
+            // the world may change the avatar entities a world's script made; others' and the visitor's own it reads
+            return entity.getLocalOwner() == entity::LocalOwner::WORLD ? WorldReach::FULL : WorldReach::READ;
         case entity::HostType::LOCAL:
         default:
             // fail closed: only a local entity recorded as a world's script's is the world's

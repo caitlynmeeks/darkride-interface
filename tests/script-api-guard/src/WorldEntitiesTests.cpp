@@ -12,6 +12,8 @@
 //  ScriptCaller, as the guards mark each of its calls) may use domain entities and the local entities a world's script
 //  made, read avatar entities, and nothing else: any other local entity answers as if it didn't exist and can't be
 //  changed, reparented onto or sent events. The app and the visitor's own scripts see and change everything as before.
+//  An avatar entity a world's script made (a hat the world hands out) is the world's too: it may change it; the
+//  visitor's own avatar entities it only reads.
 //
 
 #include "WorldEntitiesTests.h"
@@ -271,6 +273,86 @@ void WorldEntitiesTests::testOwnerKeptOnEdit() {
     }
     QCOMPARE(int(find(_tree, _worldLocal)->getLocalOwner()), int(entity::LocalOwner::WORLD));
     QCOMPARE(int(find(_tree, _visitorLocal)->getLocalOwner()), int(entity::LocalOwner::VISITOR));
+}
+
+void WorldEntitiesTests::testWorldAvatarEntities() {
+    // one the visitor's own script made (as the visitor's settings and favourites make them), one a world's script made
+    const QUuid visitorHat = _entities->addEntity(box("visitor's hat"), QString("avatar"));
+    QUuid worldHat;
+    {
+        ScriptCaller::WorldScope world(true);
+        worldHat = _entities->addEntity(box("world's hat"), QString("avatar"));
+    }
+    QVERIFY(!visitorHat.isNull());
+    QVERIFY(!worldHat.isNull());
+    QVERIFY(find(_tree, worldHat)->isMyAvatarEntity());
+    QCOMPARE(int(find(_tree, visitorHat)->getLocalOwner()), int(entity::LocalOwner::NONE));
+    QCOMPARE(int(find(_tree, worldHat)->getLocalOwner()), int(entity::LocalOwner::WORLD));
+    QVERIFY(find(_tree, worldHat)->isMadeByWorld());
+    QVERIFY(!find(_tree, worldHat)->isVisitorsOwn());
+    QVERIFY(find(_tree, visitorHat)->isVisitorsOwn());
+    QVERIFY(!find(_tree, visitorHat)->isMadeByWorld());
+
+    EntityItemProperties rename;
+    rename.setName("changed by a world");
+    {
+        ScriptCaller::WorldScope world(true);
+        // the world reads both, changes its own and not the visitor's
+        QCOMPARE(_entities->forWorldRead(visitorHat), visitorHat);
+        QCOMPARE(_entities->getEntityProperties(visitorHat).getName(), QString("visitor's hat"));
+        QVERIFY(_entities->editEntity(visitorHat, rename).isNull());
+        _entities->deleteEntity(visitorHat);  // refused before anything is deleted
+        QCOMPARE(_entities->editEntity(worldHat, rename), worldHat);
+        // and may attach its own things to its hat
+        auto feather = box("feather");
+        feather.setParentID(worldHat);
+        const QUuid featherID = _entities->addEntity(feather, QString("local"));
+        QVERIFY(!featherID.isNull());
+        QCOMPARE(find(_tree, featherID)->getParentID(), worldHat);
+    }
+    QCOMPARE(nameOf(_tree, visitorHat), QString("visitor's hat"));
+    QCOMPARE(nameOf(_tree, worldHat), QString("changed by a world"));
+    QCOMPARE(int(find(_tree, worldHat)->getLocalOwner()), int(entity::LocalOwner::WORLD));
+
+    // the visitor's side changes either, and the owner stays
+    EntityItemProperties back;
+    back.setName("renamed by the visitor");
+    QCOMPARE(_entities->editEntity(worldHat, back), worldHat);
+    QCOMPARE(nameOf(_tree, worldHat), QString("renamed by the visitor"));
+    QCOMPARE(int(find(_tree, worldHat)->getLocalOwner()), int(entity::LocalOwner::WORLD));
+}
+
+void WorldEntitiesTests::testWorldClones() {
+    // a domain entity that clones as an avatar entity (a cloneable hat on a rack)
+    auto rackHat = box("rack hat");
+    rackHat.setCloneable(true);
+    rackHat.setCloneAvatarEntity(true);
+    const QUuid rack = addToTree(_tree, rackHat);
+    QVERIFY(!rack.isNull());
+
+    QUuid worldsCloneOfOwn, worldsCloneOfRack, worldsCloneOfVisitors;
+    {
+        ScriptCaller::WorldScope world(true);
+        worldsCloneOfOwn = _entities->cloneEntity(_worldLocal);
+        worldsCloneOfRack = _entities->cloneEntity(rack);
+        worldsCloneOfVisitors = _entities->cloneEntity(_visitorLocal);  // hidden: as if it didn't exist
+    }
+    const QUuid visitorsCloneOfRack = _entities->cloneEntity(rack);
+    const QUuid visitorsCloneOfOwn = _entities->cloneEntity(_visitorLocal);
+
+    QVERIFY(worldsCloneOfVisitors.isNull());
+    for (const auto& id : { worldsCloneOfOwn, worldsCloneOfRack, visitorsCloneOfRack, visitorsCloneOfOwn }) {
+        QVERIFY(!id.isNull());
+        QVERIFY(find(_tree, id));
+    }
+    QVERIFY(find(_tree, worldsCloneOfOwn)->isLocalEntity());
+    QCOMPARE(int(find(_tree, worldsCloneOfOwn)->getLocalOwner()), int(entity::LocalOwner::WORLD));
+    QVERIFY(find(_tree, worldsCloneOfRack)->isMyAvatarEntity());
+    QCOMPARE(int(find(_tree, worldsCloneOfRack)->getLocalOwner()), int(entity::LocalOwner::WORLD));
+    QVERIFY(find(_tree, visitorsCloneOfRack)->isMyAvatarEntity());
+    QCOMPARE(int(find(_tree, visitorsCloneOfRack)->getLocalOwner()), int(entity::LocalOwner::NONE));
+    QVERIFY(find(_tree, visitorsCloneOfOwn)->isLocalEntity());
+    QCOMPARE(int(find(_tree, visitorsCloneOfOwn)->getLocalOwner()), int(entity::LocalOwner::VISITOR));
 }
 
 void WorldEntitiesTests::cleanupTestCase() {

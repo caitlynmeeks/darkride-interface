@@ -78,8 +78,10 @@ enum class HostType {
 };
 
 /// Who made a local entity on this computer, recorded once when it is added (EntityTree::addEntity) and never changed
-/// or sent anywhere: the visitor's side (the app and the visitor's own scripts) or a world's script. None for domain
-/// and avatar entities. A world's scripts may use only the local entities a world's script made.
+/// or sent anywhere: the visitor's side (the app and the visitor's own scripts) or a world's script. An avatar entity
+/// a world's script made is recorded as the world's too (it is never saved with the visitor's avatar); other
+/// avatar entities and domain entities record none. Of the local entities a world's scripts use only those a world's
+/// script made; of the avatar entities they change only those.
 enum class LocalOwner : uint8_t {
     NONE = 0,
     VISITOR,
@@ -581,17 +583,19 @@ public:
     
     virtual void setEntityHostType(entity::HostType hostType) { _hostType = hostType; }
 
-    /// Who made this local entity (NONE for domain and avatar entities); safe to read from any thread without the
-    /// entity's lock.
+    /// Who made this local or avatar entity (NONE for domain entities and for avatar entities no world's script made);
+    /// safe to read from any thread without the entity's lock.
     entity::LocalOwner getLocalOwner() const { return static_cast<entity::LocalOwner>(_localOwner.load()); }
-    /// Records who made a local entity. Called once, by EntityTree::addEntity, before the entity is in the tree.
+    /// Records who made a local or avatar entity. Called once, by EntityTree::addEntity, before the entity is in the
+    /// tree.
     void setLocalOwner(entity::LocalOwner owner) { _localOwner.store(static_cast<uint8_t>(owner)); }
-    /// The world's own content: a domain entity, or a local entity a world's script made.
+    /// The world's own content: a domain entity, or a local or avatar entity a world's script made.
     bool isMadeByWorld() const { return isDomainEntity() || getLocalOwner() == entity::LocalOwner::WORLD; }
     /// The visitor's own: a local entity the app or the visitor's own scripts made, or one of the visitor's avatar
-    /// entities.
+    /// entities that no world's script made.
     bool isVisitorsOwn() const {
-        return (isLocalEntity() && getLocalOwner() == entity::LocalOwner::VISITOR) || isMyAvatarEntity();
+        return (isLocalEntity() && getLocalOwner() == entity::LocalOwner::VISITOR) ||
+               (isMyAvatarEntity() && getLocalOwner() != entity::LocalOwner::WORLD);
     }
 
     // if this entity is an avatar entity, which avatar is it associated with?
