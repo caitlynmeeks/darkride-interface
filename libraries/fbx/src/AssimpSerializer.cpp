@@ -50,8 +50,9 @@ MediaType AssimpSerializer::getMediaType() const {
 
     // The model formats Darkride reads through Assimp: the common ones for worlds and avatars. Assimp has importers for
     // dozens more, many old and little used; content from anywhere only reaches these. (FBX and OBJ have their own
-    // serializers.) Add a format here to support it.
-    static const QStringList ALLOWED_EXTENSIONS = { "gltf", "glb", "dae", "3ds", "ply", "stl" };
+    // serializers.) Add a format here to support it. A VRM is a binary glTF: the Assimp built here reads it as a .glb,
+    // and newer ones also list .vrm.
+    static const QStringList ALLOWED_EXTENSIONS = { "gltf", "glb", "vrm", "dae", "3ds", "ply", "stl" };
 
     auto exts = QString(aiExts.C_Str()).split(";");
     for (QString anyExt : exts) {
