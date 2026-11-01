@@ -19,6 +19,7 @@ private slots:
     void normalizedKey_data();
     void normalizedKey();
     void neverToScripts();
+    void refusedProtected();
 };
 
 #endif // hifi_SettingKeyTests_h

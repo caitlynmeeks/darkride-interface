@@ -44,3 +44,7 @@ bool Setting::neverToScripts(const QString& key) {
     }
     return false;
 }
+
+bool Setting::refusedProtected(bool worldScript, bool heldToNetworkRule) {
+    return worldScript || heldToNetworkRule;
+}
