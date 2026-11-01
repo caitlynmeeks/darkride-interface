@@ -12,10 +12,15 @@
 
 namespace {
 thread_local bool callerIsWorld = false;
+thread_local bool threadIsWorld = false;
 }
 
 bool ScriptCaller::isWorld() {
-    return callerIsWorld;
+    return callerIsWorld || threadIsWorld;
+}
+
+void ScriptCaller::markThreadAsWorld() {
+    threadIsWorld = true;
 }
 
 ScriptCaller::WorldScope::WorldScope(bool world) : _outer(callerIsWorld) {

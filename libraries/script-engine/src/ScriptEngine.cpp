@@ -1442,6 +1442,11 @@ void ScriptEngine::run() {
         // (because we're a client script)
         hifi::scripting::setLocalAccessSafeThread(true);
     }
+    if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
+        // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
+        // call no guard marks (ScriptCaller)
+        ScriptCaller::markThreadAsWorld();
+    }
 
     auto filenameParts = _fileNameString.split("/");
     auto name = filenameParts.size() > 0 ? filenameParts[filenameParts.size() - 1] : "unknown";

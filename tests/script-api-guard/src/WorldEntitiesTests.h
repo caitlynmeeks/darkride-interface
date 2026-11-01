@@ -35,6 +35,7 @@ private slots:
     void testOwnerKeptOnEdit();
     void testWorldAvatarEntities();
     void testWorldClones();
+    void testWorldThread();
     void cleanupTestCase();
 
 private:

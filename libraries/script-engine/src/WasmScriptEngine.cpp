@@ -37,6 +37,7 @@
 #include <PointerEvent.h>
 #include <ResourceCache.h>
 #include <ResourceManager.h>
+#include <ScriptCaller.h>
 #include <SettingHandle.h>
 #include <SharedUtil.h>
 #include <shared/LocalFileAccessGate.h>
@@ -463,6 +464,11 @@ bool WasmScriptEngine::fetchModuleBytes() {
 void WasmScriptEngine::run() {
     if (QThread::currentThread() != qApp->thread() && _context == Context::CLIENT_SCRIPT) {
         hifi::scripting::setLocalAccessSafeThread(true);
+    }
+    if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
+        // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
+        // call no guard marks (ScriptCaller)
+        ScriptCaller::markThreadAsWorld();
     }
     QSharedPointer<ScriptEngines> scriptEngines(_scriptEngines);
     if (!scriptEngines || scriptEngines->isStopped()) {

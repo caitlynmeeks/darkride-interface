@@ -26,6 +26,8 @@
 #include <ScriptCaller.h>
 #include <SpatialParentFinder.h>
 
+#include <QtCore/QThread>
+
 #include <EntityItemProperties.h>
 #include <EntityScriptingInterface.h>
 #include <EntityTree.h>
@@ -353,6 +355,45 @@ void WorldEntitiesTests::testWorldClones() {
     QCOMPARE(int(find(_tree, visitorsCloneOfRack)->getLocalOwner()), int(entity::LocalOwner::NONE));
     QVERIFY(find(_tree, visitorsCloneOfOwn)->isLocalEntity());
     QCOMPARE(int(find(_tree, visitorsCloneOfOwn)->getLocalOwner()), int(entity::LocalOwner::VISITOR));
+}
+
+void WorldEntitiesTests::testWorldThread() {
+    // a thread marked as a world's (the entities script engine's thread): every call on it is the world's, whether a
+    // guard marked it or not, and no scope clears that; other threads stay unmarked
+    bool before = true;
+    bool after = false;
+    bool afterScope = false;
+    QUuid made;
+    QUuid visitorsAsSeen;
+    QThread* worldThread = QThread::create([&] {
+        before = ScriptCaller::isWorld();
+        ScriptCaller::markThreadAsWorld();
+        after = ScriptCaller::isWorld();
+        {
+            ScriptCaller::WorldScope notWorld(false);
+            afterScope = ScriptCaller::isWorld();
+        }
+        made = _entities->addEntity(box("made on the world's thread"), QString("local"));
+        visitorsAsSeen = _entities->forWorldRead(_visitorLocal);
+    });
+    worldThread->start();
+    QVERIFY(worldThread->wait(10000));
+    delete worldThread;
+
+    QVERIFY(!before);
+    QVERIFY(after);
+    QVERIFY(afterScope);
+    QVERIFY(!ScriptCaller::isWorld());  // the test's own thread
+    QVERIFY(!made.isNull());
+    QCOMPARE(int(find(_tree, made)->getLocalOwner()), int(entity::LocalOwner::WORLD));
+    QVERIFY(visitorsAsSeen.isNull());
+
+    bool fresh = true;
+    QThread* otherThread = QThread::create([&] { fresh = ScriptCaller::isWorld(); });
+    otherThread->start();
+    QVERIFY(otherThread->wait(10000));
+    delete otherThread;
+    QVERIFY(!fresh);
 }
 
 void WorldEntitiesTests::cleanupTestCase() {

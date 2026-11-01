@@ -22,6 +22,12 @@
 namespace ScriptCaller {
     bool isWorld();
 
+    /// Marks every call made on this thread from now on as a world's script's, for the rest of the thread's life. Set
+    /// once, when the thread of an engine that runs only a world's scripts starts (the entities script engine, on
+    /// both engines), so that a call the guards don't mark still counts as the world's. Nothing clears it, a
+    /// WorldScope included.
+    void markThreadAsWorld();
+
     /// Marks the calls made while it lives as a world's script's (when `world` is true).
     class WorldScope {
     public:
