@@ -211,6 +211,7 @@ private:
     void screenDialogGone();
     void leaveDialogOnly();
     void showKeptSlots();   // setScreenState after hideScreenSlots
+    QString middleFront() const;   // the middle's page to put in front as it fills
 
     bool _restored { false };   // none opens before the layout's restore (after sign-in)
     QHash<QString, QPointer<QDockWidget>> _docks;

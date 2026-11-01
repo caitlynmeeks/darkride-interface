@@ -519,13 +519,26 @@ void Panels::leaveDialogOnly() {
         return;   // the slot fills as it comes (takeScreenSlot)
     }
     host->setProperty("dialogOnly", false);
-    bool put;
-    if (!_middleTabs.isEmpty() && _middleTabs.last() == TABLET_TAB) {
-        put = putTabletOnScreen();
-    } else {
-        put = putOnScreen(_middleTabs.isEmpty() ? MIDDLE_FIRST : _middleTabs.last());
+    const QString front = middleFront();
+    const bool put = front == TABLET_TAB ? putTabletOnScreen() : putOnScreen(front);
+    qCDebug(interfaceapp) << "Panels: the screen whole again, in front" << front << put;
+}
+
+QString Panels::middleFront() const {
+    // the middle's page in front: its last tab, unless that's the tablet's added unseen (a page the tablet loaded while
+    // the screen was up, its tab put first: tabletScreenChanged) and never brought forward; then the panel before it
+    if (_middleTabs.isEmpty()) {
+        return MIDDLE_FIRST;
     }
-    qCDebug(interfaceapp) << "Panels: the screen whole again, its middle page put" << put;
+    if (_middleTabs.last() != TABLET_TAB || _tabletOnScreen) {
+        return _middleTabs.last();
+    }
+    for (int i = _middleTabs.size() - 2; i >= 0; --i) {
+        if (_middleTabs[i] != TABLET_TAB) {
+            return _middleTabs[i];
+        }
+    }
+    return MIDDLE_FIRST;
 }
 
 bool Panels::makeNextScreenPage() {
@@ -613,10 +626,10 @@ void Panels::takeScreenSlot(const QString& slot, QQuickItem* host) {
         if (page && page->property("on").toBool()) {
             putOnScreen(RADIO);
         }
-    } else if (!_middleTabs.isEmpty() && _middleTabs.last() == TABLET_TAB) {
+    } else if (middleFront() == TABLET_TAB) {
         putTabletOnScreen();
     } else {
-        putOnScreen(_middleTabs.isEmpty() ? MIDDLE_FIRST : _middleTabs.last());
+        putOnScreen(middleFront());
     }
 }
 
