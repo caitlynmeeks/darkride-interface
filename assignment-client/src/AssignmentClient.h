@@ -53,6 +53,9 @@ private:
     QString _assignmentServerHostname;
     bool _assignmentServerPortGiven { false };   // --server-port was given: the shared-memory slot is not consulted
     HifiSockAddr _assignmentServerSocket;
+    QList<QHostAddress> _assignmentServerAddresses; // every address the configured name resolves to
+    bool _assignmentsFromAnyAddress { false };      // TIVOLI_ASSIGNMENTS_FROM_ANY_ADDRESS, for a server with several addresses
+    quint64 _lastRefusedAssignmentLogUsecs { 0 };
     QTimer _requestTimer; // timer for requesting and assignment
     QTimer _statsTimerACM; // timer for sending stats to assignment client monitor
     QUuid _childAssignmentUUID = QUuid::createUuid();
