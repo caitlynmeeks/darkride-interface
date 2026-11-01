@@ -691,8 +691,6 @@ void DomainServer::setupNodeListAndAssignments() {
 
     QVariant localPortValue = _settingsManager.valueOrDefaultValueForKeyPath(CUSTOM_LOCAL_PORT_OPTION);
     // TODO: if env HIFI_DOMAIN_SERVER_PORT, set new local port value
-    // then remove workaround in docker/server/ecosystem.config.js
-    // ...which should also be replaced sometime
     int domainServerPort = localPortValue.toInt();
 
     int domainServerDTLSPort = INVALID_PORT;
