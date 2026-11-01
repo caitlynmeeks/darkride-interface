@@ -126,7 +126,7 @@ public:
     /// vr's check that a window is one of its slots' surfaces; until it's set, every host is refused
     static void setScreenWindowCheck(std::function<bool(QQuickWindow*)> check);
     /// a slot's layout size in panel pixels; empty while it holds nothing (the right one while the radio is off)
-    QSize screenSlotSize(const QString& slot) const;
+    Q_INVOKABLE QSize screenSlotSize(const QString& slot) const;
     /// "down" or "parked" (hiding is releaseScreenSlots); "tablet shown" for scripts follows it
     void setScreenState(const QString& state);
     QString screenState() const { return _screenState; }

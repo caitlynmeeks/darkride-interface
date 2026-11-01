@@ -243,9 +243,9 @@ bool QmlDock::moveTo(QQuickItem* host) {
     if (!page || !host) {
         return false;
     }
-    page->setParentItem(host);
     page->setPosition(QPointF(0, 0));
     page->setSize(host->size());
+    page->setParentItem(host);   // a slot lays its pages out as they come in (ScreenSlot.qml's scale)
     page->setVisible(true);
     _away = true;
     return true;
@@ -262,6 +262,10 @@ bool QmlDock::moveBack(bool shown) {
     page->setParentItem(_view->quickWindow()->contentItem());
 #endif
     page->setPosition(QPointF(0, 0));
+    page->setScale(1.0);
+    if (page->metaObject()->indexOfProperty("screenScale") >= 0) {
+        page->setProperty("screenScale", 1.0);
+    }
     page->setSize(_view->size());
     page->setVisible(shown);
     _away = false;

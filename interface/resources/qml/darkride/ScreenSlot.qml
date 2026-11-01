@@ -59,21 +59,35 @@ Rectangle {
         }
     }
 
+    // the surface's pixels per layout pixel: vr sizes the surface from its own degrees-per-pixel number, the panels are
+    // laid out in their own pixels (Panels.screenSlotSize), so a page is laid out at its size and drawn this much bigger
+    readonly property real pageScale: {
+        var layout = Panels.screenSlotSize(slot);
+        return layout.width > 0 ? Math.max(1, width / layout.width) : 1;
+    }
+    onPageScaleChanged: content.layoutPages()
+
     Item {
         id: content
         objectName: "content"
         anchors { left: parent.left; right: parent.right; top: tabRow.bottom; bottom: parent.bottom }
-        // the page in it follows its size (Panels sets the page's size when it moves in)
-        onWidthChanged: {
+        // a page in it is laid out at its own size and scaled up to fill it; Qt Quick text stays sharp scaled, and a
+        // panel with a web view counter-scales it (its screenScale) so the page's picture has the pixels
+        function layoutPages() {
             for (var i = 0; i < children.length; i++) {
-                children[i].width = width;
+                var page = children[i];
+                page.transformOrigin = Item.TopLeft;
+                page.scale = root.pageScale;
+                page.width = width / root.pageScale;
+                page.height = height / root.pageScale;
+                if (page.screenScale !== undefined) {
+                    page.screenScale = root.pageScale;
+                }
             }
         }
-        onHeightChanged: {
-            for (var i = 0; i < children.length; i++) {
-                children[i].height = height;
-            }
-        }
+        onWidthChanged: layoutPages()
+        onHeightChanged: layoutPages()
+        onChildrenChanged: layoutPages()
     }
 
     // the surface puts the item in its window after the item is made: Panels checks that window
