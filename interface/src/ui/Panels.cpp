@@ -507,18 +507,24 @@ void Panels::setScreenState(const QString& state) {
 
 void Panels::releaseScreenSlots() {
     const bool shown = !qApp->isHMDMode();
+    QStringList movedBack;
     for (auto it = _docks.cbegin(); it != _docks.cend(); ++it) {
         auto qmlDock = qobject_cast<QmlDock*>(it.value().data());
         if (qmlDock && qmlDock->isAway()) {
             qmlDock->moveBack(shown);
+            movedBack.append(it.key());
         }
     }
     _screenSlots.clear();
     _middleTabs.clear();
-    // out of the headset, the docks that were showing before the screen took their pages show again; in it, they
-    // wait unseen (displayChanged shows them when the headset comes off)
+    // out of the headset, the docks that were showing before the screen took their pages show again, and a panel
+    // that was only ever on the screen is closed; in the headset they wait unseen (displayChanged, as it comes off)
     if (shown) {
         showHiddenForScreen();
+        for (const QString& name : movedBack) {
+            QDockWidget* panel = _docks.value(name);
+            setOpen(name, panel && !panel->isHidden());
+        }
     }
     if (!_screenState.isEmpty()) {
         _screenState.clear();
