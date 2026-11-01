@@ -168,7 +168,7 @@ public:
     QMultiMap<QString, QString> _connectionParentMap;
     QMultiMap<QString, QString> _connectionChildMap;
 
-    static glm::vec3 getVec3(const QVariantList& properties, int index);
+    static glm::vec3 getVec3(const FBXPropertyList& properties, int index);
     static QVector<glm::vec4> createVec4Vector(const QVector<double>& doubleVector);
     static QVector<glm::vec4> createVec4VectorRGBA(const QVector<double>& doubleVector, glm::vec4& average);
     static QVector<glm::vec3> createVec3Vector(const QVector<double>& doubleVector);

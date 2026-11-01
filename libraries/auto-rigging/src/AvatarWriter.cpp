@@ -44,7 +44,7 @@ QByteArray objectName(const QString& name, const char* kind) {
     return name.toUtf8() + QByteArray("\x00\x01", 2) + QByteArray(kind);
 }
 
-FBXNode makeNode(const QByteArray& name, const QVariantList& properties = QVariantList(),
+FBXNode makeNode(const QByteArray& name, const FBXPropertyList& properties = FBXPropertyList(),
                  const FBXNodeList& children = FBXNodeList()) {
     FBXNode node;
     node.name = name;
@@ -54,22 +54,23 @@ FBXNode makeNode(const QByteArray& name, const QVariantList& properties = QVaria
 }
 
 // One "P" entry of a Properties70 block: name, type, label, flags, values.
-FBXNode property(const char* name, const char* type, const char* label, const char* flags, const QVariantList& values) {
-    QVariantList properties { QByteArray(name), QByteArray(type), QByteArray(label), QByteArray(flags) };
+FBXNode property(const char* name, const char* type, const char* label, const char* flags,
+                 const FBXPropertyList& values) {
+    FBXPropertyList properties { QByteArray(name), QByteArray(type), QByteArray(label), QByteArray(flags) };
     properties.append(values);
     return makeNode("P", properties);
 }
 
-QVariantList vector3(const glm::vec3& v) {
+FBXPropertyList vector3(const glm::vec3& v) {
     return { (double)v.x, (double)v.y, (double)v.z };
 }
 
-QVariant doubles(const QVector<double>& values) {
-    return QVariant::fromValue(values);
+FBXProperty doubles(const QVector<double>& values) {
+    return FBXProperty(values);
 }
 
-QVariant ints(const QVector<qint32>& values) {
-    return QVariant::fromValue(values);
+FBXProperty ints(const QVector<qint32>& values) {
+    return FBXProperty(values);
 }
 
 // glm matrices are stored column by column, as FBX expects.

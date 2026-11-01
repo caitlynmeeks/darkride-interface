@@ -24,7 +24,7 @@ public:
     static QByteArray encodeFBX(const FBXNode& root);
 
     static void encodeNode(QDataStream& out, const FBXNode& node);
-    static void encodeFBXProperty(QDataStream& out, const QVariant& property);
+    static void encodeFBXProperty(QDataStream& out, const FBXProperty& property);
 };
 
 #endif // hifi_FBXWriter_h

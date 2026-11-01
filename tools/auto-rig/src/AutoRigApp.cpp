@@ -84,19 +84,18 @@ static std::map<QString, glm::vec3> keyJoints(const HFMModel& key) {
 static void dumpNode(const FBXNode& node, int depth, int maxDepth, int maxChildren) {
     QStringList properties;
     for (int i = 0; i < node.properties.size() && i < 8; i++) {
-        const QVariant& p = node.properties.at(i);
-        const QString type = p.typeName();
-        if (p.type() == QVariant::ByteArray) {
+        const FBXProperty& p = node.properties.at(i);
+        const QString type = p.scalar().typeName();
+        if (p.scalar().type() == QVariant::ByteArray) {
             QString text = QString::fromLatin1(p.toByteArray().left(60));
             text.replace(QChar('\0'), "\\0").replace(QChar('\1'), "\\1");
             properties << "\"" + text + "\"";
-        } else if (type.startsWith("QVector")) {
-            int size = 0;
-            if (type == "QVector<double>") size = p.value<QVector<double>>().size();
-            else if (type == "QVector<float>") size = p.value<QVector<float>>().size();
-            else if (type == "QVector<int>") size = p.value<QVector<int>>().size();
-            else if (type == "QVector<qlonglong>") size = p.value<QVector<qlonglong>>().size();
-            properties << QString("%1[%2]").arg(type).arg(size);
+        } else if (p.isArray()) {
+            if (auto values = p.array<double>()) properties << QString("QVector<double>[%1]").arg(values->size());
+            else if (auto values = p.array<float>()) properties << QString("QVector<float>[%1]").arg(values->size());
+            else if (auto values = p.array<qint32>()) properties << QString("QVector<int>[%1]").arg(values->size());
+            else if (auto values = p.array<qint64>()) properties << QString("QVector<qlonglong>[%1]").arg(values->size());
+            else if (auto values = p.array<bool>()) properties << QString("QVector<bool>[%1]").arg(values->size());
         } else {
             properties << QString("%1:%2").arg(type).arg(p.toString().left(40));
         }
