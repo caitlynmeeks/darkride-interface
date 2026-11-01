@@ -62,6 +62,13 @@ public:
 
     void loadScripts();
     void saveScripts();
+    /// The visitor's answer to the one review of the saved scripts (savedScriptsNeedReview): the scripts kept start
+    /// now and stay saved, the rest are taken off the list, and the review is not asked again. For the app's own
+    /// dialog only: not a slot, not reachable by any script.
+    void finishSavedScriptsReview(const QStringList& kept);
+    /// The saved scripts held for that review, until it is answered (empty otherwise): for the app to ask when its UI
+    /// is up, whether or not it was listening when savedScriptsNeedReview was emitted at start.
+    QStringList savedScriptsAwaitingReview() const { return _heldForReview; }
 
     QString getDebugScriptUrl() { return _debugScriptUrl; };
     void setDebugScriptUrl(const QString& url) { _debugScriptUrl = url; };
@@ -188,6 +195,10 @@ public:
     void addScriptEngine(ScriptEnginePointer);
 
 signals:
+    /// Once, at the first start of an app that has this review: the saved scripts from the network that would start
+    /// with the app (anything but the app's own scripts and files of this machine). They are held, not started,
+    /// until finishSavedScriptsReview answers.
+    void savedScriptsNeedReview(const QStringList& scripts);
 
     /**jsdoc
      * Triggered when the number of Interface scripts running changes.
@@ -362,6 +373,7 @@ protected:
     const QUrl _defaultScriptsOverride { };
     // If an override is set, this will be true if defaultScripts.js was previously running.
     bool _defaultScriptsWasRunning { false };
+    QStringList _heldForReview;   // saved scripts from the network, not started until the visitor's review
 };
 
 QUrl normalizeScriptURL(const QUrl& rawScriptURL);

@@ -8,6 +8,9 @@
 
 #include "ScriptEngines.h"
 
+#include <ScriptNetworkPolicy.h>
+#include <QtCore/QFile>
+#include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 
 #include <QtCore/QStandardPaths>
@@ -35,6 +38,44 @@ static const QUrl DEFAULT_SCRIPTS_LOCATION { "file:///~//defaultScripts.js" };
 
 // Using a QVariantList so this is human-readable in the settings file
 static Setting::Handle<QVariantList> runningScriptsHandle(SETTINGS_KEY, { QVariant(DEFAULT_SCRIPTS_LOCATION) });
+// The one review of the saved scripts (security finding #30) is done once. Its mark is a file in the app's data
+// folder, which no script can write: a setting could have been set by a world before this app.
+static QString savedScriptsReviewedMark() {
+    return PathUtils::getAppDataFilePath("saved-scripts-reviewed");
+}
+static bool savedScriptsReviewed() {
+    return QFileInfo::exists(savedScriptsReviewedMark());
+}
+static void markSavedScriptsReviewed() {
+    QFile mark(savedScriptsReviewedMark());
+    if (mark.open(QIODevice::WriteOnly)) {
+        mark.write("reviewed\n");
+    }
+}
+// A file a world could have had the app write (a download into its caches, its data folder, the system's temp
+// folder): held for the review like a script from the network. Compared on canonical paths.
+static bool inAFolderTheAppWrites(const QUrl& url) {
+    QFileInfo file(url.toLocalFile());
+    const QString path = file.exists() ? file.canonicalFilePath() : QDir::cleanPath(file.absoluteFilePath());
+    const QStringList folders {
+        PathUtils::getAppDataPath(), PathUtils::getAppLocalDataPath(),
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation),
+        QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation), QDir::tempPath()
+    };
+    for (const QString& folder : folders) {
+        if (folder.isEmpty()) {
+            continue;
+        }
+        QString canonical = QFileInfo(folder).canonicalFilePath();
+        if (canonical.isEmpty()) {
+            canonical = QDir::cleanPath(folder);
+        }
+        if (path == canonical || path.startsWith(canonical + "/")) {
+            return true;
+        }
+    }
+    return false;
+}
 
 const int RELOAD_ALL_SCRIPTS_TIMEOUT = 1000;
 
@@ -340,9 +381,28 @@ void ScriptEngines::loadScripts() {
     // loads all saved scripts
     auto runningScripts = runningScriptsHandle.get();
     bool defaultScriptsOverrideSet = !_defaultScriptsOverride.isEmpty();
+    // before the review, a saved script from the network waits for the visitor's word: only the app's own scripts and
+    // files of this machine start on their own
+    const bool reviewing = !savedScriptsReviewed();
 
     for (auto script : runningScripts) {
         auto url = script.toUrl();
+        if (!url.isEmpty() && reviewing && url != DEFAULT_SCRIPTS_LOCATION) {
+            const QUrl normalized = normalizeScriptURL(url);
+            const QString scheme = normalized.scheme().toLower();
+            // the app's own scripts and the visitor's own files start; anything from the network, or a file in a
+            // folder the app writes, waits
+            QUrl local = normalized;
+            if (scheme == "file" && normalized.path().startsWith("/~/")) {
+                local.setPath(expandScriptPath(normalized.path()));   // "/~/" is the app's scripts folder
+            }
+            // "/~/" counts only when it resolves inside the app's scripts (canonical: "/~/../" reaches nothing)
+            const bool appScript = scheme == "qrc" || (scheme == "file" && ScriptNetworkPolicy::isAppScript(local));
+            if (!appScript && (scheme != "file" || inAFolderTheAppWrites(local))) {
+                _heldForReview << url.toString();
+                continue;
+            }
+        }
         if (!url.isEmpty()) {
             // a script of the app's own that the app no longer has (deleted from the repo, as the old Create app's
             // system/create/edit.js was, 10-24) is left out, and so drops off the list when it is next saved.
@@ -367,6 +427,26 @@ void ScriptEngines::loadScripts() {
     if (defaultScriptsOverrideSet) {
         loadScript(_defaultScriptsOverride, false);
     }
+    if (reviewing) {
+        if (_heldForReview.isEmpty()) {
+            markSavedScriptsReviewed();   // nothing to ask: silent, and not asked again
+        } else {
+            qCWarning(scriptengine) << _heldForReview.size() << "saved scripts wait for the visitor's review before they start:" << _heldForReview;
+            emit savedScriptsNeedReview(_heldForReview);
+        }
+    }
+}
+
+void ScriptEngines::finishSavedScriptsReview(const QStringList& kept) {
+    const QStringList held = _heldForReview;
+    _heldForReview.clear();
+    markSavedScriptsReviewed();   // only an answer marks it: a dialog closed unanswered asks again next start
+    for (const QString& script : held) {
+        if (kept.contains(script)) {
+            loadScript(QUrl(script));
+        }
+    }
+    saveScripts();   // the kept ones are running now, so they stay saved; the rest drop off the list
 }
 
 void ScriptEngines::saveScripts() {
@@ -400,6 +480,12 @@ void ScriptEngines::saveScripts() {
 
     if (_defaultScriptsWasRunning) {
         list.append(DEFAULT_SCRIPTS_LOCATION);
+    }
+    // a script held for the review stays saved until the visitor has answered (quitting first doesn't drop it)
+    for (const QString& script : _heldForReview) {
+        if (!list.contains(script)) {
+            list.append(script);
+        }
     }
 
     runningScriptsHandle.set(list);
