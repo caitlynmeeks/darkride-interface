@@ -111,6 +111,7 @@ void DomainHandler::softReset(QString reason) {
 
     _connectionDenialsSinceKeypairRegen = 0;
     _checkInPacketsSinceLastReply = 0;
+    _waitingForSignIn = false;
 
     // cancel the failure timeout for any pending requests for settings
     QMetaObject::invokeMethod(&_settingsTimer, "stop");
@@ -534,6 +535,14 @@ void DomainHandler::processDomainServerConnectionDeniedPacket(QSharedPointer<Rec
     auto extraInfoUtf8= message->readWithoutCopy(extraInfoSize);
     QString extraInfo = QString::fromUtf8(extraInfoUtf8);
 
+    auto accountManager = DependencyManager::get<AccountManager>();
+    bool needsSignIn = reasonSuggestsLogin(reasonCode) && !accountManager->isLoggedIn();
+
+    if (needsSignIn && _waitingForSignIn) {
+        // the same answer to one of our occasional check-ins: nothing new to say until the visitor signs in
+        return;
+    }
+
     // output to the log so the user knows they got a denied connection request
     // and check and signal for an access token so that we can make sure they are logged in
     qCWarning(networking) << "The domain-server denied a connection request: " << reasonMessage << " extraInfo:" << extraInfo;
@@ -549,8 +558,6 @@ void DomainHandler::processDomainServerConnectionDeniedPacket(QSharedPointer<Rec
 #endif
     }
 
-    auto accountManager = DependencyManager::get<AccountManager>();
-
     // Some connection refusal reasons imply that a login is required. If so, suggest a new login
     if (reasonSuggestsLogin(reasonCode)) {
         qCWarning(networking) << "Make sure you are logged in.";
@@ -558,6 +565,16 @@ void DomainHandler::processDomainServerConnectionDeniedPacket(QSharedPointer<Rec
         if (!_hasCheckedForAccessToken) {
             accountManager->checkAndSignalForAccessToken();
             _hasCheckedForAccessToken = true;
+        }
+
+        if (needsSignIn) {
+            // signed out, the answer won't change until the visitor signs in, and a new key pair needs a signed-in
+            // account: check in only now and then (a world that opens up later still lets us in), and at once on sign-in
+            qCInfo(networking) << "This world lets in signed-in visitors only. Checking in again every"
+                << SIGNED_OUT_CHECK_IN_MSECS / MSECS_PER_SECOND << "s until you sign in.";
+            _waitingForSignIn = true;
+            _lastSignedOutCheckIn = usecTimestampNow();
+            return;
         }
 
         static const int CONNECTION_DENIALS_FOR_KEYPAIR_REGEN = 3;
@@ -568,6 +585,27 @@ void DomainHandler::processDomainServerConnectionDeniedPacket(QSharedPointer<Rec
             _connectionDenialsSinceKeypairRegen = 0;
         }
     }
+}
+
+bool DomainHandler::holdCheckInForSignIn() {
+    if (!_waitingForSignIn) {
+        return false;
+    }
+    quint64 now = usecTimestampNow();
+    if (now - _lastSignedOutCheckIn < SIGNED_OUT_CHECK_IN_MSECS * USECS_PER_MSEC) {
+        return true;
+    }
+    _lastSignedOutCheckIn = now;
+    return false;
+}
+
+bool DomainHandler::signedIn() {
+    if (!_waitingForSignIn.exchange(false)) {
+        return false;
+    }
+    // a refusal after signing in (signed in, but not let in) is news again
+    _domainConnectionRefusals.clear();
+    return true;
 }
 
 static const int SILENT_DOMAIN_TRAFFIC_DROP_MIN = 25;

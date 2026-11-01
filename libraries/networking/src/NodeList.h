@@ -37,6 +37,7 @@
 #include "Node.h"
 
 const quint64 DOMAIN_SERVER_CHECK_IN_MSECS = 1 * 1000;
+const quint64 SIGNED_OUT_CHECK_IN_MSECS = 30 * 1000;
 
 using PacketOrPacketList = std::pair<std::unique_ptr<NLPacket>, std::unique_ptr<NLPacketList>>;
 using NodePacketOrPacketListPair = std::pair<SharedNodePointer, PacketOrPacketList>;
