@@ -220,7 +220,8 @@ void AccountManager::setSessionID(const QUuid& sessionID) {
 
 QNetworkRequest AccountManager::createRequest(QString path, AccountManagerAuth::Type authType) {
     QNetworkRequest networkRequest;
-    networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    // requests that carry the account's token or secrets follow redirects only within the metaverse's own origin
+    networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     networkRequest.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
 
     networkRequest.setRawHeader(METAVERSE_SESSION_ID_HEADER,
@@ -426,6 +427,10 @@ bool writeAccountMapToFile(const QVariantMap& accountMap) {
     accountFileDirectory.mkpath(".");
 
     if (accountFile.open(QIODevice::WriteOnly)) {
+        // it holds the account's tokens and key: readable by this user only (where the system has such permissions),
+        // set before anything is written
+        accountFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+
         QDataStream writeStream(&accountFile);
 
         // persist the updated account QVariantMap to file
@@ -560,7 +565,7 @@ void AccountManager::requestAccessToken(const QString& login, const QString& pas
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
 
     QNetworkRequest request;
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     request.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
 
     QUrl grantURL = _authURL;
@@ -590,7 +595,7 @@ void AccountManager::requestAccessTokenWithKey(const QString& username, const QS
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
 
     QNetworkRequest request;
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     request.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
 
     QUrl grantURL = _authURL.isEmpty() ? getMetaverseServerURL() : _authURL;
@@ -613,7 +618,7 @@ void AccountManager::requestAccessTokenWithAuthCode(const QString& authCode, con
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
 
     QNetworkRequest request;
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     request.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
 
     QUrl grantURL = _authURL;
@@ -644,7 +649,7 @@ void AccountManager::refreshAccessToken() {
         QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
 
         QNetworkRequest request;
-        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
         request.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
 
         QUrl grantURL = _authURL;
@@ -779,7 +784,7 @@ void AccountManager::requestProfile() {
     profileURL.setPath("/api/v1/user/profile");
 
     QNetworkRequest profileRequest(profileURL);
-    profileRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    profileRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     profileRequest.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
     profileRequest.setRawHeader(ACCESS_TOKEN_AUTHORIZATION_HEADER, _accountInfo.getAccessToken().authorizationHeaderValue());
 
@@ -829,7 +834,7 @@ void AccountManager::requestAccountSettings() {
     lockerURL.setPath("/api/v1/user/locker");
 
     QNetworkRequest lockerRequest(lockerURL);
-    lockerRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    lockerRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     lockerRequest.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
     lockerRequest.setRawHeader(ACCESS_TOKEN_AUTHORIZATION_HEADER, _accountInfo.getAccessToken().authorizationHeaderValue());
 
@@ -900,7 +905,7 @@ void AccountManager::postAccountSettings() {
     lockerURL.setPath("/api/v1/user/locker");
 
     QNetworkRequest lockerRequest(lockerURL);
-    lockerRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    lockerRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::SameOriginRedirectPolicy);
     lockerRequest.setHeader(QNetworkRequest::UserAgentHeader, _userAgentGetter());
     lockerRequest.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     lockerRequest.setRawHeader(ACCESS_TOKEN_AUTHORIZATION_HEADER, _accountInfo.getAccessToken().authorizationHeaderValue());
