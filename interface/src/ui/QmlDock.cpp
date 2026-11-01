@@ -14,6 +14,7 @@
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QtGui/QKeyEvent>
 #include <QtGui/QSurfaceFormat>
@@ -229,6 +230,47 @@ QWindow* QmlDock::contentWindow() const {
 #else
     return nullptr;
 #endif
+}
+
+QQuickItem* QmlDock::makePage() {
+    makeContent();
+    return panel();
+}
+
+bool QmlDock::moveTo(QQuickItem* host) {
+    QQuickItem* page = panel();
+    if (!page || !host) {
+        return false;
+    }
+    page->setParentItem(host);
+    page->setPosition(QPointF(0, 0));
+    page->setSize(host->size());
+    page->setVisible(true);
+    _away = true;
+    return true;
+}
+
+bool QmlDock::moveBack(bool shown) {
+    QQuickItem* page = panel();
+    if (!page || !_view) {
+        return false;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    page->setParentItem(_view->contentItem());   // the view is the window here
+#else
+    page->setParentItem(_view->quickWindow()->contentItem());
+#endif
+    page->setPosition(QPointF(0, 0));
+    page->setSize(_view->size());
+    page->setVisible(shown);
+    _away = false;
+    return true;
+}
+
+void QmlDock::setPageShown(bool shown) {
+    if (QQuickItem* page = _away ? nullptr : panel()) {
+        page->setVisible(shown);
+    }
 }
 
 QQuickItem* QmlDock::panel() const {

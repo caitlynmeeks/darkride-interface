@@ -18,6 +18,7 @@
 
 #include <gl/GLHelpers.h>
 #include <MainWindow.h>
+#include <OffscreenUi.h>
 #include <SettingHandle.h>
 
 #include "Application.h"
@@ -44,6 +45,16 @@ namespace {
     const QString PEOPLE_TAB = "io.darkride.peoplePanel.tab";
     const int PROFILE_TAB = 2;
     // Build mode's own, there only while it's on
+    const QString RADIO = "Radio";
+
+    const QString SLOT_LEFT = "left";
+    const QString SLOT_MIDDLE = "middle";
+    const QString SLOT_RIGHT = "right";
+    const QString MIDDLE_FIRST = "Explore";   // the middle slot's page when nothing else has been in front
+    const int SLOT_HEIGHT = 720;
+    const int MIDDLE_WIDTH = 760;   // Explore's cards (the widest panel)
+    std::function<bool(QQuickWindow*)> screenWindowCheck;
+
     const QString HIERARCHY = "Entities";   // Build mode's Hierarchy panel (Caity, 10-27: "Entities")
     const QString INSPECTOR = "Inspector";
 
@@ -263,6 +274,16 @@ void Panels::restore() {
     for (const QString& name : names()) {
         dock(name);
     }
+    connect(qApp, &Application::activeDisplayPluginChanged, this, &Panels::displayChanged, Qt::UniqueConnection);
+    // test builds only (team/editor-ui/test-kit/vr-screen): slots a test script made stand in for vr's, any window but
+    // the desktop's own; set only from the environment, which no world reaches
+    if (!screenWindowCheck && qEnvironmentVariableIsSet("DARKRIDE_SCREEN_TEST_SLOTS")) {
+        screenWindowCheck = [](QQuickWindow* window) {
+            auto offscreenUi = DependencyManager::get<OffscreenUi>();
+            return window && (!offscreenUi || window != offscreenUi->getWindow());
+        };
+        qCWarning(interfaceapp) << "Panels: TEST screen slots allowed (DARKRIDE_SCREEN_TEST_SLOTS)";
+    }
     // Build mode's own panels are made as it first comes on: watched from then
     connect(DependencyManager::get<Editor>().data(), &Editor::activeChanged, this, [this] {
         dock(HIERARCHY);
@@ -322,6 +343,29 @@ void Panels::change(const QString& name, Change how) {
         ChatWindow::toggle();
         return;
     }
+    // the VR screen, while it's up: a page with a slot opens there, and closes back into its dock
+    if (!_screenSlots.isEmpty() && !screenSlotFor(name).isEmpty()) {
+        auto qmlDock = qobject_cast<QmlDock*>(panel);
+        const bool inFront = qmlDock && qmlDock->isAway() &&
+            (screenSlotFor(name) != SLOT_MIDDLE || (!_middleTabs.isEmpty() && _middleTabs.last() == name));
+        if (how == Change::Close || (how == Change::Toggle && inFront)) {
+            if (qmlDock && qmlDock->isAway()) {
+                qmlDock->moveBack(false);
+            }
+            _middleTabs.removeAll(name);
+            panel->close();
+            setOpen(name, false);
+            if (name == RADIO) {
+                emit screenSlotSizeChanged(SLOT_RIGHT);
+            } else if (screenSlotFor(name) == SLOT_MIDDLE && !_middleTabs.isEmpty()) {
+                putOnScreen(_middleTabs.last());
+            }
+            return;
+        }
+        if (putOnScreen(name)) {
+            return;
+        }
+    }
     // tabbed behind another, a docked panel is still visible to Qt, moved out of sight (QWidgetAnimator)
     const bool inSight = panel->isVisible() && !panel->visibleRegion().isEmpty();
     const bool inFront = inSight && (!panel->isFloating() || panel->isActiveWindow());
@@ -343,6 +387,153 @@ void Panels::change(const QString& name, Change how) {
     } else if (QGuiApplication::applicationState() == Qt::ApplicationActive) {
         panel->raise();
         panel->activateWindow();
+    }
+    showDockPages();
+}
+
+QString Panels::screenSlotFor(const QString& name) const {
+    if (name == PEOPLE) {
+        return SLOT_LEFT;
+    }
+    if (name == RADIO) {
+        return SLOT_RIGHT;
+    }
+    for (const auto& panel : QML_PANELS) {
+        if (panel.name == name) {
+            return SLOT_MIDDLE;
+        }
+    }
+    return QString();   // Chat, My Files, the console, Build mode's: not on the screen (yet)
+}
+
+bool Panels::isScreenSlotUrl(const QString& url) {
+    static const QStringList SLOT_URLS {
+        "qrc:///qml/darkride/ScreenSlotLeft.qml", "qrc:///qml/darkride/ScreenSlotMiddle.qml",
+        "qrc:///qml/darkride/ScreenSlotRight.qml"
+    };
+    return SLOT_URLS.contains(url);
+}
+
+void Panels::setScreenWindowCheck(std::function<bool(QQuickWindow*)> check) {
+    screenWindowCheck = check;
+}
+
+void Panels::screenSlotReady(const QString& slot, QQuickItem* host) {
+    if (slot != SLOT_LEFT && slot != SLOT_MIDDLE && slot != SLOT_RIGHT) {
+        return;
+    }
+    // only the screen's own surfaces, made by the app (a world's script could make a Web entity showing the same QML)
+    QQuickWindow* window = host ? host->window() : nullptr;
+    if (!window || !screenWindowCheck || !screenWindowCheck(window)) {
+        qCWarning(interfaceapp) << "Panels: a screen slot from a window that isn't the screen's, refused:" << slot;
+        return;
+    }
+    if (_screenSlots.value(slot) == host) {
+        return;
+    }
+    _screenSlots[slot] = host;
+    qCDebug(interfaceapp) << "Panels: screen slot ready:" << slot << host->size();
+    if (slot == SLOT_LEFT) {
+        putOnScreen(PEOPLE);
+    } else if (slot == SLOT_RIGHT) {
+        // the radio comes along only while it's on (from its first showing until it's closed: RadioPanel.qml)
+        auto radio = qobject_cast<QmlDock*>(dock(RADIO));
+        QQuickItem* page = radio ? radio->panel() : nullptr;
+        if (page && page->property("on").toBool()) {
+            putOnScreen(RADIO);
+        }
+    } else {
+        putOnScreen(_middleTabs.isEmpty() ? MIDDLE_FIRST : _middleTabs.last());
+    }
+}
+
+bool Panels::putOnScreen(const QString& name) {
+    const QString slot = screenSlotFor(name);
+    QQuickItem* host = _screenSlots.value(slot);
+    auto qmlDock = qobject_cast<QmlDock*>(slot.isEmpty() ? nullptr : dock(name));
+    if (!host || !qmlDock) {
+        return false;
+    }
+    // the middle slot holds one page in front (its tabs, the host's): the one there goes back to its dock, unseen
+    if (slot == SLOT_MIDDLE) {
+        if (!_middleTabs.isEmpty() && _middleTabs.last() != name) {
+            if (auto front = qobject_cast<QmlDock*>(dock(_middleTabs.last()))) {
+                if (front->isAway()) {
+                    front->moveBack(false);
+                }
+            }
+        }
+        _middleTabs.removeAll(name);
+        _middleTabs.append(name);
+        host->setProperty("tabs", _middleTabs);
+    }
+    QQuickItem* content = host->findChild<QQuickItem*>("content");
+    if (!qmlDock->makePage() || !qmlDock->moveTo(content ? content : host)) {
+        return false;
+    }
+    if (qmlDock->isVisible()) {
+        qmlDock->hide();   // an empty dock; the page is on the screen
+    }
+    setOpen(name, true);
+    if (slot == SLOT_RIGHT) {
+        emit screenSlotSizeChanged(SLOT_RIGHT);
+    }
+    return true;
+}
+
+QSize Panels::screenSlotSize(const QString& slot) const {
+    if (slot == SLOT_LEFT) {
+        return QSize(560, SLOT_HEIGHT);
+    }
+    if (slot == SLOT_MIDDLE) {
+        return QSize(MIDDLE_WIDTH, SLOT_HEIGHT);
+    }
+    if (slot == SLOT_RIGHT) {
+        auto radio = qobject_cast<QmlDock*>(_docks.value(RADIO).data());
+        return radio && radio->isAway() ? QSize(320, 640) : QSize();
+    }
+    return QSize();
+}
+
+void Panels::setScreenState(const QString& state) {
+    if ((state == "down" || state == "parked") && state != _screenState) {
+        _screenState = state;
+        emit screenStateChanged(state);
+    }
+}
+
+void Panels::releaseScreenSlots() {
+    const bool shown = !qApp->isHMDMode();
+    for (auto it = _docks.cbegin(); it != _docks.cend(); ++it) {
+        auto qmlDock = qobject_cast<QmlDock*>(it.value().data());
+        if (qmlDock && qmlDock->isAway()) {
+            qmlDock->moveBack(shown);
+            // on the screen it was open; back in its dock it shows where it was, or stays closed out of the headset
+            setOpen(it.key(), !qmlDock->isHidden());
+        }
+    }
+    _screenSlots.clear();
+    if (!_screenState.isEmpty()) {
+        _screenState.clear();
+        emit screenStateChanged(_screenState);
+    }
+}
+
+void Panels::displayChanged() {
+    // leaving the headset, the screen's pages come home first (vr releases them before deleting its slots; this is
+    // the fallback)
+    if (!qApp->isHMDMode() && !_screenSlots.isEmpty()) {
+        releaseScreenSlots();
+    }
+    showDockPages();
+}
+
+void Panels::showDockPages() {
+    const bool shown = !qApp->isHMDMode();
+    for (const auto& dockWidget : _docks) {
+        if (auto qmlDock = qobject_cast<QmlDock*>(dockWidget.data())) {
+            qmlDock->setPageShown(shown);
+        }
     }
 }
 

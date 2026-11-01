@@ -94,6 +94,7 @@
 #include "scripting/RenderScriptingInterface.h"
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
 #endif
+#include "ui/Panels.h"
 #include "ui/DialogsManager.h"
 #include "ui/LoginDialog.h"
 #include "ui/QuitCheck.h"
@@ -1594,7 +1595,7 @@ void Application::installOperators() {
             });
             auto rootItemLoadedFunctor = [webSurface, url, isTablet] {
                 Application::setupQmlSurface(webSurface->getSurfaceContext(), isTablet || url == LOGIN_DIALOG.toString() || url == AVATAR_INPUTS_BAR_QML.toString() ||
-                   url == BUBBLE_ICON_QML.toString());
+                   url == BUBBLE_ICON_QML.toString() || Panels::isScreenSlotUrl(url));
             };
             if (webSurface->getRootItem()) {
                 rootItemLoadedFunctor();

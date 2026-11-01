@@ -23,9 +23,13 @@
 #include <QtCore/QSet>
 #include <QtCore/QSize>
 
+#include <functional>
+
 #include <DependencyManager.h>
 
 class QDockWidget;
+class QQuickItem;
+class QQuickWindow;
 class QWidget;
 
 /**jsdoc
@@ -110,6 +114,25 @@ public:
     /// the bar's panels closed, floating at their first places (View > Layouts > Reset to Default)
     void resetDocks();
 
+    // ---- the VR screen (team/editor-ui/VR-SCREEN-PLAN.md; vr-screen/PANEL-SURFACE-INTERFACE.md): three slots, "left"
+    // (People), "middle" (the other panels, one in front, tabs along its top) and "right" (the Radio, while it's on),
+    // each an item in a Qt Quick window of vr's; the panels' pages, made once, move in and out. Main thread ----
+
+    /// a slot's host item (ScreenSlot.qml) says it's ready; refused unless its window is one of the screen's
+    Q_INVOKABLE void screenSlotReady(const QString& slot, QQuickItem* host);
+    /// a slot's host QML, by its exact address: the app's names (Panels among them) go to that surface's context
+    /// (Application::setupQmlSurface). Not a trusted address for Web entities: vr makes the slots as the app's own
+    static bool isScreenSlotUrl(const QString& url);
+    /// vr's check that a window is one of its slots' surfaces; until it's set, every host is refused
+    static void setScreenWindowCheck(std::function<bool(QQuickWindow*)> check);
+    /// a slot's layout size in panel pixels; empty while it holds nothing (the right one while the radio is off)
+    QSize screenSlotSize(const QString& slot) const;
+    /// "down" or "parked" (hiding is releaseScreenSlots); "tablet shown" for scripts follows it
+    void setScreenState(const QString& state);
+    QString screenState() const { return _screenState; }
+    /// every page back in its dock (hidden while the headset is on), the slots forgotten: before vr deletes them
+    void releaseScreenSlots();
+
 signals:
     /**jsdoc
      * Triggered when a panel opens or closes, however that happened (its close box, View > Panels, a script).
@@ -120,17 +143,28 @@ signals:
      */
     void openChanged(const QString& name, bool open);
 
+    /// a VR screen slot's size changed (the right one folds while the radio is off), or the screen's state did
+    void screenSlotSizeChanged(const QString& slot);
+    void screenStateChanged(const QString& state);
+
 private:
     enum class Change { Open, Close, Toggle };
     void change(const QString& name, Change how);
     void watch(const QString& name, QDockWidget* dock);
     void setOpen(const QString& name, bool open);
     void styleTabs();   // the tabs of panels docked together, in the skin's colours
+    QString screenSlotFor(const QString& name) const;
+    bool putOnScreen(const QString& name);   // the page into its slot, if the screen is up
+    void showDockPages();   // the pages in docks shown, or hidden while the headset is on (nobody sees the docks then)
+    void displayChanged();   // the headset on or off
 
     bool _restored { false };   // none opens before the layout's restore (after sign-in)
     QHash<QString, QPointer<QDockWidget>> _docks;
     mutable QMutex _openMutex;   // isOpen is asked from scripts' threads
     QSet<QString> _open;
+    QHash<QString, QPointer<QQuickItem>> _screenSlots;
+    QString _screenState;
+    QStringList _middleTabs;   // the middle slot's panels, the front one last
 };
 
 #endif // hifi_Panels_h

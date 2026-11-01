@@ -1,0 +1,71 @@
+//
+//  ScreenSlot.qml
+//  interface/resources/qml/darkride
+//
+//  One slot of the VR screen (team/editor-ui/VR-SCREEN-PLAN.md): the host item in a surface of vr's, which the app's
+//  panels' pages move into (Panels.screenSlotReady; Panels refuses a window that isn't the screen's). The middle slot
+//  shows its panels' tabs along its top, the page in front under them. Pages are made once, in the desktop's QML
+//  engine, and go back to their docks when the screen is hidden or the headset comes off.
+//
+//  Copyright 2026 Darkride.
+//
+//  Distributed under the MIT License.
+//  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
+//
+
+import QtQuick 2.15
+import "panel"
+
+Rectangle {
+    id: root
+    property string slot: ""
+    property var tabs: []   // the middle slot's panels, the one in front last (Panels sets it)
+    readonly property bool hasTabs: slot === "middle"
+
+    color: Theme.background
+
+    Row {
+        id: tabRow
+        visible: root.hasTabs
+        height: root.hasTabs ? Theme.controlHeight + 12 * Theme.unit : 0
+        anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 12 * Theme.unit }
+        spacing: 4 * Theme.unit
+
+        Repeater {
+            // in the order they were first opened would shuffle as they come to the front: a steady order, the bar's
+            model: root.tabs.slice().sort()
+            delegate: Rectangle {
+                readonly property bool front: root.tabs.length > 0 && root.tabs[root.tabs.length - 1] === modelData
+                anchors.verticalCenter: parent.verticalCenter
+                width: tabLabel.implicitWidth + 20 * Theme.unit
+                height: Theme.controlHeight
+                radius: 7 * Theme.unit
+                color: front ? Theme.fill : "transparent"
+                Text {
+                    id: tabLabel
+                    anchors.centerIn: parent
+                    text: modelData
+                    textFormat: Text.PlainText
+                    color: parent.front ? Theme.text : Theme.secondaryText
+                    font.pixelSize: 13 * Theme.unit
+                    font.weight: parent.front ? Font.DemiBold : Font.Normal
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: Panels.open(modelData)
+                }
+            }
+        }
+    }
+
+    Item {
+        id: content
+        objectName: "content"
+        anchors { left: parent.left; right: parent.right; top: tabRow.bottom; bottom: parent.bottom }
+        // the page in it follows its size (Panels sets the page's size when it moves in)
+        onWidthChanged: for (var i = 0; i < children.length; i++) { children[i].width = width; }
+        onHeightChanged: for (var i = 0; i < children.length; i++) { children[i].height = height; }
+    }
+
+    Component.onCompleted: Panels.screenSlotReady(slot, root)
+}

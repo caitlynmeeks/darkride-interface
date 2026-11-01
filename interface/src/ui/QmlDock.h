@@ -61,6 +61,15 @@ signals:
     // the panel's QML was made (contentWindow() and panel() are there now)
     void contentMade();
 
+    // the VR screen (VR-SCREEN-PLAN.md): the page, made once, moved into one of the screen's slots (an item in another
+    // Qt Quick window) and back into this dock, without being made again; a page moved back while in the headset is
+    // hidden (nobody sees the desktop's docks there), so its web views stop drawing while their sound plays on
+    QQuickItem* makePage();   // the page, made now if it hasn't been (without showing the dock)
+    bool moveTo(QQuickItem* host);
+    bool moveBack(bool shown);
+    bool isAway() const { return _away; }
+    void setPageShown(bool shown);
+
 protected:
     bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -77,6 +86,7 @@ private:
     QQuickWidget* _view { nullptr };
 #endif
     bool _releasing { false };
+    bool _away { false };   // the page is on the VR screen
 };
 
 #endif // hifi_QmlDock_h
