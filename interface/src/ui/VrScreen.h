@@ -36,7 +36,7 @@ class VrScreen : public QObject, public Dependency {
 public:
     VrScreen();
 
-    /// The screen in place of the tablet. Set by DARKRIDE_VR_SCREEN until the tablet's VR parts are removed.
+    /// The screen in place of the tablet: in the headset. DARKRIDE_VR_SCREEN also turns it on in Desktop, for tests.
     static bool isOn();
 
     /// the menu button: up in front of you, or hidden

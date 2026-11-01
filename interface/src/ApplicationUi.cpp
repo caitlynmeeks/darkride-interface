@@ -344,11 +344,9 @@ void Application::centerUI() {
 void Application::updateSystemTabletMode() {
     if (_settingsLoaded && !getLoginDialogPoppedUp()) {
         qApp->setProperty(hifi::properties::HMD, isHMDMode());
-        if (isHMDMode()) {
-            DependencyManager::get<TabletScriptingInterface>()->setToolbarMode(getHmdTabletBecomesToolbarSetting());
-        } else {
-            DependencyManager::get<TabletScriptingInterface>()->setToolbarMode(getDesktopTabletBecomesToolbarSetting());
-        }
+        // the 3D tablet is gone: the Tablet API's window is on the desktop's QML engine in both modes, and in the headset
+        // Panels moves its content onto the VR screen
+        DependencyManager::get<TabletScriptingInterface>()->setToolbarMode(true);
     }
 }
 

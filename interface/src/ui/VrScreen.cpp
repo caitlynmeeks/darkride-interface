@@ -27,6 +27,7 @@
 #include "InterfaceLogging.h"
 #include "avatar/AvatarManager.h"
 #include "avatar/MyAvatar.h"
+#include "scripting/HMDScriptingInterface.h"
 #include "ui/Keyboard.h"
 #include "ui/Panels.h"
 
@@ -69,19 +70,28 @@ glm::vec2 toVec2(const QSize& size) {
 }   // namespace
 
 bool VrScreen::isOn() {
-    static const bool on = qEnvironmentVariableIsSet("DARKRIDE_VR_SCREEN");
-    return on;
+    static const bool onInDesktop = qEnvironmentVariableIsSet("DARKRIDE_VR_SCREEN");
+    return onInDesktop || qApp->isHMDMode();
 }
 
 VrScreen::VrScreen() {
     _dragTimer.setInterval(DRAG_INTERVAL_MS);
     connect(&_dragTimer, &QTimer::timeout, this, &VrScreen::dragTick);
-    if (isOn()) {
-        Panels::setScreenWindowCheck([](QQuickWindow* window) {
-            auto screen = DependencyManager::get<VrScreen>();
-            return screen && screen->ownsWindow(window);
-        });
-    }
+    Panels::setScreenWindowCheck([](QQuickWindow* window) {
+        auto screen = DependencyManager::get<VrScreen>();
+        return screen && screen->ownsWindow(window);
+    });
+    // HMD.openTablet and closeTablet: apps call them to bring up what they've just opened
+    connect(DependencyManager::get<HMDScriptingInterface>().data(), &HMDScriptingInterface::showTabletChanged, this, [this](bool show) {
+        if (!isOn() || show == _shown) {
+            return;
+        }
+        if (show) {
+            this->show();
+        } else {
+            hide();
+        }
+    });
 }
 
 void VrScreen::connectOnce() {
@@ -129,6 +139,7 @@ void VrScreen::show() {
     }
     makePiece(Bar, places);
     tellState();
+    DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(true);
     qCDebug(interfaceapp) << "VR screen: shown, yaw" << _yaw;
 }
 
@@ -149,6 +160,7 @@ void VrScreen::hide() {
     }
     _changing = false;
     DependencyManager::get<Keyboard>()->setRaised(false);
+    DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(false);
     qCDebug(interfaceapp) << "VR screen: hidden";
 }
 
