@@ -17,6 +17,7 @@
 #include <chrono>
 
 #include <QDir>
+#include <QSaveFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -1701,9 +1702,47 @@ void DomainServer::nodePingMonitor() {
     });
 }
 
+// The world file's packets carry no sender id, so their sender is known by the address it sends from: they are taken
+// only from the address this domain recorded when its entity server connected.
+static bool isFromEntityServer(const HifiSockAddr& sender) {
+    bool fromEntityServer = false;
+    DependencyManager::get<LimitedNodeList>()->eachNodeBreakable([&](const SharedNodePointer& node) {
+        if (node->getType() == NodeType::EntityServer) {
+            auto nodeData = static_cast<DomainServerNodeData*>(node->getLinkedData());
+            if (nodeData && nodeData->getSendingSockAddr() == sender) {
+                fromEntityServer = true;
+                return false;
+            }
+        }
+        return true;
+    });
+    return fromEntityServer;
+}
+
+static void logWorldFilePacketRefused(const char* what, const HifiSockAddr& sender) {
+    static int refused = 0;
+    ++refused;
+    if (refused <= 10 || refused % 1000 == 0) {
+        qCWarning(domain_server) << "Ignored" << what << "from" << sender << "- not this world's entity server ("
+                                 << refused << "so far)";
+    }
+}
+
 void DomainServer::processOctreeDataPersistMessage(QSharedPointer<ReceivedMessage> message) {
+    if (!isFromEntityServer(message->getSenderSockAddr())) {
+        logWorldFilePacketRefused("a world file save", message->getSenderSockAddr());
+        return;
+    }
+
     auto data = message->readAll();
     qDebug() << "Received octree data persist message" << (data.size() / 1000) << "kbytes.";
+
+    // the entity server sends its world file gzipped (OctreePersistThread::sendLatestEntityDataToDS)
+    if (data.size() < 2 || data.at(0) != '\x1f' || data.at(1) != '\x8b') {
+        qCWarning(domain_server) << "Ignored a world file save that isn't gzipped," << data.size() << "bytes";
+        return;
+    }
+
     auto filePath = getEntitiesFilePath();
 
     QDir dir(getEntitiesDirPath());
@@ -1712,7 +1751,8 @@ void DomainServer::processOctreeDataPersistMessage(QSharedPointer<ReceivedMessag
         dir.mkpath(".");
     }
 
-    QFile f(filePath);
+    // written beside the file and renamed over it, so the world file is never left half written
+    QSaveFile f(filePath);
     if (f.open(QIODevice::WriteOnly)) {
         f.write(data);
 #ifdef EXPENSIVE_NETWORK_DIAGNOSTICS
@@ -1725,6 +1765,9 @@ void DomainServer::processOctreeDataPersistMessage(QSharedPointer<ReceivedMessag
             qCDebug(domain_server) << "Failed to read new octree data info";
         }
 #endif
+        if (!f.commit()) {
+            qCDebug(domain_server) << "Failed to write new entities file:" << filePath;
+        }
     } else {
         qCDebug(domain_server) << "Failed to write new entities file:" << filePath;
     }
@@ -1747,6 +1790,11 @@ QString DomainServer::getEntitiesReplacementFilePath() {
 }
 
 void DomainServer::processOctreeDataRequestMessage(QSharedPointer<ReceivedMessage> message) {
+    if (!isFromEntityServer(message->getSenderSockAddr())) {
+        logWorldFilePacketRefused("a world file request", message->getSenderSockAddr());
+        return;
+    }
+
     qDebug() << "Got request for octree data from " << message->getSenderSockAddr();
 
     maybeHandleReplacementEntityFile();
