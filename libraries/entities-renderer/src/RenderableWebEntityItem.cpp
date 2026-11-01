@@ -122,7 +122,13 @@ WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(e
     _texture->setSource(__FUNCTION__);
 
     _contentType = ContentType::HtmlContent;
-    buildWebSurface(entity, "");
+    // The app's own QML surfaces (the VR screen's pieces, listed by setAppSurface before their renderer is made) get theirs
+    // at the first update: a placeholder web view made here for them was only thrown away there, and at the VR screen's
+    // first show (an empty web-view cache) it made two new web views, 2.6 ms each on the main thread, plus the empty
+    // address's "Invalid empty URL" at every show
+    if (!_appSurfaces.contains(entity->getID())) {
+        buildWebSurface(entity, "");
+    }
 
     _timer.setInterval(MSECS_PER_SECOND);
     connect(&_timer, &QTimer::timeout, this, &WebEntityRenderer::onTimeout);
