@@ -178,8 +178,8 @@ signals:
     /// a VR screen slot's size changed (the right one folds while the radio is off), or the screen's state did
     void screenSlotSizeChanged(const QString& slot);
     void screenStateChanged(const QString& state);
-    /// a page moved into a slot while the screen is hidden (its surface paused): vr resumes it briefly so the page's
-    /// first sync happens now, not at the next show
+    /// a page moved into a slot while the screen isn't shown (vr's warm-up at entry, or a hidden screen: its surface
+    /// paused): vr resumes it briefly so the page's first sync happens now, not at the next show
     void screenSlotFilled(const QString& slot);
 
 private:

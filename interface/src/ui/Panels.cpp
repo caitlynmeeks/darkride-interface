@@ -667,8 +667,8 @@ bool Panels::putOnScreen(const QString& name) {
     if (slot == SLOT_RIGHT) {
         emit screenSlotSizeChanged(SLOT_RIGHT);
     }
-    if (_screenHidden) {
-        emit screenSlotFilled(slot);
+    if (_screenState.isEmpty()) {
+        emit screenSlotFilled(slot);   // not shown (vr's warm-up at entry, or hidden): its surface is paused
     }
     return true;
 }
@@ -978,7 +978,7 @@ bool Panels::putTabletOnScreen() {
         _tabletLoader->setSize(content->size());
         _tabletLoader->setParentItem(content);   // the slot lays it out at its scale (ScreenSlot.qml)
         _tabletOnScreen = true;
-        if (_screenHidden) {
+        if (_screenState.isEmpty()) {
             emit screenSlotFilled(SLOT_MIDDLE);
         }
     }
