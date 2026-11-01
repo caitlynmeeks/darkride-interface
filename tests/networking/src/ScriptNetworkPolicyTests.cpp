@@ -9,9 +9,14 @@
 
 #include "ScriptNetworkPolicyTests.h"
 
+#include <QtCore/QDir>
 #include <QtCore/QEventLoop>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
+#include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
 
+#include <PathUtils.h>
 #include <ScriptNetworkPolicy.h>
 
 QTEST_MAIN(ScriptNetworkPolicyTests)
@@ -198,4 +203,44 @@ void ScriptNetworkPolicyTests::blockingDecisions() {
     QVERIFY(!ScriptNetworkPolicy::decideBlocking(QUrl("file:///etc/hosts"), QUrl("https://cdn.example.com/x.js"), reason));
     // a name: looked up here, on this thread; refused when it leads home or cannot be found
     QVERIFY(!ScriptNetworkPolicy::decideBlocking(QUrl("http://127.0.0.1.nip.io/"), QUrl("https://cdn.example.com/x.js"), reason));
+}
+
+// The app's own scripts: qrc, or a file in the app's scripts folder once both paths are canonical, so that a path which
+// only starts in the folder, however it is spelled, doesn't count.
+void ScriptNetworkPolicyTests::appScripts() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString root = QFileInfo(dir.path()).canonicalFilePath();
+    QVERIFY(QDir(root).mkpath("app/scripts/sub"));
+    QVERIFY(QDir(root).mkpath("app/scripts-other"));
+    QVERIFY(QDir(root).mkpath("outside"));
+    for (const QString& name : { "app/scripts/x.js", "app/scripts/sub/y.js", "app/scripts-other/x.js", "outside/z.js" }) {
+        QFile file(root + "/" + name);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    QVERIFY(QFile::link(root + "/outside", root + "/app/scripts/link"));
+    const QString folder = root + "/app/scripts";
+    PathUtils::defaultScriptsLocation(folder);
+    auto file = [](const QString& path) { return QUrl::fromLocalFile(path); };
+
+    QVERIFY(ScriptNetworkPolicy::isAppScript(QUrl("qrc:///scripts/x.js")));
+    QVERIFY(ScriptNetworkPolicy::isAppScript(file(folder)));
+    QVERIFY(ScriptNetworkPolicy::isAppScript(file(folder + "/x.js")));
+    QVERIFY(ScriptNetworkPolicy::isAppScript(file(folder + "/sub/y.js")));
+    QVERIFY(ScriptNetworkPolicy::isAppScript(file(folder + "/sub/../x.js")));
+    QVERIFY(ScriptNetworkPolicy::isAppScript(file(folder + "/not-there.js")));
+
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(file(folder + "/../../outside/z.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(file(folder + "/sub/../../../outside/z.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(file(folder + "/../../outside/not-there.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl("file://" + folder + "/%2e%2e/%2E%2E/outside/z.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl("file://" + folder + "/..%2f..%2foutside/z.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(file(folder + "/..\\..\\outside\\z.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl("file://" + folder + "/..%5c..%5coutside%5cz.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(file(folder + "/link/z.js")));        // a link out of the folder
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(file(root + "/app/scripts-other/x.js")));   // a folder beside it, same start
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(file(root + "/outside/z.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl("https://example.invalid/scripts/x.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl("http://127.0.0.1/x.js")));
+    QVERIFY(!ScriptNetworkPolicy::isAppScript(QUrl()));
 }

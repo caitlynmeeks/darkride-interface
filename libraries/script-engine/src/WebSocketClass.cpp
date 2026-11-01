@@ -26,6 +26,7 @@ WebSocketClass::WebSocketClass(QScriptEngine* engine, QString url) :
     if (auto scriptEngine = qobject_cast<ScriptEngine*>(engine)) {
         _origin = scriptEngine->currentScriptOrigin();
         _ruled = scriptEngine->isClientSide();
+        _worldIsLocal = scriptEngine->worldIsLocal();
     }
     const QUrl target(url);
     if (!_ruled) {
@@ -39,7 +40,7 @@ WebSocketClass::WebSocketClass(QScriptEngine* engine, QString url) :
         } else {
             refuse(target, decision.reason);
         }
-    });
+    }, _worldIsLocal);
 }
 
 void WebSocketClass::refuse(const QUrl& target, const QString& reason) {
@@ -209,7 +210,7 @@ void WebSocketClass::handleOnMessage(const QString& message) {
  * @callback WebSocket~onOpenCallback
  */
 void WebSocketClass::handleOnOpen() {
-    if (_ruled && ScriptNetworkPolicy::applies(_origin) && ScriptNetworkPolicy::isPrivateAddress(_webSocket->peerAddress())) {
+    if (_ruled && ScriptNetworkPolicy::applies(_origin, _worldIsLocal) && ScriptNetworkPolicy::isPrivateAddress(_webSocket->peerAddress())) {
         // the name led here after it was judged (an answer that changed): nothing goes over this connection
         if (auto scriptEngine = qobject_cast<ScriptEngine*>(_engine)) {
             scriptEngine->scriptWarningMessage(ScriptNetworkPolicy::refusalLine(_origin, _webSocket->requestUrl(),

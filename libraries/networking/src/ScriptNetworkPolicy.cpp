@@ -11,6 +11,8 @@
 
 #include <cstring>
 
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <QtCore/QStringList>
 #include <QtNetwork/QHostInfo>
 
@@ -133,29 +135,48 @@ bool ScriptNetworkPolicy::isStrict() {
     return strict;
 }
 
-// The app's own scripts (its scripts folder, its resources): the client's interface, which the strict switch must
-// not take apart.
-static bool isAppScript(const QUrl& origin) {
-    if (origin.scheme().toLower() == "qrc") {
+// A file's path with links followed and "." and ".." resolved; a path that names no file is cleaned by its spelling.
+static QString canonicalPath(const QString& path) {
+    const QString canonical = QFileInfo(path).canonicalFilePath();
+    return canonical.isEmpty() ? QDir::cleanPath(path) : canonical;
+}
+
+bool ScriptNetworkPolicy::isAppScript(const QUrl& scriptUrl) {
+    if (scriptUrl.scheme().toLower() == "qrc") {
         return true;
     }
-    if (!origin.isLocalFile()) {
+    if (!scriptUrl.isLocalFile()) {
         return false;
     }
     const QUrl defaults = PathUtils::defaultScriptsLocation();
-    return !defaults.isEmpty() && defaults.isParentOf(origin);
+    if (!defaults.isLocalFile()) {
+        return false;
+    }
+    // both paths canonical, so that a path which only starts in the folder ("scripts/../..") doesn't count; the app's
+    // own paths never hold a backslash (a separator on Windows, a plain character elsewhere)
+    const QString local = scriptUrl.toLocalFile();
+    if (local.contains('\\')) {
+        return false;
+    }
+    const QString folder = canonicalPath(defaults.toLocalFile());
+    const QString path = canonicalPath(local);
+    if (folder.isEmpty() || folder == "/") {
+        return false;
+    }
+    return path.compare(folder, PathUtils::getFSCaseSensitivity()) == 0 ||
+           path.startsWith(folder + "/", PathUtils::getFSCaseSensitivity());
 }
 
-bool ScriptNetworkPolicy::applies(const QUrl& origin) {
+bool ScriptNetworkPolicy::applies(const QUrl& origin, bool worldIsLocal) {
     if (isStrict()) {
         return !isAppScript(origin);
     }
-    return !isLocalOrigin(origin) && !isWorldLocal();
+    return !isLocalOrigin(origin) && !worldIsLocal;
 }
 
-ScriptNetworkPolicy::Decision ScriptNetworkPolicy::check(const QUrl& target, const QUrl& origin) {
+ScriptNetworkPolicy::Decision ScriptNetworkPolicy::check(const QUrl& target, const QUrl& origin, bool worldIsLocal) {
     Decision decision;
-    if (!applies(origin)) {
+    if (!applies(origin, worldIsLocal)) {
         return decision;
     }
     const QString scheme = target.scheme().toLower();
@@ -209,8 +230,8 @@ ScriptNetworkPolicy::Decision ScriptNetworkPolicy::checkAddresses(const QList<QH
 }
 
 void ScriptNetworkPolicy::decide(const QUrl& target, const QUrl& origin, QObject* context,
-                                 std::function<void(const Decision&)> callback) {
-    const Decision first = check(target, origin);
+                                 std::function<void(const Decision&)> callback, bool worldIsLocal) {
+    const Decision first = check(target, origin, worldIsLocal);
     if (!first.needsLookup) {
         callback(first);
         return;
@@ -227,8 +248,8 @@ void ScriptNetworkPolicy::decide(const QUrl& target, const QUrl& origin, QObject
     });
 }
 
-bool ScriptNetworkPolicy::decideBlocking(const QUrl& target, const QUrl& origin, QString& reason) {
-    Decision decision = check(target, origin);
+bool ScriptNetworkPolicy::decideBlocking(const QUrl& target, const QUrl& origin, QString& reason, bool worldIsLocal) {
+    Decision decision = check(target, origin, worldIsLocal);
     if (decision.needsLookup) {
         const QHostInfo info = QHostInfo::fromName(target.host());
         if (info.error() != QHostInfo::NoError) {

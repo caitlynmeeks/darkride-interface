@@ -42,7 +42,7 @@ public:
     /// Opens the connection to the URL at once, as the constructor of a WebSocket does, when the network rule for a
     /// script's own requests (ScriptNetworkPolicy) allows it for a script of this origin; ruled says whether the rule
     /// holds here (a person's client). A refusal shows as a connection that fails, with the reason in the log.
-    WebSocketObject(const QString& url, const QUrl& origin, bool ruled, std::function<void(const QString&)> logger,
+    WebSocketObject(const QString& url, const QUrl& origin, bool ruled, bool worldIsLocal, std::function<void(const QString&)> logger,
                     QObject* parent = nullptr);
     /// Wraps a socket that exists already (a server's incoming connection).
     WebSocketObject(QWebSocket* socket, QObject* parent = nullptr);
@@ -78,6 +78,7 @@ private:
     QUrl _requestedUrl;
     QUrl _origin;
     bool _ruled { false };
+    bool _worldIsLocal { false };   // the world the script is judged in (ScriptEngine::worldIsLocal), when it opened the socket
     std::function<void(const QString&)> _logger;
 };
 

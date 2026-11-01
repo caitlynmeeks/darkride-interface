@@ -30,8 +30,13 @@ const QStringList PROTECTED_SUFFIXES { "Location" };
 }  // namespace
 
 ScriptSettingsInterface::ScriptSettingsInterface(ScriptEngine* engine) : QObject(engine), _engine(engine) {
-    connect(SettingsScriptingInterface::getInstance(), &SettingsScriptingInterface::valueChanged,
-            this, &ScriptSettingsInterface::valueChanged);
+    connect(SettingsScriptingInterface::getInstance(), &SettingsScriptingInterface::valueChanged, this,
+            [this](const QString& setting, const QVariant& value) {
+                // a setting a script may not read, it doesn't hear change either
+                if (!refuses(setting)) {
+                    emit valueChanged(setting, value);
+                }
+            });
 }
 
 bool ScriptSettingsInterface::isProtected(const QString& setting) {
@@ -57,14 +62,36 @@ bool ScriptSettingsInterface::refuses(const QString& setting) const {
     if (!_engine || !_engine->isClientSide() || !isProtected(setting)) {
         return false;
     }
-    return ScriptNetworkPolicy::applies(_engine->currentScriptOrigin());
+    return ScriptNetworkPolicy::applies(_engine->currentScriptOrigin(), _engine->worldIsLocal());
+}
+
+bool ScriptSettingsInterface::refusesRead(const QString& setting) {
+    if (!refuses(setting)) {
+        return false;
+    }
+    if (!_refusedReads.contains(setting)) {
+        _refusedReads.insert(setting);
+        const QUrl origin = _engine->currentScriptOrigin();
+        _engine->scriptWarningMessage(QString("%1 may not read the setting \"%2\": a script from the network does not read "
+                                              "what the client runs, where it has been, whose avatar it wears or where its "
+                                              "files are; a script loaded from this machine, or a world served from it or its "
+                                              "network, keeps every setting.")
+                                          .arg(origin.isEmpty() ? QString("a script") : origin.toDisplayString().left(200), setting));
+    }
+    return true;
 }
 
 QVariant ScriptSettingsInterface::getValue(const QString& setting) {
+    if (refusesRead(setting)) {
+        return QVariant();
+    }
     return SettingsScriptingInterface::getInstance()->getValue(setting);
 }
 
 QVariant ScriptSettingsInterface::getValue(const QString& setting, const QVariant& defaultValue) {
+    if (refusesRead(setting)) {
+        return defaultValue;
+    }
     return SettingsScriptingInterface::getInstance()->getValue(setting, defaultValue);
 }
 

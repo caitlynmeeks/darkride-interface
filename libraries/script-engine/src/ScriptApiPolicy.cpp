@@ -20,14 +20,15 @@ namespace {
 // Account/GlobalServices/AccountServices, AvatarBookmarks, LocationBookmarks, DiskCache, Keyboard, Render, LODManager,
 // Performance, Workload, Scene, Reticle, Friends, Toolbars, File, AvatarInputs, Panels, AudioScope,
 // DesktopPreviewProvider, OffscreenFlags, Test, Desktop and the OverlayWindow/OverlayWebWindow/QmlFragment
-// constructors (QML and web windows on the visitor's desktop), StackTest.
+// constructors (QML and web windows on the visitor's desktop), StackTest, Resources (for the visitor's own scripts),
+// Paths, ResourceRequestObserver.
 const QSet<QString> ALLOWED_GLOBALS {
     // the engine's own
     "Script", "Vec3", "Quat", "Mat4", "Uuid", "console", "print", "atob", "btoa", "TREE_SCALE", "debugEntityID",
     "XMLHttpRequest", "WebSocket", "request", "AudioEffectOptions",
     "Http", "Sockets",                 // the WebAssembly engine's factories under XMLHttpRequest and WebSocket (the guest hides them)
     // the world and its content
-    "Entities", "Messages", "Audio", "Assets", "Resources", "Resource", "Model", "DebugDraw", "Overlays", "Picks",
+    "Entities", "Messages", "Audio", "Assets", "Resource", "Model", "DebugDraw", "Overlays", "Picks",
     "Pointers", "RayPick", "LaserPointers", "Selection", "Camera", "Graphics", "TextToSpeech", "SoundCache",
     "AnimationCache", "TextureCache", "MaterialCache", "ModelCache",
     // the visitor as the world sees them
@@ -35,8 +36,7 @@ const QSet<QString> ALLOWED_GLOBALS {
     // the app, the part a page would get
     "Window", "Window.location", "Tablet", "tabletInterface", "AddressManager", "location", "Chat", "Settings",
     // reads
-    "Stats", "Rates", "AudioStats", "PlatformInfo", "About", "Paths", "EntityScriptServerLog",
-    "ResourceRequestObserver"
+    "Stats", "Rates", "AudioStats", "PlatformInfo", "About", "EntityScriptServerLog"
 };
 
 // The classes whose objects a world's script may use (by ancestry). The globals' classes, and the classes their
@@ -45,7 +45,7 @@ const QSet<QByteArray> ALLOWED_CLASSES {
     // the globals
     "ScriptEngine", "Vec3", "Quat", "Mat4", "ScriptUUID", "ConsoleScriptingInterface", "AudioEffectOptions",
     "EntityScriptingInterface", "WorldMessages", "AudioScriptingInterface", "AssetScriptingInterface",
-    "ResourceScriptingInterface", "ScriptableResourceCache", "ModelScriptingInterface", "DebugDraw", "Overlays",
+    "ScriptableResourceCache", "ModelScriptingInterface", "DebugDraw", "Overlays",
     "PickScriptingInterface", "PointerScriptingInterface", "RayPickScriptingInterface",
     "LaserPointerScriptingInterface", "SelectionScriptingInterface", "Camera", "GraphicsScriptingInterface",
     "TTSScriptingInterface", "SoundCacheScriptingInterface", "AnimationCacheScriptingInterface",
@@ -53,7 +53,7 @@ const QSet<QByteArray> ALLOWED_CLASSES {
     "MyAvatar", "AvatarManager", "controller::ScriptingInterface", "HMDScriptingInterface",
     "WindowScriptingInterface", "TabletScriptingInterface", "AddressManager", "ChatScriptingInterface",
     "ScriptSettingsInterface", "Stats", "RatesScriptingInterface", "AudioStats", "PlatformInfoScriptingInterface",
-    "AboutUtil", "PathUtils", "EntityScriptServerLogClient", "ResourceRequestObserver",
+    "AboutUtil", "EntityScriptServerLogClient",
     // what allowed members hand back
     "QTimer",                                                       // Script.setTimeout / setInterval
     "TabletProxy",                                                  // Tablet.getTablet
@@ -105,7 +105,9 @@ const QHash<QByteArray, QSet<QByteArray>> ALLOWED_METHODS {
 
 // Kept classes with a DENY-list of methods instead: too large and too much of them content's to allow-list, so a
 // member added later is reachable until it is judged. MyAvatar: what persists the visitor's avatar identity and
-// points the loaders at a world's content on every start. Controller: the recordings on the visitor's disk.
+// points the loaders at a world's content on every start. Controller: the recordings on the visitor's disk, and taking
+// the visitor's input for itself (keys, mouse, wheel, touch, joysticks, clicks on entities, the avatar's actions); a
+// world's script may still hear the 3D view's keys and use mappings.
 const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
     { "MyAvatar", {
         "setSkeletonModelURL", "setSkeletonModelURLFromScript", "useFullAvatarURL", "setAnimGraphUrl",
@@ -114,7 +116,12 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
         "loadData", "setDisplayName" } },
     { "controller::ScriptingInterface", {
         "startInputRecording", "stopInputRecording", "startInputPlayback", "stopInputPlayback", "saveInputRecording",
-        "loadInputRecording", "getInputRecorderSaveDirectory" } }
+        "loadInputRecording", "getInputRecorderSaveDirectory", "captureMouseEvents", "releaseMouseEvents",
+        "captureTouchEvents", "releaseTouchEvents", "captureWheelEvents", "releaseWheelEvents", "captureActionEvents",
+        "releaseActionEvents" } },
+    { "ControllerScriptingInterface", {
+        "captureKeyEvents", "releaseKeyEvents", "captureJoystick", "releaseJoystick", "captureEntityClickEvents",
+        "releaseEntityClickEvents" } }
 };
 
 // Properties a world's script may write on an allow-listed class (every other write on such a class is refused).

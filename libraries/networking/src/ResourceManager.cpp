@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QThread>
 #include <QFileInfo>
+#include <QRegularExpression>
 
 #include <SharedUtil.h>
 #include <plugins/Forward.h>
@@ -52,13 +53,48 @@ ResourceManager::~ResourceManager() {
     }
 }
 
+// An address read as one on this machine: a file or qrc URL, or a string the loaders take as a path (no scheme, or a
+// Windows drive letter); a prefix that is part of such an address (empty, "fi") counts too.
+static bool isLocalAddress(const QString& address) {
+    const QString scheme = QUrl(address).scheme().toLower();
+    return scheme.isEmpty() || scheme.length() == 1 || scheme == "file" || scheme == "qrc";
+}
+
 void ResourceManager::setUrlPrefixOverride(const QString& prefix, const QString& replacement) {
+    // what is on this machine is never served from elsewhere
+    if (!replacement.isEmpty() && isLocalAddress(prefix) && !isLocalAddress(replacement)) {
+        qCWarning(networking) << "Not mapping addresses on this machine elsewhere:" << prefix.left(200) << replacement.left(200);
+        return;
+    }
     QMutexLocker locker(&_prefixMapLock);
     if (replacement.isEmpty()) {
         _prefixMap.erase(prefix);
     } else {
         _prefixMap[prefix] = replacement;
     }
+}
+
+// Whether the rest of an address after a prefix stays under the prefix's replacement: its path (up to a query or a
+// fragment), percent-decoded, with backslashes read as separators, never climbs above where it starts.
+static bool staysUnderReplacement(const QString& rest) {
+    QString path = rest;
+    const int end = path.indexOf(QRegularExpression("[?#]"));
+    if (end >= 0) {
+        path.truncate(end);
+    }
+    path = QUrl::fromPercentEncoding(path.toUtf8());
+    path.replace('\\', '/');
+    int depth = 0;
+    for (const QString& part : path.split('/')) {
+        if (part == "..") {
+            if (--depth < 0) {
+                return false;
+            }
+        } else if (!part.isEmpty() && part != ".") {
+            ++depth;
+        }
+    }
+    return true;
 }
 
 QString ResourceManager::normalizeURL(const QString& urlString) {
@@ -74,6 +110,16 @@ QString ResourceManager::normalizeURL(const QString& urlString) {
         const auto& prefix = entry.first;
         const auto& replacement = entry.second;
         if (result.startsWith(prefix)) {
+            // a prefix maps what is under it, never what is beside it: an address that climbs out of the replacement
+            // ("../", however spelled), or one that only starts with a prefix without a closing slash ("…/model-1" for
+            // "…/model-1-other/"), is left as written
+            const QString rest = result.mid(prefix.size());
+            const bool atBoundary = prefix.endsWith('/') || rest.isEmpty() || rest.startsWith('/') || rest.startsWith('?') ||
+                                    rest.startsWith('#');
+            if (!atBoundary || !staysUnderReplacement(rest)) {
+                qCWarning(networking) << "Not replacing" << prefix << "in an address outside it:" << result.left(200);
+                continue;
+            }
             qCDebug(networking) << "Replacing " << prefix << " with " << replacement;
             result.replace(0, prefix.size(), replacement);
         }

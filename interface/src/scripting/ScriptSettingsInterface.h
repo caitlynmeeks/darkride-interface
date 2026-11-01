@@ -9,14 +9,16 @@
 //  The Settings object a script engine gets: the client's settings through one object per engine, which knows where
 //  the engine's scripts came from. A script from the network (a world's script, by the network rule for a script's
 //  own requests, ScriptNetworkPolicy) may not write the settings that decide what the client runs at start, where it
-//  goes, whose avatar it wears, what it is allowed to do, or where its files are; a local script, or any script of a
-//  local world, writes as before. Reads are unchanged here (a settings space per world is the next step).
+//  goes, whose avatar it wears, what it is allowed to do, or where its files are, nor read them or hear them change
+//  (where the visitor has been, their account's settings); a local script, or any script of a local world, reads and
+//  writes as before. A settings space per world is the next step.
 //
 
 #ifndef hifi_ScriptSettingsInterface_h
 #define hifi_ScriptSettingsInterface_h
 
 #include <QtCore/QObject>
+#include <QtCore/QSet>
 #include <QtCore/QString>
 #include <QtCore/QVariant>
 
@@ -27,7 +29,7 @@ class ScriptSettingsInterface : public QObject {
 public:
     explicit ScriptSettingsInterface(ScriptEngine* engine);
 
-    /// Whether a script from the network may not write this setting.
+    /// Whether a script from the network may not read or write this setting.
     static bool isProtected(const QString& setting);
 
 public slots:
@@ -40,8 +42,11 @@ signals:
 
 private:
     bool refuses(const QString& setting) const;
+    /// refuses() for a read, with the refusal logged once per setting.
+    bool refusesRead(const QString& setting);
 
     ScriptEngine* _engine { nullptr };
+    QSet<QString> _refusedReads;
 };
 
 #endif // hifi_ScriptSettingsInterface_h

@@ -64,7 +64,11 @@ public:
     void setTimeout(int timeout) { _timeout = timeout; }
     /// Where the script that makes this request came from, and whether the network rule for a script's own requests
     /// (ScriptNetworkPolicy) holds here (a person's client); set by the factory.
-    void setOrigin(const QUrl& origin, bool ruled) { _origin = origin; _ruled = ruled; }
+    void setOrigin(const QUrl& origin, bool ruled, bool worldIsLocal) {
+        _origin = origin;
+        _ruled = ruled;
+        _worldIsLocal = worldIsLocal;
+    }
     /// Where a refusal is logged (the script's own log).
     void setLogger(std::function<void(const QString&)> logger) { _logger = std::move(logger); }
     int unsent() const { return UNSENT; }
@@ -119,6 +123,7 @@ private:
     QTimer _timer;
     QUrl _origin;
     bool _ruled { false };
+    bool _worldIsLocal { false };   // the world the script is judged in (ScriptEngine::worldIsLocal), when it made the request
     bool _deciding { false };    // the network rule is still judging (a name lookup)
     int _generation { 0 };       // abort() moves it on, so a judgement that comes late is dropped
     std::function<void(const QString&)> _logger;

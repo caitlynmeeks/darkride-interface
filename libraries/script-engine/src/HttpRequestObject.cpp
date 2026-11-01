@@ -92,7 +92,7 @@ void HttpRequestObject::send(const QVariant& data) {
                     refuse(reason);
                 }
             }, Qt::QueuedConnection);
-        });
+        }, _worldIsLocal);
     }
     if (!_async && _readyState != DONE) {
         QEventLoop loop;
@@ -117,7 +117,7 @@ void HttpRequestObject::refuse(const QString& reason) {
 
 void HttpRequestObject::doSend() {
     DependencyManager::get<ResourceRequestObserver>()->update(_url, -1, "HttpRequestObject::doSend");
-    const bool ruled = _ruled && ScriptNetworkPolicy::applies(_origin);
+    const bool ruled = _ruled && ScriptNetworkPolicy::applies(_origin, _worldIsLocal);
     if (ruled) {
         // a redirect is judged as the request was
         _request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
@@ -149,7 +149,7 @@ void HttpRequestObject::doSend() {
                     _logger(ScriptNetworkPolicy::refusalLine(_origin, url, decision.reason + " (a redirect)"));
                 }
                 reply->abort();
-            });
+            }, _worldIsLocal);
         });
     }
     if (_timeout > 0) {
@@ -257,7 +257,7 @@ HttpRequestFactory::HttpRequestFactory(ScriptEngine* engine) : QObject(engine), 
 HttpRequestObject* HttpRequestFactory::createRequest(const QString& origin) {
     auto request = new HttpRequestObject(this);
     if (_engine) {
-        request->setOrigin(_engine->verifiedScriptOrigin(origin), _engine->isClientSide());
+        request->setOrigin(_engine->verifiedScriptOrigin(origin), _engine->isClientSide(), _engine->worldIsLocal());
         QPointer<ScriptEngine> engine(_engine);
         request->setLogger([engine](const QString& line) {
             if (engine) {

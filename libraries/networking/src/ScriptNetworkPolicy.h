@@ -47,8 +47,13 @@ public:
     static bool isWorldLocal();
     /// Whether every script but the app's own is held to the rule (DARKRIDE_SCRIPT_NETWORK_STRICT=1).
     static bool isStrict();
-    /// Whether a script of this origin is held to the rule at all; false: it keeps every address.
-    static bool applies(const QUrl& origin);
+    /// Whether a script's address is one of the app's own scripts: qrc, or a file in the app's scripts folder with both
+    /// paths made canonical (links followed, "." and ".." resolved), so a path that only starts there doesn't count.
+    static bool isAppScript(const QUrl& scriptUrl);
+    /// Whether a script of this origin is held to the rule at all; false: it keeps every address. worldIsLocal: the
+    /// world the script is judged in, the one the client is in now unless the caller holds a script to its own world
+    /// (an entities engine, ScriptEngine::worldIsLocal), as in every judgement below.
+    static bool applies(const QUrl& origin, bool worldIsLocal = isWorldLocal());
 
     /// Loopback, link-local, private (RFC 1918), shared (100.64/10), unspecified, multicast, reserved: not public.
     static bool isPrivateAddress(const QHostAddress& address);
@@ -56,18 +61,18 @@ public:
     static bool isLocalHostName(const QString& host);
 
     /// The judgement before any name lookup.
-    static Decision check(const QUrl& target, const QUrl& origin);
+    static Decision check(const QUrl& target, const QUrl& origin, bool worldIsLocal = isWorldLocal());
     /// The judgement once the target's addresses are known: public, every one of them, or refused.
     static Decision checkAddresses(const QList<QHostAddress>& addresses);
     /// The whole judgement, lookup included. The callback runs on the context's thread: at once when no lookup is
     /// needed (so a request that was allowed yesterday goes out the same way today), later otherwise; never after
     /// the context is gone.
     static void decide(const QUrl& target, const QUrl& origin, QObject* context,
-                       std::function<void(const Decision&)> callback);
+                       std::function<void(const Decision&)> callback, bool worldIsLocal = isWorldLocal());
 
     /// The whole judgement on the calling thread, with the name lookup waited for (for Script.include and
     /// Script.require, which wait for their download anyway); reason is set when refused.
-    static bool decideBlocking(const QUrl& target, const QUrl& origin, QString& reason);
+    static bool decideBlocking(const QUrl& target, const QUrl& origin, QString& reason, bool worldIsLocal = isWorldLocal());
 
     /// The line for the log when a request is refused.
     static QString refusalLine(const QUrl& origin, const QUrl& target, const QString& reason);

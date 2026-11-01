@@ -25,6 +25,12 @@ private slots:
     void testFetch();
     void testHttpRequest();
     void testWebSocket();
+    void testWorldRule();
+    void testWorldRuleOnRequests();
+    void testRefusalAtLoad();
+    void testAppScriptsFolder();
+    void testResourcesNotForWorlds();
+    void testInputAndPrivacyNotForWorlds();
 
 private:
     QTemporaryDir _dir;
