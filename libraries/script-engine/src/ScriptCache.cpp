@@ -145,6 +145,7 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
             #endif
             auto request = DependencyManager::get<ResourceManager>()->createResourceRequest(
                 nullptr, url, true, -1, "ScriptCache::getScriptContents");
+            applyRule(request, url);
 
             if (!request) {
                 qCWarning(scriptengine) << "Error loading script from URL (createResourceRequest failed)" << url;
@@ -228,6 +229,14 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
 
                         auto request = DependencyManager::get<ResourceManager>()->createResourceRequest(
                             nullptr, url, true, -1, "ScriptCache::scriptContentAvailable");
+                        if (request) {
+                            // a ruled download's retry is ruled as it was (the record keeps the rule)
+                            Lock lock(_containerLock);
+                            if (_activeScriptRequests.contains(url) && _activeScriptRequests[url].ruled) {
+                                const ScriptRequest& record = _activeScriptRequests[url];
+                                request->setNetworkRule(record.ruleOrigin, record.ruleWorldIsLocal);
+                            }
+                        }
                         Q_ASSERT(request);
 
                         // We've already made a request, so the cache must be disabled or it wasn't there, so enabling
@@ -263,4 +272,29 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
             thisCallback(url.toString(), scriptBytes, success, status);
         }
     }
+}
+
+void ScriptCache::ruleFetch(const QUrl& unnormalizedURL, const QUrl& origin, bool worldIsLocal) {
+    const QUrl url = DependencyManager::get<ResourceManager>()->normalizeURL(unnormalizedURL);
+    Lock lock(_containerLock);
+    _fetchRules[url] = FetchRule { origin, worldIsLocal };
+}
+
+void ScriptCache::applyRule(ResourceRequest* request, const QUrl& url) {
+    // called with _containerLock free: the first download of a URL; its retries read the rule from the request record
+    Lock lock(_containerLock);
+    auto found = _fetchRules.find(url);
+    if (found == _fetchRules.end()) {
+        return;
+    }
+    if (request) {
+        request->setNetworkRule(found->origin, found->worldIsLocal);
+    }
+    if (_activeScriptRequests.contains(url)) {
+        auto& scriptRequest = _activeScriptRequests[url];
+        scriptRequest.ruled = true;
+        scriptRequest.ruleOrigin = found->origin;
+        scriptRequest.ruleWorldIsLocal = found->worldIsLocal;
+    }
+    _fetchRules.erase(found);
 }

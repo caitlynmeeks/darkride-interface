@@ -121,6 +121,14 @@
         } catch (e) {
             done("require a local json", "threw " + e + (String(e).indexOf("Refused") >= 0 ? " REFUSED" : ""));
         }
+        // a public JSON module: its download goes to the address judged, by name (the certificate checked by the name)
+        pending++;
+        try {
+            var pkg = Script.require("https://cdn.jsdelivr.net/npm/lodash@4.17.21/package.json");
+            done("require a public json", pkg && pkg.name === "lodash" ? "READ" : "no content");
+        } catch (e) {
+            done("require a public json", "threw " + e);
+        }
         pending++;
         var includeDone = false;
         Script.include("http://127.0.0.1:" + ECHO_PORT + "/network-rules-included.js", function () {
