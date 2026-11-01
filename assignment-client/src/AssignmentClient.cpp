@@ -13,6 +13,7 @@
 
 #include <assert.h>
 
+#include <QHostInfo>
 #include <QProcess>
 #include <QSharedMemory>
 #include <QThread>
@@ -81,6 +82,14 @@ AssignmentClient::AssignmentClient(Assignment::Type requestAssignmentType, QStri
     }
     _assignmentServerSocket.setObjectName("AssignmentServer");
     nodeList->setAssignmentServerSocket(_assignmentServerSocket);
+
+    // who may give this client work: see handleCreateAssignmentPacket
+    _assignmentServerAddresses = QHostInfo::fromName(_assignmentServerHostname).addresses();
+    _assignmentsFromAnyAddress = !qgetenv("TIVOLI_ASSIGNMENTS_FROM_ANY_ADDRESS").isEmpty();
+    if (_assignmentsFromAnyAddress) {
+        qCWarning(assignment_client) << "TIVOLI_ASSIGNMENTS_FROM_ANY_ADDRESS is set: taking work from any sender that can"
+            << "reach this client's port";
+    }
 
     qCDebug(assignment_client) << "Assignment server socket is" << _assignmentServerSocket;
 
@@ -211,6 +220,23 @@ void AssignmentClient::sendAssignmentRequest() {
 
 void AssignmentClient::handleCreateAssignmentPacket(QSharedPointer<ReceivedMessage> message) {
     qCDebug(assignment_client) << "Received a PacketType::CreateAssignment - attempting to unpack.";
+
+    // Work counts only from the assignment server this client asks. The server answers from the port it was asked on, so
+    // a NAT in front of this client doesn't change what arrives.
+    const HifiSockAddr& sender = message->getSenderSockAddr();
+    bool fromAssignmentServer = sender.getPort() == _assignmentServerSocket.getPort() &&
+        (sender.getAddress() == _assignmentServerSocket.getAddress() || _assignmentServerAddresses.contains(sender.getAddress()));
+    if (!fromAssignmentServer && !_assignmentsFromAnyAddress) {
+        const quint64 REFUSED_LOG_INTERVAL_USECS = 10 * USECS_PER_SECOND;
+        quint64 now = usecTimestampNow();
+        if (now - _lastRefusedAssignmentLogUsecs > REFUSED_LOG_INTERVAL_USECS) {
+            _lastRefusedAssignmentLogUsecs = now;
+            qCWarning(assignment_client) << "Refused an assignment from" << sender << "- this client takes work only from"
+                << _assignmentServerSocket << "(a server that answers from another address needs"
+                << "TIVOLI_ASSIGNMENTS_FROM_ANY_ADDRESS=1)";
+        }
+        return;
+    }
 
     if (_currentAssignment) {
         qCWarning(assignment_client) << "Received a PacketType::CreateAssignment while still running an active assignment. Ignoring.";
