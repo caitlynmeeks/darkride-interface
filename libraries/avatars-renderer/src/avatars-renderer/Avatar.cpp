@@ -1230,9 +1230,12 @@ glm::quat Avatar::getAbsoluteJointRotationInObjectFrame(int index) const {
             return glm::quat();
         }
         case SENSOR_TO_WORLD_MATRIX_INDEX: {
-            glm::mat4 sensorToWorldMatrix = getSensorToWorldMatrix();
+            // the room relative to the avatar. The local transform is in the parent's coordinates when the avatar rides
+            // a car, so it pairs with sensorToLocal (the parent's pose and sensorToWorld of one moment; sensorToWorld
+            // itself with no parent), not with sensorToWorld, which carried the car in twice (vehicle master plan 11 b)
+            glm::mat4 sensorToLocalMatrix = getSensorToLocalMatrix();
             glm::mat4 avatarMatrix = getLocalTransform().getMatrix();
-            glm::mat4 finalMat = glm::inverse(avatarMatrix) * sensorToWorldMatrix;
+            glm::mat4 finalMat = glm::inverse(avatarMatrix) * sensorToLocalMatrix;
             return glmExtractRotation(finalMat);
         }
         case CAMERA_RELATIVE_CONTROLLER_LEFTHAND_INDEX:
@@ -1282,9 +1285,10 @@ glm::vec3 Avatar::getAbsoluteJointTranslationInObjectFrame(int index) const {
             return glm::vec3(0.0f);
         }
         case SENSOR_TO_WORLD_MATRIX_INDEX: {
-            glm::mat4 sensorToWorldMatrix = getSensorToWorldMatrix();
+            // as the rotation case above: the local transform pairs with sensorToLocal (entry 11 b)
+            glm::mat4 sensorToLocalMatrix = getSensorToLocalMatrix();
             glm::mat4 avatarMatrix = getLocalTransform().getMatrix();
-            glm::mat4 finalMat = glm::inverse(avatarMatrix) * sensorToWorldMatrix;
+            glm::mat4 finalMat = glm::inverse(avatarMatrix) * sensorToLocalMatrix;
             return extractTranslation(finalMat);
         }
         case CAMERA_RELATIVE_CONTROLLER_LEFTHAND_INDEX:

@@ -1841,6 +1841,10 @@ public:
     // results are in sensor frame (-z forward)
     glm::mat4 deriveBodyFromHMDSensor() const;
 
+    // the sensor matrix the follow works in: sensorToWorld on the ground, sensorToLocal in a frame (vehicle master
+    // plan entry 11: the room is fixed to the car, so the follow sees in a car what it sees on the ground)
+    glm::mat4 getFollowSensorMatrix() const;
+
     glm::mat4 getSpine2RotationRigSpace() const;
 
     glm::vec3 computeCounterBalance();

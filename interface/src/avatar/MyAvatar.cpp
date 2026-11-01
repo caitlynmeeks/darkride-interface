@@ -6309,8 +6309,14 @@ void MyAvatar::FollowHelper::prePhysicsUpdate(MyAvatar& myAvatar, const glm::mat
         }
     }
 
-    glm::mat4 desiredWorldMatrix = myAvatar.getSensorToWorldMatrix() * desiredBodyMatrix;
-    glm::mat4 currentWorldMatrix = myAvatar.getSensorToWorldMatrix() * currentBodyMatrix;
+    // Into the coordinates the character steps in: the domain on the ground, the frame's own in a frame (vehicle master
+    // plan entry 11). The room relative to a frame (sensorToLocal) is constant while riding whatever the car does, as
+    // sensorToWorld is on the ground; built with sensorToWorld, the wanted pose carried the previous frame's presented
+    // car pose into a conversion with this step's simulated one, and the target lay behind the body by the car's
+    // motion over a frame, while the step came back in the frame's coordinates and was applied as a world one.
+    glm::mat4 sensorToWorldMatrix = myAvatar.getFollowSensorMatrix();
+    glm::mat4 desiredWorldMatrix = sensorToWorldMatrix * desiredBodyMatrix;
+    glm::mat4 currentWorldMatrix = sensorToWorldMatrix * currentBodyMatrix;
 
     AnimPose followWorldPose(currentWorldMatrix);
 
@@ -6347,11 +6353,12 @@ glm::mat4 MyAvatar::FollowHelper::postPhysicsUpdate(MyAvatar& myAvatar, const gl
         float dt = myAvatar.getCharacterController()->getFollowTime();
         decrementTimeRemaining(dt);
 
-        // apply follow displacement to the body matrix.
+        // apply follow displacement to the body matrix: the step is in the coordinates the character stepped in (the
+        // frame's own in a frame), and so is the matrix it comes back into the room with (entry 11)
         glm::vec3 worldLinearDisplacement = myAvatar.getCharacterController()->getFollowLinearDisplacement();
         glm::quat worldAngularDisplacement = myAvatar.getCharacterController()->getFollowAngularDisplacement();
 
-        glm::mat4 sensorToWorldMatrix = myAvatar.getSensorToWorldMatrix();
+        glm::mat4 sensorToWorldMatrix = myAvatar.getFollowSensorMatrix();
         glm::mat4 worldToSensorMatrix = glm::inverse(sensorToWorldMatrix);
 
         glm::vec3 sensorLinearDisplacement = transformVectorFast(worldToSensorMatrix, worldLinearDisplacement);
@@ -6368,6 +6375,14 @@ glm::mat4 MyAvatar::FollowHelper::postPhysicsUpdate(MyAvatar& myAvatar, const gl
     } else {
         return currentBodyMatrix;
     }
+}
+
+// The sensor matrix the follow works in: into the coordinates the character steps in, so the domain on the ground and
+// the frame's own in a frame (sensorToLocal, the avatar's local pose x inverse(body in the room), kept by
+// updateSensorToWorldMatrix; constant while riding whatever the car does). Vehicle master plan entry 11.
+glm::mat4 MyAvatar::getFollowSensorMatrix() const {
+    PhysicsWorld* world = _characterController.getWorld();
+    return (world && !world->isRoot()) ? getSensorToLocalMatrix() : getSensorToWorldMatrix();
 }
 
 bool MyAvatar::FollowHelper::getForceActivateRotation() const {
