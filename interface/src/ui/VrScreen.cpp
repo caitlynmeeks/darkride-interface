@@ -225,6 +225,7 @@ void VrScreen::makePiece(Piece piece, const Arrangement& places) {
         AppMadeEntityScope appMade;
         _pieces[piece] = entities->addEntityInternal(properties, entity::HostType::LOCAL);
     }
+    // before the renderer exists: it builds its surface at once, and it's made on a later update (addingEntity is queued)
     render::entities::WebEntityRenderer::setAppSurface(_pieces[piece], true);
 }
 
