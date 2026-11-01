@@ -78,6 +78,7 @@ public:
 
     void reserve(size_t size) { _triangles.reserve(size); } // reserve space in the datastructure for size number of triangles
     size_t size() const { return _triangles.size(); }
+    const std::vector<Triangle>& getTriangles() const { return _triangles; }
     void clear();
 
     // Determine if a point is "inside" all the triangles of a convex hull. It is the responsibility of the caller to

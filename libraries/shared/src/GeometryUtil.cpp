@@ -379,9 +379,18 @@ bool findRayTriangleIntersection(const glm::vec3& origin, const glm::vec3& direc
     glm::vec3 secondSide = v2 - v0;
     glm::vec3 P = glm::cross(direction, secondSide);
     float det = glm::dot(firstSide, P);
-    if (!allowBackface && det < EPSILON) {
+    // det grows with the triangle's two sides and the ray direction's length, so the tolerance does too: it is a
+    // tolerance on the angle between the ray and the triangle, and a triangle is judged the same at any scale. (An
+    // absolute tolerance refused every triangle of a model authored a few centimetres tall and shown scaled up, since
+    // the picks run in the model's own units: its millimetre triangles and a shortened ray gave a det near 1e-8.)
+    // Compared squared: three dot products instead of three square roots, the same decision (the terrain's pick tests
+    // thousands of triangles a hover with no tree; performance's review, 2026-10-31).
+    const float toleranceSquared = EPSILON * EPSILON * glm::dot(firstSide, firstSide) * glm::dot(secondSide, secondSide) *
+                                   glm::dot(direction, direction);
+    if (!allowBackface && det <= 0.0f) {
         return false;
-    } else if (fabsf(det) < EPSILON) {
+    }
+    if (det * det <= toleranceSquared) {
         return false;
     }
 

@@ -393,6 +393,19 @@ void Model::initJointStates() {
     _rig.initJointStates(hfmModel, modelOffset);
 }
 
+// whether a shape's material is drawn on both sides (a cull mode of none), so its faces can be picked from either side
+static bool shapeIsDoubleSided(const HFMModel& hfmModel, int shapeID) {
+    if (shapeID < 0 || shapeID >= (int)hfmModel.shapes.size()) {
+        return false;
+    }
+    const uint32_t materialIndex = hfmModel.shapes[shapeID].material;
+    if (materialIndex >= hfmModel.materials.size()) {
+        return false;
+    }
+    const auto& material = hfmModel.materials[materialIndex]._material;
+    return material && material->getCullFaceMode() == graphics::MaterialKey::CULL_NONE;
+}
+
 bool Model::findRayIntersectionAgainstSubMeshes(const glm::vec3& origin, const glm::vec3& direction, float& distance,
                                                 BoxFace& face, glm::vec3& surfaceNormal, QVariantMap& extraInfo,
                                                 bool pickAgainstTriangles, bool allowBackface) {
@@ -487,8 +500,11 @@ bool Model::findRayIntersectionAgainstSubMeshes(const glm::vec3& origin, const g
             float triangleSetDistance = FLT_MAX;
             BoxFace triangleSetFace;
             Triangle triangleSetTriangle;
+            // a part drawn on both sides (a double-sided material: glTF's doubleSided, a cull mode of none) is picked
+            // on both sides too; a face the visitor sees is a face they can click
+            const bool bothSides = allowBackface || shapeIsDoubleSided(hfmModel, sortedTriangleSet.shapeID);
             if (sortedTriangleSet.triangleSet->findRayIntersection(meshFrameOrigin, meshFrameDirection, meshFrameInvDirection, triangleSetDistance, triangleSetFace,
-                                                                   triangleSetTriangle, pickAgainstTriangles, allowBackface)) {
+                                                                   triangleSetTriangle, pickAgainstTriangles, bothSides)) {
                 if (triangleSetDistance < bestDistance) {
                     bestDistance = triangleSetDistance;
                     intersectedSomething = true;
@@ -519,6 +535,62 @@ bool Model::findRayIntersectionAgainstSubMeshes(const glm::vec3& origin, const g
          * @property {Vec3} subMeshNormal - The normal of the intersected mesh part triangle in model coordinates.
          * @property {Triangle} subMeshTriangle - The vertices of the intersected mesh part triangle in model coordinates.
          */
+        // TIVOLI_PICK_DIAG in the environment: a precise pick that passes the model's box but no triangle logs what it
+        // saw (the sets' bounds in the mesh frame, the ray there, and whether the other side of the faces would have
+        // been hit), to tell a misplaced set from reversed winding (the unclickable models of 2026-10-30)
+        static const bool PICK_DIAG = qEnvironmentVariableIsSet("TIVOLI_PICK_DIAG");
+        if (PICK_DIAG && pickAgainstTriangles && !intersectedSomething) {
+            qDebug() << "PICKDIAG miss" << _url.toString() << "modelExtents" << modelExtents.minimum << modelExtents.maximum
+                     << "meshFrameOrigin" << meshFrameOrigin << "dir" << meshFrameDirection << "sets" << sortedTriangleSets.size()
+                     << "of" << _modelSpaceMeshTriangleSets.size() << "meshes";
+            for (const auto& set : sortedTriangleSets) {
+                float backDistance = FLT_MAX;
+                BoxFace backFace;
+                Triangle backTriangle;
+                bool backHit = set.triangleSet->findRayIntersection(meshFrameOrigin, meshFrameDirection, meshFrameInvDirection,
+                                                                     backDistance, backFace, backTriangle, true, true);
+                // brute force over the set's triangles, past the tree: how many a ray through them would hit (either
+                // side), how many are degenerate, and how close the ray line passes to any vertex
+                int bruteHits = 0, degenerate = 0;
+                float nearestVertex = FLT_MAX, bruteDistance = FLT_MAX;
+                const glm::vec3 unitDir = glm::normalize(meshFrameDirection);
+                for (const auto& tri : set.triangleSet->getTriangles()) {
+                    if (glm::length(glm::cross(tri.v1 - tri.v0, tri.v2 - tri.v0)) < 1.0e-12f) {
+                        degenerate++;
+                    }
+                    float d;
+                    if (findRayTriangleIntersection(meshFrameOrigin, meshFrameDirection, tri, d, true)) {
+                        bruteHits++;
+                        bruteDistance = std::min(bruteDistance, d);
+                    }
+                    for (const glm::vec3& v : { tri.v0, tri.v1, tri.v2 }) {
+                        glm::vec3 toV = v - meshFrameOrigin;
+                        nearestVertex = std::min(nearestVertex, glm::length(toV - unitDir * glm::dot(toV, unitDir)));
+                    }
+                }
+                // an aimed ray, straight down at the first triangle's centre through the tree: proves the set itself is
+                // pickable where it has a surface (a hollow shape's bounds are mostly empty space)
+                bool aimedHit = false;
+                float aimedDistance = FLT_MAX;
+                if (!set.triangleSet->getTriangles().empty()) {
+                    const Triangle& first = set.triangleSet->getTriangles().front();
+                    const glm::vec3 centre = (first.v0 + first.v1 + first.v2) / 3.0f;
+                    const float above = set.triangleSet->getBounds().getDimensions().y + 1.0f;
+                    const glm::vec3 aimedOrigin = centre + glm::vec3(0.0f, above, 0.0f);
+                    const glm::vec3 aimedDir(0.0f, -1.0f, 0.0f);
+                    BoxFace aimedFace;
+                    Triangle aimedTriangle;
+                    aimedHit = set.triangleSet->findRayIntersection(aimedOrigin, aimedDir, 1.0f / aimedDir, aimedDistance, aimedFace, aimedTriangle, true, true);
+                }
+                qDebug() << "PICKDIAG   set shape" << set.shapeID << "aimedRayAtFirstTriangle" << aimedHit << (aimedHit ? aimedDistance : -1.0f)
+                         << "bounds" << set.triangleSet->getBounds().getCorner()
+                         << set.triangleSet->getBounds().getDimensions() << "triangles" << set.triangleSet->size()
+                         << "boundsDistance" << set.distance << "treeHitWithBackfaces" << backHit << (backHit ? backDistance : -1.0f)
+                         << "bruteHits" << bruteHits << bruteDistance << "degenerate" << degenerate << "nearestVertexToRayLine" << nearestVertex
+                         << "doubleSided" << shapeIsDoubleSided(hfmModel, set.shapeID);
+            }
+        }
+
         if (intersectedSomething) {
             distance = bestDistance;
             face = bestFace;
