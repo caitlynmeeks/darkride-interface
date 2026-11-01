@@ -30,65 +30,75 @@ void ConnectionMonitor::init() {
     // Connect to domain disconnected message
     auto nodeList = DependencyManager::get<NodeList>();
     const DomainHandler& domainHandler = nodeList->getDomainHandler();
-    connect(&domainHandler, &DomainHandler::resetting, this, &ConnectionMonitor::startTimer);
-    connect(&domainHandler, &DomainHandler::disconnectedFromDomain, this, &ConnectionMonitor::startTimer);
-    connect(&domainHandler, &DomainHandler::connectedToDomain, this, &ConnectionMonitor::stopTimer);
-    connect(&domainHandler, &DomainHandler::domainConnectionRefused, this, &ConnectionMonitor::stopTimer);
-    connect(&domainHandler, &DomainHandler::redirectToErrorDomainURL, this, &ConnectionMonitor::stopTimer);
-    // left on purpose (the sign-in screen after a logout, #34): no time-out, no connection-failure window over it. Queued
-    // after leave()'s resetting, so the timer that one started ends stopped
-    connect(&domainHandler, &DomainHandler::left, this, &ConnectionMonitor::stopTimer);
-    connect(this, &ConnectionMonitor::setRedirectErrorState, &domainHandler, &DomainHandler::setRedirectErrorState);
+    // each start runs this (signing in again after signing out too): connected once, or the time-out would run twice,
+    // the second showing the failure window over the fallback
+    if (!_hooked) {
+        _hooked = true;
+        connect(&domainHandler, &DomainHandler::resetting, this, &ConnectionMonitor::startTimer);
+        connect(&domainHandler, &DomainHandler::disconnectedFromDomain, this, &ConnectionMonitor::startTimer);
+        connect(&domainHandler, &DomainHandler::connectedToDomain, this, &ConnectionMonitor::stopTimer);
+        connect(&domainHandler, &DomainHandler::domainConnectionRefused, this, &ConnectionMonitor::stopTimer);
+        connect(&domainHandler, &DomainHandler::redirectToErrorDomainURL, this, &ConnectionMonitor::stopTimer);
+        // left on purpose (the sign-in screen after a logout, #34): no time-out, no connection-failure window over it.
+        // Queued after leave()'s resetting, so the timer that one started ends stopped
+        connect(&domainHandler, &DomainHandler::left, this, &ConnectionMonitor::stopTimer);
+        connect(this, &ConnectionMonitor::setRedirectErrorState, &domainHandler, &DomainHandler::setRedirectErrorState);
 
-    _timer.setSingleShot(true);
+        _timer.setSingleShot(true);
+        connect(&_timer, &QTimer::timeout, this, [this]() {
+            // the start-up world never answered (Caity's 1.1.1: her last world was an instance stopped since, tried
+            // again and again behind the failure window): the entry world instead, the loading screen saying why. Once
+            // only: if the entry doesn't answer either, the failure window as for any world
+            if (!_fallbackFrom.isEmpty()) {
+                const QString from = _fallbackFrom;
+                _fallbackFrom.clear();
+                qCInfo(interfaceapp) << "ConnectionMonitor: the start-up world (" << from << _startUpWorld
+                                     << ") doesn't answer, going to the entry world";
+                emit DependencyManager::get<WindowScriptingInterface>()->startUpWorldUnreachable(from);
+                DependencyManager::get<AddressManager>()->goToEntry();
+                _timer.start(ON_INITIAL_LOAD_REDIRECT_AFTER_DISCONNECTED_FOR_X_MS);   // a lookup that never answers
+                return;
+            }
+            // scripts are told first: the loading screen (worldLoading.js) lifts, so the failure window isn't hidden
+            // behind it
+            emit DependencyManager::get<WindowScriptingInterface>()->domainConnectionTimedOut();
+            // set in a timeout error
+            bool enableInterstitial = DependencyManager::get<NodeList>()->getDomainHandler().getInterstitialModeEnabled();
+            if (enableInterstitial) {
+                qDebug() << "ConnectionMonitor: Redirecting to 404 error domain";
+                emit setRedirectErrorState(REDIRECT_HIFI_ADDRESS, "", 5);
+            } else {
+                qDebug() << "ConnectionMonitor: Showing connection failure window";
+                DependencyManager::get<DialogsManager>()->setDomainConnectionFailureVisibility(true);
+            }
+        });
+    }
+
     if (!domainHandler.isConnected()) {
         _timer.start(ON_INITIAL_LOAD_REDIRECT_AFTER_DISCONNECTED_FOR_X_MS);
     } else {
         _fallbackFrom.clear();
     }
+}
 
-    // the start-up world is the one its lookups lead to, again on every retry; a lookup leading elsewhere is a world the
-    // person asked for meanwhile (a link, a hop), which keeps the failure window. A plain address has led there already
-    if (!_fallbackFrom.isEmpty()) {
-        if (!domainHandler.getHostname().isEmpty()) {
-            _startUpWorld = domainHandler.getHostname() + ":" + QString::number(domainHandler.getPort());
-        }
-        auto addressManager = DependencyManager::get<AddressManager>();
-        connect(addressManager.data(), &AddressManager::possibleDomainChangeRequired, this,
-                [this](QUrl domainURL, QUuid) {
-            startUpWorldAsked(domainURL.host() + ":" +
-                              QString::number(domainURL.port() != -1 ? domainURL.port() : DEFAULT_DOMAIN_SERVER_PORT));
-        });
-        connect(addressManager.data(), &AddressManager::possibleDomainChangeRequiredViaICEForID, this,
-                [this](const QString&, const QUuid& domainID) { startUpWorldAsked(domainID.toString()); });
+void ConnectionMonitor::setStartUpFallback(const QString& from) {
+    _fallbackFrom = from;
+    _startUpWorld.clear();
+    // the start-up world is the first one its lookups lead to (the address is asked for right after this), again on
+    // every retry; a lookup leading elsewhere is a world the person asked for meanwhile (a link, a hop), which keeps
+    // the failure window. Heard here, not read off the DomainHandler, which takes the address on the NodeList's
+    // thread. Listened to once: a later start (signing in again) only arms it again
+    if (_listeningForStartUpWorld) {
+        return;
     }
-
-    connect(&_timer, &QTimer::timeout, this, [this]() {
-        // the start-up world never answered (Caity's 1.1.1: her last world was an instance stopped since, tried again
-        // and again behind the failure window): the entry world instead, the loading screen saying why. Once only:
-        // if the entry doesn't answer either, the failure window as for any world
-        if (!_fallbackFrom.isEmpty()) {
-            const QString from = _fallbackFrom;
-            _fallbackFrom.clear();
-            qCInfo(interfaceapp) << "ConnectionMonitor: the start-up world (" << from << _startUpWorld
-                                 << ") doesn't answer, going to the entry world";
-            emit DependencyManager::get<WindowScriptingInterface>()->startUpWorldUnreachable(from);
-            DependencyManager::get<AddressManager>()->goToEntry();
-            _timer.start(ON_INITIAL_LOAD_REDIRECT_AFTER_DISCONNECTED_FOR_X_MS);   // a lookup that never answers
-            return;
-        }
-        // scripts are told first: the loading screen (worldLoading.js) lifts, so the failure window isn't hidden behind it
-        emit DependencyManager::get<WindowScriptingInterface>()->domainConnectionTimedOut();
-        // set in a timeout error
-        bool enableInterstitial = DependencyManager::get<NodeList>()->getDomainHandler().getInterstitialModeEnabled();
-        if (enableInterstitial) {
-            qDebug() << "ConnectionMonitor: Redirecting to 404 error domain";
-            emit setRedirectErrorState(REDIRECT_HIFI_ADDRESS, "", 5);
-        } else {
-            qDebug() << "ConnectionMonitor: Showing connection failure window";
-            DependencyManager::get<DialogsManager>()->setDomainConnectionFailureVisibility(true);
-        }
+    _listeningForStartUpWorld = true;
+    auto addressManager = DependencyManager::get<AddressManager>();
+    connect(addressManager.data(), &AddressManager::possibleDomainChangeRequired, this, [this](QUrl domainURL, QUuid) {
+        startUpWorldAsked(domainURL.host() + ":" +
+                          QString::number(domainURL.port() != -1 ? domainURL.port() : DEFAULT_DOMAIN_SERVER_PORT));
     });
+    connect(addressManager.data(), &AddressManager::possibleDomainChangeRequiredViaICEForID, this,
+            [this](const QString&, const QUuid& domainID) { startUpWorldAsked(domainID.toString()); });
 }
 
 void ConnectionMonitor::startTimer() {
