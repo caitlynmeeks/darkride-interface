@@ -132,6 +132,8 @@ public:
     QString screenState() const { return _screenState; }
     /// every page back in its dock (hidden while the headset is on), the slots forgotten: before vr deletes them
     void releaseScreenSlots();
+    /// test builds only (DARKRIDE_SCREEN_TEST_SLOTS): a test script's releaseScreenSlots, before it deletes its slots
+    Q_INVOKABLE void testReleaseScreenSlots();
 
 signals:
     /**jsdoc

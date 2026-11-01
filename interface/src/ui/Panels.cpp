@@ -10,6 +10,7 @@
 #include "Panels.h"
 
 #include <QtGui/QGuiApplication>
+#include <QtCore/QThread>
 #include <QtGui/QScreen>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
@@ -17,6 +18,7 @@
 #include <QtWidgets/QDockWidget>
 
 #include <gl/GLHelpers.h>
+#include <shared/QtHelpers.h>
 #include <MainWindow.h>
 #include <OffscreenUi.h>
 #include <SettingHandle.h>
@@ -517,6 +519,17 @@ void Panels::releaseScreenSlots() {
         _screenState.clear();
         emit screenStateChanged(_screenState);
     }
+}
+
+void Panels::testReleaseScreenSlots() {
+    if (!qEnvironmentVariableIsSet("DARKRIDE_SCREEN_TEST_SLOTS")) {
+        return;
+    }
+    if (QThread::currentThread() != thread()) {
+        BLOCKING_INVOKE_METHOD(this, "testReleaseScreenSlots");
+        return;
+    }
+    releaseScreenSlots();
 }
 
 void Panels::displayChanged() {
