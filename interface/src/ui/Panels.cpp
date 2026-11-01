@@ -521,6 +521,22 @@ void Panels::leaveDialogOnly() {
     }
 }
 
+bool Panels::makeNextScreenPage() {
+    if (!_restored) {
+        return false;   // none is made before sign-in (Panels::change)
+    }
+    const QString middle = _middleTabs.isEmpty() || _middleTabs.last() == TABLET_TAB ? MIDDLE_FIRST : _middleTabs.last();
+    for (const QString& name : { PEOPLE, middle }) {
+        auto qmlDock = qobject_cast<QmlDock*>(dock(name));
+        if (qmlDock && !qmlDock->panel()) {
+            qmlDock->makePage();   // in its closed dock, unseen
+            qCDebug(interfaceapp) << "Panels: screen page made ahead:" << name;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Panels::cancelScreenDialog() {
     QQuickItem* host = _screenSlots.value(SLOT_MIDDLE);
     QQuickItem* dialogs = host ? host->findChild<QQuickItem*>("dialogs") : nullptr;

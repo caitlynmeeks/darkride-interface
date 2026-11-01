@@ -129,6 +129,10 @@ public:
     /// the dialog over the middle slot answered Cancel (the menu button in the headset, as Escape on the desktop); false
     /// when there's none
     bool cancelScreenDialog();
+    /// vr's warm-up at headset entry, one step at a time: makes one page the screen's first show will need (People,
+    /// then the middle's front panel; the radio's exists while it's on), each about a 50-70 ms block of QML, so the
+    /// show itself only moves pages in. False once there's none left to make
+    bool makeNextScreenPage();
     /// vr's check that a window is one of its slots' surfaces; until it's set, every host is refused
     static void setScreenWindowCheck(std::function<bool(QQuickWindow*)> check);
     /// a slot's layout size in panel pixels; empty while it holds nothing (the right one while the radio is off)
