@@ -86,14 +86,19 @@ void Application::toggleTabletUI(bool shouldOpen) const {
 
 void Application::initializeUi() {
 
-    // Allow remote QML content from trusted sources ONLY
+    // QML is the app's own interface code: it comes from the app (qrc:), a path relative to it, or a file on this
+    // computer. An address that names a host, or whose path starts with two slashes, is on another machine or a
+    // network share (a relative one too, once resolved against a file base) and is refused, as is any other scheme,
+    // written with its slashes or without.
     {
         auto newValidator = [=](const QUrl& url)->bool {
-            auto pathStr = url.toString().toLower();
-            if (pathStr.contains(":/") && !(pathStr.startsWith("file:/") || pathStr.startsWith("qrc:/"))) {
+            const QString path = url.path();
+            if (!url.host().isEmpty() || path.startsWith("//") || path.startsWith("\\\\")) {
                 return false;
             }
-            return true;
+            // (a one-letter scheme is a Windows drive: a path on this computer)
+            const QString scheme = url.scheme().toLower();
+            return scheme.isEmpty() || scheme == "qrc" || scheme == "file" || scheme.length() == 1;
         };
         OffscreenQmlSurface::setUrlValidator(newValidator);
     }
