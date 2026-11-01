@@ -18,6 +18,9 @@
 #ifndef hifi_GuardedObject_h
 #define hifi_GuardedObject_h
 
+#include <QtCore/QHash>
+#include <QtCore/QPair>
+#include <QtCore/QVector>
 #include <QtScript/QScriptClass>
 #include <QtScript/QScriptEngine>
 #include <QtScript/QScriptValue>
@@ -44,6 +47,20 @@ public:
 
 private:
     enum Kind { Absent = 0, Method = 1, Property = 2, Signal = 3 };
+    /// A signal whose deliveries the gate checks (HostInterface::MemberGate::checksDelivery): the world's script gets
+    /// connect and disconnect, never the signal itself, and each function it connects hears only the deliveries the
+    /// gate lets through.
+    QScriptValue guardSignal(const QScriptValue& guard, const QString& member);
+    static QScriptValue connectChecked(QScriptContext* context, QScriptEngine* engine);
+    static QScriptValue disconnectChecked(QScriptContext* context, QScriptEngine* engine);
+    static QScriptValue deliverChecked(QScriptContext* context, QScriptEngine* engine);
+    struct CheckedConnection {
+        QScriptValue receiver;  // the `this` the script gave, or invalid
+        QScriptValue function;  // the script's function
+        QScriptValue checked;   // what is connected to the real signal in its place
+    };
+    // by the real object and the signal's name: what disconnect looks the script's function up in
+    QHash<QPair<const QObject*, QString>, QVector<CheckedConnection>> _checkedConnections;
     /// What the name is on the real object, by the policy: Absent when the world's script may not have it.
     Kind kindOf(const QScriptValue& raw, const QByteArray& name, bool& writable) const;
     static QScriptValue forward(QScriptContext* context, QScriptEngine* engine);

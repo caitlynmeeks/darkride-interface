@@ -1075,23 +1075,28 @@ int HostInterface::connect(ObjectTable::Handle handle, const QString& signal, QS
         error = refuse(object->metaObject(), signal.toUtf8());
         return 0;
     }
-    if (gated(object->metaObject()) && _gate.deniesSignal) {
+    const QMetaObject* meta = object->metaObject();
+    QByteArray name;
+    if (gated(meta)) {
         // the signal the relay would join, by whichever name it is given (its name, its signature, its index)
-        const QMetaObject* meta = object->metaObject();
         int index = -1;
         if (signal.startsWith('#')) {
             index = signal.mid(1).toInt();
         } else if (signal.contains('(')) {
             index = meta->indexOfSignal(QMetaObject::normalizedSignature(signal.toUtf8().constData()).constData());
         }
-        const QByteArray name = (index >= 0 && index < meta->methodCount()) ? meta->method(index).name()
-                                                                              : signal.toUtf8();
-        if (_gate.deniesSignal(meta, name)) {
+        name = (index >= 0 && index < meta->methodCount()) ? meta->method(index).name() : signal.toUtf8();
+        if (_gate.deniesSignal && _gate.deniesSignal(meta, name)) {
             error = refuse(meta, name);
             return 0;
         }
     }
-    return _relay.connect(object, signal, [this](int connection, const QVariantList& arguments) {
+    // a signal the gate checks at each delivery (one about an entity the world may not see doesn't arrive)
+    const bool checkEach = gated(meta) && _gate.checksDelivery && _gate.holdsBackDelivery && _gate.checksDelivery(meta, name);
+    return _relay.connect(object, signal, [this, checkEach, meta, name](int connection, const QVariantList& arguments) {
+        if (checkEach && _gate.holdsBackDelivery(meta, name, arguments)) {
+            return;
+        }
         QString deliveryError;
         deliverSignal(connection, arguments, deliveryError);
     }, error);

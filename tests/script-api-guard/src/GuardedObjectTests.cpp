@@ -48,6 +48,7 @@ public:
 signals:
     void countChanged(int count);
     void secretChanged(const QString& secret);
+    void pointed(const QString& id, int n);
 private:
     int _count { 0 };
     int _limit { 0 };
@@ -64,6 +65,10 @@ struct Fixture {
         gate.deniesPropertyWrite = [](const QMetaObject*, const QByteArray& name) { return name == "count"; };
         gate.deniesPropertyRead = [](const QMetaObject*, const QByteArray& name) { return name == "label"; };
         gate.deniesSignal = [](const QMetaObject*, const QByteArray& name) { return name == "secretChanged"; };
+        gate.checksDelivery = [](const QMetaObject*, const QByteArray& name) { return name == "pointed"; };
+        gate.holdsBackDelivery = [](const QMetaObject*, const QByteArray& name, const QVariantList& arguments) {
+            return name == "pointed" && arguments.value(0).toString() == "hidden";
+        };
         gate.refusalLine = [](const QString& object, const QString& member) { return object + "." + member + " is for the visitor's own scripts"; };
         guard = new GuardedObjectClass(&engine, gate);   // owned by the engine's lifetime in the fixture
         QScriptValue raw = engine.newQObject(&probe, QScriptEngine::QtOwnership,
@@ -162,4 +167,33 @@ void GuardedObjectTests::testDeniedSignals() {
              QString("function"));
     f.probe.setCount(5);
     QCOMPARE(f.run("heard"), QString("5"));
+}
+
+void GuardedObjectTests::testCheckedSignals() {
+    Fixture f;
+    // a signal checked at each delivery: connect and disconnect, each connected function hears only what the gate
+    // lets through
+    QCOMPARE(f.run("var heard = []; function hear(id, n) { heard.push(id + n); } probe.pointed.connect(hear); "
+                   "typeof probe.pointed.connect"), QString("function"));
+    emit f.probe.pointed("hidden", 1);
+    emit f.probe.pointed("seen", 2);
+    QCOMPARE(f.run("heard.join(',')"), QString("seen2"));
+    // with a receiver, by function and by method name: `this` is the receiver
+    QCOMPARE(f.run("var listener = { got: [], take: function (id, n) { this.got.push(id + n); } }; "
+                   "probe.pointed.connect(listener, listener.take); probe.pointed.connect(listener, 'take'); 'ok'"),
+             QString("ok"));
+    emit f.probe.pointed("hidden", 3);
+    emit f.probe.pointed("seen", 4);
+    QCOMPARE(f.run("heard.join(',') + ' ' + listener.got.join(',')"), QString("seen2,seen4 seen4,seen4"));
+    // disconnect finds what connect made: no more deliveries to that function; an unknown one is an error
+    QCOMPARE(f.run("probe.pointed.disconnect(hear); probe.pointed.disconnect(listener, 'take'); 'ok'"), QString("ok"));
+    emit f.probe.pointed("seen", 5);
+    QCOMPARE(f.run("heard.join(',') + ' ' + listener.got.join(',')"), QString("seen2,seen4 seen4,seen4,seen5"));
+    QVERIFY(f.run("probe.pointed.disconnect(hear)").startsWith("EXCEPTION"));
+    QVERIFY(f.run("probe.pointed.connect(42)").startsWith("EXCEPTION"));
+    // the signal itself is out of reach: it can't be fired
+    QVERIFY(f.run("probe.pointed('seen', 6)").startsWith("EXCEPTION"));
+    QCOMPARE(f.run("listener.got.length"), QString("3"));
+    // a signal that isn't checked is the signal itself, as before
+    QCOMPARE(f.run("typeof probe.countChanged"), QString("function"));
 }

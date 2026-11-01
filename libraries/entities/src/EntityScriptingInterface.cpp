@@ -538,13 +538,17 @@ QVector<QUuid> EntityScriptingInterface::readableByWorld(const QVector<QUuid>& i
     return readable;
 }
 
-bool EntityScriptingInterface::worldMayChange(const QUuid& id, const char* method) const {
+bool EntityScriptingInterface::worldMayUse(const QUuid& id) const {
     if (!ScriptCaller::isWorld() || !_entityTree || id.isNull()) {
         return true;
     }
     EntityItemPointer entity;
     _entityTree->withReadLock([&] { entity = _entityTree->findEntityByEntityItemID(id); });
-    if (!entity || worldReachOf(*entity) == WorldReach::FULL) {
+    return !entity || worldReachOf(*entity) == WorldReach::FULL;
+}
+
+bool EntityScriptingInterface::worldMayChange(const QUuid& id, const char* method) const {
+    if (worldMayUse(id)) {
         return true;
     }
     logWorldRefusal(method, "change the visitor's own entities or the app's");
@@ -552,12 +556,7 @@ bool EntityScriptingInterface::worldMayChange(const QUuid& id, const char* metho
 }
 
 bool EntityScriptingInterface::worldMaySend(const QUuid& id, const char* method) const {
-    if (!ScriptCaller::isWorld() || !_entityTree || id.isNull()) {
-        return true;
-    }
-    EntityItemPointer entity;
-    _entityTree->withReadLock([&] { entity = _entityTree->findEntityByEntityItemID(id); });
-    if (!entity || worldReachOf(*entity) == WorldReach::FULL) {
+    if (worldMayUse(id)) {
         return true;
     }
     logWorldRefusal(method, "send events or messages into an entity that isn't the world's");

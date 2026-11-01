@@ -23,6 +23,7 @@
 #include <DependencyManager.h>
 #include <NodeList.h>
 #include <PointerEvent.h>
+#include <ScriptApiPolicy.h>
 #include <ScriptCaller.h>
 #include <SpatialParentFinder.h>
 
@@ -394,6 +395,43 @@ void WorldEntitiesTests::testWorldThread() {
     QVERIFY(otherThread->wait(10000));
     delete otherThread;
     QVERIFY(!fresh);
+}
+
+void WorldEntitiesTests::testWorldSignalDeliveries() {
+    // a world's script hears an entity's signal only about the entities it may see, and a Web entity's events only
+    // from the world's own; the ids as the WebAssembly host's relay carries them and as QtScript's text
+    const QMetaObject* entities = &EntityScriptingInterface::staticMetaObject;
+    auto held = [&](const char* signal, const QVariantList& arguments) {
+        return ScriptApiPolicy::holdsBackDelivery(entities, signal, arguments);
+    };
+    auto id = [](const QUuid& uuid) { return QVariant::fromValue(EntityItemID(uuid)); };
+    QVERIFY(ScriptApiPolicy::checksDelivery(entities, "mousePressOnEntity"));
+    QVERIFY(ScriptApiPolicy::checksDelivery(entities, "hoverOverEntity"));
+    QVERIFY(!ScriptApiPolicy::checksDelivery(entities, "clearingEntities"));
+    QVERIFY(!ScriptApiPolicy::checksDelivery(entities, "addingWearable"));
+    for (const auto& hidden : { _visitorLocal, _straightLocal, _unownedLocal }) {
+        QVERIFY(held("mousePressOnEntity", { id(hidden), QVariant() }));
+        QVERIFY(held("hoverOverEntity", { hidden.toString(), QVariant() }));     // QtScript's form
+        QVERIFY(held("addingEntity", { id(hidden) }));
+        QVERIFY(held("collisionWithEntity", { id(_domain), id(hidden), QVariant() }));
+        QVERIFY(held("webEventReceived", { id(hidden), QVariant("message") }));
+    }
+    for (const auto& seen : { _domain, _worldLocal, _avatar }) {
+        QVERIFY(!held("mousePressOnEntity", { id(seen), QVariant() }));
+        QVERIFY(!held("hoverOverEntity", { seen.toString(), QVariant() }));
+        QVERIFY(!held("enterEntity", { id(seen) }));
+    }
+    QVERIFY(!held("collisionWithEntity", { id(_domain), id(_worldLocal), QVariant() }));
+    // a Web entity's events: from the world's own only, not from an avatar entity it can only read
+    QVERIFY(!held("webEventReceived", { id(_domain), QVariant("message") }));
+    QVERIFY(!held("webEventReceived", { id(_worldLocal), QVariant("message") }));
+    QVERIFY(held("webEventReceived", { id(_avatar), QVariant("message") }));
+    QVERIFY(held("fromQml", { id(_avatar), QVariant("message") }));
+    // an id that isn't an entity (gone already) and a signal not checked: delivered
+    QVERIFY(!held("deletingEntity", { id(QUuid::createUuid()) }));
+    QVERIFY(!held("clearingEntities", {}));
+    // the check is the world's whatever the thread: the visitor's own scripts never go through it
+    QVERIFY(!ScriptCaller::isWorld());
 }
 
 void WorldEntitiesTests::cleanupTestCase() {

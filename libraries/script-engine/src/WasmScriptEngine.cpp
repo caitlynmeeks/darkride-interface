@@ -467,7 +467,8 @@ void WasmScriptEngine::run() {
     }
     if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
         // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
-        // call no guard marks (ScriptCaller)
+        // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
+        // makes a new one for each engine, never from a pool) and ends with it.
         ScriptCaller::markThreadAsWorld();
     }
     QSharedPointer<ScriptEngines> scriptEngines(_scriptEngines);
@@ -546,6 +547,8 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
         gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
         gate.deniesSignal = &ScriptApiPolicy::deniesSignal;
+        gate.checksDelivery = &ScriptApiPolicy::checksDelivery;
+        gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
         instance->host->setMemberGate(std::move(gate));
     }

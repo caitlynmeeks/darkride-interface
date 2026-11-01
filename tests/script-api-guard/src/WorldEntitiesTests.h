@@ -36,6 +36,7 @@ private slots:
     void testWorldAvatarEntities();
     void testWorldClones();
     void testWorldThread();
+    void testWorldSignalDeliveries();
     void cleanupTestCase();
 
 private:

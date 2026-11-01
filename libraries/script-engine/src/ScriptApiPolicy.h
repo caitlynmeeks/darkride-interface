@@ -30,6 +30,7 @@
 
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
+#include <QtCore/QVariantList>
 
 struct QMetaObject;
 
@@ -56,6 +57,14 @@ namespace ScriptApiPolicy {
     /// A signal of an allowed class a world's script may not hear (nor fire, on QtScript): those that carry the
     /// visitor's own data, the microphone's samples and the paths of the files the visitor picks among them.
     bool deniesSignal(const QMetaObject* meta, const QByteArray& name);
+
+    /// A signal of an allowed class whose deliveries to a world's script are checked one by one (holdsBackDelivery):
+    /// those that carry an entity's id.
+    bool checksDelivery(const QMetaObject* meta, const QByteArray& name);
+    /// A delivery of such a signal a world's script doesn't get: one about an entity it may not see, or a Web entity's
+    /// event from an entity that isn't the world's own. The arguments as the signal carries them (an id as an
+    /// EntityItemID, a QUuid or its text). Runs on the world's script's thread when the delivery arrives.
+    bool holdsBackDelivery(const QMetaObject* meta, const QByteArray& name, const QVariantList& arguments);
 
     // The line logged on a refusal.
     QString refusalLine(const QString& object, const QString& member);

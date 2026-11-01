@@ -2498,6 +2498,9 @@ public:
     QUuid forWorldRead(const QUuid& id) const;
     /// The ids a world's caller may read (the others left out); all of them for everyone else.
     QVector<QUuid> readableByWorld(const QVector<QUuid>& ids) const;
+    /// False when the caller is a world's script and may not change the entity or send it events: true for a domain
+    /// entity, one a world's script made, an id that isn't an entity, and for every caller but a world's script.
+    bool worldMayUse(const QUuid& id) const;
 private:
     /// False (and the refusal logged once per method on this thread) when the caller is a world's script and may not
     /// change the entity: true for a domain entity or a local entity a world's script made.

@@ -1157,6 +1157,8 @@ GuardedObjectClass* ScriptEngine::guardClass() {
         gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
         gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
         gate.deniesSignal = &ScriptApiPolicy::deniesSignal;
+        gate.checksDelivery = &ScriptApiPolicy::checksDelivery;
+        gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
         _guardClass = std::make_unique<GuardedObjectClass>(this, std::move(gate));
     }
@@ -1444,7 +1446,8 @@ void ScriptEngine::run() {
     }
     if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
         // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
-        // call no guard marks (ScriptCaller)
+        // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
+        // makes a new one for each engine, never from a pool) and ends with it.
         ScriptCaller::markThreadAsWorld();
     }
 
