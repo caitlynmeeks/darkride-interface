@@ -119,7 +119,7 @@ private:
     static std::function<void(QString, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> _acquireWebSurfaceOperator;
     static QStringList _trustedQmlUrls;
     static QSet<QUuid> _appSurfaces;
-    bool _countedWebView { false };   // this surface is in the count of web views (an app surface isn't)
+    bool _countedWebView { false };   // this surface is in the count of web views: false on an app surface
     static std::function<void(QSharedPointer<OffscreenQmlSurface>&, bool&, std::vector<QMetaObject::Connection>&)> _releaseWebSurfaceOperator;
 
 public slots:

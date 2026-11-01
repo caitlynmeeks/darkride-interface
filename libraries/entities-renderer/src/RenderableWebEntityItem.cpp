@@ -285,7 +285,11 @@ void WebEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene
                 {
                     auto contextPosition = entity->getWorldPosition();
                     if (_contextPosition != contextPosition) {
-                        _webSurface->getSurfaceContext()->setContextProperty("globalPosition", vec3toVariant(contextPosition));
+                        // not on the app's own surfaces: nothing there reads it, and a surface carried on a ride would
+                        // write it every frame and sync every frame (performance, the VR screen's timing run)
+                        if (_countedWebView) {
+                            _webSurface->getSurfaceContext()->setContextProperty("globalPosition", vec3toVariant(contextPosition));
+                        }
                         _contextPosition = contextPosition;
                     }
                 }

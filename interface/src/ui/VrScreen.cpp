@@ -43,7 +43,10 @@ const QString GRAB_BAR_URL = "qrc:///qml/darkride/ScreenGrabBar.qml";
 const glm::vec2 GRAB_BAR_PIXELS { 240.0f, 35.0f };
 const char* SLOT_RIGHT = "right";
 const float PIECE_THICKNESS = 0.01f;
-const int WEB_MAX_FPS = 90;          // as the tablet; a surface only redraws when its page changes
+// A surface only redraws when its page changes, but each redraw syncs on the main thread: the panel you use gets the
+// tablet's rate, and the side panels and the bar a rate that costs next to nothing while they animate (timing run, 11-01)
+const int MIDDLE_MAX_FPS = 90;
+const int SIDE_MAX_FPS = 30;
 const int DRAG_INTERVAL_MS = 11;     // about 90 Hz, only while the bar is held
 const int REMAKE_DELAY_MS = 500;
 const uint64_t MIN_TOGGLE_INTERVAL_USECS = 300 * USECS_PER_MSEC;
@@ -254,7 +257,7 @@ void VrScreen::makePiece(Piece piece, const Arrangement& places) {
     properties.setRotation(glmExtractRotation(sensorToWorld) * pose.rotation);
     properties.setDimensions(glm::vec3(metres, PIECE_THICKNESS * scale));
     properties.setDPI((uint16_t)dpi);
-    properties.setMaxFPS(WEB_MAX_FPS);
+    properties.setMaxFPS(piece == Middle ? MIDDLE_MAX_FPS : SIDE_MAX_FPS);
     properties.setPrimitiveMode(PrimitiveMode::SOLID);
     properties.getGrab().setGrabbable(false);
     properties.setIgnorePickIntersection(false);
