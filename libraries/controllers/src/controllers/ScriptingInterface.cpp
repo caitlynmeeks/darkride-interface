@@ -79,7 +79,8 @@ namespace controller {
 
     QObject* ScriptingInterface::newMapping(const QString& mappingName) {
         auto userInputMapper = DependencyManager::get<UserInputMapper>();
-        return new MappingBuilderProxy(*userInputMapper, userInputMapper->newMapping(mappingName));
+        auto mapping = userInputMapper->newMapping(mappingName);
+        return mapping ? new MappingBuilderProxy(*userInputMapper, mapping) : nullptr;
     }
 
     void ScriptingInterface::enableMapping(const QString& mappingName, bool enable) {

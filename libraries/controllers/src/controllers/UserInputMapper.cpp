@@ -8,6 +8,7 @@
 
 #include "UserInputMapper.h"
 
+#include <ScriptCaller.h>
 #include <set>
 
 #include <QtCore/QThread>
@@ -746,11 +747,20 @@ Endpoint::Pointer UserInputMapper::compositeEndpointFor(Endpoint::Pointer first,
 
 Mapping::Pointer UserInputMapper::newMapping(const QString& mappingName) {
     Locker locker(_lock);
-    if (_mappingsByName.count(mappingName)) {
+    const bool byWorld = ScriptCaller::isWorld();
+    auto existing = _mappingsByName.find(mappingName);
+    if (existing != _mappingsByName.end()) {
         qCWarning(controllers) << "Refusing to recreate mapping named " << mappingName;
+        if (byWorld && !existing->second->madeByWorld) {
+            // a world's script doesn't take the name of the app's or the visitor's own mapping
+            qCWarning(controllers) << "A world's script may not make a mapping named" << mappingName
+                                   << "(the name of a mapping of the app or the visitor's own scripts)";
+            return Mapping::Pointer();
+        }
     }
     qCDebug(controllers) << "Creating new Mapping " << mappingName;
     auto mapping = std::make_shared<Mapping>(mappingName);
+    mapping->madeByWorld = byWorld;
     _mappingsByName[mappingName] = mapping;
     return mapping;
 }
@@ -788,6 +798,11 @@ void UserInputMapper::enableMapping(const QString& mappingName, bool enable) {
     }
 
     auto mapping = iterator->second;
+    if (ScriptCaller::isWorld() && !mapping->madeByWorld) {
+        // a world's script switches its own mappings only, never the app's or the visitor's own
+        qCWarning(controllers) << "A world's script may not" << (enable ? "enable" : "disable") << "the mapping" << mappingName;
+        return;
+    }
     if (enable) {
         enableMapping(mapping);
     } else {

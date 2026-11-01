@@ -118,7 +118,9 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
         "startInputRecording", "stopInputRecording", "startInputPlayback", "stopInputPlayback", "saveInputRecording",
         "loadInputRecording", "getInputRecorderSaveDirectory", "captureMouseEvents", "releaseMouseEvents",
         "captureTouchEvents", "releaseTouchEvents", "captureWheelEvents", "releaseWheelEvents", "captureActionEvents",
-        "releaseActionEvents" } },
+        "releaseActionEvents",
+        // a mapping from JSON is built without RouteBuilderProxy::to, where a world's routes are judged
+        "parseMapping", "loadMapping" } },
     { "ControllerScriptingInterface", {
         "captureKeyEvents", "releaseKeyEvents", "captureJoystick", "releaseJoystick", "captureEntityClickEvents",
         "releaseEntityClickEvents" } }

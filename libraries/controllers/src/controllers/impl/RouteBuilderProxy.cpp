@@ -27,6 +27,14 @@
 #include "filters/NotFilter.h"
 #include "filters/PulseFilter.h"
 #include "filters/ScaleFilter.h"
+#include <ScriptCaller.h>
+
+#include "endpoints/ActionEndpoint.h"
+#include "endpoints/CallbackEndpoint.h"
+#include "endpoints/JSEndpoint.h"
+#include "endpoints/ScriptEndpoint.h"
+#include "../UserInputMapper.h"
+#include <unordered_set>
 #include "filters/TranslateFilter.h"
 #include "filters/TransformFilter.h"
 #include "filters/PostTransformFilter.h"
@@ -63,7 +71,60 @@ QObject* RouteBuilderProxy::whenValue(const QVariant& expression) {
     return this;
 }
 
+bool RouteBuilderProxy::worldMayRouteTo(const Endpoint::Pointer& destination) {
+    if (!destination) {
+        return false;
+    }
+    if (std::dynamic_pointer_cast<JSEndpoint>(destination) || std::dynamic_pointer_cast<ScriptEndpoint>(destination) ||
+        std::dynamic_pointer_cast<CallbackEndpoint>(destination)) {
+        return true;   // the world's own function: it reads the input itself
+    }
+    if (!std::dynamic_pointer_cast<ActionEndpoint>(destination) ||
+        destination->getInput().getDevice() != UserInputMapper::ACTIONS_DEVICE) {
+        return false;  // a device's endpoint (Standard, Hardware): the visitor's own controller scripts read those
+    }
+    static const std::unordered_set<int> ALLOWED = [] {
+        std::unordered_set<int> allowed;
+        for (int action = toInt(Action::TRANSLATE_X); action <= toInt(Action::TRANSLATE_CAMERA_Z); ++action) {
+            allowed.insert(action);    // movement, the combined axes
+        }
+        for (int action = toInt(Action::LEFT_HAND); action <= toInt(Action::HEAD); ++action) {
+            allowed.insert(action);    // poses
+        }
+        for (Action action : { Action::ACTION1, Action::ACTION2, Action::SHIFT, Action::SPRINT,
+                               Action::LONGITUDINAL_BACKWARD, Action::LONGITUDINAL_FORWARD, Action::LATERAL_LEFT,
+                               Action::LATERAL_RIGHT, Action::VERTICAL_DOWN, Action::VERTICAL_UP, Action::YAW_LEFT,
+                               Action::YAW_RIGHT, Action::PITCH_DOWN, Action::PITCH_UP, Action::BOOM_IN, Action::BOOM_OUT }) {
+            allowed.insert(toInt(action));
+        }
+        for (int action = toInt(Action::LEFT_ARM); action < toInt(Action::NUM_ACTIONS); ++action) {
+            if (action != toInt(Action::SPRINT)) {
+                allowed.insert(action);  // the arms, fingers, legs, tracked objects, eyes, face and head turn
+            }
+        }
+        return allowed;
+    }();
+    return ALLOWED.count(destination->getInput().getChannel()) > 0;
+}
+
 void RouteBuilderProxy::to(const Endpoint::Pointer& destination) {
+    // a world's mapping, or any route a world's script builds, doesn't drive the app's own UI, nor the visitor's own
+    // controller endpoints
+    if ((_mapping->madeByWorld || ScriptCaller::isWorld()) && !worldMayRouteTo(destination)) {
+        if (!_mapping->refusalLogged) {
+            _mapping->refusalLogged = true;
+            QString target = "nothing";
+            if (destination && destination->getInput().getDevice() == UserInputMapper::ACTIONS_DEVICE) {
+                target = "Actions." + _parent.getActionName(Action(destination->getInput().getChannel()));
+            } else if (destination) {
+                target = "a device's input";
+            }
+            qCWarning(controllers) << "A world's mapping" << _mapping->name << "may not route to" << target
+                                   << "(the app's own controls; a world's mapping goes to its functions and the movement, vehicle and pose actions)";
+        }
+        deleteLater();
+        return;
+    }
     _route->destination = destination;
     _mapping->routes.push_back(_route);
     deleteLater();
