@@ -27,6 +27,11 @@ hfm::Mesh makeSquare() {
     part.quadIndices = { 0, 1, 2, 3 };
     part.quadTrianglesIndices = { 0, 1, 3, 1, 2, 3 };
     mesh.parts.push_back(part);
+    hfm::Blendshape smile;  // moves vertices 2 and 3 up
+    smile.indices = { 2, 3 };
+    smile.vertices = { { 0.0f, 0.1f, 0.0f }, { 0.0f, 0.1f, 0.0f } };
+    smile.normals = QVector<glm::vec3>(2, glm::vec3(0.0f, 0.0f, 1.0f));
+    mesh.blendshapes.append(smile);
     return mesh;
 }
 
@@ -56,6 +61,8 @@ void ModelSanitizeTests::testGoodMeshUntouched() {
 
     QCOMPARE(result.facesRemoved, 0);
     QCOMPARE(result.listsCleared, 0);
+    QCOMPARE(result.blendshapesCleared, 0);
+    QVERIFY(!result.changed());
     QCOMPARE(mesh.parts[0].triangleIndices, copy.parts[0].triangleIndices);
     QCOMPARE(mesh.parts[0].quadIndices, copy.parts[0].quadIndices);
     QCOMPARE(mesh.parts[0].quadTrianglesIndices, copy.parts[0].quadTrianglesIndices);
@@ -65,6 +72,52 @@ void ModelSanitizeTests::testGoodMeshUntouched() {
     QVERIFY(mesh.parts[0].triangleIndices.isSharedWith(copy.parts[0].triangleIndices));
     QVERIFY(mesh.parts[0].quadIndices.isSharedWith(copy.parts[0].quadIndices));
     QVERIFY(mesh.parts[0].quadTrianglesIndices.isSharedWith(copy.parts[0].quadTrianglesIndices));
+    QVERIFY(mesh.blendshapes.isSharedWith(copy.blendshapes));
+}
+
+void ModelSanitizeTests::testBadBlendshapesEmptied() {
+    hfm::Mesh mesh = makeSquare();
+    const hfm::Blendshape good = mesh.blendshapes[0];
+    hfm::Blendshape pastVertices = good;  // names vertex 9 of 4
+    pastVertices.indices = { 2, 9 };
+    hfm::Blendshape negative = good;
+    negative.indices = { -1, 3 };
+    hfm::Blendshape shortVertices = good;  // two indices, one vertex
+    shortVertices.vertices.resize(1);
+    hfm::Blendshape shortNormals = good;  // the normals go, the baker makes them again; the shape stays
+    shortNormals.normals.resize(1);
+    hfm::Blendshape longTangents = good;
+    longTangents.tangents = QVector<glm::vec3>(3, glm::vec3(1.0f, 0.0f, 0.0f));
+    mesh.blendshapes << pastVertices << negative << shortVertices << shortNormals << longTangents;
+
+    const hfm::MeshSanitizeResult result = hfm::sanitizeMesh(mesh);
+
+    QCOMPARE(result.blendshapesCleared, 3);
+    QCOMPARE(result.listsCleared, 2);
+    QCOMPARE(result.facesRemoved, 0);
+    QCOMPARE(mesh.blendshapes.size(), 6);  // every slot stays: the channels are numbered by it
+    QCOMPARE(mesh.blendshapes[0].indices, good.indices);
+    QCOMPARE(mesh.blendshapes[0].normals.size(), 2);
+    for (int i : { 1, 2, 3 }) {
+        QVERIFY(mesh.blendshapes[i].indices.isEmpty());
+        QVERIFY(mesh.blendshapes[i].vertices.isEmpty());
+        QVERIFY(mesh.blendshapes[i].normals.isEmpty());
+        QVERIFY(mesh.blendshapes[i].tangents.isEmpty());
+    }
+    QCOMPARE(mesh.blendshapes[4].indices, good.indices);
+    QCOMPARE(mesh.blendshapes[4].vertices.size(), 2);
+    QVERIFY(mesh.blendshapes[4].normals.isEmpty());
+    QCOMPARE(mesh.blendshapes[5].normals.size(), 2);
+    QVERIFY(mesh.blendshapes[5].tangents.isEmpty());
+    // what's left holds together: every index inside the mesh, every list one per index or empty
+    for (const auto& shape : mesh.blendshapes) {
+        QCOMPARE(shape.vertices.size(), shape.indices.size());
+        QVERIFY(shape.normals.isEmpty() || shape.normals.size() == shape.indices.size());
+        QVERIFY(shape.tangents.isEmpty() || shape.tangents.size() == shape.indices.size());
+        for (int index : shape.indices) {
+            QVERIFY(index >= 0 && index < mesh.vertices.size());
+        }
+    }
 }
 
 void ModelSanitizeTests::testBadFacesRemoved() {
@@ -89,10 +142,12 @@ void ModelSanitizeTests::testBadFacesRemoved() {
     QCOMPARE(mesh.vertices.size(), 4);
     verifyHoldsTogether(mesh);
 
-    // no vertices at all: every face goes
+    // no vertices at all: every face goes, and the blendshape with them
     hfm::Mesh empty = makeSquare();
     empty.vertices.clear();
-    QCOMPARE(hfm::sanitizeMesh(empty).facesRemoved, 2 + 1 + 2);
+    const hfm::MeshSanitizeResult emptied = hfm::sanitizeMesh(empty);
+    QCOMPARE(emptied.facesRemoved, 2 + 1 + 2);
+    QCOMPARE(emptied.blendshapesCleared, 1);
     verifyHoldsTogether(empty);
 }
 

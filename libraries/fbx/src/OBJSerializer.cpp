@@ -834,10 +834,11 @@ HFMModel::Pointer OBJSerializer::read(const hifi::ByteArray& data, const hifi::V
     for (uint32_t meshIndex = 0; meshIndex < (uint32_t)hfmModel.meshes.size(); ++meshIndex) {
         HFMMesh& mesh = hfmModel.meshes[meshIndex];
         const hfm::MeshSanitizeResult sanitized = hfm::sanitizeMesh(mesh);
-        if (sanitized.facesRemoved > 0 || sanitized.listsCleared > 0) {
+        if (sanitized.changed()) {
             qCWarning(modelformat) << "OBJSerializer:" << _url << "mesh" << meshIndex << ":" << sanitized.facesRemoved
                                    << "faces with a vertex past the mesh's" << mesh.vertices.size() << "or cut short left out,"
-                                   << sanitized.listsCleared << "per-vertex lists of the wrong length cleared";
+                                   << sanitized.listsCleared << "lists of the wrong length cleared,"
+                                   << sanitized.blendshapesCleared << "blendshapes emptied";
         }
     }
 

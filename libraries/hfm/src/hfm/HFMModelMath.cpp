@@ -272,6 +272,35 @@ MeshSanitizeResult sanitizeMesh(hfm::Mesh& mesh) {
     result.listsCleared += clearIfNotPerVertex(mesh.colors, vertexCount);
     result.listsCleared += clearIfNotPerVertex(mesh.texCoords, vertexCount);
     result.listsCleared += clearIfNotPerVertex(mesh.texCoords1, vertexCount);
+
+    // blendshapes: Model's blend and the baker's normals and tangents index the mesh's vertices with a blendshape's
+    // indices, and its vertices, normals and tangents with the position in that list, all unchecked. A blendshape with
+    // an index past the vertices, or a vertex list not one per index, is emptied (its slot stays: the blendshape
+    // channels are numbered by it); normals or tangents not one per index are cleared, and the baker makes them again.
+    // Read through a const reference first, so a good mesh's list is not copied.
+    const QVector<hfm::Blendshape>& shapes = mesh.blendshapes;
+    for (int i = 0; i < shapes.size(); ++i) {
+        const int count = shapes[i].indices.size();
+        bool indicesInside = shapes[i].vertices.size() == count;
+        for (int j = 0; indicesInside && j < count; ++j) {
+            indicesInside = (uint32_t)shapes[i].indices[j] < (uint32_t)vertexCount;
+        }
+        if (!indicesInside) {
+            mesh.blendshapes[i] = hfm::Blendshape();
+            ++result.blendshapesCleared;
+            continue;
+        }
+        const bool normalsWrong = !shapes[i].normals.isEmpty() && shapes[i].normals.size() != count;
+        const bool tangentsWrong = !shapes[i].tangents.isEmpty() && shapes[i].tangents.size() != count;
+        if (normalsWrong) {
+            mesh.blendshapes[i].normals.clear();
+            ++result.listsCleared;
+        }
+        if (tangentsWrong) {
+            mesh.blendshapes[i].tangents.clear();
+            ++result.listsCleared;
+        }
+    }
     return result;
 }
 

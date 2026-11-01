@@ -1496,10 +1496,11 @@ HFMModel* FBXSerializer::extractHFMModel(const hifi::VariantHash& mapping, const
         hfm::Mesh& mesh = hfmModel.meshes.back();
         // the reader's last check: the passes after it index the vertices with the parts' indices unchecked
         const hfm::MeshSanitizeResult sanitized = hfm::sanitizeMesh(mesh);
-        if (sanitized.facesRemoved > 0 || sanitized.listsCleared > 0) {
+        if (sanitized.changed()) {
             qCWarning(modelformat) << "FBXSerializer:" << url << "mesh" << meshIndex << ":" << sanitized.facesRemoved
                                    << "faces with a vertex past the mesh's" << mesh.vertices.size() << "or cut short left out,"
-                                   << sanitized.listsCleared << "per-vertex lists of the wrong length cleared";
+                                   << sanitized.listsCleared << "lists of the wrong length cleared,"
+                                   << sanitized.blendshapesCleared << "blendshapes emptied";
         }
 
         std::vector<QString> instanceModelIDs = getModelIDsForMeshID(meshID, fbxModels, _connectionParentMap);

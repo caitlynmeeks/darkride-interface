@@ -43,13 +43,18 @@ const TriangleListMesh generateTriangleListMesh(const std::vector<glm::vec3>& sr
 struct MeshSanitizeResult {
     int facesRemoved { 0 };
     int listsCleared { 0 };
+    int blendshapesCleared { 0 };
+
+    bool changed() const { return facesRemoved > 0 || listsCleared > 0 || blendshapesCleared > 0; }
 };
 
 // A reader's last check on a mesh it made (FBX, OBJ): the passes after the reader (the GPU index buffer, Draco, LODs,
-// forEachIndex) index the vertices with the parts' indices unchecked. Removes every triangle and quad naming a vertex
+// forEachIndex, the blendshape blend) index the vertices unchecked. Removes every triangle and quad naming a vertex
 // the mesh does not have (a negative index included) and a face cut short at the end of its list; clears a per-vertex
-// list (normals, tangents, colours, texture coordinates) whose length is not the vertex count. Vertices are never
-// removed. A mesh that already holds together is only read, never copied.
+// list (normals, tangents, colours, texture coordinates) whose length is not the vertex count; empties a blendshape
+// naming a vertex the mesh does not have or whose vertices are not one per index (its slot stays), and clears its
+// normals or tangents when they are not one per index. Vertices are never removed. A mesh that already holds
+// together is only read, never copied.
 MeshSanitizeResult sanitizeMesh(hfm::Mesh& mesh);
 
 };

@@ -16,6 +16,7 @@ class ModelSanitizeTests : public QObject {
 private slots:
     void testGoodMeshUntouched();
     void testBadFacesRemoved();
+    void testBadBlendshapesEmptied();
     void testFbxPolygonCutShort();
     void testObjFacePastVertices();
 };
