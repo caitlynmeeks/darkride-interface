@@ -527,16 +527,20 @@ void ScriptableAvatar::updateJointMappings() {
         // then some. It doesn't cover the connect() call, so we may
         // want to add a HTTPResourceRequest::doSend() method that does
         // connects.
-        QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
-        QNetworkRequest networkRequest = QNetworkRequest(fstURL);
-        networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
-        networkRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
-        DependencyManager::get<ResourceRequestObserver>()->update(
-            fstURL, -1, "AvatarData::updateJointMappings");
-        QNetworkReply* networkReply = networkAccessManager.get(networkRequest);
-        //
-        ////
-        connect(networkReply, &QNetworkReply::finished, this, &ScriptableAvatar::setJointMappingsFromNetworkReply);
+        // On this object's thread, where its slot runs. A script's skeleton change arrives on the script's thread, and
+        // a reply made there goes when that thread ends (an agent stopping) while the slot is still reading it.
+        QMetaObject::invokeMethod(this, [this, fstURL] {
+            QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
+            QNetworkRequest networkRequest = QNetworkRequest(fstURL);
+            networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+            networkRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
+            DependencyManager::get<ResourceRequestObserver>()->update(
+                fstURL, -1, "AvatarData::updateJointMappings");
+            QNetworkReply* networkReply = networkAccessManager.get(networkRequest);
+            //
+            ////
+            connect(networkReply, &QNetworkReply::finished, this, &ScriptableAvatar::setJointMappingsFromNetworkReply);
+        });
     }
 }
 
