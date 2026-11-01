@@ -200,6 +200,29 @@ public:
     int getPrevNumEntityUpdates() const { return _prevNumEntityUpdates; }
     int getPrevTotalNeededEntityUpdates() const { return _prevTotalNeededEntityUpdates; }
 
+    // The render-update budget's counters (team/performance/INSTRUMENTS-PLAN.md, item 2), a few integers kept every
+    // frame: the last pass's values, and the maxima over the last whole second for a Stats line that holds still.
+    // "Needed" and "done" above are the budgeted lane (AUTOMATIC entities, with the last frame's leftovers); the
+    // carried lane (a moving entity's parts, refreshed with it outside the budget), the avatars' lane and the
+    // PRIORITIZED lane are counted apart. Main thread.
+    uint64_t getRenderUpdateFrame() const { return _renderUpdateFrame; }
+    int getPrevNumCarriedEntityUpdates() const { return _prevNumCarriedEntityUpdates; }
+    int getPrevNumAvatarChildUpdates() const { return _prevNumAvatarChildUpdates; }
+    int getPrevNumPriorityEntityUpdates() const { return _prevNumPriorityEntityUpdates; }
+    int getPrevNumDeferredEntityUpdates() const { return _prevNumDeferredEntityUpdates; }
+    int getPrevOldestDeferredFrames() const { return _prevOldestDeferredFrames; }
+    int getMaxDeferredEntityUpdatesLastSecond() const { return _maxDeferredLastSecond; }
+    int getMaxDeferredFramesLastSecond() const { return _maxDeferredFramesLastSecond; }
+    // An entity's staleness for the inspector: how many frames it has waited for its render update, 0 when it is
+    // drawn as its entity is, -1 when it has no renderable (not drawn); and how many frames late its last refresh
+    // came. Main thread, no lock (the map is the main thread's own); cheap enough to poll.
+    int getRenderUpdateFramesBehind(const EntityItemID& id) const;
+    int getRenderUpdateLastLateFrames(const EntityItemID& id) const;
+    // when a moving assembly (a vehicle, a train car, a frame, a platform: a moving entity with parts, the carried
+    // lane) was last refreshed inside the view, usecTimestampNow(); 0 when never. The refresh regime reads it: a ride
+    // in view keeps the full rate while the window is unfocused (Caity, 2026-10-31). Main thread.
+    uint64_t getLastMovingAssemblyInViewTime() const { return _lastMovingAssemblyInView; }
+
 signals:
     void enterEntity(const EntityItemID& entityItemID);
     void leaveEntity(const EntityItemID& entityItemID);
@@ -333,6 +356,19 @@ private:
     std::unordered_set<EntityItemID> _changedEntities;
     int _prevNumEntityUpdates { 0 };
     int _prevTotalNeededEntityUpdates { 0 };
+    uint64_t _renderUpdateFrame { 0 };   // one per updateChangedEntities pass (one a frame)
+    int _prevNumCarriedEntityUpdates { 0 };
+    int _prevNumAvatarChildUpdates { 0 };
+    int _prevNumPriorityEntityUpdates { 0 };
+    int _prevNumDeferredEntityUpdates { 0 };
+    int _prevOldestDeferredFrames { 0 };
+    int _maxDeferredThisSecond { 0 };
+    int _maxDeferredFramesThisSecond { 0 };
+    int _maxDeferredLastSecond { 0 };
+    int _maxDeferredFramesLastSecond { 0 };
+    uint64_t _countersSecondStart { 0 };
+    uint64_t _lastMovingAssemblyInView { 0 };
+    uint64_t _lastMovingAssemblyTest { 0 };
 
     std::unordered_set<EntityRendererPointer> _renderablesToUpdate;
     std::unordered_set<EntityRendererPointer> _priorityRenderablesToUpdate;

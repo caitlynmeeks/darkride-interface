@@ -41,6 +41,8 @@ struct AppRenderArgs {
     glm::mat4 _sensorToWorld;
     float _sensorToWorldScale{ 1.0f };
     bool _isStereo{ false };
+    uint64_t _traceFrame{ 0 };   // the frame trace's record for this frame (FrameTrace::currentFrame), carried to the gpu::Frame
+    uint64_t _mainFrameUsecs{ 0 };   // the main thread's last frame time, carried to the gpu::Frame for the refresh governor
 };
 
 using RenderArgsEditor = std::function <void(AppRenderArgs&)>;

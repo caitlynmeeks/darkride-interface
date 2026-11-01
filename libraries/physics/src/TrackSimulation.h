@@ -34,11 +34,15 @@
 #include <EntityItem.h>
 #include <TrackCurve.h>
 #include <TrackFollower.h>
+#include "CorrectionCounters.h"
 
 class TrackEntityItem;
 
 class TrackSimulation {
 public:
+    // the server-state corrections, counted (item 6 of the instruments plan): for the Stats line
+    const CorrectionCounters& getCorrectionCounters() const { return _corrections; }
+
     // a train state the server wants published on its Track entity
     struct Publication {
         QUuid trackID;
@@ -46,7 +50,14 @@ public:
         quint64 domainTime { 0 };   // the domain time the state is for (the substep's)
     };
 
-    static constexpr float BLEND_TIME = 0.25f;           // s: a correction's residual decays with this time constant
+    // A correction's residual (adoptState) closes at no more than CLOSE_RATE, so the car never visibly lurches: the
+    // server's states carry the clocks' noise (the skew estimate, the substep rounding: tens of ms, a few cm at
+    // speed), and chasing that noise over BLEND_TIME put a small forward-or-back push into the car once a second
+    // (Port Amarelle's monorail, 2026-10-31). A residual of a real desync (past BLEND_DISTANCE) decays over BLEND_TIME
+    // as before, and one past SNAP_DISTANCE is taken at once.
+    static constexpr float CLOSE_RATE = 0.1f;            // m/s: the most a small residual moves the car against its track speed
+    static constexpr float BLEND_DISTANCE = 0.5f;        // m: a residual past this is a desync and blends over BLEND_TIME
+    static constexpr float BLEND_TIME = 0.25f;           // s: a desync's residual decays with this time constant
     static constexpr float SNAP_DISTANCE = 3.0f;         // m: a correction larger than this is taken at once
     static constexpr quint64 SERVER_STATE_TTL = 15 * USECS_PER_SECOND;   // a server state older than this is stale
     static constexpr quint64 HEARTBEAT = USECS_PER_SECOND;               // the server republishes at least this often
@@ -75,6 +86,7 @@ public:
     static quint64 substepDomainTime();
 
 private:
+    CorrectionCounters _corrections;
     struct Train {
         uint32_t version { 0 };   // the Track entity's property version the curve was built from
         TrackCurve curve;

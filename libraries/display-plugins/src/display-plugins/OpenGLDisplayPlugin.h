@@ -31,7 +31,7 @@ namespace gpu { namespace gl {
 class GLBackend;
 }}  // namespace gpu::gl
 
-class RefreshRateController;
+#include "RefreshRateController.h"
 
 class OpenGLDisplayPlugin : public DisplayPlugin {
     Q_OBJECT
@@ -50,6 +50,8 @@ public:
 
     // (the target rate, the display's own rate)
     static std::function<void(int, int)> getRefreshRateOperator();
+    // the present cadence's last whole second, for the refresh governor and the Stats line (any thread)
+    static std::function<RefreshRateController::CadenceCounters()> getCadenceCountersOperator();
     // A test knob: every present costs this many microseconds more, busy-waited, as a heavy scene's would (the
     // pacing's overrun cases, 10-21 review). TIVOLI_PRESENT_LOAD_US in the environment sets it at start, Test.setPresentLoad
     // while running; 0, the default, is no load.
@@ -184,9 +186,14 @@ protected:
     std::mutex _presentTraceMutex;
     std::vector<PresentSample> _presentTrace;
     bool _presentedNewFrame{ false };           // this present's frame was not shown before
+    uint64_t _previousPresentStart{ 0 };        // the start of the present before this one (present thread)
+    int _tracePresentRefreshes{ 0 };            // refreshes the current gpu frame has been shown for, for the trace
     uint32_t _lastSwapUsecs{ 0 };               // how long the last swap took (the wait for the display, with vsync)
     QMetaObject::Connection _screenConnection;  // the window's screen change restarts the display link
     QMetaObject::Connection _visibilityConnection;  // minimizing the window stops it, showing it starts it
+    QTimer* _linkWatchdog { nullptr };          // every 2 s: the link follows the window's display and restarts when quiet
+    int _linkQuietRestarts { 0 };               // restarts for a quiet link in a row; after the first that did not help, one a minute
+    int64_t _linkNextRestartNs { 0 };
     QThread* _presentThread{ nullptr };
     std::queue<gpu::FramePointer> _newFrameQueue;
     RateCounter<200> _droppedFrameRate;

@@ -1,7 +1,8 @@
 #!/bin/zsh
-# The kart at speed from its chase camera (judder.js): one walled-off client with its per-frame camera trace on
-# (TIVOLI_CAMERA_TRACE, ViewState.cpp), serverless on world.json or on a domain whose sandbox is already up (not started
-# here). Prints the JUDDER lines and judder-report.py's summary.
+# The kart at speed from its chase camera (judder.js): one walled-off client with the engine's frame trace on
+# (Test.frameTrace; the camera and the ride per frame, cam.* and ride.* from ViewState.cpp, dumped per phase into
+# frame-trace-<phase>.csv), serverless on world.json or on a domain whose sandbox is already up (not started here).
+# Prints the JUDDER lines and judder-report.py's summary.
 #   tests-manual/physics-baseline/run-judder.sh [path/to/Darkride.app] [udp port|serverless] [results dir]
 #   JUDDER_CAMERA=entity ...           (the camera fixed in the kart's frame; "chase", the engine's chase camera, 1.1;
 #                                       "script", vehicles.js's chase camera of 1.0, by default)
@@ -21,10 +22,9 @@ BIN="$APP/Contents/MacOS/Darkride"
 mkdir -p "$R"   # Test.saveObject writes into the results location only when it exists
 SERVERLESS=false
 [ "$PORT" = "serverless" ] && SERVERLESS=true
-{ echo "var JUDDER_CONFIG = { camera: \"$CAMERA\", serverless: $SERVERLESS };"
+{ echo "var JUDDER_CONFIG = { camera: \"$CAMERA\", serverless: $SERVERLESS, results: \"$R\" };"
   cat "${KART_RIG:-$D/kart-rig.js}" "$D/judder.js"; } > "$R/judder-test.js"
-export TIVOLI_CAMERA_TRACE="$R/camera-trace.txt"
-rm -f "$TIVOLI_CAMERA_TRACE"
+find "$R" -maxdepth 1 -name "frame-trace-*.csv" -delete   # not a glob: zsh stops on an unmatched one (a fresh results dir)
 export HIFI_METAVERSE_URL=${HIFI_METAVERSE_URL:-https://vr.darkride.ai}
 URL="hifi://localhost:$PORT"
 [ "$PORT" = "serverless" ] && URL="file://$D/world.json"

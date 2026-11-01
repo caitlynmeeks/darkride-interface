@@ -12,9 +12,10 @@
 //      which the engine works out every frame from the kart as drawn: the same view without the script's timing;
 //    "chase": the engine's chase camera (Camera.setChaseTarget, 1.1), set up as vehicles.js sets it up for a car: the
 //      script's chase, smoothing and all, worked out every frame.
-//  The client's own per-frame record (TIVOLI_CAMERA_TRACE, ViewState.cpp) holds the camera and the kart as each frame
-//  showed them; the render and present traces (Test.traceRenderedEntity, tracePresents) say what reached the screen.
-//  Prints JUDDER lines with the phases' times; the traces are in judder.json, read by judder-report.py.
+//  The engine's frame trace (Test.frameTrace; the cam.* and ride.* columns ViewState.cpp writes, FrameTrace) holds the
+//  camera and the kart as each frame showed them, dumped at each phase's end into frame-trace-<phase>.csv in the results
+//  location (JUDDER_CONFIG.results); the render and present traces (Test.traceRenderedEntity, tracePresents) say what
+//  reached the screen. Prints JUDDER lines with the phases' times; the traces are in judder.json, read by judder-report.py.
 //
 //  Copyright 2026 Darkride.
 //
@@ -25,6 +26,11 @@
     var config = (typeof JUDDER_CONFIG !== "undefined" && JUDDER_CONFIG) ? JUDDER_CONFIG : {};
     var CAMERA = config.camera || "script";
     var SERVERLESS = config.serverless !== false;
+    var RESULTS = config.results || "";
+    var FRAME_TRACE = typeof Test.frameTrace === "function";
+    if (typeof Menu !== "undefined") {   // shadows on, as Caity rides (a fresh walled config starts with them off)
+        Menu.setIsOptionChecked("Shadows", true);
+    }
     var SIT_ANIMATION_URL = "https://s3-us-west-1.amazonaws.com/hifi-content/clement/production/animations/sitting_idle.fbx";
     var LIFETIME = 300;
     var FLOOR_FRICTION = 0.9;
@@ -157,6 +163,9 @@
                 phases.push({ name: plan.name, start: now, speedAtStart: speed });
                 Test.traceRenderedEntity(kart.chassis);
                 Test.tracePresents(true);
+                if (FRAME_TRACE) {
+                    Test.frameTrace(true);   // starts afresh: the ring holds about 14 s at 144, this phase's 4
+                }
             }
             if (t > 20) {
                 log("FAIL " + plan.name + ": never settled (" + speed.toFixed(2) + " m/s after 20 s)");
@@ -177,9 +186,15 @@
                 phase.presentTrace = Test.takePresentTrace();
                 Test.tracePresents(false);
                 Test.traceRenderedEntity(Uuid.NULL);
+                if (FRAME_TRACE) {
+                    phase.frameTraceFile = "frame-trace-" + plan.name.replace(/[^a-z0-9]+/gi, "-") + ".csv";
+                    phase.frameRows = Test.dumpFrameTrace(RESULTS + "/" + phase.frameTraceFile);
+                    Test.frameTrace(false);
+                }
                 log(plan.name + ": " + phase.speed.toFixed(2) + " m/s, " + phase.ticks + " script updates in " +
                     ((phase.end - phase.start) / 1000).toFixed(2) + " s, " + phase.renderTrace.length + " drawn frames, " +
-                    phase.presentTrace.length + " presents; window " + phase.start + " to " + phase.end + " ms");
+                    phase.presentTrace.length + " presents, " + (phase.frameRows === undefined ? "no" : phase.frameRows) +
+                    " frame trace rows; window " + phase.start + " to " + phase.end + " ms");
                 recording = false;
                 settledAt = 0;
                 phaseIndex++;

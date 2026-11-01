@@ -112,6 +112,12 @@ public:
     // substep cap dropped; counted while the world idles too), and how many steps there have been: what moves beside
     // the physics each frame (the avatar's turn) steps by it, to keep to the world's clock (GitHub #15)
     float getLastSteppedTime() const { return _lastSteppedTime; }
+    // how far the paced clock is ahead of the wall clock, in ms (negative: behind): the Stats panel's present cadence
+    // line and the frame trace (team/performance/INSTRUMENTS-PLAN.md, items 3 and 4); 0 while the presents are not paced
+    float getPacedClockLeadMs() const { return _presentPeriod > 0.0f ? _pacedClockLead * 1000.0f : 0.0f; }
+    // the frames of the last whole second by their substeps, 0, 1, 2 and 3 or more (the Stats line's histogram,
+    // item 4 of the instruments plan); kept always
+    void getSubstepsPerFrameLastSecond(uint32_t counts[4]) const { for (int i = 0; i < 4; i++) { counts[i] = _substepCountsLastSecond[i]; } }
     uint64_t getStepCount() const { return _stepCount; }
     void harvestPerformanceStats();
     void printPerformanceStatsToFile(const QString& filename);
@@ -253,6 +259,9 @@ private:
     float _pacedSnapTotal { 0.0f };
     float _lastStepDuration { 0.0f };
     uint32_t _numSubsteps { 0 };
+    uint32_t _substepCounts[4] { 0, 0, 0, 0 };             // the frames of this second by their substeps (0, 1, 2, 3+)
+    uint32_t _substepCountsLastSecond[4] { 0, 0, 0, 0 };   // the last whole second's
+    uint64_t _substepWindowStart { 0 };
     uint32_t _debugDrawMode { 0 };
     bool _dumpNextStats { false };
     bool _saveNextStats { false };

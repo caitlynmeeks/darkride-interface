@@ -640,6 +640,29 @@ void Display::setDisplayPlugin(DisplayPluginPointer newDisplayPlugin) {
 
         RefreshRateManager& refreshRateManager = qApp->getRefreshRateManager();
         refreshRateManager.setRefreshRateOperator(OpenGLDisplayPlugin::getRefreshRateOperator());
+        // the present cadence's last second, for the refresh governor
+        // a ride in view keeps the full rate through the unfocused regime (Caity, 2026-10-31)
+        refreshRateManager.setRideInViewSource([]() { return qApp->isRideInView(); });
+        refreshRateManager.setCadenceSource([counters = OpenGLDisplayPlugin::getCadenceCountersOperator()]() {
+            RefreshRateController::CadenceCounters c = counters();
+            RefreshRateManager::CadenceSample sample;
+            sample.displayRate = c.displayRefreshRate;
+            sample.presents = c.presents;
+            sample.repeated = c.repeated;
+            sample.onTwoOrMoreRefreshes = c.onTwoRefreshes + c.onThreeRefreshes + c.onMoreRefreshes;
+            sample.onOneRefresh = c.onOneRefresh;
+            sample.newFrames = c.newFrames;
+            sample.slowMainFrames = c.slowMainFrames;
+            sample.slowBuildFrames = c.slowBuildFrames;
+            sample.slowExecutes = c.slowExecutes;
+            sample.maxMainUs = c.maxMainUs;
+            sample.maxBuildUs = c.maxBuildUs;
+            sample.maxExecuteUs = c.maxExecuteUs;
+            sample.gpuMs = c.gpuMs;
+            sample.rolledAtNs = c.rolledAtNs;
+            sample.startedAtNs = c.startedAtNs;
+            return sample;
+        });
         bool isHmd = newDisplayPlugin->isHmd();
         RefreshRateManager::UXMode uxMode = isHmd ? RefreshRateManager::UXMode::VR :
             RefreshRateManager::UXMode::DESKTOP;

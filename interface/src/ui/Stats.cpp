@@ -34,6 +34,7 @@
 #include "Util.h"
 #include "SequenceNumberStats.h"
 #include "StatTracker.h"
+#include <FrameTrace.h>
 
 
 HIFI_QML_DEF(Stats)
@@ -128,6 +129,12 @@ void Stats::updateStats(bool force) {
     STAT_UPDATE(avatarCount, avatarManager->size() - 1);
     STAT_UPDATE(heroAvatarCount, avatarManager->getNumHeroAvatars());
     STAT_UPDATE(physicsObjectCount, qApp->getNumCollisionObjects());
+    {   // the camera against the vehicle, the last whole second's (item 11)
+        const ViewState& viewState = qApp->getViewState();
+        STAT_UPDATE(cameraRideStepMaxMm, viewState.getCameraRideStepMaxMm());
+        STAT_UPDATE(cameraStepMinMm, viewState.getCameraStepMinMm());
+        STAT_UPDATE(cameraStepMaxMm, viewState.getCameraStepMaxMm());
+    }
     STAT_UPDATE(updatedAvatarCount, avatarManager->getNumAvatarsUpdated());
     STAT_UPDATE(updatedHeroAvatarCount, avatarManager->getNumHeroAvatarsUpdated());
     STAT_UPDATE(notUpdatedAvatarCount, avatarManager->getNumAvatarsNotUpdated());
@@ -163,6 +170,9 @@ void Stats::updateStats(bool force) {
 
     STAT_UPDATE(bypassPrioritySorting, (bool)qApp->getForcedBypassPrioritySorting());
     STAT_UPDATE(gameLoopRate, (int)qApp->getGameLoopRate());
+    // the frame trace's columns, live (FrameTrace.h; team/performance/INSTRUMENTS-PLAN.md item 1): the lines are
+    // rebuilt at most four times a second and empty while the trace is off and holds nothing
+    STAT_UPDATE(frameTraceLines, FrameTrace::summaryLines());
 
     auto pickManager = DependencyManager::get<PickManager>();
     if (pickManager && (_expanded || force)) {

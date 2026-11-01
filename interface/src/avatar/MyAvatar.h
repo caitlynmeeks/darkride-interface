@@ -1469,6 +1469,10 @@ public:
     // The moving reference frame the avatar is in (PHYSICS.md 4.1): its parent, when that is a frame entity;
     // null in the domain itself. The character then moves in that frame's physics world, in its coordinates.
     QUuid getFrameID() const;
+    // the carry's counter for the Stats line (team/performance/INSTRUMENTS-PLAN.md, item 5): the largest step of the
+    // avatar's local position in one frame over the last second, in mm, while it is carried by a frame or a parent;
+    // 0 when it is not. Standing still on a car it reads 0; a step that is not the avatar's own walking is a carry fault
+    float getCarryStepMaxMm() const { return _carryStepMaxLastSecond; }
     // The frame's world orientation; identity outside a frame. The camera, the look-at yaw and the motors are world
     // rotations, and the character in a frame moves in the frame's coordinates: the inverse takes them there.
     glm::quat getFrameOrientation() const;
@@ -2896,6 +2900,13 @@ private:
     void nextLocalAttitude(const glm::vec3& position, const glm::quat& orientation, const glm::vec3& velocity);
     // steps into or out of a frame when the avatar's position says so, with an exact handover of pose and velocity
     void updateFrameMembership();
+    // the frame trace's carry columns (item 5) and the carry's counter, after the frame's harvest each frame
+    void traceCarry(bool inFrame);
+    glm::vec3 _carryLastLocal { 0.0f };
+    QUuid _carryLastParent;
+    float _carryStepMax { 0.0f };            // mm, the window being filled
+    float _carryStepMaxLastSecond { 0.0f };  // mm, the last whole second's
+    uint64_t _carryWindowStart { 0 };
 
     MyCharacterController _characterController;
     int32_t _previousCollisionMask { BULLET_COLLISION_MASK_MY_AVATAR };

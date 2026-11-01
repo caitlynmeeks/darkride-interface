@@ -1004,6 +1004,7 @@ void VehicleSimulation::followStream(Vehicle& vehicle, uint32_t step) {
             ++_stats.corrections;
             _stats.lastError = error;
             _stats.maxError = glm::max(_stats.maxError, error);
+            _corrections.note(error, error > SNAP_DISTANCE ? 0.0f : error / OTHERS_BLEND_TIME, error > SNAP_DISTANCE);
         }
         smooth(vehicle, shownPosition, shownRotation, OTHERS_BLEND_TIME);
         vehicle.extrapolating = false;
@@ -1163,6 +1164,7 @@ void VehicleSimulation::correctDriver(Vehicle& vehicle, const VehicleState& pose
     ++_stats.corrections;
     _stats.lastError = error;
     _stats.maxError = glm::max(_stats.maxError, error);
+    _corrections.note(error, error > SNAP_DISTANCE ? 0.0f : error / blendTime, error > SNAP_DISTANCE);
 
     // every correction, for the parity measurement (PHYSICS.md round 9, item 3): the error in the vehicle's own axes
     // (right, up, forward), the speed, the height above whatever is below, so a log can tell a timing error (along the
@@ -1248,6 +1250,7 @@ void VehicleSimulation::correctFollower(Vehicle& vehicle, const VehicleState& po
         ++_stats.corrections;
         _stats.lastError = error;
         _stats.maxError = glm::max(_stats.maxError, error);
+        _corrections.note(error, error > SNAP_DISTANCE ? 0.0f : error / OTHERS_BLEND_TIME, error > SNAP_DISTANCE);
     }
     smooth(vehicle, shownPosition, shownRotation, OTHERS_BLEND_TIME);
 }

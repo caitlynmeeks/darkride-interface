@@ -256,7 +256,9 @@ bool Application::eventFilter(QObject* object, QEvent* event) {
 
     if (eventType == QEvent::KeyPress || eventType == QEvent::KeyRelease || eventType == QEvent::MouseMove ||
         eventType == QEvent::MouseButtonPress || eventType == QEvent::Wheel) {
-        getRefreshRateManager().resetInactiveTimer();
+        // a press, a key or the wheel is deliberate: it also brings the client back from the unfocused regime, which
+        // a right click does not do through the window's activation (macOS leaves the window inactive for it)
+        getRefreshRateManager().resetInactiveTimer(eventType != QEvent::MouseMove);
     }
 
     if (event->type() == QEvent::Leave) {

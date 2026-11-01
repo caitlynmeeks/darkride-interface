@@ -745,6 +745,35 @@ public slots:
     Q_INVOKABLE QVariantList takePresentTrace();
 
     /**jsdoc
+     * Starts or stops the frame trace (FrameTrace.h; team/performance/INSTRUMENTS-PLAN.md item 1): a ring buffer of the
+     * last frames (about 14 s), each a record of the named numbers the engine's instruments write while it is on (the
+     * frame's own times, the physics step, the camera boom, the avatar's carry in a vehicle, the entity render-update
+     * budget, the presents); off, each writer pays one check. Starting drops the records held so far. Thread-safe by
+     * construction, so no hop to the game loop.
+     * @function Test.frameTrace
+     * @param {boolean} on - Whether to record.
+     */
+    Q_INVOKABLE void frameTrace(bool on);
+
+    /**jsdoc
+     * Writes the frame trace's records as a CSV: a header of "frame", "t_us" and one column per name written, then one
+     * line per frame with blank cells where that frame has no value. The records stay.
+     * @function Test.dumpFrameTrace
+     * @param {string} path - The file to write.
+     * @returns {number} The rows written, or -1 when the file could not be written.
+     */
+    Q_INVOKABLE int dumpFrameTrace(const QString& path);
+
+    /**jsdoc
+     * Takes the frame trace's records: the column names first, then one row per frame, oldest first, in that order (a
+     * cell is a number, a string, or undefined where the frame has no value: test it with <code>cell == null</code>).
+     * The records are cleared in the same step; the trace stays on or off as it was.
+     * @function Test.takeFrameTrace
+     * @returns {Array<Array<number|string>>} [columns, row, row, ...].
+     */
+    Q_INVOKABLE QVariantList takeFrameTrace();
+
+    /**jsdoc
      * Starts or stops recording the display's refreshes (macOS: the display link's callbacks, each with the instant
      * of the refresh it announces). Starting clears what was recorded.
      * @function Test.traceRefreshes
