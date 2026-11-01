@@ -101,11 +101,19 @@ public:
     // ragged 72 Hz on a 144 Hz panel (PHYSICS.md "The driver's stutter"). Wanted = the Render.vsyncEnabled setting,
     // read at activation and pushed on a change; TIVOLI_VSYNC=1 or 0 in the environment forces it; the HMD plugins
     // never want it (HmdDisplayPlugin::wantVsync: the headset's compositor paces them). The present thread applies it
-    // (applyVsync).
+    // (applyVsync), but not while the display link paces the presents (macOS, vsyncApplies): they are in phase with the
+    // display already, 2 ms after each refresh, and a swap that waited on top would hold the GL lock through the
+    // refresh, take the presents off the paced clock (getPresentPeriod) and hide a missed refresh from the cadence
+    // governor, which cannot see the display's refreshes through the swap (Caity's ride of 2026-10-31: the governor
+    // blind at the full rate, the car juddering standing still; the setting had been ticked the night before).
     virtual bool wantVsync() const {
         static const int forced = qgetenv("TIVOLI_VSYNC").isEmpty() ? -1 : (qgetenv("TIVOLI_VSYNC") != "0" ? 1 : 0);
         return forced < 0 ? _vsyncWanted.load() : (forced != 0);
     }
+    // whether the swap is to wait for the refresh now: wanted, and no display link pacing the presents. A forced
+    // TIVOLI_VSYNC=1 applies even under the link: a measurement knob that reproduces the 2026-10-31 14:40 state (the
+    // cadence governor blind under the swap's wait, the presents off the paced clock), never a way to turn vsync on.
+    bool vsyncApplies() const;
     void setVsyncEnabled(bool vsyncEnabled) { _vsyncEnabled = vsyncEnabled; }
     bool isVsyncEnabled() const override { return _vsyncEnabled; }
     void setVsyncWanted(bool wanted) override { _vsyncWanted = wanted; }
