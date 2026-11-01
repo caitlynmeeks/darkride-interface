@@ -49,6 +49,11 @@ class ScriptingInterface;
 class RouteBuilderProxy : public QObject {
         Q_OBJECT
     public:
+        /// Where a route of a world's mapping may go (security finding #29): a script's own function, or the movement,
+        /// vehicle, pose and face actions; never the app's own UI actions (mute, the menu and screen, the camera, the
+        /// reticle, UI navigation, the hand clicks) or a device's endpoint, nor anything added later.
+        static bool worldMayRouteTo(const Endpoint::Pointer& destination);
+
         RouteBuilderProxy(UserInputMapper& parent, Mapping::Pointer mapping, Route::Pointer route)
             : _parent(parent), _mapping(mapping), _route(route) { }
 

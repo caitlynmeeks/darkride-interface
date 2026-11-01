@@ -15,6 +15,8 @@
 #include <QtScript/QScriptContext>
 #include <QtScript/QScriptString>
 
+#include <ScriptCaller.h>
+
 #include "ScriptEngineLogging.h"
 
 GuardedObjectClass::GuardedObjectClass(QScriptEngine* engine, HostInterface::MemberGate gate) :
@@ -165,6 +167,8 @@ QScriptValue GuardedObjectClass::forward(QScriptContext* context, QScriptEngine*
     for (int i = 0; i < context->argumentCount(); ++i) {
         arguments << (guardClass ? guardClass->unwrap(context->argument(i)) : context->argument(i));
     }
+    // the guard is a world's script's: what the call runs knows it (ScriptCaller)
+    ScriptCaller::WorldScope caller(true);
     QScriptValue result = method.call(raw, arguments);
     if (engine->hasUncaughtException()) {
         return result;   // the exception stays raised for the caller

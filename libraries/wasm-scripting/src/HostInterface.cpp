@@ -8,6 +8,7 @@
 
 #include "HostInterface.h"
 
+#include <ScriptCaller.h>
 #include <QtCore/QCborValue>
 #include <QtCore/QDebug>
 #include <QtCore/QMetaEnum>
@@ -868,6 +869,8 @@ QVariant HostInterface::call(ObjectTable::Handle handle, const QString& methodNa
 
 QVariant HostInterface::callWithCbor(ObjectTable::Handle handle, const QByteArray& methodName, const QCborArray& arguments, QString& error) {
     ++_statistics.calls;
+    // a gated host is a world's script's: what the call runs knows it (ScriptCaller)
+    ScriptCaller::WorldScope caller(hasMemberGate());
     // a failure is a TypeError unless every candidate wanted more arguments than were given: QtScript's
     // "too few arguments in call to ..." is a SyntaxError
     _callErrorType = QStringLiteral("TypeError");

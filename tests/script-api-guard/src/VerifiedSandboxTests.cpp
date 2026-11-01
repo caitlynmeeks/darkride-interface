@@ -37,6 +37,11 @@
 
 #include <HttpRequestObject.h>
 #include <ScriptApiPolicy.h>
+#include <controllers/impl/endpoints/InputEndpoint.h>
+#include <controllers/impl/endpoints/ActionEndpoint.h>
+#include <controllers/impl/RouteBuilderProxy.h>
+#include <controllers/UserInputMapper.h>
+#include <ScriptCaller.h>
 #include <controllers/ScriptingInterface.h>
 #include <ScriptNetworkPolicy.h>
 #include <WasmScriptEngine.h>
@@ -620,4 +625,41 @@ void VerifiedSandboxTests::testAppScriptsForAWorldFromTheNetwork() {
     QCOMPARE(engine.fetchScript(QUrl::fromLocalFile(_root + "/app/scripts/out-link/other.js").toString(), false, network)
                  .value("status").toString(), QString("Refused"));
     QFile::remove(_root + "/app/scripts/out-link");
+}
+
+void VerifiedSandboxTests::testWorldMappingDestinations() {
+    // a world's mapping routes to its functions and the movement, vehicle, pose and face actions; never to the app's
+    // own UI actions or a device's endpoint (security finding #29)
+    using namespace controller;
+    auto action = [](Action a) {
+        return Endpoint::Pointer(std::make_shared<ActionEndpoint>(Input(UserInputMapper::ACTIONS_DEVICE, toInt(a), ChannelType::AXIS)));
+    };
+    for (Action a : { Action::TOGGLE_MUTE, Action::TOGGLE_PUSHTOTALK, Action::CONTEXT_MENU, Action::CYCLE_CAMERA,
+                      Action::TOGGLE_OVERLAY, Action::RETICLE_CLICK, Action::RETICLE_X, Action::RETICLE_Y, Action::RETICLE_LEFT,
+                      Action::RETICLE_DOWN, Action::UI_NAV_LATERAL, Action::UI_NAV_SELECT, Action::UI_NAV_BACK,
+                      Action::LEFT_HAND_CLICK, Action::RIGHT_HAND_CLICK }) {
+        QVERIFY2(!RouteBuilderProxy::worldMayRouteTo(action(a)), qPrintable(QString::number(toInt(a))));
+    }
+    for (Action a : { Action::TRANSLATE_Z, Action::YAW, Action::DELTA_YAW, Action::STEP_YAW, Action::LONGITUDINAL_FORWARD,
+                      Action::YAW_LEFT, Action::BOOM_IN, Action::SPRINT, Action::LEFT_HAND, Action::HEAD, Action::LEFT_ARM,
+                      Action::RIGHT_HAND_INDEX1, Action::TRACKED_OBJECT_03, Action::EYEBLINK_L, Action::HEAD_TURN,
+                      Action::ACTION1, Action::ACTION2, Action::SHIFT }) {
+        QVERIFY2(RouteBuilderProxy::worldMayRouteTo(action(a)), qPrintable(QString::number(toInt(a))));
+    }
+    // a device's endpoint (the visitor's own controller scripts read the Standard ones), and nothing
+    QVERIFY(!RouteBuilderProxy::worldMayRouteTo(std::make_shared<InputEndpoint>(Input(UserInputMapper::STANDARD_DEVICE, 0, ChannelType::BUTTON))));
+    QVERIFY(!RouteBuilderProxy::worldMayRouteTo(Endpoint::Pointer()));
+
+    // the guards' mark of a world's call: nested, and gone after
+    QVERIFY(!ScriptCaller::isWorld());
+    {
+        ScriptCaller::WorldScope world(true);
+        QVERIFY(ScriptCaller::isWorld());
+        {
+            ScriptCaller::WorldScope inner(false);
+            QVERIFY(ScriptCaller::isWorld());   // an inner call of a world's call is still the world's
+        }
+        QVERIFY(ScriptCaller::isWorld());
+    }
+    QVERIFY(!ScriptCaller::isWorld());
 }

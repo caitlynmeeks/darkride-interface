@@ -30,6 +30,9 @@ namespace controller {
 
         List routes;
         QString name;
+        // made by a world's script (ScriptCaller): its routes go only where a world's may (RouteBuilderProxy::to)
+        bool madeByWorld { false };
+        bool refusalLogged { false };
     };
 
 }
