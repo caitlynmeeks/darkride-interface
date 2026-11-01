@@ -20,6 +20,7 @@
 #include <NumericalConstants.h>
 #include <RenderableWebEntityItem.h>
 #include <shared/LocalFileAccessGate.h>
+#include <SharedUtil.h>
 #include <SpatiallyNestable.h>
 #include <controllers/Actions.h>
 
@@ -45,6 +46,7 @@ const float PIECE_THICKNESS = 0.01f;
 const int WEB_MAX_FPS = 90;          // as the tablet; a surface only redraws when its page changes
 const int DRAG_INTERVAL_MS = 11;     // about 90 Hz, only while the bar is held
 const int REMAKE_DELAY_MS = 500;
+const uint64_t MIN_TOGGLE_INTERVAL_USECS = 300 * USECS_PER_MSEC;
 
 // The app's own QML, made from C++. A Web entity reads this at creation (WebEntityItem.cpp); it's up only for the call
 // that creates the entity, with no events processed inside, so nothing else can be made under it.
@@ -105,6 +107,13 @@ void VrScreen::connectOnce() {
 }
 
 void VrScreen::toggle() {
+    // a second guard, beside the rule on worlds' mappings: nothing (a stuck button, a mapping) can make the screen rebuild
+    // its surfaces in a loop, on a ride or anywhere
+    const uint64_t now = usecTimestampNow();
+    if (now - _lastToggle < MIN_TOGGLE_INTERVAL_USECS) {
+        return;
+    }
+    _lastToggle = now;
     if (_shown) {
         hide();
     } else {

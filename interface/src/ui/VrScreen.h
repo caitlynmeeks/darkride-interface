@@ -73,6 +73,7 @@ private:
     bool _shown { false };
     bool _changing { false };   // our own deletes, as against someone else's
     bool _wasHeadset { false };
+    uint64_t _lastToggle { 0 };
     std::array<QUuid, PIECE_COUNT> _pieces;
     std::array<QMetaObject::Connection, 3> _entityConnections;
 
