@@ -12,7 +12,14 @@
 
 #include "VrScreen.h"
 
+#include <memory>
+
+#include <QtCore/QThread>
+#include <QtQml/QQmlContext>
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
+
+#include <AbstractViewStateInterface.h>
 
 #include <EntityScriptingInterface.h>
 #include <EntityTreeRenderer.h>
@@ -23,6 +30,7 @@
 #include <SharedUtil.h>
 #include <SpatiallyNestable.h>
 #include <controllers/Actions.h>
+#include <ui/OffscreenQmlSurface.h>
 
 #include "Application.h"
 #include "InterfaceLogging.h"
@@ -49,6 +57,13 @@ const int MIDDLE_MAX_FPS = 90;
 const int SIDE_MAX_FPS = 30;
 const int DRAG_INTERVAL_MS = 11;     // about 90 Hz, only while the bar is held
 const int REMAKE_DELAY_MS = 500;
+// The warm-up at headset entry (the surface pool): after the display's own start, one step per shot. A step makes one
+// surface (~5 ms on the main thread), lets one draw its first frame (the main thread waits ~20 ms for its first sync),
+// or pauses one. Far enough apart that a surface's first draw on its own thread is done before the next one's sync.
+const int WARM_START_DELAY_MS = 2000;
+const int WARM_STEP_MS = 150;
+const int WARM_RETRY_MS = 500;       // moving (a ride, or walking with the stick): wait until still
+const float WARM_MOVING_SPEED = 0.3f;    // m/s
 const uint64_t MIN_TOGGLE_INTERVAL_USECS = 300 * USECS_PER_MSEC;
 
 // The app's own QML, made from C++. A Web entity reads this at creation (WebEntityItem.cpp); it's up only for the call
@@ -68,6 +83,16 @@ float degreesPerPixel() {
     return value;
 }
 
+// tests: DARKRIDE_VR_SCREEN_WARM_DELAY_MS puts the warm-up where a timing run can see it, in a settled world
+int warmStartDelay() {
+    static const int value = [] {
+        bool ok = false;
+        const int fromEnvironment = qEnvironmentVariable("DARKRIDE_VR_SCREEN_WARM_DELAY_MS").toInt(&ok);
+        return ok && fromEnvironment >= 0 ? fromEnvironment : WARM_START_DELAY_MS;
+    }();
+    return value;
+}
+
 glm::vec2 toVec2(const QSize& size) {
     return glm::vec2(size.width(), size.height());
 }
@@ -82,6 +107,13 @@ bool VrScreen::isOn() {
 VrScreen::VrScreen() {
     _dragTimer.setInterval(DRAG_INTERVAL_MS);
     connect(&_dragTimer, &QTimer::timeout, this, &VrScreen::dragTick);
+    _warmTimer.setSingleShot(true);
+    connect(&_warmTimer, &QTimer::timeout, this, &VrScreen::warmStep);
+    // entering and leaving the headset (the warm-up, and hiding as it comes off); a Desktop test warms at its first
+    // display. Connected now, as the app is made: the first display starts before anything shows the screen.
+    connect(qApp, &Application::activeDisplayPluginChanged, this, &VrScreen::displayChanged);
+    // the kept surfaces go before QML stops, as any hidden piece's would (connected before any surface's own quit)
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &VrScreen::stopKeeping);
     Panels::setScreenWindowCheck([](QQuickWindow* window) {
         auto screen = DependencyManager::get<VrScreen>();
         return screen && screen->ownsWindow(window);
@@ -98,13 +130,14 @@ VrScreen::VrScreen() {
             }
         });
     // HMD.openTablet and closeTablet: apps call them to bring up what they've just opened
+    // A dialog-only screen (a world's dialog) isn't the tablet shown: an app's openTablet brings the whole screen then
     connect(DependencyManager::get<HMDScriptingInterface>().data(), &HMDScriptingInterface::showTabletChanged, this, [this](bool show) {
-        if (!isOn() || show == _shown) {
+        if (!isOn()) {
             return;
         }
         if (show) {
             this->show();
-        } else {
+        } else if (_shown && !_dialogOnly) {
             hide();
         }
     });
@@ -116,8 +149,6 @@ void VrScreen::connectOnce() {
     }
     _connected = true;
     connect(DependencyManager::get<Panels>().data(), &Panels::screenSlotSizeChanged, this, &VrScreen::slotSizeChanged);
-    connect(qApp, &Application::activeDisplayPluginChanged, this, &VrScreen::displayChanged);
-    _wasHeadset = qApp->isHMDMode();
 }
 
 void VrScreen::toggle() {
@@ -141,6 +172,12 @@ void VrScreen::toggle() {
 }
 
 void VrScreen::show() {
+    if (_shown) {
+        if (_dialogOnly) {
+            showInFront(false);   // the whole screen, around the dialog that's up
+        }
+        return;
+    }
     showPieces(false);
 }
 
@@ -159,6 +196,8 @@ void VrScreen::showPieces(bool dialogOnly) {
     };
     faceHead();
     _shown = true;
+    // what isn't warm yet is made now, as before, and kept at the next hide
+    _warmTimer.stop();
 
     const Arrangement places = arrangement();
     makePiece(Middle, places);
@@ -166,8 +205,10 @@ void VrScreen::showPieces(bool dialogOnly) {
         makeOtherPieces(places);
     }
     tellState();
-    DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(true);
-    qCDebug(interfaceapp) << "VR screen: shown, yaw" << _yaw;
+    if (!dialogOnly) {
+        DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(true);
+    }
+    qCDebug(interfaceapp) << "VR screen: shown, yaw" << _yaw << (dialogOnly ? "(dialog only)" : "");
 }
 
 void VrScreen::makeOtherPieces(const Arrangement& places) {
@@ -179,6 +220,9 @@ void VrScreen::makeOtherPieces(const Arrangement& places) {
 }
 
 void VrScreen::showInFront(bool dialogOnly) {
+    if (!isOn()) {
+        return;   // nothing pops the screen on a plain desktop (editor-ui's guard, again here)
+    }
     if (!_shown) {
         showPieces(dialogOnly);
         return;
@@ -189,6 +233,7 @@ void VrScreen::showInFront(bool dialogOnly) {
     if (_dialogOnly && !dialogOnly) {
         _dialogOnly = false;
         makeOtherPieces(arrangement());
+        DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(true);
     }
     tellState();
 }
@@ -230,6 +275,9 @@ void VrScreen::hide() {
     _changing = false;
     DependencyManager::get<Keyboard>()->setRaised(false);
     DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(false);
+    if (_keeping && (!_toWarm.isEmpty() || _warmLoaded || _warmDrawing)) {
+        _warmTimer.start(WARM_STEP_MS);
+    }
     qCDebug(interfaceapp) << "VR screen: hidden";
 }
 
@@ -273,34 +321,22 @@ void VrScreen::makePiece(Piece piece, const Arrangement& places) {
         return;
     }
     auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
-    auto panels = DependencyManager::get<Panels>();
     const Pose pose = placedPiece(places, piece);
     const glm::mat4 sensorToWorld = avatar->getSensorToWorldMatrix();
     const float scale = avatar->getSensorToWorldScale();
-
-    static const char* NAMES[] = { "left", "middle", "right" };
-    glm::vec2 pixels = GRAB_BAR_PIXELS;
-    QString url = GRAB_BAR_URL;
-    QString name = "VR screen grab bar";
-    if (piece != Bar) {
-        pixels = glm::round(toVec2(panels->screenSlotSize(NAMES[piece])) * textureScale(degreesPerPixel()));
-        url = piece == Left ? SLOT_LEFT_URL : piece == Middle ? SLOT_MIDDLE_URL : SLOT_RIGHT_URL;
-        name = QString("VR screen ") + NAMES[piece];
-    }
-    const float dpi = dpiForWidth(pixels.x, pose.size.x * scale);
-    const glm::vec2 metres = metresForPixels(pixels, dpi);
+    const PieceSpec spec = pieceSpec(piece, places);
 
     EntityItemProperties properties;
     properties.setType(EntityTypes::Web);
-    properties.setName(name);
-    properties.setSourceUrl(url);
+    properties.setName(spec.name);
+    properties.setSourceUrl(spec.url);
     properties.setParentID(AVATAR_SELF_ID);
     properties.setParentJointIndex(SENSOR_TO_WORLD_MATRIX_INDEX);
     properties.setPosition(transformPoint(sensorToWorld, pose.position));
     properties.setRotation(glmExtractRotation(sensorToWorld) * pose.rotation);
-    properties.setDimensions(glm::vec3(metres, PIECE_THICKNESS * scale));
-    properties.setDPI((uint16_t)dpi);
-    properties.setMaxFPS(piece == Middle ? MIDDLE_MAX_FPS : SIDE_MAX_FPS);
+    properties.setDimensions(glm::vec3(spec.metres, PIECE_THICKNESS * scale));
+    properties.setDPI((uint16_t)spec.dpi);
+    properties.setMaxFPS(spec.fps);
     properties.setPrimitiveMode(PrimitiveMode::SOLID);
     properties.getGrab().setGrabbable(false);
     properties.setIgnorePickIntersection(false);
@@ -314,6 +350,175 @@ void VrScreen::makePiece(Piece piece, const Arrangement& places) {
     }
     // before the renderer exists: it builds its surface at once, and it's made on a later update (addingEntity is queued)
     render::entities::WebEntityRenderer::setAppSurface(_pieces[piece], true);
+}
+
+VrScreen::PieceSpec VrScreen::pieceSpec(Piece piece, const Arrangement& places) const {
+    static const char* NAMES[] = { "left", "middle", "right" };
+    const Pose& arranged = piece == Left ? places.left : piece == Middle ? places.middle : piece == Right ? places.right : places.bar;
+    const float scale = DependencyManager::get<AvatarManager>()->getMyAvatar()->getSensorToWorldScale();
+    PieceSpec spec;
+    glm::vec2 pixels = GRAB_BAR_PIXELS;
+    spec.url = GRAB_BAR_URL;
+    spec.name = "VR screen grab bar";
+    if (piece != Bar) {
+        pixels = glm::round(toVec2(DependencyManager::get<Panels>()->screenSlotSize(NAMES[piece])) * textureScale(degreesPerPixel()));
+        spec.url = piece == Left ? SLOT_LEFT_URL : piece == Middle ? SLOT_MIDDLE_URL : SLOT_RIGHT_URL;
+        spec.name = QString("VR screen ") + NAMES[piece];
+    }
+    spec.dpi = dpiForWidth(pixels.x, arranged.size.x * scale);
+    spec.metres = metresForPixels(pixels, spec.dpi);
+    spec.fps = piece == Middle ? MIDDLE_MAX_FPS : SIDE_MAX_FPS;
+    return spec;
+}
+
+QSize VrScreen::surfaceSize(const PieceSpec& spec) {
+    // as WebEntityRenderer::getWindowSize works it out from the entity (its metres x inches x whole-number dpi, the
+    // longest side at most 4096), so a warm surface needs no new size, and no new layout, at the show
+    const float MAX_WINDOW_SIZE = 4096.0f;
+    glm::vec2 window = spec.metres;
+    window *= METRES_TO_INCHES * (float)(uint16_t)spec.dpi;
+    const float longest = std::max(window.x, window.y);
+    if (longest > MAX_WINDOW_SIZE) {
+        window *= MAX_WINDOW_SIZE / longest;
+    }
+    return QSize(window.x, window.y);
+}
+
+bool VrScreen::isPieceUrl(const QString& url) {
+    return url == SLOT_LEFT_URL || url == SLOT_MIDDLE_URL || url == SLOT_RIGHT_URL || url == GRAB_BAR_URL;
+}
+
+QSharedPointer<OffscreenQmlSurface> VrScreen::makeSurface(const QString& url, bool warm) {
+    // as the app's acquire operator makes its own QML surfaces (ApplicationStartup.cpp)
+    QSharedPointer<OffscreenQmlSurface> surface(new OffscreenQmlSurface(), [](OffscreenQmlSurface* surface) {
+        AbstractViewStateInterface::instance()->sendLambdaEvent([surface] {
+            delete surface;
+        });
+    });
+    QObject::connect(surface.data(), &hifi::qml::OffscreenSurface::rootContextCreated, [surface = surface.data(), warm] {
+        Application::setupQmlSurface(surface->getSurfaceContext(), true);
+        // made while hidden: the slot doesn't tell Panels it's ready (it would be refused); VrScreen does at the show
+        surface->getSurfaceContext()->setContextProperty("screenSlotWarm", warm);
+    });
+    {
+        AppMadeEntityScope appMade;
+        surface->load(url);
+    }
+    _surfaceUrls.insert(surface.data(), url);
+    return surface;
+}
+
+QSharedPointer<OffscreenQmlSurface> VrScreen::takeSurface(const QString& url) {
+    QSharedPointer<OffscreenQmlSurface> surface = _kept.take(url);
+    if (!surface) {
+        // not warm yet (a show before the warm-up got to it, or the radio's slot): made now, kept after; its slot tells
+        // Panels it's ready itself
+        return makeSurface(url, false);
+    }
+    if (surface == _warmLoaded) {
+        _warmLoaded.reset();
+    }
+    if (surface == _warmDrawing) {
+        _warmDrawing.reset();
+    }
+    // A slot tells Panels it's ready as its QML is made, which for a warm one was while the screen was hidden (refused).
+    // It's the screen's now: Panels takes it on the next turn, by when the Web entity's renderer holds this surface.
+    if (Panels::isScreenSlotUrl(url)) {
+        auto announce = [](QQuickItem* root) {
+            DependencyManager::get<Panels>()->screenSlotReady(root->property("slot").toString(), root);
+        };
+        if (QQuickItem* root = surface->getRootItem()) {
+            announce(root);
+        } else {
+            // still loading (handed over the moment it was made): once its root item is there
+            auto once = std::make_shared<QMetaObject::Connection>();
+            *once = QObject::connect(surface.data(), &hifi::qml::OffscreenSurface::rootItemCreated, this, [once, announce](QQuickItem* root) {
+                QObject::disconnect(*once);
+                announce(root);
+            });
+        }
+    }
+    return surface;
+}
+
+bool VrScreen::keepSurface(const QSharedPointer<OffscreenQmlSurface>& surface) {
+    auto found = _surfaceUrls.find(surface.data());
+    if (found == _surfaceUrls.end()) {
+        return false;
+    }
+    const QString url = found.value();
+    // out of the headset, a second one for the same address, or not on the main thread: deleted as any other
+    if (!_keeping || _kept.contains(url) || QThread::currentThread() != thread()) {
+        _surfaceUrls.erase(found);
+        return false;
+    }
+    surface->pause();
+    _kept.insert(url, surface);
+    return true;
+}
+
+void VrScreen::startWarming() {
+    _keeping = true;
+    _toWarm = { Middle, Left, Bar, Right };
+    _warmTimer.start(warmStartDelay());
+}
+
+void VrScreen::warmStep() {
+    if (!_keeping || _shown) {
+        return;
+    }
+    if (_warmDrawing) {
+        _warmDrawing->pause();
+        _warmDrawing.reset();
+    }
+    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    if (glm::length(avatar->getWorldVelocity()) > WARM_MOVING_SPEED) {
+        _warmTimer.start(WARM_RETRY_MS);
+        return;
+    }
+    if (_warmLoaded) {
+        // its render thread has started up by now, off the main thread: its first draw (the main thread waits for the
+        // first sync only)
+        qCDebug(interfaceapp) << "VR screen: warm-up: first draw";
+        _warmLoaded->setMaxFps(_warmFps);
+        _warmDrawing = _warmLoaded;
+        _warmLoaded.reset();
+        _warmTimer.start(WARM_STEP_MS);
+        return;
+    }
+    const Arrangement places = arrangement();
+    while (!_toWarm.isEmpty()) {
+        const Piece piece = _toWarm.takeFirst();
+        if (piece == Right && !DependencyManager::get<Panels>()->screenSlotSize(SLOT_RIGHT).isValid()) {
+            continue;   // the radio's off: made if it's on at a show, kept after
+        }
+        const PieceSpec spec = pieceSpec(piece, places);
+        if (_kept.contains(spec.url)) {
+            continue;
+        }
+        qCDebug(interfaceapp) << "VR screen: warm-up: making" << spec.name << surfaceSize(spec);
+        auto surface = makeSurface(spec.url, true);
+        surface->setMaxFps(0);   // no draw while its render thread starts up
+        surface->resize(surfaceSize(spec));
+        _kept.insert(spec.url, surface);
+        _warmLoaded = surface;
+        _warmFps = spec.fps;
+        _warmTimer.start(WARM_STEP_MS);
+        return;
+    }
+    qCDebug(interfaceapp) << "VR screen: surfaces warm:" << _kept.size();
+}
+
+void VrScreen::stopKeeping() {
+    _keeping = false;
+    _warmTimer.stop();
+    _toWarm.clear();
+    _warmLoaded.reset();
+    _warmDrawing.reset();
+    for (auto it = _kept.cbegin(); it != _kept.cend(); ++it) {
+        _surfaceUrls.remove(it.value().data());
+    }
+    _kept.clear();   // their deleter deletes them on a later turn
 }
 
 void VrScreen::deletePiece(Piece piece) {
@@ -398,8 +603,12 @@ void VrScreen::displayChanged() {
     const bool headset = qApp->isHMDMode();
     if (_wasHeadset && !headset) {
         hide();
+        stopKeeping();
     }
     _wasHeadset = headset;
+    if (!_keeping && isOn()) {
+        startWarming();
+    }
 }
 
 void VrScreen::mousePressed(const EntityItemID& id, const PointerEvent& event) {

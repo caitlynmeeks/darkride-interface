@@ -99,6 +99,7 @@
 #include "ui/LoginDialog.h"
 #include "ui/QuitCheck.h"
 #include "ui/Keyboard.h"
+#include "ui/VrScreen.h"
 #include "Util.h"
 #include <GPUIdent.h>
 #include <PickManager.h>
@@ -1571,7 +1572,11 @@ void Application::installOperators() {
                                                               AVATAR_INPUTS_BAR_QML.toString(), BUBBLE_ICON_QML.toString() });
     render::entities::WebEntityRenderer::setAcquireWebSurfaceOperator([=](const QString& url, bool htmlContent, QSharedPointer<OffscreenQmlSurface>& webSurface, bool& cachedWebSurface) {
         bool isTablet = url == TabletScriptingInterface::QML;
-        if (htmlContent) {
+        if (!htmlContent && VrScreen::isPieceUrl(url)) {
+            // the VR screen's pieces: made ahead at headset entry and kept paused while hidden (a surface pool, ui/VrScreen.h)
+            webSurface = DependencyManager::get<VrScreen>()->takeSurface(url);
+            cachedWebSurface = false;
+        } else if (htmlContent) {
             webSurface = DependencyManager::get<OffscreenQmlSurfaceCache>()->acquire(render::entities::WebEntityRenderer::QML);
             cachedWebSurface = true;
             auto rootItemLoadedFunctor = [url, webSurface] {
@@ -1612,6 +1617,18 @@ void Application::installOperators() {
         webSurface->setMaxFps(isTablet ? TABLET_FPS : DEFAULT_MAX_FPS);
     });
     render::entities::WebEntityRenderer::setReleaseWebSurfaceOperator([=](QSharedPointer<OffscreenQmlSurface>& webSurface, bool& cachedWebSurface, std::vector<QMetaObject::Connection>& connections) {
+        // the VR screen's pieces keep their surfaces, paused, for the next show (ui/VrScreen.h); the Web entity's own
+        // connections go, as for a cached surface, and the next renderer makes its own
+        auto vrScreen = DependencyManager::get<VrScreen>();
+        if (!cachedWebSurface && vrScreen && vrScreen->keepSurface(webSurface)) {
+            for (auto& connection : connections) {
+                QObject::disconnect(connection);
+            }
+            connections.clear();
+            webSurface.reset();
+            return;
+        }
+
         QQuickItem* rootItem = webSurface->getRootItem();
 
         // Fix for crash in QtWebEngineCore when rapidly switching domains

@@ -5,7 +5,8 @@
 //  The VR screen's headset side (team/editor-ui/VR-SCREEN-PLAN.md): the menu button brings it up in front of you or hides
 //  it, its grab bar moves it, and it stays where you put it in your play space. Its pieces are local Web entities under
 //  the avatar's sensor-to-world joint, made only while it's shown: anything under the avatar is refreshed every frame, so
-//  hiding deletes them and a hidden screen costs nothing. Panels moves the pages in and out of the slots.
+//  hiding deletes them. Their QML surfaces are made ahead, at headset entry, and kept paused while the screen is hidden
+//  (a surface pool): making one and its first draw block the main thread. Panels moves the pages in and out of the slots.
 //
 //  Copyright 2026 Darkride.
 //
@@ -17,7 +18,11 @@
 
 #include <array>
 
+#include <QtCore/QHash>
+#include <QtCore/QList>
 #include <QtCore/QObject>
+#include <QtCore/QSharedPointer>
+#include <QtCore/QSize>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
 
@@ -27,6 +32,7 @@
 
 #include "VrScreenLayout.h"
 
+class OffscreenQmlSurface;
 class QQuickWindow;
 
 class VrScreen : public QObject, public Dependency {
@@ -53,8 +59,36 @@ public:
     /// one of the slots' surfaces, by the window object itself (Panels refuses a host in any other)
     bool ownsWindow(QQuickWindow* window) const;
 
+    // The pieces' QML surfaces, for the app's acquire and release operators (ApplicationStartup.cpp). Making a surface
+    // and its first draw block the main thread about 5 + 20-35 ms each, 130-190 ms for a show (results/20261101-1511-joint,
+    // 20261101-1528-screen2). So they're made at headset entry, a step at a time, and kept paused while hidden. Main thread.
+
+    /// one of the pieces' QML addresses
+    static bool isPieceUrl(const QString& url);
+    /// a piece's surface: the warm one for its address, or a new one if none is warm yet
+    QSharedPointer<OffscreenQmlSurface> takeSurface(const QString& url);
+    /// one of the pieces' surfaces, let go by its Web entity: true if it's kept (paused) for the next show; false if the
+    /// caller is to delete it as any other (out of the headset, or not one of ours)
+    bool keepSurface(const QSharedPointer<OffscreenQmlSurface>& surface);
+
 private:
     enum Piece { Left = 0, Middle, Right, Bar, PIECE_COUNT };
+
+    // what a piece's Web entity is made with
+    struct PieceSpec {
+        QString url;
+        QString name;
+        glm::vec2 metres { 0.0f };
+        float dpi { 0.0f };
+        int fps { 0 };
+    };
+    PieceSpec pieceSpec(Piece piece, const vrscreen::Arrangement& places) const;
+    static QSize surfaceSize(const PieceSpec& spec);
+    /// warm: made ahead, while hidden (its slot leaves telling Panels it's ready to VrScreen, at the show)
+    QSharedPointer<OffscreenQmlSurface> makeSurface(const QString& url, bool warm);
+    void startWarming();
+    void warmStep();
+    void stopKeeping();
 
     void connectOnce();
     void showPieces(bool dialogOnly);
@@ -90,6 +124,17 @@ private:
     glm::vec3 _head { 0.0f };
     float _yaw { 0.0f };
     float _pitch { vrscreen::DEFAULT_PITCH_DEGREES };
+
+    // the surface pool: every surface of the screen's (handed out or kept), and the kept ones by address
+    bool _keeping { false };   // in the headset, or a Desktop test
+    QHash<OffscreenQmlSurface*, QString> _surfaceUrls;
+    QHash<QString, QSharedPointer<OffscreenQmlSurface>> _kept;
+    // the warm-up at headset entry: one step per timer shot, each blocking the main thread once
+    QTimer _warmTimer;
+    QList<Piece> _toWarm;
+    QSharedPointer<OffscreenQmlSurface> _warmLoaded;    // made; no draw yet while its render thread starts up
+    QSharedPointer<OffscreenQmlSurface> _warmDrawing;   // drawing its first frame; paused at the next step
+    int _warmFps { 0 };
 
     // a drag: only while the bar is held does anything here run per frame
     QTimer _dragTimer;
