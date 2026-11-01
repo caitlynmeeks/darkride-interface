@@ -121,6 +121,15 @@
         } catch (e) {
             done("require a local json", "threw " + e + (String(e).indexOf("Refused") >= 0 ? " REFUSED" : ""));
         }
+        // one of the app's own libraries: no request to the network, so a script from the network includes it (the
+        // seats' utils.js); the requests after it are judged as before
+        pending++;
+        try {
+            Script.include("/~/system/libraries/utils.js");
+            done("include an app library", typeof isInEditMode === "function" ? "INCLUDED" : "not included");
+        } catch (e) {
+            done("include an app library", "threw " + e);
+        }
         // a public JSON module: its download goes to the address judged, by name (the certificate checked by the name)
         pending++;
         try {

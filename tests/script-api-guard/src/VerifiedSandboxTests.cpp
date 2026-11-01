@@ -589,3 +589,35 @@ void VerifiedSandboxTests::testServerEnginesAreRuled() {
     QVERIFY(client.networkRuled());
     QCOMPARE(client.ruledOrigin(QUrl("http://127.0.0.1/x.js")), QUrl("http://127.0.0.1/x.js"));
 }
+
+void VerifiedSandboxTests::testAppScriptsForAWorldFromTheNetwork() {
+    // a world from the network may include and require the app's own libraries (the seats' utils.js): they are no
+    // request to the network; anything else of this machine stays refused, a path that climbs out of the folder too
+    setWorld(PUBLIC_WORLD);
+    EntitiesEngine engine;
+    engine.addEntityScript(NETWORK_SCRIPT, EntityScriptStatus::RUNNING);
+    Warnings warnings(engine);
+    const QString network = NETWORK_SCRIPT.toString();
+    const QString appLibrary = QUrl::fromLocalFile(_root + "/app/scripts/entities/helper.js").toString();
+    QCOMPARE(engine.resolveInclude("/~/entities/helper.js", network, network).value("url").toString(), appLibrary);
+    QCOMPARE(engine.resolveModule(appLibrary, QString(), network, network).value("url").toString(), appLibrary);
+    // (the fetch itself is shown in-engine: a fetch that downloads runs an event loop this fixture can't host)
+    // refused: a file outside the folder, and a path that only starts in it
+    const QString outside = QUrl::fromLocalFile(_root + "/outside/other.js").toString();
+    for (const QString& target : { outside, "file://" + _root + "/app/scripts/../../outside/other.js" }) {
+        QCOMPARE(engine.fetchScript(target, false, network).value("status").toString(), QString("Refused"));
+    }
+    QVERIFY(!engine.resolveInclude("/~/../../outside/other.js", network, network).contains("url"));
+    // a backslash spelling: where it is a separator it climbs and is refused; where it is a name it stays in the folder
+    const QVariantMap backslashed = engine.resolveInclude("/~/..\\..\\outside/other.js", network, network);
+    if (backslashed.contains("url")) {
+        QVERIFY2(ScriptNetworkPolicy::isAppScript(QUrl(backslashed.value("url").toString())),
+                 qPrintable(backslashed.value("url").toString()));
+    }
+    // a link in the folder that points out of it: refused (compared on canonical paths)
+    QVERIFY(QFile::link(_root + "/outside", _root + "/app/scripts/out-link"));
+    QVERIFY(!engine.resolveInclude("/~/out-link/other.js", network, network).contains("url"));
+    QCOMPARE(engine.fetchScript(QUrl::fromLocalFile(_root + "/app/scripts/out-link/other.js").toString(), false, network)
+                 .value("status").toString(), QString("Refused"));
+    QFile::remove(_root + "/app/scripts/out-link");
+}

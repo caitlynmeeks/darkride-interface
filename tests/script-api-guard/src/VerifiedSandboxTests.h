@@ -33,6 +33,7 @@ private slots:
     void testWorldRuleOnRequests();
     void testRefusalAtLoad();
     void testAppScriptsFolder();
+    void testAppScriptsForAWorldFromTheNetwork();
     void testResourcesNotForWorlds();
     void testInputAndPrivacyNotForWorlds();
     void testSignalsNotForWorlds();
