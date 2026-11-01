@@ -10,6 +10,7 @@
 //
 
 #include "HFMModelMath.h"
+#include "ModelFormatLogging.h"
 
 #include <LogHandler.h>
 
@@ -187,20 +188,33 @@ const TriangleListMesh generateTriangleListMesh(const std::vector<glm::vec3>& sr
     }
 
     {
+        // a triangle at a time: one with a vertex past the source's is left out rather than read past oldToNewIndex
         dest.indices.resize(newIndicesCount);
         int i = 0;
+        int trianglesLeftOut = 0;
+        const auto copyTriangles = [&](const QVector<int>& indices) {
+            for (int t = 0; t + 2 < indices.size(); t += 3) {
+                const uint32_t a = (uint32_t)indices[t], b = (uint32_t)indices[t + 1], c = (uint32_t)indices[t + 2];
+                if (a >= srcVertices.size() || b >= srcVertices.size() || c >= srcVertices.size()) {
+                    ++trianglesLeftOut;
+                    continue;
+                }
+                dest.indices[i++] = oldToNewIndex[a];
+                dest.indices[i++] = oldToNewIndex[b];
+                dest.indices[i++] = oldToNewIndex[c];
+            }
+        };
         for (const auto& part : srcParts) {
             glm::ivec2 spart(i, 0);
-            for (const auto& qti : part.quadTrianglesIndices) {
-                dest.indices[i] = oldToNewIndex[qti];
-                ++i;
-            }
-            for (const auto& ti : part.triangleIndices) {
-                dest.indices[i] = oldToNewIndex[ti];
-                ++i;
-            }
+            copyTriangles(part.quadTrianglesIndices);
+            copyTriangles(part.triangleIndices);
             spart.y = i - spart.x;
             dest.parts.push_back(spart);
+        }
+        dest.indices.resize(i);
+        if (trianglesLeftOut > 0) {
+            qCWarning(modelformat) << "generateTriangleListMesh:" << trianglesLeftOut << "triangles with a vertex past the mesh's"
+                       << srcVertices.size() << "left out";
         }
     }
 

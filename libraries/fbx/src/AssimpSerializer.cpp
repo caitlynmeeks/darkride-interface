@@ -611,12 +611,24 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
             }
         }
 
+        // a triangle with a vertex the mesh doesn't have is left out: the passes after the reader index the vertices
+        // with it unchecked
+        size_t trianglesLeftOut = 0;
         for (size_t faceIndex = 0; faceIndex < mMesh->mNumFaces; faceIndex++) {
-            aiFace face = mMesh->mFaces[faceIndex];
+            const aiFace& face = mMesh->mFaces[faceIndex];
             if (face.mNumIndices != 3) continue; // must be a triangle
+            if (face.mIndices[0] >= mMesh->mNumVertices || face.mIndices[1] >= mMesh->mNumVertices ||
+                face.mIndices[2] >= mMesh->mNumVertices) {
+                trianglesLeftOut++;
+                continue;
+            }
             for (size_t i = 0; i < face.mNumIndices; i++) {
                 meshPartPtr->triangleIndices.push_back(face.mIndices[i]);
             }
+        }
+        if (trianglesLeftOut > 0) {
+            qCWarning(modelformat) << "AssimpSerializer::read" << url.fileName() << "mesh" << meshIndex << ":" << trianglesLeftOut
+                                   << "triangles with a vertex past the mesh's" << mMesh->mNumVertices << "left out";
         }
 
         hifi::VariantHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
