@@ -673,6 +673,17 @@ public slots:
     Q_INVOKABLE QVariantMap hierarchyToggles(const QUuid& id);
 
     /**jsdoc
+     * A stroke along a build-mode Hierarchy toggle's column, as the mouse makes it: a press on the first row's toggle,
+     * a move over each row, a release on the last. Every row passed takes the first row's new state, one undo step.
+     * @function Test.hierarchyStroke
+     * @param {string} which - "hide", "pick", "lock" or "scripts".
+     * @param {Uuid[]} ids - The rows, in the order the stroke passes them (all in sight).
+     * @param {boolean} [onlyThis=false] - As with Alt held: the rows alone, not what's under them.
+     * @returns {boolean} <code>false</code> when a row isn't in sight.
+     */
+    Q_INVOKABLE bool hierarchyStroke(const QString& which, const QVariantList& ids, bool onlyThis = false);
+
+    /**jsdoc
      * Does what a click on the Hierarchy note's Show All does.
      * @function Test.hierarchyShowAll
      */

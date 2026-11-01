@@ -2951,6 +2951,15 @@ void Editor::setLocallyHidden(const QList<QUuid>& ids, bool hidden) {
     }
 }
 
+bool Editor::strokeHierarchyToggle(const QString& which, const QList<QUuid>& ids, bool onlyThis) {
+    if (!_hierarchy) {
+        return false;
+    }
+    auto toggle = which == "hide" ? HierarchyPanel::Hide : which == "pick" ? HierarchyPanel::NoPick
+                : which == "scripts" ? HierarchyPanel::Scripts : HierarchyPanel::Lock;
+    return _hierarchy->testStroke(toggle, ids, onlyThis);
+}
+
 bool Editor::clickHierarchyToggle(const QString& which, const QUuid& id, bool onlyThis) {
     if (!_hierarchy) {
         return false;
