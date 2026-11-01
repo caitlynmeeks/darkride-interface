@@ -152,6 +152,13 @@ void VrScreen::connectOnce() {
     }
     _connected = true;
     connect(DependencyManager::get<Panels>().data(), &Panels::screenSlotSizeChanged, this, &VrScreen::slotSizeChanged);
+    // the pages can't be made before sign-in: once Panels has restored, the ones still missing, staggered
+    connect(DependencyManager::get<Panels>().data(), &Panels::restored, this, [this] {
+        if (_keeping) {
+            _warmPages = true;
+            warmLater();
+        }
+    });
 }
 
 void VrScreen::toggle() {
