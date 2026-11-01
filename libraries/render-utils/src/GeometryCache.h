@@ -15,6 +15,7 @@
 #include "model-networking/ModelCache.h"
 
 #include <array>
+#include <atomic>
 
 #include <QMap>
 #include <QRunnable>
@@ -178,6 +179,12 @@ public:
     void bindWebBrowserProgram(gpu::Batch& batch, bool transparent, bool forward, bool sideBySide);
     gpu::PipelinePointer getWebBrowserProgram(bool transparent, bool forward, bool sideBySide);
     static std::map<std::tuple<bool, bool, bool>, gpu::PipelinePointer> _webPipelines;
+    // A web-browser program compiles on the GPU thread the first time a pipeline using it is set, which for the VR
+    // screen's first show was ~7 ms inside the slow frame. Asked from any thread (vr's headset-entry warm-up), the
+    // next frame's WarmPipelines job sets the opaque and the transparent web-browser pipelines of the render method
+    // in effect with nothing drawn, so the compile happens then. takeWebBrowserWarmup gives the request to one job.
+    static void warmWebBrowserPrograms();
+    static bool takeWebBrowserWarmup();
 
     static void initializeShapePipelines();
     render::ShapePipelinePointer getShapePipelinePointer(bool transparent, bool unlit, bool forward,
