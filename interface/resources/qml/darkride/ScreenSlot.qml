@@ -104,6 +104,19 @@ Rectangle {
         onChildrenChanged: layoutPages()
     }
 
+    // the app's dialogs over the middle slot (OffscreenUi's dialog host while the screen is up), over everything in it,
+    // at the slot's scale
+    Item {
+        id: dialogs
+        objectName: "dialogs"
+        visible: root.slot === "middle"
+        z: 10
+        width: parent.width / root.pageScale
+        height: parent.height / root.pageScale
+        scale: root.pageScale
+        transformOrigin: Item.TopLeft
+    }
+
     // the surface puts the item in its window after the item is made: Panels checks that window
     readonly property bool inWindow: root.Window.window !== null
     onInWindowChanged: {

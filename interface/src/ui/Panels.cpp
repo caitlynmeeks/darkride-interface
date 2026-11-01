@@ -462,6 +462,12 @@ void Panels::takeScreenSlot(const QString& slot, QQuickItem* host) {
     }
     _screenSlots[slot] = host;
     qCDebug(interfaceapp) << "Panels: screen slot ready:" << slot << host->size();
+    if (slot == SLOT_MIDDLE) {
+        // the app's dialogs show over the middle slot, not the HUD (it can be behind you, or hidden on a ride: vr)
+        if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
+            offscreenUi->setDialogHost(host->findChild<QQuickItem*>("dialogs"));
+        }
+    }
     if (slot == SLOT_LEFT) {
         putOnScreen(PEOPLE);
     } else if (slot == SLOT_RIGHT) {
@@ -551,6 +557,9 @@ void Panels::reportScreenShown(bool shown) {
 
 void Panels::releaseScreenSlots() {
     const bool shown = !qApp->isHMDMode();
+    if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
+        offscreenUi->setDialogHost(nullptr);   // a dialog still waiting goes back to the desktop
+    }
     takeTabletOffScreen();
     hideTabletWindow(!shown);
     QStringList movedBack;

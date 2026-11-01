@@ -348,7 +348,7 @@ QQuickItem* OffscreenUi::createMessageBox(Icon icon, const QString& title, const
         qWarning() << "Failed to create message box";
         return nullptr;
     }
-    return qvariant_cast<QQuickItem*>(result);
+    return placeDialog(qvariant_cast<QQuickItem*>(result));
 }
 
 int OffscreenUi::waitForMessageBoxResult(QQuickItem* messageBox) {
@@ -669,7 +669,7 @@ QQuickItem* OffscreenUi::createInputDialog(const Icon icon, const QString& title
         return nullptr;
     }
 
-    return qvariant_cast<QQuickItem*>(result);
+    return placeDialog(qvariant_cast<QQuickItem*>(result));
 }
 
 QQuickItem* OffscreenUi::createCustomInputDialog(const Icon icon, const QString& title, const QVariantMap& config) {
@@ -698,7 +698,7 @@ QQuickItem* OffscreenUi::createCustomInputDialog(const Icon icon, const QString&
         return nullptr;
     }
 
-    return qvariant_cast<QQuickItem*>(result);
+    return placeDialog(qvariant_cast<QQuickItem*>(result));
 }
 
 QVariant OffscreenUi::waitForInputDialogResult(QQuickItem* inputDialog) {
@@ -785,6 +785,28 @@ void OffscreenUi::createDesktop(const QUrl& url) {
         emit desktopReady();
         connect(keyboardFocus, SIGNAL(keyboardFocusActive()), this, SIGNAL(keyboardFocusActive()));
     });
+}
+
+void OffscreenUi::setDialogHost(QQuickItem* host) {
+    if (host == _dialogHost) {
+        return;
+    }
+    // the dialogs waiting on the old host go back to the desktop (an answer is still wanted)
+    if (_dialogHost && _desktop) {
+        for (QQuickItem* dialog : _dialogHost->childItems()) {
+            dialog->setScale(1.0);
+            dialog->setParentItem(_desktop);
+        }
+    }
+    _dialogHost = host;
+}
+
+QQuickItem* OffscreenUi::placeDialog(QQuickItem* dialog) {
+    // only the desktop's own dialogs (the tablet in toolbar mode); the old tablet's stay on it
+    if (dialog && _dialogHost && _desktop && dialog->parentItem() == _desktop) {
+        dialog->setParentItem(_dialogHost);   // the host lays it out at its slot's scale (ScreenSlot.qml)
+    }
+    return dialog;
 }
 
 QQuickItem* OffscreenUi::getDesktop() {
@@ -883,7 +905,7 @@ QString OffscreenUi::fileDialog(const QVariantMap& properties) {
             return QString();
         }
 
-        QVariant result = FileDialogListener(qvariant_cast<QQuickItem*>(buildDialogResult)).waitForResult();
+        QVariant result = FileDialogListener(placeDialog(qvariant_cast<QQuickItem*>(buildDialogResult))).waitForResult();
         if (!result.isValid()) {
             return QString();
         }
@@ -951,7 +973,7 @@ ModalDialogListener* OffscreenUi::fileDialogAsync(const QVariantMap& properties)
             return nullptr;
         }
 
-        fileDialogListener = new FileDialogListener(qvariant_cast<QQuickItem*>(buildDialogResult));
+        fileDialogListener = new FileDialogListener(placeDialog(qvariant_cast<QQuickItem*>(buildDialogResult)));
     }
 
     QObject* fileModalDialog = qobject_cast<QObject*>(fileDialogListener);
@@ -1174,7 +1196,7 @@ QString OffscreenUi::assetDialog(const QVariantMap& properties) {
         return QString();
     }
 
-    QVariant result = AssetDialogListener(qvariant_cast<QQuickItem*>(buildDialogResult)).waitForResult();
+    QVariant result = AssetDialogListener(placeDialog(qvariant_cast<QQuickItem*>(buildDialogResult))).waitForResult();
     if (!result.isValid()) {
         return QString();
     }
@@ -1205,7 +1227,7 @@ ModalDialogListener *OffscreenUi::assetDialogAsync(const QVariantMap& properties
         return nullptr;
     }
 
-    AssetDialogListener* assetDialogListener = new AssetDialogListener(qvariant_cast<QQuickItem*>(buildDialogResult));
+    AssetDialogListener* assetDialogListener = new AssetDialogListener(placeDialog(qvariant_cast<QQuickItem*>(buildDialogResult)));
     QObject* assetModalDialog = qobject_cast<QObject*>(assetDialogListener);
     _modalDialogListeners.push_back(assetModalDialog);
     return assetDialogListener;

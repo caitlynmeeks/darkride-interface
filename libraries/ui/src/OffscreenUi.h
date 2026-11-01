@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <functional>
 
+#include <QtCore/QPointer>
 #include <QtCore/QVariant>
 #include <QtCore/QQueue>
 #include <QtWidgets/QFileDialog>
@@ -85,6 +86,9 @@ public:
     QObject* getFlags();
     Q_INVOKABLE bool isPointOnDesktopWindow(QVariant point);
     QQuickItem* getDesktop();
+    // the VR screen (interface's Panels): while it's up, dialogs made on the desktop's QML show over its middle slot
+    // (this host item) instead of the desktop, which in the headset is the HUD; null puts them back
+    void setDialogHost(QQuickItem* host);
     QObject* getRootMenu();
     enum Icon {
         ICON_NONE = 0,
@@ -283,6 +287,8 @@ private:
     ModalDialogListener* assetDialogAsync(const QVariantMap& properties);
 
     QQuickItem* _desktop { nullptr };
+    QPointer<QQuickItem> _dialogHost;
+    QQuickItem* placeDialog(QQuickItem* dialog);   // into the dialog host, if there is one
     QList<QObject*> _modalDialogListeners;
     std::unordered_map<int, bool> _pressedKeys;
     VrMenu* _vrMenu { nullptr };
