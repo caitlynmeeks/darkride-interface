@@ -13,9 +13,12 @@
 # (build.yml); this file is only macOS. It builds, and doesn't package: RELEASING.md's macOS steps make the app.
 #
 # Qt 5.15 with WebEngine for arm64 comes prebuilt from MacPorts: Qt's own 5.15.2 is Intel only, and Homebrew's qt@5
-# has no WebEngine. MacPorts builds for the macOS it runs on, so this is macOS 14 Sonoma. Installing MacPorts' Qt
-# installs about 150 other ports into /opt/local, which CMake searches by default on macOS, so the configure here and
-# the ports (hifi_vcpkg.py's triplet) both ignore /opt/local; Qt is found by its own path, /opt/local/libexec/qt5.
+# has no WebEngine. MacPorts builds for the macOS it runs on, so this is macOS 15 Sequoia (GitHub retires its macOS 14
+# runners on 2 November 2026). The client still targets macOS 14 (MACOSX_DEPLOYMENT_TARGET); MacPorts' Qt is built
+# for 15, so the linker may warn that a library is newer than the target, which a build check can ignore. Installing
+# MacPorts' Qt installs about 150 other ports into /opt/local, which CMake searches by default on macOS, so the
+# configure here and the ports (hifi_vcpkg.py's triplet) both ignore /opt/local; Qt is found by its own path,
+# /opt/local/libexec/qt5.
 # CMake is pinned to 3.31 (CMake 4 refuses the 2021 ports' scripts) and Python to 3.11 (prebuild.py fails on 3.14).
 # The same job has built the Mac disk image on Martin's fork (darkride-builds) since 18 October.
 #
@@ -44,7 +47,7 @@ concurrency:
 jobs:
   client:
     name: macOS client
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 330
     env:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
@@ -79,8 +82,8 @@ jobs:
       # bin stays off PATH, so its pkg-config and libraries aren't picked up by the ports.
       - name: MacPorts and Qt
         run: |
-          curl -fsSL --retry 3 -o MacPorts.pkg https://github.com/macports/macports-base/releases/download/v2.12.7/MacPorts-2.12.7-14-Sonoma.pkg
-          echo "6e6e8a96f051035b34bf5e4c48f889370056f6139f05029dbc20bedfd1b65c4a  MacPorts.pkg" | shasum -a 256 -c -
+          curl -fsSL --retry 3 -o MacPorts.pkg https://github.com/macports/macports-base/releases/download/v2.12.7/MacPorts-2.12.7-15-Sequoia.pkg
+          echo "87b2e87ed7adc4aca947b42eb7ff991614cc0edfccb486237f2bbc75f28aae63  MacPorts.pkg" | shasum -a 256 -c -
           sudo installer -pkg MacPorts.pkg -target /
           rm MacPorts.pkg
           sudo /opt/local/bin/port -q selfupdate
