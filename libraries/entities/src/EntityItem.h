@@ -597,6 +597,11 @@ public:
         return (isLocalEntity() && getLocalOwner() == entity::LocalOwner::VISITOR) ||
                (isMyAvatarEntity() && getLocalOwner() != entity::LocalOwner::WORLD);
     }
+    /// Kept when the visitor leaves a world: the local entities and the visitor's own avatar entities, except those a
+    /// world's script made, which go with the world's domain entities.
+    bool isKeptOnWorldChange() const {
+        return (isLocalEntity() || isMyAvatarEntity()) && getLocalOwner() != entity::LocalOwner::WORLD;
+    }
 
     // if this entity is an avatar entity, which avatar is it associated with?
     QUuid getOwningAvatarID() const { return _owningAvatarID; }

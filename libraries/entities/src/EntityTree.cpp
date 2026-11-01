@@ -80,6 +80,17 @@ OctreeElementPointer EntityTree::createNewElement(unsigned char* octalCode) {
     return std::static_pointer_cast<OctreeElement>(newElement);
 }
 
+QVector<EntityItemID> EntityTree::getWorldsAvatarEntityIDs() const {
+    QVector<EntityItemID> ids;
+    QReadLocker locker(&_entityMapLock);
+    for (const auto& entity : _entityMap) {
+        if (entity && entity->isMyAvatarEntity() && entity->getLocalOwner() == entity::LocalOwner::WORLD) {
+            ids.push_back(entity->getEntityItemID());
+        }
+    }
+    return ids;
+}
+
 void EntityTree::eraseDomainAndNonOwnedEntities() {
     emit clearingEntities();
 
@@ -99,7 +110,7 @@ void EntityTree::eraseDomainAndNonOwnedEntities() {
                 element->cleanupDomainAndNonOwnedEntities();
             }
             if (!getIsServer()) {
-                if (entity->isLocalEntity() || entity->isMyAvatarEntity()) {
+                if (entity->isKeptOnWorldChange()) {
                     savedEntities[entity->getEntityItemID()] = entity;
                 } else {
                     int32_t spaceIndex = entity->getSpaceIndex();
@@ -122,7 +133,7 @@ void EntityTree::eraseDomainAndNonOwnedEntities() {
 
         foreach (EntityItemWeakPointer entityItem, _needsParentFixup) {
             auto entity = entityItem.lock();
-            if (entity && (entity->isLocalEntity() || entity->isMyAvatarEntity())) {
+            if (entity && entity->isKeptOnWorldChange()) {
                 needParentFixup.push_back(entityItem);
             }
         }

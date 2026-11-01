@@ -255,7 +255,7 @@ void EntityTreeRenderer::stopDomainAndNonOwnedEntities() {
                 continue;
             }
             if (!entityItem->getScript().isEmpty()) {
-                if (!(entityItem->isLocalEntity() || entityItem->isMyAvatarEntity())) {
+                if (!entityItem->isKeptOnWorldChange()) {
                     if (_currentEntitiesInside.contains(entityID)) {
                         _entitiesScriptEngine->callEntityScriptMethod(entityID, "leaveEntity");
                     }
@@ -268,12 +268,21 @@ void EntityTreeRenderer::stopDomainAndNonOwnedEntities() {
         }
         qCDebug(entitiesrenderer) << "leaving the world's entities: of" << entitiesWithEntityScripts.size()
                                  << "entity scripts listed," << unloaded << "unloaded," << unloadedGone
-                                 << "unloaded whose entities were already gone," << kept << "kept (local or avatar)";
+                                 << "unloaded whose entities were already gone," << kept
+                                 << "kept (the visitor's own local or avatar entities)";
     }
 }
 
 void EntityTreeRenderer::clearDomainAndNonOwnedEntities() {
     stopDomainAndNonOwnedEntities();
+    // the avatar entities a world's script made (a hat it handed out) go with the world: deleted the usual way, so
+    // the visitor's avatar stops carrying them too (MyAvatar's avatar-entity data, sent on to the next world)
+    auto entities = DependencyManager::get<EntityScriptingInterface>();
+    if (auto tree = getTree(); tree && entities) {
+        for (const auto& id : tree->getWorldsAvatarEntityIDs()) {
+            entities->deleteEntity(id);
+        }
+    }
     resetZoneCulling();
 
     std::unordered_map<EntityItemID, EntityRendererPointer> savedEntities;
@@ -284,7 +293,7 @@ void EntityTreeRenderer::clearDomainAndNonOwnedEntities() {
         for (const auto& entry :  _entitiesInScene) {
             const auto& renderer = entry.second;
             const EntityItemPointer& entityItem = renderer->getEntity();
-            if (entityItem && !(entityItem->isLocalEntity() || entityItem->isMyAvatarEntity())) {
+            if (entityItem && !entityItem->isKeptOnWorldChange()) {
                 fadeOutRenderable(renderer);
             } else {
                 savedEntities[entry.first] = entry.second;
@@ -1391,7 +1400,7 @@ void EntityTreeRenderer::leaveDomainAndNonOwnedEntities() {
         QSet<EntityItemID> currentEntitiesInsideToSave;
         foreach (const EntityItemID& entityID, _currentEntitiesInside) {
             EntityItemPointer entityItem = getTree()->findEntityByEntityItemID(entityID);
-            if (entityItem && !(entityItem->isLocalEntity() || entityItem->isMyAvatarEntity())) {
+            if (entityItem && !entityItem->isKeptOnWorldChange()) {
                 emit leaveEntity(entityID);
                 if (_entitiesScriptEngine) {
                     _entitiesScriptEngine->callEntityScriptMethod(entityID, "leaveEntity");
@@ -1949,7 +1958,7 @@ bool EntityTreeRenderer::LayeredZones::clearDomainAndNonOwnedZones() {
     auto it = begin();
     while (it != end()) {
         auto zone = it->zone.lock();
-        if (!zone || !(zone->isLocalEntity() || zone->isMyAvatarEntity())) {
+        if (!zone || !zone->isKeptOnWorldChange()) {
             zonesChanged = true;
             it = erase(it);
         } else {

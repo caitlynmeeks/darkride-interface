@@ -37,6 +37,7 @@ private slots:
     void testWorldClones();
     void testWorldThread();
     void testWorldSignalDeliveries();
+    void testWorldChangeErase();
     void cleanupTestCase();
 
 private:

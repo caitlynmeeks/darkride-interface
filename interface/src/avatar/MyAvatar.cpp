@@ -3418,7 +3418,13 @@ QVector<AttachmentData> MyAvatar::getAttachmentData() const {
     _avatarEntitiesLock.withReadLock([&] {
         avatarEntityIDs = _packedAvatarEntityData.keys();
     });
+    auto treeRenderer = DependencyManager::get<EntityTreeRenderer>();
+    EntityTreePointer entityTree = treeRenderer ? treeRenderer->getTree() : nullptr;
     for (const auto& entityID : avatarEntityIDs) {
+        auto entity = entityTree ? entityTree->findEntityByID(entityID) : nullptr;
+        if (entity && entity->getLocalOwner() == entity::LocalOwner::WORLD) {
+            continue;  // a world's avatar entity: not the visitor's to keep
+        }
         auto properties = DependencyManager::get<EntityScriptingInterface>()->getEntityProperties(entityID);
         AttachmentData data = entityPropertiesToAttachmentData(properties);
         attachmentData.append(data);

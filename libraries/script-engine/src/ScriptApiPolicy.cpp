@@ -186,8 +186,15 @@ const QHash<QByteArray, QHash<QByteArray, DeliveryRule>> CHECKED_DELIVERIES {
         { "mousePressOnOverlay", { { 0 } } }, { "mouseDoublePressOnOverlay", { { 0 } } },
         { "mouseReleaseOnOverlay", { { 0 } } }, { "mouseMoveOnOverlay", { { 0 } } },
         { "hoverEnterOverlay", { { 0 } } }, { "hoverOverOverlay", { { 0 } } }, { "hoverLeaveOverlay", { { 0 } } },
-        { "overlayDeleted", { { 0 } } } } }
+        { "overlayDeleted", { { 0 } } } } },
+    // the entity the app or the visitor's own scripts turned hand touch off for (MyAvatar is the app's own class)
+    { "MyAvatar", { { "disableHandTouchForIDChanged", { { 0 } } } } },
+    // an entity script finished loading in this engine: the visitor's own entities' scripts share the world's engine
+    { "ScriptEngine", { { "entityScriptPreloadFinished", { { 0 } } } } }
 };
+// Checked and left as they are: the domain's id (AddressManager.possibleDomainChangeRequired*), the sender's session
+// id (Chat.messageReceived, Messages.messageReceived/dataReceived), the visitor's worn entities (addingWearable,
+// deletingWearable: avatar entities, which a world reads anyway).
 
 const DeliveryRule* deliveryRuleFor(const QMetaObject* meta, const QByteArray& name) {
     for (const QMetaObject* cls = meta; cls; cls = cls->superClass()) {

@@ -24,6 +24,7 @@
 #include <NodeList.h>
 #include <PointerEvent.h>
 #include <ScriptApiPolicy.h>
+#include <ScriptEngine.h>
 #include <ScriptCaller.h>
 #include <SpatialParentFinder.h>
 
@@ -409,6 +410,11 @@ void WorldEntitiesTests::testWorldSignalDeliveries() {
     QVERIFY(ScriptApiPolicy::checksDelivery(entities, "hoverOverEntity"));
     QVERIFY(!ScriptApiPolicy::checksDelivery(entities, "clearingEntities"));
     QVERIFY(!ScriptApiPolicy::checksDelivery(entities, "addingWearable"));
+    QVERIFY(ScriptApiPolicy::checksDelivery(&ScriptEngine::staticMetaObject, "entityScriptPreloadFinished"));
+    QVERIFY(ScriptApiPolicy::holdsBackDelivery(&ScriptEngine::staticMetaObject, "entityScriptPreloadFinished",
+                                               { QVariant::fromValue(EntityItemID(_visitorLocal)) }));
+    QVERIFY(!ScriptApiPolicy::holdsBackDelivery(&ScriptEngine::staticMetaObject, "entityScriptPreloadFinished",
+                                                { QVariant::fromValue(EntityItemID(_worldLocal)) }));
     for (const auto& hidden : { _visitorLocal, _straightLocal, _unownedLocal }) {
         QVERIFY(held("mousePressOnEntity", { id(hidden), QVariant() }));
         QVERIFY(held("hoverOverEntity", { hidden.toString(), QVariant() }));     // QtScript's form
@@ -432,6 +438,33 @@ void WorldEntitiesTests::testWorldSignalDeliveries() {
     QVERIFY(!held("clearingEntities", {}));
     // the check is the world's whatever the thread: the visitor's own scripts never go through it
     QVERIFY(!ScriptCaller::isWorld());
+}
+
+void WorldEntitiesTests::testWorldChangeErase() {
+    // last: it empties the fixture's world. Leaving a world erases the domain entities, other people's avatar
+    // entities and everything a world's script made (local and avatar entities); the visitor's own stay.
+    const QUuid visitorHat = _entities->addEntity(box("visitor's hat, kept"), QString("avatar"));
+    QUuid worldHat;
+    {
+        ScriptCaller::WorldScope world(true);
+        worldHat = _entities->addEntity(box("world's hat, erased"), QString("avatar"));
+    }
+    const QVector<EntityItemID> worldsHats = _tree->getWorldsAvatarEntityIDs();
+    QVERIFY(worldsHats.contains(EntityItemID(worldHat)));
+    QVERIFY(!worldsHats.contains(EntityItemID(visitorHat)));
+    QVERIFY(find(_tree, _visitorLocal)->isKeptOnWorldChange());
+    QVERIFY(!find(_tree, _worldLocal)->isKeptOnWorldChange());
+    QVERIFY(!find(_tree, worldHat)->isKeptOnWorldChange());
+    QVERIFY(!find(_tree, _domain)->isKeptOnWorldChange());
+
+    _tree->eraseDomainAndNonOwnedEntities();
+    for (const auto& gone : { _domain, _avatar, _worldLocal, worldHat }) {
+        QVERIFY2(!find(_tree, gone), qPrintable(gone.toString()));
+    }
+    for (const auto& kept : { _visitorLocal, _straightLocal, _unownedLocal, visitorHat }) {
+        QVERIFY2(find(_tree, kept), qPrintable(kept.toString()));
+    }
+    QVERIFY(_tree->getWorldsAvatarEntityIDs().isEmpty());
 }
 
 void WorldEntitiesTests::cleanupTestCase() {

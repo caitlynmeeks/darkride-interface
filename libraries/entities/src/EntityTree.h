@@ -79,6 +79,8 @@ public:
 
 
     virtual void eraseDomainAndNonOwnedEntities() override;
+    /// The visitor's avatar entities a world's script made: they go when the visitor leaves the world.
+    QVector<EntityItemID> getWorldsAvatarEntityIDs() const;
     virtual void eraseAllOctreeElements(bool createNewRoot = true) override;
 
     virtual void readBitstreamToTree(const unsigned char* bitstream,
