@@ -28,6 +28,7 @@
 #include <ResourceScriptingInterface.h>
 #include <ScriptCache.h>
 #include <ScriptEngines.h>
+#include <ScriptAddressCheck.h>
 #include <SoundCacheScriptingInterface.h>
 #include <UUID.h>
 #include <WebSocketServerClass.h>
@@ -567,6 +568,12 @@ void EntityScriptServer::checkAndCallPreload(const EntityItemID& entityID, bool 
 
             QString scriptUrl = entity->getServerScriptsToRun();
             if (!scriptUrl.isEmpty()) {
+                // the same rule the entity server applies to an entity's server scripts
+                const QString refusal = script_address::refusalReason(scriptUrl);
+                if (!refusal.isEmpty()) {
+                    qCWarning(entity_script_server) << "Not loading the server scripts of" << entityID << "-" << refusal;
+                    return;
+                }
                 scriptUrl = DependencyManager::get<ResourceManager>()->normalizeURL(scriptUrl);
                 if (QUrl(scriptUrl).scheme() == URL_SCHEME_ATP) {
                     // an atp: script needs the asset server's link live: a mapping request sent before then goes
