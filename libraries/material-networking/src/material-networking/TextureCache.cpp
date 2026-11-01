@@ -612,9 +612,11 @@ void NetworkTexture::makeRequest() {
                             descriptor = new ktx::KTXDescriptor(header, cached->_keyValues, header.generateImageDescriptors());
                         }
                     }
-                    QMetaObject::invokeMethod(resource.data(), "finishLoadFromIndex",
-                        Q_ARG(gpu::TexturePointer, texture),
-                        Q_ARG(ktx::KTXDescriptor*, descriptor));
+                    // a functor, not a call by name with custom-type arguments: see handBackImage
+                    auto receiver = static_cast<NetworkTexture*>(resource.data());
+                    QMetaObject::invokeMethod(receiver, [receiver, texture, descriptor] {
+                        receiver->finishLoadFromIndex(texture, descriptor);
+                    });
                 });
                 return;
             }
@@ -1027,8 +1029,11 @@ void NetworkTexture::handleFinishedInitialLoad() {
             return;
         }
         auto originalKtxDescriptor = new ktx::KTXDescriptor(*header, keyValues, imageDescriptors);
-        QMetaObject::invokeMethod(resource.data(), "setOriginalDescriptor",
-            Q_ARG(ktx::KTXDescriptor*, originalKtxDescriptor));
+        // a functor, not a call by name with a custom-type argument: see handBackImage
+        auto receiver = static_cast<NetworkTexture*>(resource.data());
+        QMetaObject::invokeMethod(receiver, [receiver, originalKtxDescriptor] {
+            receiver->setOriginalDescriptor(originalKtxDescriptor);
+        });
 
         // Create bare ktx in memory
         auto found = std::find_if(keyValues.begin(), keyValues.end(), [](const ktx::KeyValue& val) -> bool {
