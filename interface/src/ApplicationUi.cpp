@@ -92,8 +92,9 @@ void Application::initializeUi() {
     // written with its slashes or without.
     {
         auto newValidator = [=](const QUrl& url)->bool {
-            const QString path = url.path();
-            if (!url.host().isEmpty() || path.startsWith("//") || path.startsWith("\\\\")) {
+            // (backslashes read as slashes, as Windows reads them: /\server and \\server are shares too)
+            const QString path = QString(url.path()).replace('\\', '/');
+            if (!url.host().isEmpty() || path.startsWith("//")) {
                 return false;
             }
             // (a one-letter scheme is a Windows drive: a path on this computer)
