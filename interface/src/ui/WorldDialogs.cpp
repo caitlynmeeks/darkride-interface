@@ -10,6 +10,7 @@
 
 #include "WorldDialogs.h"
 
+#include <QtCore/QUrl>
 #include <QtQuick/QQuickItem>
 
 #include <AddressManager.h>
@@ -84,7 +85,16 @@ bool isOurDomain(const QString& host) {
 
 QString WorldDialogs::displayName(const QString& placeName, const QString& host) {
     QString name = cleaned(placeName);
-    const QString cleanHost = cleaned(host);
+    // a host with any non-ASCII letter shows in its xn-- form, so a look-alike ("dаrkride.ai" with a Cyrillic а) can't
+    // read as ours, and the darkride.ai test compares ASCII (security)
+    QString cleanHost = cleaned(host);
+    bool ascii = true;
+    for (const QChar c : cleanHost) {
+        ascii = ascii && c.unicode() < 0x80;
+    }
+    if (!ascii) {
+        cleanHost = QString::fromLatin1(QUrl::toAce(cleanHost));
+    }
     // a world's name may not claim to be the app: its address instead, or "This world" if that does too
     if (name.isEmpty() || soundsLikeDarkride(name)) {
         name = cleanHost;
