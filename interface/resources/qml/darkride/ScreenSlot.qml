@@ -63,8 +63,16 @@ Rectangle {
         objectName: "content"
         anchors { left: parent.left; right: parent.right; top: tabRow.bottom; bottom: parent.bottom }
         // the page in it follows its size (Panels sets the page's size when it moves in)
-        onWidthChanged: for (var i = 0; i < children.length; i++) { children[i].width = width; }
-        onHeightChanged: for (var i = 0; i < children.length; i++) { children[i].height = height; }
+        onWidthChanged: {
+            for (var i = 0; i < children.length; i++) {
+                children[i].width = width;
+            }
+        }
+        onHeightChanged: {
+            for (var i = 0; i < children.length; i++) {
+                children[i].height = height;
+            }
+        }
     }
 
     Component.onCompleted: Panels.screenSlotReady(slot, root)
