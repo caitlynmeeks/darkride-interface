@@ -226,13 +226,18 @@ void WorldChat::wearNames() {
 }
 
 void WorldChat::fetchProfile(const QString& username) {
+    // the name comes from the world's server: one that is only dots would step out of the address, so no lookup
+    if (username == "." || username == "..") {
+        return;
+    }
     qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (_profileAt.contains(username) && now - _profileAt.value(username) < PROFILE_MAX_AGE_MS) {
         return;
     }
     _profileAt.insert(username, now);
     QUrl url = NetworkingConstants::METAVERSE_SERVER_URL();
-    url.setPath("/api/user/" + username + "/profile");
+    // escaped, so whatever the name holds ("/", "?", "#") it stays one part of the address
+    url.setPath("/api/user/" + QString::fromUtf8(QUrl::toPercentEncoding(username)) + "/profile", QUrl::TolerantMode);
     QNetworkReply* reply = NetworkAccessManager::getInstance().get(QNetworkRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply, username] {
         reply->deleteLater();
@@ -241,6 +246,11 @@ void WorldChat::fetchProfile(const QString& username) {
             return;
         }
         QJsonObject profile = QJsonDocument::fromJson(reply->readAll()).object();
+        // the profile is the account asked about, or it isn't used (a name the world reports can't borrow another
+        // account's mark)
+        if (profile.value("username").toString().compare(username, Qt::CaseInsensitive) != 0) {
+            return;
+        }
         _marks.insert(username, markLine(profile));
         wearNames();
     });
