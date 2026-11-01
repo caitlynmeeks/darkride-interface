@@ -515,6 +515,12 @@ void Panels::releaseScreenSlots() {
             movedBack.append(it.key());
         }
     }
+    // the middle's tabs behind the front one are in their docks already, unseen
+    for (const QString& name : _middleTabs) {
+        if (!movedBack.contains(name)) {
+            movedBack.append(name);
+        }
+    }
     _screenSlots.clear();
     _middleTabs.clear();
     // out of the headset, the docks that were showing before the screen took their pages show again, and a panel
