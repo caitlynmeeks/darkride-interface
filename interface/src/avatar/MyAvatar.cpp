@@ -8,6 +8,20 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: these functions, the carry of an avatar on a moving frame or vehicle and the camera's eye:
+//   prepareForPhysicsSimulation, harvestResultsFromPhysicsSimulation, updateFrameMembership, traceCarry,
+//   FollowHelper::prePhysicsUpdate, FollowHelper::postPhysicsUpdate, FollowHelper::getMaxTimeRemaining,
+//   getCameraEyesPosition (and getLookAtRotation in MyAvatar.h), each with everything it calls on the vehicle's path.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #include "MyAvatar.h"
 
@@ -2928,6 +2942,7 @@ glm::quat MyAvatar::getFrameOrientation() const {
     return success ? parentTransform.getRotation() : Quaternions::IDENTITY;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void MyAvatar::prepareForPhysicsSimulation() {
     relayDriveKeysToCharacterController();
     updateMotors();
@@ -2993,6 +3008,7 @@ void MyAvatar::nextAttitude(glm::vec3 position, glm::quat orientation) {
     updateAttitude(orientation);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void MyAvatar::harvestResultsFromPhysicsSimulation(float deltaTime) {
     // In a frame, everything the character says is in the frame's coordinates, and goes into the avatar's
     // local pose; the renderer composes it with the frame's transform.
@@ -3034,6 +3050,7 @@ void MyAvatar::harvestResultsFromPhysicsSimulation(float deltaTime) {
     updateFrameMembership();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // The carry, as this frame has it (team/performance/INSTRUMENTS-PLAN.md, item 5): while the avatar is carried by a
 // frame (standing on a monorail car, a deck) or by a parent that is not a frame (a seat), the parent (carry.frame),
 // the avatar's position in the parent's coordinates (carry.local_x/y/z_m, the pose the renderer composes with the
@@ -3100,6 +3117,7 @@ void MyAvatar::nextLocalAttitude(const glm::vec3& position, const glm::quat& ori
     updateAttitude(getWorldOrientation());
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // The avatar belongs to the frame whose volume it stands in. Stepping in or out hands over the exact pose
 // and velocity, so nothing pops; the character follows into the new world at the next prepare.
 void MyAvatar::updateFrameMembership() {
@@ -6050,6 +6068,7 @@ bool MyAvatar::FollowHelper::isActive() const {
     return false;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float MyAvatar::FollowHelper::getMaxTimeRemaining() const {
     float max = 0.0f;
     for (int i = 0; i < NumFollowTypes; i++) {
@@ -6178,6 +6197,7 @@ bool MyAvatar::FollowHelper::shouldActivateVertical(const MyAvatar& myAvatar, co
     return returnValue;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void MyAvatar::FollowHelper::prePhysicsUpdate(MyAvatar& myAvatar, const glm::mat4& desiredBodyMatrix,
                                               const glm::mat4& currentBodyMatrix, bool hasDriveInput) {
 
@@ -6259,6 +6279,7 @@ void MyAvatar::FollowHelper::prePhysicsUpdate(MyAvatar& myAvatar, const glm::mat
     myAvatar.getCharacterController()->setFollowParameters(followWorldPose, getMaxTimeRemaining());
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 glm::mat4 MyAvatar::FollowHelper::postPhysicsUpdate(MyAvatar& myAvatar, const glm::mat4& currentBodyMatrix) {
     if (isActive()) {
         float dt = myAvatar.getCharacterController()->getFollowTime();
@@ -7537,6 +7558,7 @@ glm::vec3 MyAvatar::getLookAtPivotPoint() {
     return yAxisEyePosition;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 glm::vec3 MyAvatar::getCameraEyesPosition(float deltaTime) {
     glm::vec3 defaultEyesPosition = getLookAtPivotPoint();
 

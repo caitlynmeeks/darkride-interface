@@ -23,6 +23,7 @@
 #include <QtCore/QFileInfo>
 
 #include <AddressManager.h>
+#include <AudioScriptingInterface.h>
 #include <DependencyManager.h>
 #include <NodeList.h>
 #include <PathUtils.h>
@@ -538,4 +539,25 @@ void VerifiedSandboxTests::testInputAndPrivacyNotForWorlds() {
     for (const char* member : { "newMapping", "enableMapping", "getValue", "getActionNames", "getPoseValue" }) {
         QVERIFY2(!ScriptApiPolicy::deniesMethod(controller, member), member);
     }
+}
+
+void VerifiedSandboxTests::testSignalsNotForWorlds() {
+    // the microphone's samples, and when the visitor speaks or clips (AudioScriptingInterface's, and Audio's on it)
+    const QMetaObject* audio = &AudioScriptingInterface::staticMetaObject;
+    for (const char* member : { "inputReceived", "noiseGateOpened", "noiseGateClosed" }) {
+        QVERIFY2(ScriptApiPolicy::deniesSignal(audio, member), member);
+    }
+    QVERIFY(!ScriptApiPolicy::deniesSignal(audio, "mutedByMixer"));
+    QVERIFY(!ScriptApiPolicy::deniesSignal(audio, "isStereoInputChanged"));
+    // the app's own classes are listed by name (the test does not link the app)
+    QVERIFY(ScriptApiPolicy::allowsClass(&WindowScriptingInterface::staticMetaObject));
+    for (const char* member : { "browseChanged", "browseDirChanged", "saveFileChanged", "assetsDirChanged", "promptTextChanged",
+                                "stillSnapshotTaken", "snapshot360Taken", "snapshotShared", "processingGifStarted",
+                                "processingGifCompleted" }) {
+        QVERIFY2(ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, member), member);
+    }
+    QVERIFY(!ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, "domainChanged"));
+    QVERIFY(!ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, "geometryChanged"));
+    // a class a world doesn't get: none of its signals
+    QVERIFY(ScriptApiPolicy::deniesSignal(&QObject::staticMetaObject, "destroyed"));
 }

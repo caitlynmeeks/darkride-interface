@@ -56,7 +56,7 @@ GuardedObjectClass::Kind GuardedObjectClass::kindOf(const QScriptValue& raw, con
             continue;
         }
         if (method.methodType() == QMetaMethod::Signal) {
-            return Signal;
+            return _gate.deniesSignal && _gate.deniesSignal(meta, name) ? Absent : Signal;
         }
         return _gate.deniesMethod(meta, name) ? Absent : Method;
     }

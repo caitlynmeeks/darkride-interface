@@ -8,6 +8,19 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: these functions: pullTransformFromBody (the presented pose and a vehicle's correction as it decays)
+//   and setCorrection (and getCorrectionDistance in EntityMotionState.h), each with everything it calls on the
+//   vehicle's path.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #include "EntityMotionState.h"
 
@@ -530,6 +543,7 @@ void EntityMotionState::pushTransformToBody(float dt) {
     });
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // Called by the engine after a step for every body that was active: the body's result goes to the entity.
 void EntityMotionState::pullTransformFromBody() {
     if (!_entity || !_body) {
@@ -853,6 +867,7 @@ bool EntityMotionState::serverTakes() const {
     return (_trackDriven || _vehicle) && Physics::isServerAuthority();
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void EntityMotionState::setCorrection(const glm::vec3& offset, const glm::quat& rotation, float blendTime) {
     _correctionOffset = offset;
     _correctionRotation = rotation;

@@ -53,6 +53,9 @@ namespace ScriptApiPolicy {
 
     // A property a world's script may not read either (a list of the visitor's devices or buttons).
     bool deniesPropertyRead(const QMetaObject* meta, const QByteArray& name);
+    /// A signal of an allowed class a world's script may not hear (nor fire, on QtScript): those that carry the
+    /// visitor's own data, the microphone's samples and the paths of the files the visitor picks among them.
+    bool deniesSignal(const QMetaObject* meta, const QByteArray& name);
 
     // The line logged on a refusal.
     QString refusalLine(const QString& object, const QString& member);

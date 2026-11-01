@@ -530,6 +530,7 @@ void HostInterfaceTests::testMemberGate() {
     gate.deniesMethod = [](const QMetaObject* meta, const QByteArray& name) { return QByteArray(meta->className()) == "Probe" && name == "scale"; };
     gate.deniesPropertyWrite = [](const QMetaObject* meta, const QByteArray& name) { return QByteArray(meta->className()) == "Probe" && name == "count"; };
     gate.deniesPropertyRead = [](const QMetaObject* meta, const QByteArray& name) { return QByteArray(meta->className()) == "Probe" && name == "label"; };
+    gate.deniesSignal = [](const QMetaObject* meta, const QByteArray& name) { return QByteArray(meta->className()) == "Probe" && name == "named"; };
     gate.refusalLine = [](const QString& object, const QString& member) { return object + "." + member + " is for the visitor's own scripts"; };
     f.host->setMemberGate(gate);
 
@@ -553,6 +554,18 @@ void HostInterfaceTests::testMemberGate() {
     }
     QVERIFY(sawCount);
     QVERIFY(!sawLabel);
+    QStringList signalNames;
+    for (const QVariant& entry : description.value("signals").toList()) {
+        signalNames << entry.toMap().value("name").toString();
+    }
+    QVERIFY(signalNames.contains("countChanged"));
+    QVERIFY(!signalNames.contains("named"));
+
+    // a denied signal: no connection by its name, its signature or its index; an allowed one connects
+    QCOMPARE(f.connect(probe, "named"), 0);
+    QCOMPARE(f.connect(probe, "named(QString,bool)"), 0);
+    QCOMPARE(f.connect(probe, QString("#%1").arg(Probe::staticMetaObject.indexOfSignal("named(QString,bool)"))), 0);
+    QVERIFY(f.connect(probe, "countChanged") != 0);
     auto otherName = f.place(QVariant("Other"));
     QVariantMap otherDescription = f.unpack(f.i64("describe", { otherName.first, otherName.second })).toMap();
     QCOMPARE(otherDescription.value("class").toString(), QString("Other"));
@@ -587,5 +600,5 @@ void HostInterfaceTests::testMemberGate() {
             warnings++;
         }
     }
-    QVERIFY(warnings >= 7);
+    QVERIFY(warnings >= 10);
 }

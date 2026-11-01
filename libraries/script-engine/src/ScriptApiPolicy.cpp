@@ -140,6 +140,18 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_PROPERTY_READS {
     { "TabletProxy", { "buttons" } }          // the visitor's buttons
 };
 
+// Signals of allowed classes a world's script may not hear: they carry the visitor's own data.
+const QHash<QByteArray, QSet<QByteArray>> DENIED_SIGNALS {
+    // the microphone's samples and level, and when the visitor speaks or clips
+    { "AudioScriptingInterface", { "inputReceived", "noiseGateOpened", "noiseGateClosed" } },
+    { "scripting::Audio", { "inputLevelChanged", "clippingChanged" } },
+    // the app's own dialogs' answers (the full local path of what the visitor picks, the prompt's text) and the
+    // visitor's snapshots
+    { "WindowScriptingInterface", {
+        "browseChanged", "browseDirChanged", "saveFileChanged", "assetsDirChanged", "promptTextChanged",
+        "stillSnapshotTaken", "snapshot360Taken", "snapshotShared", "processingGifStarted", "processingGifCompleted" } }
+};
+
 template <typename Table>
 const QSet<QByteArray>* entryFor(const Table& table, const QMetaObject* meta, const QMetaObject** owner = nullptr) {
     for (const QMetaObject* cls = meta; cls; cls = cls->superClass()) {
@@ -202,6 +214,10 @@ bool ScriptApiPolicy::deniesPropertyWrite(const QMetaObject* meta, const QByteAr
 
 bool ScriptApiPolicy::deniesPropertyRead(const QMetaObject* meta, const QByteArray& name) {
     return !allowsClass(meta) || listed(DENIED_PROPERTY_READS, meta, name);
+}
+
+bool ScriptApiPolicy::deniesSignal(const QMetaObject* meta, const QByteArray& name) {
+    return !allowsClass(meta) || listed(DENIED_SIGNALS, meta, name);
 }
 
 QString ScriptApiPolicy::refusalLine(const QString& object, const QString& member) {

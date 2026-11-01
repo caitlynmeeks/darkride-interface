@@ -8,6 +8,20 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: these functions: the moving frames (registerFrame, unregisterFrame, refreshFrameInteriors,
+//   feedFrameTransforms, getFrameTransform) and stepSimulation, the paced clock (whole periods of the presents, the
+//   substep cap and histogram; setPresentPeriod, getLastSteppedTime and getPacedClockLeadMs in PhysicsEngine.h), each
+//   with everything it calls on the vehicle's path.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #include "PhysicsEngine.h"
 
@@ -130,6 +144,7 @@ PhysicsWorld* PhysicsEngine::worldFor(ObjectMotionState* motionState) {
     return getWorld(motionState->getFrameID());
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 bool PhysicsEngine::getFrameTransform(const QUuid& frameID, glm::vec3& position, glm::quat& rotation, glm::vec3& linearVelocity, glm::vec3& angularVelocity, bool asSimulated) const {
     auto itr = _frameStates.find(frameID);
     if (itr == _frameStates.end()) {
@@ -224,6 +239,7 @@ void PhysicsEngine::restoreDynamics() {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // private: a frame is known to the engine (membership, transforms) and has its hull twin in its own world
 void PhysicsEngine::registerFrame(ObjectMotionState* frameState) {
     const QUuid& frameID = frameState->getObjectID();
@@ -237,6 +253,7 @@ void PhysicsEngine::registerFrame(ObjectMotionState* frameState) {
     world->markInteriorChanged();   // a new hull body, or a new own shape: the interior copy is rebuilt on it
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // The interior copy (round 8, PHYSICS.md 4.1). A frame's walls are static bodies in its own world and nothing of them
 // is in the parent world, where the frame's hull body is; so whoever walks in from outside stood in a wall until the
 // frame's world received them and shoved them out. Now the hull body wears a compound shape: the frame's own shape at
@@ -301,6 +318,7 @@ void PhysicsEngine::refreshFrameInteriors() {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // private
 void PhysicsEngine::unregisterFrame(const QUuid& frameID) {
     if (_frameStates.erase(frameID)) {
@@ -486,6 +504,7 @@ void PhysicsEngine::removeContacts(ObjectMotionState* motionState) {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // private
 void PhysicsEngine::feedFrameTransforms() {
     for (auto& entry : _frameWorlds) {
@@ -529,6 +548,7 @@ void PhysicsEngine::stepOnce(float dt) {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void PhysicsEngine::stepSimulation() {
     PROFILE_RANGE(simulation_physics, "stepSimulation");
     // NOTE: the grand order of operations is:

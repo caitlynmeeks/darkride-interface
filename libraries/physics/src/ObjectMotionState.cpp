@@ -8,6 +8,19 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the presentation alpha and the presented pose, blended between the last two substeps: setLeftoverTime,
+//   getPresentationLag, getPresentationAlpha, rememberSubstepStart, getPresentedBodyTransform, each with everything
+//   it calls on the vehicle's path.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 
 #include "ObjectMotionState.h"
 
@@ -44,6 +57,7 @@ glm::vec3 _worldOffset(0.0f);
 // the time past the last substep that results are read ahead by
 float _leftoverTime(0.0f);
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // static
 void ObjectMotionState::setLeftoverTime(float seconds) {
     _leftoverTime = seconds;
@@ -60,10 +74,12 @@ bool ObjectMotionState::getInterpolatePresentation() {
     return _interpolatePresentation;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float ObjectMotionState::getPresentationLag() {
     return _interpolatePresentation ? PHYSICS_ENGINE_FIXED_SUBSTEP : 0.0f;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 float ObjectMotionState::getPresentationAlpha() {
     return _interpolatePresentation ? glm::clamp(_leftoverTime / PHYSICS_ENGINE_FIXED_SUBSTEP, 0.0f, 1.0f) : 1.0f;
 }
@@ -450,6 +466,7 @@ void ObjectMotionState::setBodyTransform(const glm::vec3& position, const glm::q
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void ObjectMotionState::rememberSubstepStart() {
     if (_body) {
         _substepStartPosition = joltToGLM(_body->GetPosition());
@@ -458,6 +475,7 @@ void ObjectMotionState::rememberSubstepStart() {
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void ObjectMotionState::getPresentedBodyTransform(glm::vec3& position, glm::quat& rotation) const {
     getBodyTransform(position, rotation);
     if (!_body || !_interpolatePresentation || _substepStartStep != getWorldSimulationStep()) {

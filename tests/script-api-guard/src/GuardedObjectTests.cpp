@@ -47,6 +47,7 @@ public:
     Q_INVOKABLE int countSelves(const QVariantList& objects) { int n = 0; for (const QVariant& v : objects) { n += v.value<QObject*>() == this; } return n; }
 signals:
     void countChanged(int count);
+    void secretChanged(const QString& secret);
 private:
     int _count { 0 };
     int _limit { 0 };
@@ -62,6 +63,7 @@ struct Fixture {
         gate.deniesMethod = [](const QMetaObject*, const QByteArray& name) { return name == "scale"; };
         gate.deniesPropertyWrite = [](const QMetaObject*, const QByteArray& name) { return name == "count"; };
         gate.deniesPropertyRead = [](const QMetaObject*, const QByteArray& name) { return name == "label"; };
+        gate.deniesSignal = [](const QMetaObject*, const QByteArray& name) { return name == "secretChanged"; };
         gate.refusalLine = [](const QString& object, const QString& member) { return object + "." + member + " is for the visitor's own scripts"; };
         guard = new GuardedObjectClass(&engine, gate);   // owned by the engine's lifetime in the fixture
         QScriptValue raw = engine.newQObject(&probe, QScriptEngine::QtOwnership,
@@ -147,4 +149,17 @@ void GuardedObjectTests::testHandedBackObjects() {
     QCOMPARE(f.run("typeof o.secret"), QString("undefined"));
     QVERIFY(f.run("o.secret()").startsWith("EXCEPTION"));
     QCOMPARE(f.run("Object.keys(o).length"), QString("0"));
+}
+
+void GuardedObjectTests::testDeniedSignals() {
+    Fixture f;
+    // a denied signal is not there by its name or its signature: it can be neither heard nor fired
+    QCOMPARE(f.run("typeof probe.secretChanged"), QString("undefined"));
+    QCOMPARE(f.run("typeof probe['secretChanged(QString)']"), QString("undefined"));
+    QVERIFY(f.run("probe.secretChanged.connect(function () {})").startsWith("EXCEPTION"));
+    // an allowed one is heard
+    QCOMPARE(f.run("var heard = -1; probe.countChanged.connect(function (count) { heard = count; }); typeof probe.countChanged"),
+             QString("function"));
+    f.probe.setCount(5);
+    QCOMPARE(f.run("heard"), QString("5"));
 }

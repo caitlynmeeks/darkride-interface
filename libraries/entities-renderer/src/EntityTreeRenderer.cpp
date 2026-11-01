@@ -8,6 +8,20 @@
 //  Copyright 2019 Tivoli Cloud VR
 //
 //  Renders Entity Tree contents.
+//
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: updateChangedEntities whole (the carried pass that refreshes a moving assembly's parts with it, the
+// priority pass, the 2 ms render-update budget and its sorted pass, the moving-assembly view test, the budget's
+// counters and leftovers) and the staleness stamps it keeps (markRenderableRefreshed, getRenderUpdateFramesBehind,
+// getRenderUpdateLastLateFrames).
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
 
 #include "EntityTreeRenderer.h"
 
@@ -461,6 +475,7 @@ void EntityTreeRenderer::addPendingEntities(const render::ScenePointer& scene, r
     }
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 // the staleness stamps (the inspector's "frames behind" and the deferred-age counter): a refresh clears the wait and
 // records how late it came, in frames
 static void markRenderableRefreshed(const EntityRendererPointer& renderable, uint64_t frame) {
@@ -469,6 +484,7 @@ static void markRenderableRefreshed(const EntityRendererPointer& renderable, uin
     renderable->setDeferredSinceFrame(0);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 int EntityTreeRenderer::getRenderUpdateFramesBehind(const EntityItemID& id) const {
     EntityRendererPointer renderable = renderableForEntityId(id);
     if (!renderable) {
@@ -483,11 +499,13 @@ int EntityTreeRenderer::getRenderUpdateFramesBehind(const EntityItemID& id) cons
     return (int)(_renderUpdateFrame - since + 1);
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 int EntityTreeRenderer::getRenderUpdateLastLateFrames(const EntityItemID& id) const {
     EntityRendererPointer renderable = renderableForEntityId(id);
     return renderable ? (int)renderable->getLastLateFrames() : -1;
 }
 
+// FROZEN (vehicle path): see the note at the top of this file.
 void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene, render::Transaction& transaction) {
     PROFILE_RANGE_EX(simulation_physics, "ChangeInScene", 0xffff00ff, (uint64_t)_changedEntities.size());
     PerformanceTimer pt("change");
