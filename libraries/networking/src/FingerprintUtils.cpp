@@ -14,6 +14,7 @@
 
 #include <QDebug>
 #include <QMessageAuthenticationCode>
+#include <QRandomGenerator>
 #include <QStringList>
 
 #include <SettingHandle.h>
@@ -84,9 +85,34 @@ QString FingerprintUtils::getMachineFingerprintString() {
 
 }
 
+// Under "private/", which ScriptSettingsInterface refuses to scripts from the network.
+const QString FingerprintUtils::DOMAIN_ID_SECRET_KEY = "private/domainIdSecret";
+
+// What domains are told is keyed with this: a random secret kept on this computer, not the machine fingerprint.
+static QByteArray domainIdSecret() {
+    static const QByteArray secret = [] {
+        const int SECRET_BYTES = 32;
+        const bool canKeep = DependencyManager::isSet<Setting::Manager>();
+        QByteArray value;
+        if (canKeep) {
+            Settings settings;
+            value = QByteArray::fromHex(settings.value(FingerprintUtils::DOMAIN_ID_SECRET_KEY).toString().toLatin1());
+        }
+        if (value.size() != SECRET_BYTES) {
+            value.resize(SECRET_BYTES);
+            QRandomGenerator::system()->fillRange(reinterpret_cast<quint32*>(value.data()), SECRET_BYTES / sizeof(quint32));
+            if (canKeep) {
+                Settings settings;
+                settings.setValue(FingerprintUtils::DOMAIN_ID_SECRET_KEY, QString::fromLatin1(value.toHex()));
+            }
+        }
+        return value;
+    }();
+    return secret;
+}
+
 static QByteArray domainDigest(const QString& domain, const QByteArray& purpose) {
-    QByteArray key = FingerprintUtils::getMachineFingerprint().toRfc4122();
-    return QMessageAuthenticationCode::hash(purpose + "|" + domain.trimmed().toLower().toUtf8(), key,
+    return QMessageAuthenticationCode::hash(purpose + "|" + domain.trimmed().toLower().toUtf8(), domainIdSecret(),
                                             QCryptographicHash::Sha256);
 }
 
