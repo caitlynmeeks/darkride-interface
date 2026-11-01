@@ -209,4 +209,70 @@ const TriangleListMesh generateTriangleListMesh(const std::vector<glm::vec3>& sr
     return dest;
 }
 
+// Removes the faces of `indices` (`faceSize` indices each) that name a vertex at or past vertexCount, and a face cut
+// short at the end. Returns how many faces it removed. The list is read through a const reference first, so a list
+// shared with another mesh is not copied unless something has to go.
+static int removeFacesPastVertexCount(QVector<int>& indices, int faceSize, uint32_t vertexCount) {
+    const QVector<int>& in = indices;
+    const int wholeFaces = in.size() / faceSize;
+    const bool cutShort = (in.size() % faceSize) != 0;
+    const auto faceInside = [&](int start) {
+        for (int corner = 0; corner < faceSize; ++corner) {
+            if ((uint32_t)in[start + corner] >= vertexCount) {  // a negative index wraps past any vertex count
+                return false;
+            }
+        }
+        return true;
+    };
+
+    int firstBad = 0;
+    while (firstBad < wholeFaces && faceInside(firstBad * faceSize)) {
+        ++firstBad;
+    }
+    if (firstBad == wholeFaces && !cutShort) {
+        return 0;
+    }
+
+    int removed = cutShort ? 1 : 0;
+    int kept = firstBad * faceSize;
+    for (int face = firstBad; face < wholeFaces; ++face) {
+        const int start = face * faceSize;
+        if (!faceInside(start)) {
+            ++removed;
+            continue;
+        }
+        for (int corner = 0; corner < faceSize; ++corner) {
+            indices[kept + corner] = in[start + corner];
+        }
+        kept += faceSize;
+    }
+    indices.resize(kept);
+    return removed;
+}
+
+template <typename T>
+static int clearIfNotPerVertex(QVector<T>& list, int vertexCount) {
+    if (!list.isEmpty() && list.size() != vertexCount) {
+        list.clear();
+        return 1;
+    }
+    return 0;
+}
+
+MeshSanitizeResult sanitizeMesh(hfm::Mesh& mesh) {
+    MeshSanitizeResult result;
+    const int vertexCount = mesh.vertices.size();
+    for (auto& part : mesh.parts) {
+        result.facesRemoved += removeFacesPastVertexCount(part.triangleIndices, 3, (uint32_t)vertexCount);
+        result.facesRemoved += removeFacesPastVertexCount(part.quadTrianglesIndices, 3, (uint32_t)vertexCount);
+        result.facesRemoved += removeFacesPastVertexCount(part.quadIndices, 4, (uint32_t)vertexCount);
+    }
+    result.listsCleared += clearIfNotPerVertex(mesh.normals, vertexCount);
+    result.listsCleared += clearIfNotPerVertex(mesh.tangents, vertexCount);
+    result.listsCleared += clearIfNotPerVertex(mesh.colors, vertexCount);
+    result.listsCleared += clearIfNotPerVertex(mesh.texCoords, vertexCount);
+    result.listsCleared += clearIfNotPerVertex(mesh.texCoords1, vertexCount);
+    return result;
+}
+
 };

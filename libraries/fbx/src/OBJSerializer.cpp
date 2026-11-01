@@ -29,6 +29,7 @@
 
 #include "FBXSerializer.h"
 #include <hfm/ModelFormatLogging.h>
+#include <hfm/HFMModelMath.h>
 #include <shared/PlatformHacks.h>
 
 QHash<QString, float> COMMENT_SCALE_HINTS = {{"This file uses centimeters as units", 1.0f / 100.0f},
@@ -827,6 +828,17 @@ HFMModel::Pointer OBJSerializer::read(const hifi::ByteArray& data, const hifi::V
         }
     } catch(const std::exception& e) {
         qCDebug(modelformat) << "OBJSerializer fail: " << e.what();
+    }
+
+    // the reader's last check: the passes after it index the vertices with the parts' indices unchecked
+    for (uint32_t meshIndex = 0; meshIndex < (uint32_t)hfmModel.meshes.size(); ++meshIndex) {
+        HFMMesh& mesh = hfmModel.meshes[meshIndex];
+        const hfm::MeshSanitizeResult sanitized = hfm::sanitizeMesh(mesh);
+        if (sanitized.facesRemoved > 0 || sanitized.listsCleared > 0) {
+            qCWarning(modelformat) << "OBJSerializer:" << _url << "mesh" << meshIndex << ":" << sanitized.facesRemoved
+                                   << "faces with a vertex past the mesh's" << mesh.vertices.size() << "or cut short left out,"
+                                   << sanitized.listsCleared << "per-vertex lists of the wrong length cleared";
+        }
     }
 
     // At this point, the hfmModel joint, mesh, parts and shpaes have been defined
