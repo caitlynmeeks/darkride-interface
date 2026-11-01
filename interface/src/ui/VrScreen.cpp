@@ -23,6 +23,7 @@
 
 #include <EntityScriptingInterface.h>
 #include <EntityTreeRenderer.h>
+#include <GeometryCache.h>
 #include <GLMHelpers.h>
 #include <NumericalConstants.h>
 #include <RenderableWebEntityItem.h>
@@ -504,6 +505,7 @@ void VrScreen::startWarming() {
     _toWarm = { Middle, Left, Bar, Right };
     _warmBackToBack = true;
     _warmPages = true;
+    _warmPrograms = true;
     _warmTimer.start(warmStartDelay());
 }
 
@@ -543,6 +545,12 @@ void VrScreen::warmStep() {
         _warmLoaded.reset();
         _warmTimer.start(step);
         return;
+    }
+    if (_warmPrograms) {
+        // the Web entities' programs, compiled by the next frame on the GPU thread (rendering's WarmPipelines job), so
+        // the first show doesn't compile them (~7 ms of its frame on the Mac); nothing is drawn
+        _warmPrograms = false;
+        GeometryCache::warmWebBrowserPrograms();
     }
     const Arrangement places = arrangement();
     while (!_toWarm.isEmpty()) {

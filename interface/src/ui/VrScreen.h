@@ -140,6 +140,7 @@ private:
     QList<Piece> _toWarm;
     bool _warmBackToBack { false };
     bool _warmPages { false };      // editor-ui's pages still to make ahead
+    bool _warmPrograms { false };   // the Web entities' programs still to compile (once per headset entry)
     bool _warmSettling { false };
     int _warmSettleTicks { 0 };     // the settle step's ticks to go (WARM_SETTLE_TICKS)
     bool _warmAnnounce { false };   // the kept slots still to be announced to Panels (filled with their pages)
