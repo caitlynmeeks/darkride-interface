@@ -22,6 +22,10 @@ namespace Setting {
     /// A setting no script gets, whatever its origin or world, the visitor's own scripts included: no read, no write,
     /// no change signal. Matched on the stored form (normalizedKey), in any case.
     bool neverToScripts(const QString& key);
+
+    /// Whether a script is refused a protected setting: a world's script (an entity script, on a visitor's client or
+    /// on a server) always, whatever its world; any other script only while the network rule holds it.
+    bool refusedProtected(bool worldScript, bool heldToNetworkRule);
 }
 
 #endif // hifi_SettingKey_h

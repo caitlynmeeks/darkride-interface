@@ -47,3 +47,12 @@ void SettingKeyTests::neverToScripts() {
         QVERIFY2(!Setting::neverToScripts(key), key);
     }
 }
+
+void SettingKeyTests::refusedProtected() {
+    // a world's script: always refused, whether or not the network rule holds it (a world on this machine's network)
+    QVERIFY(Setting::refusedProtected(true, false));
+    QVERIFY(Setting::refusedProtected(true, true));
+    // the visitor's own scripts: only while the network rule holds them
+    QVERIFY(Setting::refusedProtected(false, true));
+    QVERIFY(!Setting::refusedProtected(false, false));
+}
