@@ -13,6 +13,8 @@
 #include <QtCore/QThread>
 #include <QtGui/QScreen>
 #include <QtQml/QQmlEngine>
+#include <QtCore/QFileInfo>
+#include <QtQml/QQmlProperty>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <QtWidgets/QDockWidget>
@@ -55,6 +57,7 @@ namespace {
     const QString SLOT_MIDDLE = "middle";
     const QString SLOT_RIGHT = "right";
     const QString MIDDLE_FIRST = "Explore";   // the middle slot's page when nothing else has been in front
+    const QString TABLET_TAB = "Tablet";   // the middle's tab for the tablet's content (its label says what it shows)
     const int SLOT_HEIGHT = 720;
     const int MIDDLE_WIDTH = 760;   // Explore's cards (the widest panel)
     std::function<bool(QQuickWindow*)> screenWindowCheck;
@@ -279,6 +282,7 @@ void Panels::restore() {
         dock(name);
     }
     connect(qApp, &Application::activeDisplayPluginChanged, this, &Panels::displayChanged, Qt::UniqueConnection);
+    hookTabletWindow();
     // test builds only (team/editor-ui/test-kit/vr-screen): slots a test script made stand in for vr's, any window but
     // the desktop's own; set only from the environment, which no world reaches
     if (!screenWindowCheck && qEnvironmentVariableIsSet("DARKRIDE_SCREEN_TEST_SLOTS")) {
@@ -331,6 +335,13 @@ void Panels::change(const QString& name, Change how) {
     // a page made before start-up is done finds the avatar and the rest not ready (a crash, 10-26)
     if (!_restored) {
         qCDebug(interfaceapp) << "Panels: not yet, before sign-in:" << name;
+        return;
+    }
+    // the tablet's tab on the VR screen (its tab clicked)
+    if (name == TABLET_TAB) {
+        if (how != Change::Close && !_screenSlots.isEmpty()) {
+            putTabletOnScreen();
+        }
         return;
     }
     // Build mode's own panels, only while it's on
@@ -460,6 +471,8 @@ void Panels::takeScreenSlot(const QString& slot, QQuickItem* host) {
         if (page && page->property("on").toBool()) {
             putOnScreen(RADIO);
         }
+    } else if (!_middleTabs.isEmpty() && _middleTabs.last() == TABLET_TAB) {
+        putTabletOnScreen();
     } else {
         putOnScreen(_middleTabs.isEmpty() ? MIDDLE_FIRST : _middleTabs.last());
     }
@@ -475,7 +488,9 @@ bool Panels::putOnScreen(const QString& name) {
     // the middle slot holds one page in front (its tabs, the host's): the one there goes back to its dock, unseen
     if (slot == SLOT_MIDDLE) {
         if (!_middleTabs.isEmpty() && _middleTabs.last() != name) {
-            if (auto front = qobject_cast<QmlDock*>(dock(_middleTabs.last()))) {
+            if (_middleTabs.last() == TABLET_TAB) {
+                takeTabletOffScreen();
+            } else if (auto front = qobject_cast<QmlDock*>(dock(_middleTabs.last()))) {
                 if (front->isAway()) {
                     front->moveBack(false);
                 }
@@ -483,7 +498,7 @@ bool Panels::putOnScreen(const QString& name) {
         }
         _middleTabs.removeAll(name);
         _middleTabs.append(name);
-        host->setProperty("tabs", _middleTabs);
+        showMiddleTabs();
     }
     QQuickItem* content = host->findChild<QQuickItem*>("content");
     if (!qmlDock->makePage() || !qmlDock->moveTo(content ? content : host)) {
@@ -536,6 +551,8 @@ void Panels::reportScreenShown(bool shown) {
 
 void Panels::releaseScreenSlots() {
     const bool shown = !qApp->isHMDMode();
+    takeTabletOffScreen();
+    hideTabletWindow(!shown);
     QStringList movedBack;
     for (auto it = _docks.cbegin(); it != _docks.cend(); ++it) {
         auto qmlDock = qobject_cast<QmlDock*>(it.value().data());
@@ -546,7 +563,7 @@ void Panels::releaseScreenSlots() {
     }
     // the middle's tabs behind the front one are in their docks already, unseen
     for (const QString& name : _middleTabs) {
-        if (!movedBack.contains(name)) {
+        if (name != TABLET_TAB && !movedBack.contains(name)) {
             movedBack.append(name);
         }
     }
@@ -599,6 +616,7 @@ void Panels::displayChanged() {
         }
         showHiddenForScreen();
     }
+    hideTabletWindow(qApp->isHMDMode());
     showDockPages();
 }
 
@@ -611,6 +629,141 @@ void Panels::showHiddenForScreen() {
         }
     }
     _hiddenForScreen.clear();
+}
+
+void Panels::showMiddleTabs() {
+    QQuickItem* host = _screenSlots.value(SLOT_MIDDLE);
+    if (!host) {
+        return;
+    }
+    host->setProperty("labels", QVariantMap { { TABLET_TAB, _tabletLabel } });
+    host->setProperty("tabs", _middleTabs);
+}
+
+void Panels::hookTabletWindow() {
+    auto tablets = DependencyManager::get<TabletScriptingInterface>();
+    auto tablet = tablets ? tablets->getTablet(SYSTEM_TABLET) : nullptr;
+    if (!tablet) {
+        return;
+    }
+    connect(tablet, &TabletProxy::toolbarModeChanged, this, &Panels::hookTabletWindow, Qt::UniqueConnection);
+    connect(tablet, &TabletProxy::screenChanged, this, &Panels::tabletScreenChanged, Qt::UniqueConnection);
+    QQuickItem* window = tablet->getToolbarWindowItem();
+    if (window == _tabletWindow) {
+        return;
+    }
+    // a new window (toolbar mode turned on or off): the old one went with its content
+    if (_tabletOnScreen || _middleTabs.contains(TABLET_TAB)) {
+        _tabletOnScreen = false;
+        _middleTabs.removeAll(TABLET_TAB);
+        showMiddleTabs();
+    }
+    _tabletWindow = window;
+    _tabletLoader = window ? window->findChild<QQuickItem*>("loader") : nullptr;
+    _tabletLoaderParent = _tabletLoader ? _tabletLoader->parentItem() : nullptr;
+    _tabletWindowParent = window ? window->parentItem() : nullptr;
+    if (window) {
+        QQmlProperty(window, "shown").connectNotifySignal(this, SLOT(tabletWindowShownChanged()));
+        hideTabletWindow(qApp->isHMDMode());
+    }
+}
+
+void Panels::tabletWindowShownChanged() {
+    if (!_tabletWindow) {
+        return;
+    }
+    const bool shown = _tabletWindow->property("shown").toBool();
+    if (shown && _screenSlots.value(SLOT_MIDDLE)) {
+        putTabletOnScreen();
+    } else if (!shown && _middleTabs.contains(TABLET_TAB)) {
+        // the tablet closed what it showed: its tab goes, the tab before it comes to the front
+        const bool wasFront = _middleTabs.last() == TABLET_TAB;
+        takeTabletOffScreen();
+        _middleTabs.removeAll(TABLET_TAB);
+        showMiddleTabs();
+        if (wasFront && !_middleTabs.isEmpty()) {
+            putOnScreen(_middleTabs.last());
+        }
+    }
+}
+
+void Panels::tabletScreenChanged(const QVariant& type, const QVariant& url) {
+    // the tab says what the tablet shows: chat, a world's page by its site, an app by its name
+    const QUrl address(url.toString());
+    QString label = address.host().startsWith("chat.") ? "Chat" : address.host();
+    if (label.startsWith("www.")) {
+        label = label.mid(4);
+    }
+    if (type.toString() == "QML" || label.isEmpty()) {
+        label = QFileInfo(address.path()).completeBaseName().remove("Panel").remove("App");
+    }
+    _tabletLabel = label.isEmpty() ? QString("Apps") : label.left(24);
+    // a page loaded while the screen is up is a tab even when it isn't brought forward (a world's: security's rule)
+    if (!_screenSlots.isEmpty() && type.toString() != "Home" && !_middleTabs.contains(TABLET_TAB)) {
+        _middleTabs.prepend(TABLET_TAB);
+    }
+    showMiddleTabs();
+}
+
+bool Panels::putTabletOnScreen() {
+    QQuickItem* host = _screenSlots.value(SLOT_MIDDLE);
+    QQuickItem* content = host ? host->findChild<QQuickItem*>("content") : nullptr;
+    if (!content || !_tabletLoader) {
+        return false;
+    }
+    if (!_middleTabs.isEmpty() && _middleTabs.last() != TABLET_TAB) {
+        if (auto front = qobject_cast<QmlDock*>(dock(_middleTabs.last()))) {
+            if (front->isAway()) {
+                front->moveBack(false);
+            }
+        }
+    }
+    _middleTabs.removeAll(TABLET_TAB);
+    _middleTabs.append(TABLET_TAB);
+    showMiddleTabs();
+    if (!_tabletOnScreen) {
+        _tabletLoaderSize = _tabletLoader->size();
+        _tabletLoaderParent = _tabletLoader->parentItem();
+        _tabletLoader->setPosition(QPointF(0, 0));
+        _tabletLoader->setSize(content->size());
+        _tabletLoader->setParentItem(content);   // the slot lays it out at its scale (ScreenSlot.qml)
+        _tabletOnScreen = true;
+    }
+    hideTabletWindow(true);
+    return true;
+}
+
+void Panels::takeTabletOffScreen() {
+    if (_tabletOnScreen && _tabletLoader && _tabletLoaderParent) {
+        _tabletLoader->setParentItem(_tabletLoaderParent);
+        _tabletLoader->setScale(1.0);
+        _tabletLoader->setPosition(QPointF(0, 0));
+        _tabletLoader->setSize(_tabletLoaderSize);
+    }
+    _tabletOnScreen = false;
+}
+
+void Panels::hideTabletWindow(bool hide) {
+    if (!_tabletWindow) {
+        return;
+    }
+    if (hide) {
+        if (!_tabletHolder) {
+            auto offscreenUi = DependencyManager::get<OffscreenUi>();
+            QQuickItem* desktop = offscreenUi ? offscreenUi->getRootItem() : nullptr;
+            if (!desktop) {
+                return;
+            }
+            _tabletHolder = new QQuickItem(desktop);
+            _tabletHolder->setVisible(false);
+        }
+        if (_tabletWindow->parentItem() != _tabletHolder) {
+            _tabletWindowParent = _tabletWindow->parentItem();
+            _tabletWindow->setParentItem(_tabletHolder);
+        }
+    } else if (_tabletHolder && _tabletWindow->parentItem() == _tabletHolder && _tabletWindowParent) {
+        _tabletWindow->setParentItem(_tabletWindowParent);
+    }
 }
 
 void Panels::showDockPages() {

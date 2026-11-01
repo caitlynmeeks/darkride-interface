@@ -163,6 +163,15 @@ private:
     void displayChanged();   // the headset on or off
     void showHiddenForScreen();   // the docks the screen hid, showing again
     void reportScreenShown(bool shown);   // the system tablet's tabletShown, for scripts, follows the screen
+    // the tablet in toolbar mode (vr turns it on in the headset): its window's content is one more middle tab, its
+    // empty window kept out of sight (a hidden holder on the desktop's QML) while the headset is on
+    void hookTabletWindow();
+    Q_INVOKABLE void tabletWindowShownChanged();   // (Q_INVOKABLE: connected by the window's QML notify signal)
+    void tabletScreenChanged(const QVariant& type, const QVariant& url);
+    void showMiddleTabs();   // the middle slot's tabs and their labels, to its host
+    bool putTabletOnScreen();
+    void takeTabletOffScreen();
+    void hideTabletWindow(bool hide);
 
     bool _restored { false };   // none opens before the layout's restore (after sign-in)
     QHash<QString, QPointer<QDockWidget>> _docks;
@@ -172,6 +181,14 @@ private:
     QString _screenState;
     QStringList _middleTabs;   // the middle slot's panels, the front one last
     QSet<QString> _hiddenForScreen;   // docks that were showing when their page moved to the screen
+    QPointer<QQuickItem> _tabletWindow;   // the toolbar window (WindowRoot.qml)
+    QPointer<QQuickItem> _tabletLoader;   // its content ("loader"), which moves
+    QPointer<QQuickItem> _tabletLoaderParent;   // where the content sits in the window
+    QPointer<QQuickItem> _tabletWindowParent;   // where the window sits on the desktop
+    QPointer<QQuickItem> _tabletHolder;   // a hidden item on the desktop's QML that keeps the window out of sight
+    QSizeF _tabletLoaderSize;
+    bool _tabletOnScreen { false };
+    QString _tabletLabel { "Apps" };
 };
 
 #endif // hifi_Panels_h

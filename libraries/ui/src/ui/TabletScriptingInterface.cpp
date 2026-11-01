@@ -8,6 +8,7 @@
 
 #include "TabletScriptingInterface.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QThread>
 
 #include <chrono>
@@ -15,6 +16,7 @@
 #include <set>
 #include <QtQml/QQmlProperty>
 
+#include <shared/GlobalAppProperties.h>
 #include <shared/QtHelpers.h>
 #include <shared/LocalFileAccessGate.h>
 #include <PathUtils.h>
@@ -645,7 +647,7 @@ void TabletProxy::loadQMLOnTop(const QVariant& path) {
     loadQMLOnTopImpl(path, localSafeContext);
 }
 
-void TabletProxy::returnToPreviousAppImpl(bool localSafeContext) {
+void TabletProxy::returnToPreviousAppImpl(bool localSafeContext, bool fromWorld) {
     if (QThread::currentThread() != thread()) {
         qCWarning(uiLogging) << __FUNCTION__ << "may not be called directly by scripts";
         return;
@@ -664,7 +666,9 @@ void TabletProxy::returnToPreviousAppImpl(bool localSafeContext) {
             hifi::scripting::setLocalAccessSafeThread(true);
         }
         QMetaObject::invokeMethod(root, "returnToPreviousApp");
-        QMetaObject::invokeMethod(root, "setShown", Q_ARG(const QVariant&, QVariant(true)));
+        if (!(fromWorld && QCoreApplication::instance()->property(hifi::properties::HMD).toBool())) {
+            QMetaObject::invokeMethod(root, "setShown", Q_ARG(const QVariant&, QVariant(true)));
+        }
         hifi::scripting::setLocalAccessSafeThread(false);
     } else {
         qCDebug(uiLogging) << "tablet cannot load QML because _qmlTabletRoot is null";
@@ -675,7 +679,7 @@ void TabletProxy::returnToPreviousApp() {
     bool localSafeContext = hifi::scripting::isLocalAccessSafeThread();
     qDebug() << "TabletProxy::returnToPreviousApp -> localSafeContext: " << localSafeContext;
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "returnToPreviousAppImpl", Q_ARG(bool, localSafeContext));
+        QMetaObject::invokeMethod(this, "returnToPreviousAppImpl", Q_ARG(bool, localSafeContext), Q_ARG(bool, !localSafeContext));
         return;
     }
 
@@ -942,7 +946,11 @@ void TabletProxy::loadHTMLSourceOnTopImpl(const QString& url, const QString& inj
         } else {
             QMetaObject::invokeMethod(root, "loadWebBase", Q_ARG(const QVariant&, QVariant(url)), Q_ARG(const QVariant&, QVariant(injectedJavaScriptUrl)), Q_ARG(const QVariant&, QVariant(worldPage)));
         }
-        QMetaObject::invokeMethod(root, "setShown", Q_ARG(const QVariant&, QVariant(true)));
+        // in the headset a world's page loads unseen, until the visitor goes to it (the VR screen's tab; security's
+        // rule: no world brings the screen up by itself)
+        if (!(worldPage && QCoreApplication::instance()->property(hifi::properties::HMD).toBool())) {
+            QMetaObject::invokeMethod(root, "setShown", Q_ARG(const QVariant&, QVariant(true)));
+        }
         if (_toolbarMode && _desktopWindow) {
             QMetaObject::invokeMethod(root, "setResizable", Q_ARG(const QVariant&, QVariant(false)));
         }
@@ -1043,6 +1051,10 @@ void TabletProxy::unfocus() {
     }
 }
 
+
+QQuickItem* TabletProxy::getToolbarWindowItem() const {
+    return _toolbarMode && _desktopWindow ? _desktopWindow->asQuickItem() : nullptr;
+}
 
 QQuickItem* TabletProxy::getQmlTablet() const {
     if (!_qmlTabletRoot) {

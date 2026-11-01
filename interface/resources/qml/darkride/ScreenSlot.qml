@@ -21,6 +21,7 @@ Rectangle {
     id: root
     property string slot: ""
     property var tabs: []   // the middle slot's panels, the one in front last (Panels sets it)
+    property var labels: ({})   // a tab's words where they aren't its name (the tablet's: what it shows)
     readonly property bool hasTabs: slot === "middle"
 
     color: Theme.background
@@ -45,7 +46,7 @@ Rectangle {
                 Text {
                     id: tabLabel
                     anchors.centerIn: parent
-                    text: modelData
+                    text: root.labels[modelData] || modelData
                     textFormat: Text.PlainText
                     color: parent.front ? Theme.text : Theme.secondaryText
                     font.pixelSize: 13 * Theme.unit
