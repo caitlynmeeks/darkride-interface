@@ -82,6 +82,7 @@
 #include "WorldMessages.h"
 #include "RefusedGlobal.h"
 #include "ScriptApiPolicy.h"
+#include "ScriptCaller.h"
 #include "BaseScriptEngine.h"
 #include "DataViewClass.h"
 #include "EventTypes.h"
@@ -123,6 +124,15 @@ Q_DECLARE_METATYPE(QScriptEngine::FunctionSignature)
 int functionSignatureMetaID = qRegisterMetaType<QScriptEngine::FunctionSignature>();
 
 int scriptEnginePointerMetaID = qRegisterMetaType<ScriptEnginePointer>();
+
+// Entities.getMultipleEntityProperties is a plain function on the Entities object, not one of its guarded members, so
+// the guard doesn't mark a world's call to it: it is marked here, so that the entities a world's script may not see
+// stay hidden from it (security #28).
+static QScriptValue getMultipleEntityPropertiesMarked(QScriptContext* context, QScriptEngine* engine) {
+    auto scriptEngine = qobject_cast<ScriptEngine*>(engine);
+    ScriptCaller::WorldScope caller(scriptEngine && scriptEngine->isEntityClientScript());
+    return EntityScriptingInterface::getMultipleEntityProperties(context, engine);
+}
 
 static QScriptValue debugPrint(QScriptContext* context, QScriptEngine* engine) {
     QString message = "";
@@ -985,7 +995,7 @@ void ScriptEngine::registerStandardGlobals() {
     registerGlobalObject("Audio", DependencyManager::get<AudioScriptingInterface>().data());
 
     registerGlobalObject("Entities", DependencyManager::get<EntityScriptingInterface>().data());
-    registerFunction("Entities", "getMultipleEntityProperties", EntityScriptingInterface::getMultipleEntityProperties);
+    registerFunction("Entities", "getMultipleEntityProperties", getMultipleEntityPropertiesMarked);
     registerGlobalObject("Quat", &_quatLibrary);
     registerGlobalObject("Vec3", &_vec3Library);
     registerGlobalObject("Mat4", &_mat4Library);

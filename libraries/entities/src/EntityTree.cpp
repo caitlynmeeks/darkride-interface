@@ -37,6 +37,7 @@
 #include "EntityDynamicFactoryInterface.h"
 #include "WebEntityItem.h"
 #include "ScriptAddressCheck.h"
+#include "ScriptCaller.h"
 
 static const quint64 DELETED_ENTITIES_EXTRA_USECS_TO_CONSIDER = USECS_PER_MSEC * 50;
 const float EntityTree::DEFAULT_MAX_TMP_ENTITY_LIFETIME = 60 * 60; // 1 hour
@@ -788,6 +789,11 @@ EntityItemPointer EntityTree::addEntity(const EntityItemID& entityID, const Enti
     if (result) {
         if (recordCreationTime) {
             result->recordCreationTime();
+        }
+        if (result->isLocalEntity()) {
+            // who made it, before anything else can see it: a world's script (the guards mark its calls on its own
+            // thread) or the visitor's side (the app, the visitor's own scripts)
+            result->setLocalOwner(ScriptCaller::isWorld() ? entity::LocalOwner::WORLD : entity::LocalOwner::VISITOR);
         }
         // Recurse the tree and store the entity in the correct tree element
         AddEntityOperator theOperator(getThisPointer(), result);

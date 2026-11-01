@@ -76,6 +76,15 @@ enum class HostType {
     AVATAR,
     LOCAL
 };
+
+/// Who made a local entity on this computer, recorded once when it is added (EntityTree::addEntity) and never changed
+/// or sent anywhere: the visitor's side (the app and the visitor's own scripts) or a world's script. None for domain
+/// and avatar entities. A world's scripts may use only the local entities a world's script made.
+enum class LocalOwner : uint8_t {
+    NONE = 0,
+    VISITOR,
+    WORLD
+};
 }
 
 /// EntityItem class this is the base class for all entity types. It handles the basic properties and functionality available
@@ -572,6 +581,19 @@ public:
     
     virtual void setEntityHostType(entity::HostType hostType) { _hostType = hostType; }
 
+    /// Who made this local entity (NONE for domain and avatar entities); safe to read from any thread without the
+    /// entity's lock.
+    entity::LocalOwner getLocalOwner() const { return static_cast<entity::LocalOwner>(_localOwner.load()); }
+    /// Records who made a local entity. Called once, by EntityTree::addEntity, before the entity is in the tree.
+    void setLocalOwner(entity::LocalOwner owner) { _localOwner.store(static_cast<uint8_t>(owner)); }
+    /// The world's own content: a domain entity, or a local entity a world's script made.
+    bool isMadeByWorld() const { return isDomainEntity() || getLocalOwner() == entity::LocalOwner::WORLD; }
+    /// The visitor's own: a local entity the app or the visitor's own scripts made, or one of the visitor's avatar
+    /// entities.
+    bool isVisitorsOwn() const {
+        return (isLocalEntity() && getLocalOwner() == entity::LocalOwner::VISITOR) || isMyAvatarEntity();
+    }
+
     // if this entity is an avatar entity, which avatar is it associated with?
     QUuid getOwningAvatarID() const { return _owningAvatarID; }
     QUuid getOwningAvatarIDForProperties() const;
@@ -842,6 +864,7 @@ protected:
     QUuid _sourceUUID; /// the server node UUID we came from
 
     entity::HostType _hostType { entity::HostType::DOMAIN };
+    std::atomic<uint8_t> _localOwner { static_cast<uint8_t>(entity::LocalOwner::NONE) };
     bool _transitingWithAvatar{ false };
     bool _transformDrivenLocally { false };
     QUuid _owningAvatarID;
