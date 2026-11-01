@@ -18,6 +18,11 @@
 
 #include "VerifiedSandboxTests.h"
 
+#include <QtNetwork/QHostInfo>
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QNetworkReply>
+#include <QtCore/QEventLoop>
+#include <QtCore/QTimer>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -560,4 +565,27 @@ void VerifiedSandboxTests::testSignalsNotForWorlds() {
     QVERIFY(!ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, "geometryChanged"));
     // a class a world doesn't get: none of its signals
     QVERIFY(ScriptApiPolicy::deniesSignal(&QObject::staticMetaObject, "destroyed"));
+}
+
+void VerifiedSandboxTests::testServerEnginesAreRuled() {
+    // the entity script server's engine: always, its scripts counted as the network's whatever their address
+    WasmScriptEngine entityServer(ScriptEngine::ENTITY_SERVER_SCRIPT, NO_SCRIPT, "about:Entities 1");
+    QVERIFY(entityServer.networkRuled());
+    QVERIFY(!entityServer.worldIsLocal());
+    QCOMPARE(entityServer.ruledOrigin(QUrl("http://127.0.0.1:8797/a.js")), QUrl("about:entity-server"));
+    QCOMPARE(entityServer.ruledOrigin(QUrl("https://example.com/a.js")), QUrl("https://example.com/a.js"));
+    // an agent: by its assigned script, once; the operator's own (the domain server's upload, this machine, its
+    // network) keeps every address
+    WasmScriptEngine ownAgent(ScriptEngine::AGENT_SCRIPT, NO_SCRIPT, "http://127.0.0.1:8797/body.js");
+    QVERIFY(!ownAgent.networkRuled());
+    WasmScriptEngine uploadedAgent(ScriptEngine::AGENT_SCRIPT, NO_SCRIPT, "");
+    QVERIFY(!uploadedAgent.networkRuled());
+    WasmScriptEngine networkAgent(ScriptEngine::AGENT_SCRIPT, NO_SCRIPT, "https://example.com/agent.js");
+    QVERIFY(networkAgent.networkRuled());
+    QVERIFY(!networkAgent.worldIsLocal());
+    QCOMPARE(networkAgent.ruledOrigin(QUrl("http://127.0.0.1/included.js")), QUrl("about:agent"));
+    // a client's engines, as before
+    WasmScriptEngine client(ScriptEngine::CLIENT_SCRIPT, NO_SCRIPT, "https://example.invalid/client.js");
+    QVERIFY(client.networkRuled());
+    QCOMPARE(client.ruledOrigin(QUrl("http://127.0.0.1/x.js")), QUrl("http://127.0.0.1/x.js"));
 }

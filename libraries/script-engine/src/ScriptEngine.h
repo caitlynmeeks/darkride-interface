@@ -199,6 +199,16 @@ public:
     class GuardedObjectClass* guardClass();
     /// Whether this engine runs on a person's client, where its scripts' requests are held to that rule.
     bool isClientSide() const { return _context == CLIENT_SCRIPT || _context == ENTITY_CLIENT_SCRIPT; }
+    /// Whether the network rule (ScriptNetworkPolicy) holds this engine's requests, sockets, includes and requires: a
+    /// client's engines always (judged by each script's origin and the world); the entity script server's always;
+    /// an agent's unless its assigned script is the operator's own (served by the domain server, or from this machine
+    /// or its network), decided once when the engine is made.
+    bool networkRuled() const {
+        return isClientSide() || _context == ENTITY_SERVER_SCRIPT || (_context == AGENT_SCRIPT && !_agentScriptIsLocal);
+    }
+    /// The origin the rule judges by. A server's engine's scripts count as from the network, whatever their own
+    /// address: a local one is no origin there. Elsewhere the origin itself.
+    QUrl ruledOrigin(const QUrl& origin) const;
    
     QList<EntityItemID> getListOfEntityScriptIDs();
 
@@ -1004,6 +1014,7 @@ protected:
     void callWithEnvironment(const EntityItemID& entityID, const QUrl& sandboxURL, QScriptValue function, QScriptValue thisObject, QScriptValueList args);
 
     Context _context;
+    bool _agentScriptIsLocal { false };   // an agent's assigned script is the operator's own (networkRuled)
     std::unique_ptr<class GuardedObjectClass> _guardClass;
     Type _type;
     QString _scriptContents;

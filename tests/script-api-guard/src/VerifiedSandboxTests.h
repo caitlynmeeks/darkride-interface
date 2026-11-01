@@ -36,6 +36,7 @@ private slots:
     void testResourcesNotForWorlds();
     void testInputAndPrivacyNotForWorlds();
     void testSignalsNotForWorlds();
+    void testServerEnginesAreRuled();
 
 private:
     QTemporaryDir _dir;

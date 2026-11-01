@@ -21,6 +21,8 @@
 #include <QScriptValue>
 #include <QTimer>
 
+#include <ScriptNetworkPolicy.h>
+
 /*
 XMlHttpRequest object
 XMlHttpRequest.objectName string
@@ -299,6 +301,9 @@ private:
     /// Ends the request as refused by the network rule for a script's own requests (ScriptNetworkPolicy): a failed
     /// request, with the reason in the script's log.
     void refuse(const QString& reason);
+    /// A ruled request's redirect: the next hop judged and pinned as the first was.
+    void followRedirect(int status);
+    bool isRedirectHop() const;
     void doSend();
     void connectToReply(QNetworkReply* reply);
     void disconnectFromReply(QNetworkReply* reply);
@@ -372,6 +377,11 @@ private:
     bool _ruled { false };       // whether the network rule holds here (a person's client)
     bool _worldIsLocal { false };    // the world the script is judged in (ScriptEngine::worldIsLocal), when it made the request
     bool _deciding { false };    // the rule is still judging (a name lookup)
+    // a ruled request goes to the address the rule checked, each hop judged again (HttpRequestObject's way)
+    QUrl _hopUrl;
+    ScriptNetworkPolicy::Decision _decision;
+    bool _byHand { false };
+    int _redirects { 0 };
     int _generation { 0 };       // abort() moves it on, so a judgement that comes late is dropped
 
     int _timeout { 0 };

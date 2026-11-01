@@ -30,6 +30,8 @@ private slots:
     void lookupOfAPublicName();
     void blockingDecisions();
     void appScripts();
+    void testRequestsGoToTheCheckedAddress();
+    void testPinnedNameIsCheckedOnEveryRequest();
 };
 
 #endif // hifi_ScriptNetworkPolicyTests_h

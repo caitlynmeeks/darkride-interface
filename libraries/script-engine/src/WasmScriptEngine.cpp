@@ -1455,9 +1455,9 @@ QVariantMap WasmScriptEngine::resolveInclude(const QString& file, const QString&
         result["reason"] = "outside of original entity script " + sandbox.toString();
         return result;
     }
-    if (isClientSide()) {
+    if (networkRuled()) {
         // the network rule for a script's own requests: an include's download is a request too
-        const QUrl origin = sandbox.isEmpty() ? currentScriptOrigin() : sandbox;
+        const QUrl origin = ruledOrigin(sandbox.isEmpty() ? currentScriptOrigin() : sandbox);
         QString reason;
         if (!ScriptNetworkPolicy::decideBlocking(thisURL, origin, reason, worldIsLocal())) {
             result["reason"] = ScriptNetworkPolicy::refusalLine(origin, thisURL, reason);
@@ -1527,10 +1527,10 @@ QVariantMap WasmScriptEngine::resolveModule(const QString& moduleId, const QStri
             return fail("path is not a file: " + url.toLocalFile());
         }
     }
-    if (isClientSide()) {
+    if (networkRuled()) {
         // the network rule for a script's own requests: a module's download is a request too (a JSON module comes
         // back to the script as data)
-        const QUrl origin = sandbox.isEmpty() ? currentScriptOrigin() : sandbox;
+        const QUrl origin = ruledOrigin(sandbox.isEmpty() ? currentScriptOrigin() : sandbox);
         QString reason;
         if (!ScriptNetworkPolicy::decideBlocking(url, origin, reason, worldIsLocal())) {
             scriptWarningMessage(ScriptNetworkPolicy::refusalLine(origin, url, reason));
@@ -1568,7 +1568,7 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
             reason = "a file of this machine outside the script's own place";
         }
     }
-    if (reason.isEmpty() && isClientSide() && !ScriptNetworkPolicy::decideBlocking(target, origin, reason, worldIsLocal())) {
+    if (reason.isEmpty() && networkRuled() && !ScriptNetworkPolicy::decideBlocking(target, ruledOrigin(origin), reason, worldIsLocal())) {
         // the network rule for a script's own requests
     }
     if (!reason.isEmpty()) {

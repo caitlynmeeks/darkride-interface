@@ -221,12 +221,41 @@ ScriptNetworkPolicy::Decision ScriptNetworkPolicy::checkAddresses(const QList<QH
     }
     for (const QHostAddress& address : addresses) {
         if (isPrivateAddress(address)) {
+            // one private answer among public ones refuses the name: a name that answers both ways is a sign of rebinding
             decision.allowed = false;
             decision.reason = "the name leads to an address on this machine or its network (" + address.toString() + ")";
             return decision;
         }
     }
+    // an IPv4 answer first when there is one: a machine without working IPv6 would fail on an IPv6 one, where the
+    // network manager used to try the next
+    decision.address = addresses.first();
+    for (const QHostAddress& address : addresses) {
+        if (address.protocol() == QAbstractSocket::IPv4Protocol) {
+            decision.address = address;
+            break;
+        }
+    }
     return decision;
+}
+
+void ScriptNetworkPolicy::pin(QNetworkRequest& request, const Decision& decision) {
+    if (!decision.allowed || decision.address.isNull()) {
+        return;
+    }
+    QUrl url = request.url();
+    const QString name = url.host();
+    if (name.isEmpty() || !QHostAddress(name).isNull()) {
+        return;
+    }
+    url.setHost(decision.address.toString());   // an IPv6 address gets its brackets from QUrl
+    request.setUrl(url);
+    const int port = url.port(-1);
+    request.setRawHeader("Host", (port == -1 ? name : name + ":" + QString::number(port)).toUtf8());
+    const QString scheme = url.scheme().toLower();
+    if (scheme == "https" || scheme == "wss") {
+        request.setPeerVerifyName(name);
+    }
 }
 
 void ScriptNetworkPolicy::decide(const QUrl& target, const QUrl& origin, QObject* context,

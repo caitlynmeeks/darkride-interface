@@ -37,8 +37,8 @@ XMLHttpRequestClass::XMLHttpRequestClass(QScriptEngine* engine) :
     _request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
     _timer.setSingleShot(true);
     if (auto scriptEngine = qobject_cast<ScriptEngine*>(engine)) {
-        _origin = scriptEngine->currentScriptOrigin();
-        _ruled = scriptEngine->isClientSide();
+        _origin = scriptEngine->ruledOrigin(scriptEngine->currentScriptOrigin());
+        _ruled = scriptEngine->networkRuled();
         _worldIsLocal = scriptEngine->worldIsLocal();
     }
 }
@@ -77,6 +77,9 @@ void XMLHttpRequestClass::setRequestHeader(const QString& name, const QString& v
 }
 
 void XMLHttpRequestClass::requestMetaDataChanged() {
+    if (isRedirectHop()) {
+        return;     // a redirect's headers and body are not the response
+    }
     QVariant redirect = _reply->attribute(QNetworkRequest::RedirectionTargetAttribute);
 
     // If this is a redirect, abort the current request and start a new one
@@ -91,6 +94,9 @@ void XMLHttpRequestClass::requestMetaDataChanged() {
 }
 
 void XMLHttpRequestClass::requestDownloadProgress(qint64 bytesReceived, qint64 bytesTotal) {
+    if (isRedirectHop()) {
+        return;     // a redirect's headers and body are not the response
+    }
     if (_readyState == OPENED && bytesReceived > 0) {
         setReadyState(HEADERS_RECEIVED);
         setReadyState(LOADING);
@@ -165,6 +171,9 @@ void XMLHttpRequestClass::send(const QScriptValue& data) {
             _sendData = data.toString().toUtf8();
         }
     }
+    _hopUrl = _url;
+    _redirects = 0;
+    _decision = ScriptNetworkPolicy::Decision();
     if (!_ruled) {
         doSend();
     } else {
@@ -177,6 +186,7 @@ void XMLHttpRequestClass::send(const QScriptValue& data) {
             }
             if (decision.allowed) {
                 _deciding = false;
+                _decision = decision;
                 doSend();
                 return;
             }
@@ -208,40 +218,18 @@ void XMLHttpRequestClass::refuse(const QString& reason) {
 
 void XMLHttpRequestClass::doSend() {
     DependencyManager::get<ResourceRequestObserver>()->update(_url, -1, "XMLHttpRequestClass::doSend");
-    const bool ruled = _ruled && ScriptNetworkPolicy::applies(_origin, _worldIsLocal);
-    if (ruled) {
-        // a redirect is judged as the request was
-        _request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
-        _request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::UserVerifiedRedirectPolicy);
+    _byHand = _ruled && ScriptNetworkPolicy::applies(_origin, _worldIsLocal);
+    QNetworkRequest request = _request;
+    request.setUrl(_hopUrl);
+    if (_byHand) {
+        // to the address the rule checked and no other (no second lookup of the name); a redirect comes back here,
+        // judged and pinned as the request was
+        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+        ScriptNetworkPolicy::pin(request, _decision);
     }
-    _reply = NetworkAccessManager::getInstance().sendCustomRequest(_request, _method.toLatin1(), _sendData);
+    _reply = NetworkAccessManager::getInstance().sendCustomRequest(request, _method.toLatin1(), _sendData);
     connectToReply(_reply);
-    if (ruled) {
-        QNetworkReply* reply = _reply;
-        connect(reply, &QNetworkReply::redirected, this, [this, reply](const QUrl& url) {
-            if (reply->url().scheme().toLower() == "https" && url.scheme().toLower() != "https") {
-                // a secure request stays secure
-                if (auto scriptEngine = qobject_cast<ScriptEngine*>(_engine)) {
-                    scriptEngine->scriptWarningMessage(ScriptNetworkPolicy::refusalLine(_origin, url, "a redirect from https to a plain address"));
-                }
-                reply->abort();
-                return;
-            }
-            ScriptNetworkPolicy::decide(url, _origin, this, [this, reply, url](const ScriptNetworkPolicy::Decision& decision) {
-                if (_reply != reply) {
-                    return;
-                }
-                if (decision.allowed) {
-                    emit reply->redirectAllowed();
-                    return;
-                }
-                if (auto scriptEngine = qobject_cast<ScriptEngine*>(_engine)) {
-                    scriptEngine->scriptWarningMessage(ScriptNetworkPolicy::refusalLine(_origin, url, decision.reason + " (a redirect)"));
-                }
-                reply->abort();
-            }, _worldIsLocal);
-        });
-    }
 
     if (_timeout > 0) {
         _timer.start(_timeout);
@@ -266,7 +254,57 @@ void XMLHttpRequestClass::requestTimeout() {
 void XMLHttpRequestClass::requestError(QNetworkReply::NetworkError code) {
 }
 
+bool XMLHttpRequestClass::isRedirectHop() const {
+    if (!_byHand || !_reply) {
+        return false;
+    }
+    const int status = _reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    return (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) && _reply->hasRawHeader("Location");
+}
+
+void XMLHttpRequestClass::followRedirect(int status) {
+    // relative to the hop's address by its name, not the address it was pinned to
+    const QUrl next = _hopUrl.resolved(QUrl::fromEncoded(_reply->rawHeader("Location")));
+    QNetworkReply* reply = _reply;
+    disconnectFromReply(reply);
+    _reply = nullptr;
+    reply->deleteLater();
+    QString reason;
+    if (++_redirects > _request.maximumRedirectsAllowed()) {
+        reason = "too many redirects";
+    } else if (_hopUrl.scheme().toLower() == "https" && next.scheme().toLower() != "https") {
+        reason = "a redirect from https to a plain address";   // a secure request stays secure
+    }
+    if (!reason.isEmpty()) {
+        refuse(reason + " (" + next.toDisplayString() + ")");
+        return;
+    }
+    if (status == 303 || ((status == 301 || status == 302) && _method.toUpper() == "POST")) {
+        _method = "GET";        // as browsers do
+        _sendData.clear();
+    }
+    _hopUrl = next;
+    _deciding = true;
+    const int generation = ++_generation;
+    ScriptNetworkPolicy::decide(next, _origin, this, [this, generation](const ScriptNetworkPolicy::Decision& decision) {
+        if (generation != _generation) {
+            return;
+        }
+        _deciding = false;
+        if (!decision.allowed) {
+            refuse(decision.reason + " (a redirect to " + _hopUrl.toDisplayString() + ")");
+            return;
+        }
+        _decision = decision;
+        doSend();
+    }, _worldIsLocal);
+}
+
 void XMLHttpRequestClass::requestFinished() {
+    if (isRedirectHop()) {
+        followRedirect(_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt());
+        return;
+    }
     disconnect(&_timer, SIGNAL(timeout()), this, SLOT(requestTimeout()));
 
     _errorCode = _reply->error();

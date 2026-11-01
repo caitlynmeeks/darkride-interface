@@ -30,6 +30,7 @@
 #include <QtCore/QString>
 #include <QtCore/QUrl>
 #include <QtNetwork/QHostAddress>
+#include <QtNetwork/QNetworkRequest>
 
 class ScriptNetworkPolicy {
 public:
@@ -39,6 +40,7 @@ public:
         bool allowed { true };
         bool needsLookup { false };
         QString reason;
+        QHostAddress address;   // the name's checked address, the only one a request judged by it may connect to
     };
 
     /// Whether a script loaded from this URL counts as local (this machine, or an address on its network).
@@ -73,6 +75,12 @@ public:
     /// The whole judgement on the calling thread, with the name lookup waited for (for Script.include and
     /// Script.require, which wait for their download anyway); reason is set when refused.
     static bool decideBlocking(const QUrl& target, const QUrl& origin, QString& reason, bool worldIsLocal = isWorldLocal());
+
+    /// A request judged by the decision goes to its checked address and no other (no second lookup of the name): the
+    /// URL's host becomes that address, the Host header keeps the name (with a port that isn't the scheme's default),
+    /// and an https or wss request checks its certificate against, and names itself in the handshake by, the name. A
+    /// request to an address, or one the decision didn't look up, is left as it is.
+    static void pin(QNetworkRequest& request, const Decision& decision);
 
     /// The line for the log when a request is refused.
     static QString refusalLine(const QUrl& origin, const QUrl& target, const QString& reason);
