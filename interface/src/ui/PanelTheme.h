@@ -52,7 +52,10 @@ public:
     /// a built-in scheme by name ("graphite", "midnight", "dusk", "daylight"), or "custom" for the loaded file
     Q_INVOKABLE void setScheme(const QString& scheme);
 
-    /// reads a theme file (a path or a file: URL); "" when it was loaded and is now in use, else what is wrong with it
+    /// reads a theme file (a path or a file: URL); "" when it was loaded and is now in use, else what is wrong with it.
+    /// It reads any local path and says whether a file is there: fine only while no world code reaches a QML engine
+    /// (a world's Web entity shows web pages only, RenderableWebEntityItem; the tablet gives worlds no loadQMLSource).
+    /// Every engine has PanelTheme since 10-31 (security, 10-31)
     Q_INVOKABLE QString loadFile(const QString& pathOrUrl);
 
 signals:

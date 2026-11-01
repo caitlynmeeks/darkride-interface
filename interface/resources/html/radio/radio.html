@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  radio.html
+  interface/resources/html/radio
+
+  The Radio panel's page (qml/darkride/RadioPanel.qml): internet radio in a classic skin player (Webamp, MIT), wearing
+  Darkride's own skin (mary's), with SomaFM's stations, a search of the Radio Browser directory, any stream address,
+  and the player's own skins. Only the player is here: its controls (tabs, Find, Address, skins) are the panel's own
+  native ones (RadioPanel.qml), which call the page. Each listener's app plays the stream straight from the station.
+
+  Copyright 2026 Darkride.
+
+  Distributed under the MIT License.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Radio</title>
+<link rel="stylesheet" href="radio.css">
+</head>
+<body>
+<main id="radio">
+    <div id="player"></div>
+</main>
+<script src="webamp.darkride.min.js"></script>
+<script src="darkride-skin.js"></script>
+<script src="stations.js"></script>
+<script src="radio.js"></script>
+</body>
+</html>

@@ -39,20 +39,22 @@ namespace {
     const QString HIERARCHY = "Entities";   // Build mode's Hierarchy panel (Caity, 10-27: "Entities")
     const QString INSPECTOR = "Inspector";
 
+    const int FLOATING_HEIGHT = 720;
     struct QmlPanel {
         QString name;
         QString source;
         int width;
+        int height { FLOATING_HEIGHT };
     };
     // the bar's order; at the overlay windows' widths, which the panels were laid out for: a column, or wider for
-    // Explore's cards
+    // Explore's cards; the radio at its player's size (Webamp's two windows, 275 px wide) and its native controls
     const QList<QmlPanel> QML_PANELS {
         { "Settings", "qrc:///qml/darkride/SettingsPanel.qml", 560 },
         { "Avatar", "qrc:///qml/darkride/AvatarPanel.qml", 560 },
         { "People", "qrc:///qml/darkride/PeoplePanel.qml", 560 },
         { "Explore", "qrc:///qml/darkride/ExplorePanel.qml", 760 },
+        { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 320, 640 },
     };
-    const int FLOATING_HEIGHT = 720;
 
     const QString TABS_BEGIN = "/* dock tabs: begin */";
     const QString TABS_END = "/* dock tabs: end */";
@@ -195,7 +197,7 @@ QDockWidget* Panels::dock(const QString& name) {
         if (!WindowLayout::instance()->restoreDock(made)) {
             window->addDockWidget(Qt::RightDockWidgetArea, made);
             made->setFloating(true);
-            placeFloating(made, window, QSize(panel.width, FLOATING_HEIGHT));
+            placeFloating(made, window, QSize(panel.width, panel.height));
         }
         WindowLayout::instance()->watch(made);
         _docks[name] = made;
@@ -236,7 +238,7 @@ void Panels::resetDocks() {
         if (QDockWidget* made = _docks.value(panel.name)) {
             made->hide();
             made->setFloating(true);
-            placeFloating(made, window, QSize(panel.width, FLOATING_HEIGHT));
+            placeFloating(made, window, QSize(panel.width, panel.height));
         }
     }
     // the console closed, as on a first start (Caity, 10-27), which stops what was typed into it, and back in its

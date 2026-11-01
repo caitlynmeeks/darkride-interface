@@ -106,10 +106,20 @@ bool QmlDock::event(QEvent* event) {
         case QEvent::MouseButtonDblClick:
         case QEvent::MouseButtonRelease:
         case QEvent::NonClientAreaMouseButtonDblClick:
-        case QEvent::NonClientAreaMouseButtonRelease:
-        case QEvent::Close: {
+        case QEvent::NonClientAreaMouseButtonRelease: {
             gl::ViewChangeGuard guard(event->type());
             return QDockWidget::event(event);
+        }
+        // closed, not only hidden (Build mode's layout, a re-dock and a tab behind another only hide it): a panel that
+        // keeps something on while hidden learns of it by its panelClosed() (the radio's music, Caity's hand test 10-31)
+        case QEvent::Close: {
+            gl::ViewChangeGuard guard(event->type());
+            const bool handled = QDockWidget::event(event);
+            QQuickItem* item = panel();
+            if (event->isAccepted() && item && item->metaObject()->indexOfMethod("panelClosed()") >= 0) {
+                QMetaObject::invokeMethod(item, "panelClosed");
+            }
+            return handled;
         }
         // a key the page didn't take (a text field keeps what's typed) comes up to the panel: on to the controls, as the
         // 3D view's keys go (gl/GLWidget.cpp), so push to talk's T and walking work while a panel has the keyboard
