@@ -14,6 +14,7 @@
 //
 
 import QtQuick 2.15
+import QtQuick.Window 2.15
 import "panel"
 
 Rectangle {
@@ -75,5 +76,20 @@ Rectangle {
         }
     }
 
-    Component.onCompleted: Panels.screenSlotReady(slot, root)
+    // the surface puts the item in its window after the item is made: Panels checks that window
+    readonly property bool inWindow: root.Window.window !== null
+    onInWindowChanged: {
+        if (inWindow) {
+            Panels.screenSlotReady(slot, root);
+        }
+    }
+    Component.onCompleted: {
+        if (inWindow) {
+            Panels.screenSlotReady(slot, root);
+        }
+    }
+
+    // what a Web entity's surface asks of its QML: nothing to send, nothing loading to stop
+    signal sendToScript(var message)
+    function stop() {}
 }
