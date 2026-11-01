@@ -36,15 +36,71 @@ WorldDialogs::WorldDialogs(QObject* parent) : QObject(parent) {
 
 QString WorldDialogs::worldName() {
     auto addressManager = DependencyManager::get<AddressManager>();
-    QString name = addressManager->getPlaceName().trimmed();
-    if (name.isEmpty()) {
-        name = addressManager->getHost();
+    return displayName(addressManager->getPlaceName(), addressManager->getHost());
+}
+
+namespace {
+// the world chooses its place name: no direction overrides, zero-width or control characters, no line breaks
+// (so a world can't make its name read as another's); spaces run together
+QString cleaned(const QString& text) {
+    QString clean;
+    clean.reserve(text.size());
+    for (const QChar c : text) {
+        switch (c.category()) {
+            case QChar::Other_Control:        // control characters; a line break or tab becomes a space
+                if (c.isSpace()) {
+                    clean.append(' ');
+                }
+                continue;
+            case QChar::Separator_Line:
+            case QChar::Separator_Paragraph:
+                clean.append(' ');
+                continue;
+            case QChar::Other_Format:         // bidi marks and overrides, zero-width joiners, the BOM
+                continue;
+            default:
+                clean.append(c);
+        }
+    }
+    return clean.simplified();
+}
+
+// whether a name passes for the app's own: "Darkride" in any case, spacing or punctuation ("Dark Ride", "D.A.R.K.R.I.D.E")
+bool soundsLikeDarkride(const QString& text) {
+    QString letters;
+    for (const QChar c : text.toCaseFolded()) {
+        if (c.isLetterOrNumber()) {
+            letters.append(c);
+        }
+    }
+    return letters.contains("darkride");
+}
+
+bool isOurDomain(const QString& host) {
+    const QString lower = host.toLower();
+    return lower == "darkride.ai" || lower.endsWith(".darkride.ai");
+}
+}
+
+QString WorldDialogs::displayName(const QString& placeName, const QString& host) {
+    QString name = cleaned(placeName);
+    const QString cleanHost = cleaned(host);
+    // a world's name may not claim to be the app: its address instead, or "This world" if that does too
+    if (name.isEmpty() || soundsLikeDarkride(name)) {
+        name = cleanHost;
+        if (soundsLikeDarkride(name) && !isOurDomain(name)) {
+            name.clear();
+        }
     }
     if (name.isEmpty()) {
         name = "This world";
     }
     if (name.length() > MAX_NAME_LENGTH) {
-        name = name.left(MAX_NAME_LENGTH - 1) + QChar(0x2026);
+        int cut = MAX_NAME_LENGTH - 1;
+        if (name.at(cut - 1).isHighSurrogate()) {
+            --cut;   // never half a character
+        }
+        name = name.left(cut) + QChar(0x2026);
     }
     return name;
 }

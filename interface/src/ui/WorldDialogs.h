@@ -46,8 +46,12 @@ public:
     Q_INVOKABLE ModalDialogListener* promptAsync(const QString& text, const QString& defaultText,
                                                  const QVariantMap& properties);
 
-    /// the name a world's dialog gives its world: the place's name, or the server's address
+    /// the name a world's dialog gives its world: the place's name, or the server's address (displayName)
     static QString worldName();
+    /// a place name as a world's dialog shows it: cleaned of direction overrides, zero-width and control characters;
+    /// never "Darkride" (any spacing or punctuation: the host instead, or "This world" when that says it too and isn't
+    /// darkride.ai's); at most 48 characters, never cut inside one
+    static QString displayName(const QString& placeName, const QString& host);
 
 private slots:
     void answered();   // a world's dialog's selected or canceled signal: the visitor's "no more" tick holds
