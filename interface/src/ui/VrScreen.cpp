@@ -155,8 +155,13 @@ void VrScreen::connectOnce() {
     connect(DependencyManager::get<Panels>().data(), &Panels::screenSlotFilled, this, &VrScreen::slotFilled);
     // the pages can't be made before sign-in: once Panels has restored, the ones still missing, staggered
     connect(DependencyManager::get<Panels>().data(), &Panels::restored, this, [this] {
-        if (_keeping) {
-            _warmPages = true;
+        if (!_keeping) {
+            return;
+        }
+        _warmPages = true;
+        _warmAnnounce = true;
+        // a warm-up still pending (the entry's) makes them in its own mode; otherwise staggered
+        if (!_warmTimer.isActive()) {
             warmLater();
         }
     });
@@ -574,6 +579,11 @@ void VrScreen::warmStep() {
             QQuickItem* root = Panels::isScreenSlotUrl(it.key()) ? it.value()->getRootItem() : nullptr;
             if (root) {
                 panels->screenSlotReady(root->property("slot").toString(), root);
+                // drawing until the settle step, so the page moved in syncs now (a paused surface wouldn't until the show)
+                it.value()->resume();
+                if (!_warmUnpaused.contains(it.value())) {
+                    _warmUnpaused.append(it.value());
+                }
             }
         }
         _warmSettling = true;
