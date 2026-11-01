@@ -42,8 +42,11 @@ public:
     /// the menu button: up in front of you, or hidden
     void toggle();
     void show();
-    /// up and in front of you wherever it was (a dialog that needs you). Main thread.
-    void showInFront();
+    /// Up and in front of you wherever it was (a dialog that needs you). dialogOnly (a world's dialog): if it was hidden,
+    /// only the middle slot comes up, never the side panels, until the visitor opens the screen. Main thread.
+    void showInFront(bool dialogOnly = false);
+    /// a dialog-only screen's dialog has been answered: it hides again
+    void dialogOnlyDone();
     void hide();
     bool isShown() const { return _shown; }
 
@@ -54,6 +57,8 @@ private:
     enum Piece { Left = 0, Middle, Right, Bar, PIECE_COUNT };
 
     void connectOnce();
+    void showPieces(bool dialogOnly);
+    void makeOtherPieces(const vrscreen::Arrangement& places);
     vrscreen::Arrangement arrangement() const;
     vrscreen::Pose placedPiece(const vrscreen::Arrangement& arrangement, Piece piece) const;
     void makePiece(Piece piece, const vrscreen::Arrangement& arrangement);
@@ -74,6 +79,7 @@ private:
 
     bool _connected { false };
     bool _shown { false };
+    bool _dialogOnly { false };   // only the middle slot is up, for a world's dialog
     bool _changing { false };   // our own deletes, as against someone else's
     bool _wasHeadset { false };
     uint64_t _lastToggle { 0 };

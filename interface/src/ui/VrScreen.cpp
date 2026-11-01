@@ -117,6 +117,11 @@ void VrScreen::toggle() {
         return;
     }
     _lastToggle = now;
+    // the menu button answers a dialog first (Cancel), as Escape does on the desktop; the screen stays
+    auto panels = DependencyManager::get<Panels>();
+    if (_shown && panels->cancelScreenDialog()) {
+        return;
+    }
     if (_shown) {
         hide();
     } else {
@@ -125,9 +130,14 @@ void VrScreen::toggle() {
 }
 
 void VrScreen::show() {
+    showPieces(false);
+}
+
+void VrScreen::showPieces(bool dialogOnly) {
     if (_shown) {
         return;
     }
+    _dialogOnly = dialogOnly;
     connectOnce();
     // only while shown: a world change deletes thousands of entities, and none of them should reach a hidden screen
     auto entities = DependencyManager::get<EntityScriptingInterface>();
@@ -140,26 +150,42 @@ void VrScreen::show() {
     _shown = true;
 
     const Arrangement places = arrangement();
-    makePiece(Left, places);
     makePiece(Middle, places);
-    if (DependencyManager::get<Panels>()->screenSlotSize(SLOT_RIGHT).isValid()) {
-        makePiece(Right, places);
+    if (!dialogOnly) {
+        makeOtherPieces(places);
     }
-    makePiece(Bar, places);
     tellState();
     DependencyManager::get<HMDScriptingInterface>()->setShouldShowTablet(true);
     qCDebug(interfaceapp) << "VR screen: shown, yaw" << _yaw;
 }
 
-void VrScreen::showInFront() {
+void VrScreen::makeOtherPieces(const Arrangement& places) {
+    makePiece(Left, places);
+    if (DependencyManager::get<Panels>()->screenSlotSize(SLOT_RIGHT).isValid()) {
+        makePiece(Right, places);
+    }
+    makePiece(Bar, places);
+}
+
+void VrScreen::showInFront(bool dialogOnly) {
     if (!_shown) {
-        show();
+        showPieces(dialogOnly);
         return;
     }
     endDrag();
     faceHead();
     movePieces();
+    if (_dialogOnly && !dialogOnly) {
+        _dialogOnly = false;
+        makeOtherPieces(arrangement());
+    }
     tellState();
+}
+
+void VrScreen::dialogOnlyDone() {
+    if (_dialogOnly) {
+        hide();
+    }
 }
 
 void VrScreen::faceHead() {
@@ -175,6 +201,7 @@ void VrScreen::hide() {
     }
     endDrag();
     _shown = false;
+    _dialogOnly = false;
     for (const QMetaObject::Connection& connection : _entityConnections) {
         disconnect(connection);
     }
@@ -306,7 +333,7 @@ void VrScreen::updateHead() {
 }
 
 void VrScreen::slotSizeChanged(const QString& slot) {
-    if (!_shown || slot != SLOT_RIGHT) {
+    if (!_shown || _dialogOnly || slot != SLOT_RIGHT) {
         return;
     }
     // the radio on or off: the right slot's entity comes and goes, and nothing else moves. By the time it's off, its
