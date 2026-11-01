@@ -148,8 +148,13 @@ public:
      * @returns {boolean} <code>true</code> while the VR screen is up.
      */
     Q_INVOKABLE bool isScreenUp() const { return _screenUp; }
-    /// every page back in its dock (hidden while the headset is on), the slots forgotten: before vr deletes them
+    /// every page back in its dock (hidden while the headset is on), the slots forgotten: before vr deletes them (the
+    /// headset coming off, quit)
     void releaseScreenSlots();
+    /// vr's hide in the headset: the pages stay in their kept (paused) slots, the dialogs go back to the desktop, nothing
+    /// counts as shown; the next setScreenState("down"/"parked") shows them again as they were
+    void hideScreenSlots();
+    Q_INVOKABLE void testHideScreenSlots();   // test builds only, as testReleaseScreenSlots
     /// test builds only (DARKRIDE_SCREEN_TEST_SLOTS): a test script's releaseScreenSlots, before it deletes its slots
     Q_INVOKABLE void testReleaseScreenSlots();
     Q_INVOKABLE void testSetScreenState(const QString& state);   // test builds only, as testReleaseScreenSlots
@@ -173,6 +178,9 @@ signals:
     /// a VR screen slot's size changed (the right one folds while the radio is off), or the screen's state did
     void screenSlotSizeChanged(const QString& slot);
     void screenStateChanged(const QString& state);
+    /// a page moved into a slot while the screen is hidden (its surface paused): vr resumes it briefly so the page's
+    /// first sync happens now, not at the next show
+    void screenSlotFilled(const QString& slot);
 
 private:
     enum class Change { Open, Close, Toggle };
@@ -202,6 +210,7 @@ private:
     void dialogShown(QQuickItem* dialog);
     void screenDialogGone();
     void leaveDialogOnly();
+    void showKeptSlots();   // setScreenState after hideScreenSlots
 
     bool _restored { false };   // none opens before the layout's restore (after sign-in)
     QHash<QString, QPointer<QDockWidget>> _docks;
@@ -218,8 +227,9 @@ private:
     QPointer<QQuickItem> _tabletHolder;   // a hidden item on the desktop's QML that keeps the window out of sight
     QSizeF _tabletLoaderSize;
     bool _tabletOnScreen { false };
-    bool _screenDialogOnly { false };
-    std::atomic<bool> _screenUp { false };   // _screenState set, for scripts' threads (isScreenUp)   // the screen is up only for a world's dialog: the middle slot, no page in it
+    bool _screenDialogOnly { false };   // the screen is up only for a world's dialog: the middle slot, no page in it
+    bool _screenHidden { false };   // vr hid the screen in the headset: its slots and their pages kept, out of view
+    std::atomic<bool> _screenUp { false };   // _screenState set, for scripts' threads (isScreenUp)
     QString _tabletLabel { "Apps" };
 };
 

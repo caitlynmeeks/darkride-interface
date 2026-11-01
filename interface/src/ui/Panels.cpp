@@ -375,7 +375,8 @@ void Panels::change(const QString& name, Change how) {
     // the VR screen, while it's up: a page with a slot opens there, and closes back into its dock
     if (!_screenSlots.isEmpty() && !screenSlotFor(name).isEmpty()) {
         auto qmlDock = qobject_cast<QmlDock*>(panel);
-        const bool inFront = qmlDock && qmlDock->isAway() &&
+        // (on a hidden screen the page is kept in its slot out of view: a toggle shows it rather than closing it)
+        const bool inFront = !_screenHidden && qmlDock && qmlDock->isAway() &&
             (screenSlotFor(name) != SLOT_MIDDLE || (!_middleTabs.isEmpty() && _middleTabs.last() == name));
         if (how == Change::Close || (how == Change::Toggle && inFront)) {
             if (qmlDock && qmlDock->isAway()) {
@@ -392,6 +393,9 @@ void Panels::change(const QString& name, Change how) {
             return;
         }
         if (putOnScreen(name)) {
+            if (_screenHidden && screenShowInFront) {
+                screenShowInFront(false);   // in the headset a panel opened is wanted in view
+            }
             return;
         }
         // the radio turned on while the screen is up and has no right slot yet: on now (its page hears it's open),
@@ -470,7 +474,7 @@ void Panels::dialogShown(QQuickItem* dialog) {
         return;
     }
     const bool fromWorld = !dialog->property("world").toString().isEmpty();
-    const bool up = !_screenSlots.isEmpty() || !_screenState.isEmpty();
+    const bool up = !_screenState.isEmpty();   // shown (kept slots on a hidden screen don't count)
     if (fromWorld && !up) {
         _screenDialogOnly = true;
     } else if (!fromWorld) {
@@ -575,12 +579,18 @@ void Panels::takeScreenSlot(const QString& slot, QQuickItem* host) {
         return;
     }
     if (_screenSlots.value(slot) == host) {
+        // a kept slot handed over again at a show: a side slot coming while the screen was up only for a world's
+        // dialog means it's wanted whole now (vr's own show)
+        if (_screenDialogOnly && slot != SLOT_MIDDLE) {
+            leaveDialogOnly();
+        }
         return;
     }
     _screenSlots[slot] = host;
     qCDebug(interfaceapp) << "Panels: screen slot ready:" << slot << host->size();
-    if (slot == SLOT_MIDDLE) {
-        // the app's dialogs show over the middle slot, not the HUD (it can be behind you, or hidden on a ride: vr)
+    if (slot == SLOT_MIDDLE && !_screenHidden) {
+        // the app's dialogs show over the middle slot, not the HUD (it can be behind you, or hidden on a ride: vr);
+        // a slot taken while the screen is hidden (vr's warm-up) becomes their host as the screen shows
         if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
             offscreenUi->setDialogHost(host->findChild<QQuickItem*>("dialogs"));
         }
@@ -644,6 +654,9 @@ bool Panels::putOnScreen(const QString& name) {
     if (slot == SLOT_RIGHT) {
         emit screenSlotSizeChanged(SLOT_RIGHT);
     }
+    if (_screenHidden) {
+        emit screenSlotFilled(slot);
+    }
     return true;
 }
 
@@ -666,6 +679,9 @@ QSize Panels::screenSlotSize(const QString& slot) const {
 
 void Panels::setScreenState(const QString& state) {
     if ((state == "down" || state == "parked") && state != _screenState) {
+        if (_screenHidden) {
+            showKeptSlots();
+        }
         _screenState = state;
         _screenUp = true;
         // a screen up only for a world's dialog isn't the tablet shown (vr's HMD.showTablet follows the same rule)
@@ -688,6 +704,7 @@ void Panels::reportScreenShown(bool shown) {
 void Panels::releaseScreenSlots() {
     const bool shown = !qApp->isHMDMode();
     _screenDialogOnly = false;
+    _screenHidden = false;
     if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
         offscreenUi->setDialogHost(nullptr);   // a dialog still waiting goes back to the desktop
     }
@@ -726,6 +743,50 @@ void Panels::releaseScreenSlots() {
     }
 }
 
+void Panels::hideScreenSlots() {
+    // vr's hide in the headset: the pages stay in their kept slots, so the next show is only the surfaces resuming (a
+    // page moving windows rebuilds its scene graph: 30-60 ms); the dialogs go back to the desktop, nothing counts as shown
+    _screenHidden = true;
+    if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
+        offscreenUi->setDialogHost(nullptr);
+    }
+    _screenDialogOnly = false;
+    if (QQuickItem* middle = _screenSlots.value(SLOT_MIDDLE)) {
+        middle->setProperty("dialogOnly", false);
+    }
+    if (!_screenState.isEmpty()) {
+        _screenState.clear();
+        _screenUp = false;
+        reportScreenShown(false);
+        emit screenStateChanged(_screenState);
+    }
+}
+
+void Panels::showKeptSlots() {
+    // the screen shown again with its kept slots: the middle's dialog layer hosts the dialogs again; up only for a
+    // world's dialog, the kept page and tabs are hidden in place (ScreenSlot's dialogOnly)
+    _screenHidden = false;
+    QQuickItem* middle = _screenSlots.value(SLOT_MIDDLE);
+    if (!middle) {
+        return;   // the middle slot becomes the host as it's taken
+    }
+    if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
+        offscreenUi->setDialogHost(middle->findChild<QQuickItem*>("dialogs"));
+    }
+    middle->setProperty("dialogOnly", _screenDialogOnly);
+}
+
+void Panels::testHideScreenSlots() {
+    if (!qEnvironmentVariableIsSet("DARKRIDE_SCREEN_TEST_SLOTS")) {
+        return;
+    }
+    if (QThread::currentThread() != thread()) {
+        BLOCKING_INVOKE_METHOD(this, "testHideScreenSlots");
+        return;
+    }
+    hideScreenSlots();
+}
+
 void Panels::testReleaseScreenSlots() {
     if (!qEnvironmentVariableIsSet("DARKRIDE_SCREEN_TEST_SLOTS")) {
         return;
@@ -761,13 +822,15 @@ QString Panels::testScreenDialog(const QString& action) {
         return "no tick";
     }
     QQuickItem* content = middle ? middle->findChild<QQuickItem*>("content") : nullptr;
-    return QString("%1 on the slot; newest '%2' world '%3' offerBlock %4; dialogOnly %5; pages %6")
+    return QString("%1 on the slot; newest '%2' world '%3' offerBlock %4; dialogOnly %5; pages %6 shown %7; hidden %8")
         .arg(waiting.size())
         .arg(newest ? newest->property("title").toString() : QString())
         .arg(newest ? newest->property("world").toString() : QString())
         .arg(newest ? newest->property("offerBlock").toBool() : false)
         .arg(_screenDialogOnly)
-        .arg(content ? content->childItems().size() : -1);
+        .arg(content ? content->childItems().size() : -1)
+        .arg(content && content->isVisible())
+        .arg(_screenHidden);
 }
 
 void Panels::testSetScreenState(const QString& state) {
@@ -902,6 +965,9 @@ bool Panels::putTabletOnScreen() {
         _tabletLoader->setSize(content->size());
         _tabletLoader->setParentItem(content);   // the slot lays it out at its scale (ScreenSlot.qml)
         _tabletOnScreen = true;
+        if (_screenHidden) {
+            emit screenSlotFilled(SLOT_MIDDLE);
+        }
     }
     hideTabletWindow(true);
     return true;
