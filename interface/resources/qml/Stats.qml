@@ -1,3 +1,15 @@
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the "Frame trace" box (root.frameTraceLines, the frame trace's live columns) only; the values
+// behind the other lines are Stats.cpp's (see its note). The rest of this file is not frozen.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 import Hifi 1.0 as Hifi
 import QtQuick 2.3
 import '.'
@@ -486,6 +498,7 @@ Item {
                 }
             }
 
+            // FROZEN (vehicle path): see the note at the top of this file.
             // The frame trace's columns, live (team/performance/INSTRUMENTS-PLAN.md item 1): shown while the trace is
             // on or holds records (Test.frameTrace, Developer > Recording Mode); an instrument's values appear here as
             // soon as its owner writes them, before it has Stats lines of its own. Collapsed: the heading only.

@@ -18,6 +18,19 @@
 //  Distributed under the MIT License.
 //  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
 //
+// FROZEN: DARKRIDE VEHICLE PATH (2026-10-31). DO NOT EDIT WITHOUT THE MASTER PLAN.
+// Frozen here: the whole file: the frame trace's API (start, stop, beginFrame, set, setText, columns, take, dump,
+// summaryLines) and the column names every department writes (<area>.<name>_<unit>). Every writer calls it on the
+// vehicle's frame, and the vehicle check reads the ride from it, so a change here changes the ride and its proof.
+// This code is tuned to the millisecond. The monorail, karts and every ride depend on it, and small "harmless"
+// changes here have broken the ride before (strobing, judder, frame drops). Before changing anything frozen:
+//   1. the physics, performance and rendering owners work on it together, all three on Claude Fable (not a
+//      lighter model), with one written master plan agreed before any code;
+//   2. run the full vehicle check (team/VEHICLE-PERFORMANCE.md), ending with Caity's own ride at the display's
+//      real rate in a heavy world;
+//   3. release merges it only as checked.
+// When unsure whether a change counts, it counts.
+//
 #pragma once
 
 #include <atomic>
