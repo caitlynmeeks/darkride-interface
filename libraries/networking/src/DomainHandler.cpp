@@ -420,7 +420,15 @@ void DomainHandler::requestDomainSettings() {
     _settingsTimer.start();
 }
 
+bool DomainHandler::isFromDomainServer(ReceivedMessage& message) const {
+    return !_sockAddr.isNull() && message.getSenderSockAddr() == _sockAddr;
+}
+
 void DomainHandler::processSettingsPacketList(QSharedPointer<ReceivedMessage> packetList) {
+    if (!isFromDomainServer(*packetList)) {
+        qCDebug(networking) << "Ignoring domain settings that didn't come from the domain server";
+        return;
+    }
     // stop our settings timer since we successfully requested the settings we need
     _settingsTimer.stop();
     
@@ -457,6 +465,10 @@ void DomainHandler::processICEPingReplyPacket(QSharedPointer<ReceivedMessage> me
 }
 
 void DomainHandler::processDTLSRequirementPacket(QSharedPointer<ReceivedMessage> message) {
+    if (!isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring a DTLS requirement that didn't come from the domain server";
+        return;
+    }
     // figure out the port that the DS wants us to use for us to talk to them with DTLS
     unsigned short dtlsPort;
     message->readPrimitive(&dtlsPort);
@@ -469,6 +481,11 @@ void DomainHandler::processDTLSRequirementPacket(QSharedPointer<ReceivedMessage>
 }
 
 void DomainHandler::processICEResponsePacket(QSharedPointer<ReceivedMessage> message) {
+    // this names the address the client then treats as its domain server, so only the ICE server it asked may say it
+    if (!requiresICE() || message->getSenderSockAddr() != _iceServerSockAddr) {
+        qCDebug(networking_ice) << "Ignoring an ICE peer packet that didn't come from the ICE server";
+        return;
+    }
     if (_icePeer.hasSockets()) {
         qCDebug(networking_ice) << "Received an ICE peer packet for domain-server but we already have sockets. Not processing.";
         // bail on processing this packet if our ice peer already has sockets
@@ -514,6 +531,10 @@ bool DomainHandler::reasonSuggestsLogin(ConnectionRefusedReason reasonCode) {
 }
 
 void DomainHandler::processDomainServerConnectionDeniedPacket(QSharedPointer<ReceivedMessage> message) {
+    if (!isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring a connection denial that didn't come from the domain server";
+        return;
+    }
     // we're hearing from this domain-server, don't need to refresh API info
     _apiRefreshTimer.stop();
 

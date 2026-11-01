@@ -585,6 +585,10 @@ void NodeList::sendDSPathQuery(const QString& newPath) {
 }
 
 void NodeList::processDomainServerPathResponse(QSharedPointer<ReceivedMessage> message) {
+    if (!_domainHandler.isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring a path response that didn't come from the domain server";
+        return;
+    }
     // This is a response to a path query we theoretically made.
     // In the future we may want to check that this was actually from our DS and for a query we actually made.
 
@@ -677,6 +681,10 @@ void NodeList::pingPunchForDomainServer() {
 }
 
 void NodeList::processDomainServerConnectionTokenPacket(QSharedPointer<ReceivedMessage> message) {
+    if (!_domainHandler.isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring a connection token that didn't come from the domain server";
+        return;
+    }
     if (_domainHandler.getSockAddr().isNull()) {
         // refuse to process this packet if we aren't currently connected to the DS
         return;
@@ -689,6 +697,10 @@ void NodeList::processDomainServerConnectionTokenPacket(QSharedPointer<ReceivedM
 }
 
 void NodeList::processDomainServerList(QSharedPointer<ReceivedMessage> message) {
+    if (!_domainHandler.isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring a domain list that didn't come from the domain server";
+        return;
+    }
 
     // parse header information 
     QDataStream packetStream(message->getMessage());
@@ -814,6 +826,10 @@ void NodeList::processDomainServerList(QSharedPointer<ReceivedMessage> message) 
 }
 
 void NodeList::processDomainServerAddedNode(QSharedPointer<ReceivedMessage> message) {
+    if (!_domainHandler.isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring an added node that didn't come from the domain server";
+        return;
+    }
     // setup a QDataStream
     QDataStream packetStream(message->getMessage());
 
@@ -822,6 +838,10 @@ void NodeList::processDomainServerAddedNode(QSharedPointer<ReceivedMessage> mess
 }
 
 void NodeList::processDomainServerRemovedNode(QSharedPointer<ReceivedMessage> message) {
+    if (!_domainHandler.isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring a removed node that didn't come from the domain server";
+        return;
+    }
     // read the UUID from the packet, remove it if it exists
     QUuid nodeUUID = QUuid::fromRfc4122(message->readWithoutCopy(NUM_BYTES_RFC4122_UUID));
     qCDebug(networking) << "Received packet from domain-server to remove node with UUID" << uuidStringWithoutCurlyBraces(nodeUUID);
@@ -1324,6 +1344,10 @@ void NodeList::requestUsernameFromSessionID(const QUuid& nodeID) {
 }
 
 void NodeList::processUsernameFromIDReply(QSharedPointer<ReceivedMessage> message) {
+    if (!_domainHandler.isFromDomainServer(*message)) {
+        qCDebug(networking) << "Ignoring a username reply that didn't come from the domain server";
+        return;
+    }
     // read the UUID from the packet
     QString nodeUUIDString = (QUuid::fromRfc4122(message->readWithoutCopy(NUM_BYTES_RFC4122_UUID))).toString();
     // read the username from the packet

@@ -95,6 +95,9 @@ public:
     const HifiSockAddr& getSockAddr() const { return _sockAddr; }
     void setSockAddr(const HifiSockAddr& sockAddr, const QString& hostname);
 
+    // whether a packet came from the domain server this client is talking to (its address and port)
+    bool isFromDomainServer(ReceivedMessage& message) const;
+
     unsigned short getPort() const { return _sockAddr.getPort(); }
     void setPort(quint16 port) { _sockAddr.setPort(port); }
     // whether the domain's port was chosen (named in the URL, or given on an assignment client's command line);
