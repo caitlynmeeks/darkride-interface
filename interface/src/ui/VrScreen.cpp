@@ -374,6 +374,9 @@ void VrScreen::makePiece(Piece piece, const Arrangement& places) {
     properties.setDPI((uint16_t)spec.dpi);
     properties.setMaxFPS(spec.fps);
     properties.setPrimitiveMode(PrimitiveMode::SOLID);
+    // the screen is the visitor's own, not part of the world: no shadow of it on the floor or a car (and no draw of it in
+    // the shadow pass; an entity casts one by default)
+    properties.setCanCastShadow(false);
     properties.getGrab().setGrabbable(false);
     properties.setIgnorePickIntersection(false);
     properties.setAlpha(1.0f);
