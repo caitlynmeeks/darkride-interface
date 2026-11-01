@@ -9,6 +9,7 @@
 #include "TabletScriptingInterface.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
 #include <QtCore/QThread>
 
 #include <chrono>
@@ -648,6 +649,9 @@ void TabletProxy::loadQMLOnTop(const QVariant& path) {
 }
 
 void TabletProxy::returnToPreviousAppImpl(bool localSafeContext, bool fromWorld) {
+    if (fromWorld && !worldMayLoadPage()) {
+        return;
+    }
     if (QThread::currentThread() != thread()) {
         qCWarning(uiLogging) << __FUNCTION__ << "may not be called directly by scripts";
         return;
@@ -929,7 +933,26 @@ void TabletProxy::gotoWebScreen(const QString& url, const QString& injectedJavaS
     loadHTMLSourceOnTopImpl(url, injected, loadOtherBase, localSafeContext, worldPage);
 }
 
+bool TabletProxy::worldMayLoadPage() {
+    // a world's scripts may load a few pages, not keep loading them (security's rule for the VR screen, as for its dialogs)
+    static const int MAX_LOADS = 3;
+    static const qint64 WINDOW_MSECS = 10 * 1000;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    while (!_worldPageLoads.isEmpty() && now - _worldPageLoads.first() > WINDOW_MSECS) {
+        _worldPageLoads.removeFirst();
+    }
+    if (_worldPageLoads.size() >= MAX_LOADS) {
+        qCDebug(uiLogging) << "tablet: a world's page load refused, too many in" << WINDOW_MSECS / 1000 << "s";
+        return false;
+    }
+    _worldPageLoads.append(now);
+    return true;
+}
+
 void TabletProxy::loadHTMLSourceOnTopImpl(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase, bool localSafeContext, bool worldPage) {
+    if (worldPage && !worldMayLoadPage()) {
+        return;
+    }
     QObject* root = nullptr;
     if (!_toolbarMode && _qmlTabletRoot) {
         root = _qmlTabletRoot;

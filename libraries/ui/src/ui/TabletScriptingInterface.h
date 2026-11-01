@@ -573,6 +573,8 @@ protected:
     QQuickItem* _qmlTabletRoot { nullptr };
     OffscreenQmlSurface* _qmlOffscreenSurface { nullptr };
     QmlWindowClass* _desktopWindow { nullptr };
+    QList<qint64> _worldPageLoads;   // when worlds' scripts last loaded pages (worldMayLoadPage)
+    bool worldMayLoadPage();
     bool _toolbarMode { false };
     bool _tabletShown { false };
 
