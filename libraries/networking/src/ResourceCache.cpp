@@ -633,6 +633,9 @@ bool ResourceCache::attemptRequest(QSharedPointer<Resource> resource) {
     Q_ASSERT(!resource.isNull());
 
     auto sharedItems = DependencyManager::get<ResourceCacheSharedItems>();
+    if (!sharedItems) {
+        return false; // shutting down, see requestCompleted
+    }
     if (sharedItems->appendRequest(resource)) {
         resource->makeRequest();
         return true;
@@ -642,6 +645,12 @@ bool ResourceCache::attemptRequest(QSharedPointer<Resource> resource) {
 
 void ResourceCache::requestCompleted(QWeakPointer<Resource> resource) {
     auto sharedItems = DependencyManager::get<ResourceCacheSharedItems>();
+    if (!sharedItems) {
+        // An assignment stops on its own thread and destroys these while the main thread keeps delivering events
+        // (AssignmentClient::stopAssignmentClient), so a reply already queued can still land here. Holding the shared
+        // pointer above makes this check safe; cancelling requests first could not catch a reply already queued.
+        return;
+    }
 
     sharedItems->removeRequest(resource);
 
@@ -653,6 +662,9 @@ void ResourceCache::requestCompleted(QWeakPointer<Resource> resource) {
 
 bool ResourceCache::attemptHighestPriorityRequest() {
     auto sharedItems = DependencyManager::get<ResourceCacheSharedItems>();
+    if (!sharedItems) {
+        return false; // shutting down, see requestCompleted
+    }
     auto resource = sharedItems->getHighestPendingRequest();
     return (resource && attemptRequest(resource));
 }

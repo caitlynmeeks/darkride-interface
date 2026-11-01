@@ -65,6 +65,11 @@ void ScriptableAvatar::startAnimation(const QString& url, float fps, float prior
                                   Q_ARG(float, lastFrame), Q_ARG(const QStringList&, maskedJoints));
         return;
     }
+    // a call already queued can land here after an agent's stop has destroyed the cache: then it changes nothing
+    auto cache = DependencyManager::get<AnimationCache>();
+    if (!cache) {
+        return;
+    }
     if (_animationFadeSeconds > 0.0f && !_lastPoses.empty()) {   // fade from what plays now
         if (!_fading && _animation && _animationDetails.url != QUrl(url)) {
             _fadeFromAnimation = _animation;                    // the old clip keeps playing through the fade
@@ -77,7 +82,7 @@ void ScriptableAvatar::startAnimation(const QString& url, float fps, float prior
         _fading = true;
         _fadeElapsed = 0.0f;
     }
-    _animation = DependencyManager::get<AnimationCache>()->getAnimation(url);
+    _animation = cache->getAnimation(url);
     _animationDetails = AnimationDetails("", QUrl(url), fps, 0, loop, hold, false, firstFrame, lastFrame, true, firstFrame, false);
     _maskedJoints = maskedJoints;
 }
@@ -381,7 +386,10 @@ void ScriptableAvatar::update(float deltatime) {
     // The .fst gives the skeleton's .fbx (setJointMappingsFromNetworkReply); load it once as the bind pose.
     // This line was lost when the .fst reader moved here (eb097af796), so scripted avatars never animated.
     if (_bind.isNull() && !_skeletonFBXURL.isEmpty()) {
-        _bind = DependencyManager::get<AnimationCache>()->getAnimation(_skeletonFBXURL);
+        // an update already queued can land here after an agent's stop has destroyed the cache
+        if (auto cache = DependencyManager::get<AnimationCache>()) {
+            _bind = cache->getAnimation(_skeletonFBXURL);
+        }
     }
 
     const LookAt lookAt = advanceLookAt(deltatime);
