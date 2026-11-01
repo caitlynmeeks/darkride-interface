@@ -19,6 +19,8 @@
 class FileResourceRequest : public ResourceRequest {
     Q_OBJECT
 public:
+    static bool isNetworkPath(const QUrl& url, const QString& filename);
+
     FileResourceRequest(
         const QUrl& url,
         const bool isObservable = true,

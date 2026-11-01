@@ -24,6 +24,14 @@
 #include "ResourceManager.h"
 #include "NetworkingConstants.h"
 
+bool FileResourceRequest::isNetworkPath(const QUrl& url, const QString& filename) {
+    // Files on this computer only: a file URL naming another machine (a network share) isn't opened. Either slash counts,
+    // so a backslash where the host goes is one too.
+    QString path = filename;
+    path.replace('\\', '/');
+    return !url.host().isEmpty() || path.startsWith("//");
+}
+
 void FileResourceRequest::doSend() {
     auto statTracker = DependencyManager::get<StatTracker>();
     statTracker->incrementStat(STAT_FILE_REQUEST_STARTED);
@@ -41,6 +49,8 @@ void FileResourceRequest::doSend() {
     }
 
 
+    const QString requestedFilename = filename;
+
     // Allow platform specific versions of files loaded out of a resource cache via file://
     {
         QString originalFilename = filename;
@@ -49,7 +59,15 @@ void FileResourceRequest::doSend() {
         filename = fileSelector.select(filename);
     }
 
-    if (!_byteRange.isValid()) {
+    // the selector turns a file in the root folder into //name, which isn't what was asked: keep the name as asked
+    if (isNetworkPath(_url, filename) && !isNetworkPath(_url, requestedFilename)) {
+        filename = requestedFilename;
+    }
+
+    if (_url.scheme() != URL_SCHEME_QRC && isNetworkPath(_url, filename)) {
+        qCWarning(networking) << "Not opening a network path as a file:" << _url.toDisplayString();
+        _result = ResourceRequest::AccessDenied;
+    } else if (!_byteRange.isValid()) {
         _result = ResourceRequest::InvalidByteRange;
     } else {
         QFile file(filename);
