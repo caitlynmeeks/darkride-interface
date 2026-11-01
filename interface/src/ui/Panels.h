@@ -123,6 +123,12 @@ public:
     /// a slot's host QML, by its exact address: the app's names (Panels among them) go to that surface's context
     /// (Application::setupQmlSurface). Not a trusted address for Web entities: vr makes the slots as the app's own
     static bool isScreenSlotUrl(const QString& url);
+    /// vr's way to bring the screen up in front of the visitor's head (VrScreen::showInFront; dialogOnly: only the
+    /// middle slot, for a world's dialog) and to put a dialog-only screen away again once that dialog is answered
+    static void setScreenShowInFront(std::function<void(bool dialogOnly)> showInFront, std::function<void()> dialogOnlyDone);
+    /// the dialog over the middle slot answered Cancel (the menu button in the headset, as Escape on the desktop); false
+    /// when there's none
+    bool cancelScreenDialog();
     /// vr's check that a window is one of its slots' surfaces; until it's set, every host is refused
     static void setScreenWindowCheck(std::function<bool(QQuickWindow*)> check);
     /// a slot's layout size in panel pixels; empty while it holds nothing (the right one while the radio is off)

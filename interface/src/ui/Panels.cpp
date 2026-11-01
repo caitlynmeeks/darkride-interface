@@ -11,6 +11,7 @@
 
 #include <QtGui/QGuiApplication>
 #include <QtCore/QThread>
+#include <QtGui/QKeyEvent>
 #include <QtGui/QScreen>
 #include <QtQml/QQmlEngine>
 #include <QtCore/QFileInfo>
@@ -61,6 +62,8 @@ namespace {
     const int SLOT_HEIGHT = 720;
     const int MIDDLE_WIDTH = 760;   // Explore's cards (the widest panel)
     std::function<bool(QQuickWindow*)> screenWindowCheck;
+    std::function<void(bool)> screenShowInFront;
+    std::function<void()> screenDialogOnlyDone;
 
     const QString HIERARCHY = "Entities";   // Build mode's Hierarchy panel (Caity, 10-27: "Entities")
     const QString INSPECTOR = "Inspector";
@@ -434,6 +437,24 @@ bool Panels::isScreenSlotUrl(const QString& url) {
         "qrc:///qml/darkride/ScreenSlotRight.qml"
     };
     return SLOT_URLS.contains(url);
+}
+
+void Panels::setScreenShowInFront(std::function<void(bool dialogOnly)> showInFront, std::function<void()> dialogOnlyDone) {
+    screenShowInFront = showInFront;
+    screenDialogOnlyDone = dialogOnlyDone;
+}
+
+bool Panels::cancelScreenDialog() {
+    QQuickItem* host = _screenSlots.value(SLOT_MIDDLE);
+    QQuickItem* dialogs = host ? host->findChild<QQuickItem*>("dialogs") : nullptr;
+    const QList<QQuickItem*> waiting = dialogs ? dialogs->childItems() : QList<QQuickItem*>();
+    if (waiting.isEmpty()) {
+        return false;
+    }
+    // the newest, as Escape answers it on the desktop: its Cancel (or No, Close: the dialogs' own Escape order)
+    QKeyEvent press(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QCoreApplication::sendEvent(waiting.last(), &press);
+    return true;
 }
 
 void Panels::setScreenWindowCheck(std::function<bool(QQuickWindow*)> check) {
