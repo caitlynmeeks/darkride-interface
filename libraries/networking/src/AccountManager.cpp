@@ -427,6 +427,10 @@ bool writeAccountMapToFile(const QVariantMap& accountMap) {
     accountFileDirectory.mkpath(".");
 
     if (accountFile.open(QIODevice::WriteOnly)) {
+        // it holds the account's tokens and key: readable by this user only (where the system has such permissions),
+        // set before anything is written
+        accountFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+
         QDataStream writeStream(&accountFile);
 
         // persist the updated account QVariantMap to file
@@ -434,9 +438,6 @@ bool writeAccountMapToFile(const QVariantMap& accountMap) {
 
         // close the file with the newly persisted settings
         accountFile.close();
-
-        // it holds the account's tokens and key: readable by this user only (where the system has such permissions)
-        accountFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 
         return true;
     } else {
