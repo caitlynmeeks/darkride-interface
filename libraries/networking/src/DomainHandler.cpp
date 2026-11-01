@@ -481,6 +481,11 @@ void DomainHandler::processDTLSRequirementPacket(QSharedPointer<ReceivedMessage>
 }
 
 void DomainHandler::processICEResponsePacket(QSharedPointer<ReceivedMessage> message) {
+    // this names the address the client then treats as its domain server, so only the ICE server it asked may say it
+    if (!requiresICE() || message->getSenderSockAddr() != _iceServerSockAddr) {
+        qCDebug(networking_ice) << "Ignoring an ICE peer packet that didn't come from the ICE server";
+        return;
+    }
     if (_icePeer.hasSockets()) {
         qCDebug(networking_ice) << "Received an ICE peer packet for domain-server but we already have sockets. Not processing.";
         // bail on processing this packet if our ice peer already has sockets
