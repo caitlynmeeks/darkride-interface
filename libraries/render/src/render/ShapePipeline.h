@@ -12,7 +12,9 @@
 #ifndef hifi_render_ShapePipeline_h
 #define hifi_render_ShapePipeline_h
 
+#include <thread>
 #include <unordered_set>
+#include <vector>
 
 #include <gpu/Batch.h>
 #include <graphics/Material.h>
@@ -194,6 +196,11 @@ public:
         };
         Filter(const Filter::Builder& builder) : Filter(builder._flags, builder._mask) {}
         ShapeKey key() const { return ShapeKey(_flags); }
+
+        // A key matches when it has the filter's flags wherever the filter's mask is set
+        bool matches(const ShapeKey& key) const { return ((key._flags ^ _flags) & _mask).none(); }
+        const Flags& getFlags() const { return _flags; }
+        const Flags& getMask() const { return _mask; }
     protected:
         friend class ShapePlumber;
         Flags _flags{0};
@@ -343,12 +350,29 @@ public:
 
     const PipelinePointer pickPipeline(RenderArgs* args, const Key& key) const;
 
+    // A key's pipeline is the one of the first filter added that matches it, looked up the first time the key is
+    // drawn and kept in _pipelineMap; null when no filter matches (no custom pipeline factory here)
+    PipelinePointer findPipeline(const Key& key) const;
+
+    struct FilteredPipeline {
+        Filter filter;
+        PipelinePointer pipeline;
+    };
+    const std::vector<FilteredPipeline>& getFilteredPipelines() const { return _filteredPipelines; }
+    size_t getPipelineMapSize() const { return _pipelineMap.size(); }
+
 protected:
-    void addPipelineHelper(const Filter& filter, Key key, int bit, const PipelinePointer& pipeline) const;
+    PipelineMap::iterator resolvePipeline(const Key& key) const;
     mutable PipelineMap _pipelineMap;
 
 private:
+    // The filters in the order they were added. Expanding each filter into a map entry per key it matches, as was
+    // done until 2026-10, made millions of entries (~1.3 GB a client) for the few hundred keys ever drawn
+    std::vector<FilteredPipeline> _filteredPipelines;
     mutable std::unordered_set<Key, Key::Hash, Key::KeyEqual> _missingKeys;
+    // the lookups fill _pipelineMap, so a plumber is picked from one thread only (the render thread)
+    mutable std::thread::id _pickThread;
+    mutable bool _warnedOfSecondThread { false };
 };
 
 
