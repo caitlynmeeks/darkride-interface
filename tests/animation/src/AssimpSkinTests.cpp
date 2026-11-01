@@ -143,6 +143,77 @@ QByteArray makeSharedBufferGlb(bool padJson = true) {
     return glb;
 }
 
+// A glTF binary with one quad and one morph target given as a SPARSE accessor whose single index names vertex
+// `badIndex` (of 4): a morph target naming a vertex the mesh does not have. Whatever Assimp makes of it, what the
+// reader hands on must hold together (hfm::sanitizeMesh runs at the end of each mesh).
+QByteArray makeMorphTargetGlb(uint16_t badIndex) {
+    const float POSITIONS[] = { 0, 0, 0,  1, 0, 0,  0, 1, 0,  1, 1, 0 };
+    const uint16_t INDICES[] = { 0, 1, 2, 1, 3, 2 };
+    const uint16_t SPARSE_INDEX[] = { badIndex, 0 };   // one index, padded to 4 bytes
+    const float SPARSE_VALUE[] = { 0, 0, 1 };
+
+    QByteArray bin;
+    QJsonArray bufferViews;
+    auto addView = [&](const QByteArray& bytes) {
+        while (bin.size() % 4 != 0) {
+            bin.append('\0');
+        }
+        bufferViews.append(QJsonObject{ { "buffer", 0 }, { "byteOffset", bin.size() }, { "byteLength", bytes.size() } });
+        bin.append(bytes);
+        return bufferViews.size() - 1;
+    };
+    const int FLOAT = 5126;
+    const int UNSIGNED_SHORT = 5123;
+    const int positionView = addView(QByteArray((const char*)POSITIONS, sizeof(POSITIONS)));
+    const int indexView = addView(QByteArray((const char*)INDICES, sizeof(INDICES)));
+    const int sparseIndexView = addView(QByteArray((const char*)SPARSE_INDEX, sizeof(uint16_t)));
+    const int sparseValueView = addView(QByteArray((const char*)SPARSE_VALUE, sizeof(SPARSE_VALUE)));
+    while (bin.size() % 4 != 0) {
+        bin.append('\0');
+    }
+    QJsonArray accessors{
+        QJsonObject{ { "bufferView", positionView }, { "componentType", FLOAT }, { "count", 4 }, { "type", "VEC3" },
+                     { "min", QJsonArray{ 0, 0, 0 } }, { "max", QJsonArray{ 1, 1, 0 } } },
+        QJsonObject{ { "bufferView", indexView }, { "componentType", UNSIGNED_SHORT }, { "count", 6 }, { "type", "SCALAR" } },
+        QJsonObject{ { "componentType", FLOAT }, { "count", 4 }, { "type", "VEC3" },
+                     { "sparse", QJsonObject{ { "count", 1 },
+                                              { "indices", QJsonObject{ { "bufferView", sparseIndexView }, { "componentType", UNSIGNED_SHORT } } },
+                                              { "values", QJsonObject{ { "bufferView", sparseValueView } } } } } },
+    };
+    QJsonObject gltf{
+        { "asset", QJsonObject{ { "version", "2.0" } } },
+        { "scene", 0 },
+        { "scenes", QJsonArray{ QJsonObject{ { "nodes", QJsonArray{ 0 } } } } },
+        { "nodes", QJsonArray{ QJsonObject{ { "name", "Quad" }, { "mesh", 0 } } } },
+        { "meshes", QJsonArray{ QJsonObject{
+            { "primitives", QJsonArray{ QJsonObject{ { "attributes", QJsonObject{ { "POSITION", 0 } } }, { "indices", 1 },
+                                                      { "targets", QJsonArray{ QJsonObject{ { "POSITION", 2 } } } } } } },
+            { "extras", QJsonObject{ { "targetNames", QJsonArray{ "Smile" } } } } } } },
+        { "buffers", QJsonArray{ QJsonObject{ { "byteLength", bin.size() } } } },
+        { "bufferViews", bufferViews },
+        { "accessors", accessors },
+    };
+    QByteArray json = QJsonDocument(gltf).toJson(QJsonDocument::Compact);
+    while (json.size() % 4 != 0) {
+        json.append(' ');
+    }
+    QByteArray glb;
+    auto appendUint32 = [&glb](uint32_t value) {
+        value = qToLittleEndian(value);
+        glb.append((const char*)&value, sizeof(value));
+    };
+    appendUint32(0x46546C67);  // "glTF"
+    appendUint32(2);
+    appendUint32(12 + 8 + json.size() + 8 + bin.size());
+    appendUint32(json.size());
+    appendUint32(0x4E4F534A);  // "JSON"
+    glb.append(json);
+    appendUint32(bin.size());
+    appendUint32(0x004E4942);  // "BIN"
+    glb.append(bin);
+    return glb;
+}
+
 HFMModel::Pointer readSharedBufferGlb(bool padJson = true) {
     AssimpSerializer serializer;
     return serializer.read(makeSharedBufferGlb(padJson), hifi::VariantHash(), hifi::URL("file:///skin-test.glb"));
@@ -282,4 +353,34 @@ void AssimpSkinTests::testUnpaddedJsonChunk() {
     for (size_t i = 0; i < padded->meshes.size(); i++) {
         QCOMPARE(unpadded->meshes[i].vertices.size(), padded->meshes[i].vertices.size());
     }
+}
+
+// A morph target naming a vertex the mesh does not have (a sparse accessor's index past the count): the reader either
+// refuses the file or hands on blendshapes that hold together (every index inside the mesh, every list one per index
+// or empty), never one the blend or the baker would read past. A good target, for the same path, must come through.
+void AssimpSkinTests::testMorphTargetPastVertices() {
+    AssimpSerializer serializer;
+    auto check = [&](uint16_t index, const char* what) {
+        HFMModel::Pointer model = serializer.read(makeMorphTargetGlb(index), hifi::VariantHash(), hifi::URL("file:///morph-test.glb"));
+        if (!model) {
+            qDebug() << what << ": the reader refused the file";
+            return false;
+        }
+        bool anyShape = false;
+        for (const hfm::Mesh& mesh : model->meshes) {
+            for (const hfm::Blendshape& shape : mesh.blendshapes) {
+                QCOMPARE(shape.vertices.size(), shape.indices.size());
+                QVERIFY(shape.normals.isEmpty() || shape.normals.size() == shape.indices.size());
+                QVERIFY(shape.tangents.isEmpty() || shape.tangents.size() == shape.indices.size());
+                for (int vertex : shape.indices) {
+                    QVERIFY(vertex >= 0 && vertex < mesh.vertices.size());
+                }
+                anyShape = anyShape || !shape.indices.isEmpty();
+            }
+        }
+        qDebug() << what << ": read," << model->meshes.size() << "meshes, a blendshape with vertices:" << anyShape;
+        return anyShape;
+    };
+    QVERIFY(check(1, "good target (vertex 1 of 4)"));   // the same path with a sound index comes through
+    check(9, "bad target (vertex 9 of 4)");              // refused, or sanitized: either way nothing to read past
 }
