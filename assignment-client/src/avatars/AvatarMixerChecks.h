@@ -148,8 +148,9 @@ struct InstanceLimits {
     int maxAll;
 };
 const InstanceLimits AVATAR_ENTITY_LIMITS { 256, 1024 };   // the app wears at most 128 (MAX_NUM_AVATAR_ENTITIES)
-const InstanceLimits GRAB_LIMITS { 64, 4096 };             // two hands and a few far grabs; each grab is a new id, so a
-                                                           // long game session lists thousands (performance, avatars)
+const InstanceLimits GRAB_LIMITS { 64, 1024 };             // two hands and a few far grabs; each grab is a new id, so a
+                                                           // very long session can reach it; 4,096 once the relay loop
+                                                           // finds ids by hash (security, performance, avatars 11-02)
 const InstanceLimits MENU_PARAMETERS_LIMITS { 4, 4 };      // the app has one
 
 /// Why a new instance id isn't taken (empty when it is), given how many of its kind are live and listed. An app

@@ -178,7 +178,7 @@ void AvatarMixerChecksTests::newIdsWithinTheLimitsAreTaken() {
     QCOMPARE(newInstanceRefusal(0, 0, false, AVATAR_ENTITY_LIMITS), QString());
     QCOMPARE(newInstanceRefusal(127, 400, false, AVATAR_ENTITY_LIMITS), QString());
     QCOMPARE(newInstanceRefusal(2, 900, false, GRAB_LIMITS), QString());
-    QCOMPARE(newInstanceRefusal(2, 4000, false, GRAB_LIMITS), QString());
+    QCOMPARE(newInstanceRefusal(2, 1000, false, GRAB_LIMITS), QString());
     QCOMPARE(newInstanceRefusal(0, 0, false, MENU_PARAMETERS_LIMITS), QString());
 }
 
@@ -194,7 +194,7 @@ void AvatarMixerChecksTests::aDeleteForAnUnlistedIdIsRefused() {
 
 void AvatarMixerChecksTests::theCapSaysToReconnect() {
     QVERIFY(newInstanceRefusal(3, GRAB_LIMITS.maxAll, false, GRAB_LIMITS).contains("until this avatar reconnects"));
-    QCOMPARE(GRAB_LIMITS.maxAll, 4096);
+    QCOMPARE(GRAB_LIMITS.maxAll, 1024);
     QCOMPARE(AVATAR_ENTITY_LIMITS.maxAll, 1024);
 }
 
