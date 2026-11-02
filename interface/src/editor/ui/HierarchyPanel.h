@@ -69,6 +69,15 @@ public:
     // what a click on the row's toggle does (onlyThis: an Alt-click's, the row alone); false when the row isn't there,
     // the lock can't be changed, or there are no scripts to turn on or off
     bool clickToggle(Toggle toggle, const QUuid& id, bool onlyThis);
+    // a stroke along a toggle's column (Blender's outliner; Caity 11-01): a press on one row's toggle and a drag, every
+    // row passed taking the first row's new state, applied together on release as one undo step. strokeTarget: what a
+    // click on the row's toggle would set (false when it can't change there); strokeIds: what the stroke's rows, and
+    // what's under them unless onlyThis, amount to for the toggle
+    bool strokeTarget(Toggle toggle, const QUuid& id, bool onlyThis, bool& on) const;
+    QList<QUuid> strokeIds(Toggle toggle, const QList<QUuid>& rows, bool onlyThis) const;
+    // a test's stroke (Test.hierarchyStroke): the gutter gets a press on the first row's toggle, a move over each row
+    // and a release on the last, as the mouse gives them; false when a row isn't in sight
+    bool testStroke(Toggle toggle, const QList<QUuid>& rows, bool onlyThis);
     // how many of this world's rows are hidden in this builder's view
     int hiddenCount() const;
 

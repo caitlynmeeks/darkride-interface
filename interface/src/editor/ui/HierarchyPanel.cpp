@@ -11,8 +11,12 @@
 #include <algorithm>
 #include <functional>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QItemSelectionModel>
+#include <QtCore/QPersistentModelIndex>
 #include <QtCore/QSortFilterProxyModel>
+#include <QtCore/QTimer>
+#include <QtWidgets/QScrollBar>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QHelpEvent>
 #include <QtGui/QMouseEvent>
@@ -33,6 +37,7 @@
 namespace {
     const int CELL = 18;          // each toggle's column in the gutter
     const int GUTTER_PAD = 2;     // before the first column and after the last
+    const int STROKE_SCROLL_MS = 40;   // a toggle stroke held past the list's edge scrolls a step this often
     const QColor GUTTER_FILL("#323232");                // a shade darker than the rows, as Unity's
     const QColor ICON_ON("#d2d2d2");                    // the rows' text colour (editor.qss)
     const QColor ICON_HINT(210, 210, 210, 120);         // under the pointer, while off
@@ -40,7 +45,8 @@ namespace {
     const QColor ICON_UNUSABLE(210, 210, 210, 35);      // a lock or scripts that can't be changed here
     const qreal ICON_PEN = 1.2;
 
-    const QString CLICK_HOW = "\nClick: with everything under it. Alt-click: this one alone.";
+    const QString CLICK_HOW = "\nClick: with everything under it. Alt-click: this one alone. Drag along the column to "
+                              "set every row you pass the same way.";
 
     // the icons, drawn as Apple's symbols are, in lines of one weight: an eye (struck through: hidden here), the
     // pointer's arrow (struck through: clicks pass it by), a padlock (shut and filled: locked) and curly braces for
@@ -116,6 +122,13 @@ public:
         setObjectName("EditorHierarchyGutter");
         setFixedWidth((HierarchyPanel::Scripts + 1) * CELL + 2 * GUTTER_PAD);
         setMouseTracking(true);
+        // a stroke held past the list's top or bottom scrolls it, and takes in the rows that come into sight
+        _scroll.setInterval(STROKE_SCROLL_MS);
+        connect(&_scroll, &QTimer::timeout, this, [this] {
+            QScrollBar* bar = _panel->_tree->verticalScrollBar();
+            bar->setValue(bar->value() + (_strokeY < offset() ? -1 : 1) * bar->singleStep());
+            strokeTo(_strokeY);
+        });
     }
 
 protected:
@@ -137,6 +150,9 @@ protected:
             for (int t = HierarchyPanel::Hide; t <= HierarchyPanel::Scripts; ++t) {
                 auto toggle = (HierarchyPanel::Toggle)t;
                 bool on = _panel->isOn(toggle, id);
+                if (t == _stroke && (toggle != HierarchyPanel::Scripts || scripted) && inStroke(index)) {
+                    on = _strokeOn;   // what the stroke will set, shown as it passes
+                }
                 if (toggle == HierarchyPanel::Scripts && !on && !hovered && !scripted) {
                     continue;   // braces only where there's a script to switch, or under the pointer
                 }
@@ -151,18 +167,60 @@ protected:
         }
     }
 
+    // A press on a toggle starts a stroke (Blender's outliner, Caity 11-01): dragging along the column, every row passed
+    // takes the first row's new state, shown as it passes and applied to them all on release, one undo step. A press
+    // and release on one row is the click it always was (with what's under the row; Alt: the row alone).
     void mousePressEvent(QMouseEvent* event) override {
         int toggle = toggleAt(event->pos().x());
         QModelIndex index = rowAt(event->pos().y());
         if (event->button() == Qt::LeftButton && toggle >= 0 && index.isValid()) {
-            _panel->clickToggle((HierarchyPanel::Toggle)toggle, index.data(EntityTreeModel::IdRole).toUuid(),
-                                event->modifiers().testFlag(Qt::AltModifier));
+            const bool onlyThis = event->modifiers().testFlag(Qt::AltModifier);
+            bool on = false;
+            const QUuid id = index.data(EntityTreeModel::IdRole).toUuid();
+            if (_panel->strokeTarget((HierarchyPanel::Toggle)toggle, id, onlyThis, on)) {
+                _stroke = toggle;
+                _strokeOn = on;
+                _strokeOnlyThis = onlyThis;
+                _strokeRows = { id };
+                _strokeSet = { id };
+                _strokeLast = index;
+                _strokeY = event->pos().y();
+                update();
+            }
         }
         event->accept();
     }
 
     void mouseMoveEvent(QMouseEvent* event) override {
         hover(rowAt(event->pos().y()));
+        if (_stroke >= 0 && event->buttons().testFlag(Qt::LeftButton)) {
+            _strokeY = event->pos().y();
+            strokeTo(_strokeY);
+            const int top = offset();
+            const bool outside = _strokeY < top || _strokeY >= top + _panel->_tree->viewport()->height();
+            if (outside && !_scroll.isActive()) {
+                _scroll.start();
+            } else if (!outside) {
+                _scroll.stop();
+            }
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (_stroke >= 0) {
+            _scroll.stop();
+            auto toggle = (HierarchyPanel::Toggle)_stroke;
+            QList<QUuid> rows = _strokeRows;
+            _stroke = -1;
+            _strokeRows.clear();
+            _strokeSet.clear();
+            const QList<QUuid> ids = _panel->strokeIds(toggle, rows, _strokeOnlyThis);
+            if (!ids.isEmpty()) {
+                emit _panel->toggleRequested(toggle, ids, _strokeOn);
+            }
+            update();
+        }
+        event->accept();
     }
 
     void leaveEvent(QEvent*) override {
@@ -187,6 +245,56 @@ protected:
     }
 
 private:
+    // the stroke takes in every row from the last one to the row at y (the nearest in sight when y is past the list's
+    // edge), so a quick move skips none; rows whose toggle can't change there are passed over
+    void strokeTo(int y) {
+        QTreeView* tree = _panel->_tree;
+        const int viewportY = std::max(0, std::min(y - offset(), tree->viewport()->height() - 1));
+        QModelIndex target = tree->indexAt(QPoint(0, viewportY));
+        if (!target.isValid()) {
+            // below the last row of a short list: the last row
+            for (QModelIndex at = tree->indexAt(QPoint(0, 0)); at.isValid(); at = tree->indexBelow(at)) {
+                target = at;
+            }
+        }
+        if (!target.isValid() || !_strokeLast.isValid() || target == QModelIndex(_strokeLast)) {
+            return;
+        }
+        const bool down = tree->visualRect(target).top() > tree->visualRect(_strokeLast).top();
+        for (QModelIndex at = _strokeLast; at.isValid() && at != target;) {
+            at = down ? tree->indexBelow(at) : tree->indexAbove(at);
+            if (!at.isValid()) {
+                break;
+            }
+            const QUuid id = at.data(EntityTreeModel::IdRole).toUuid();
+            bool on = false;
+            if (!_strokeSet.contains(id) && _panel->strokeTarget((HierarchyPanel::Toggle)_stroke, id, _strokeOnlyThis, on)) {
+                _strokeRows << id;
+                _strokeSet.insert(id);
+            }
+        }
+        _strokeLast = target;
+        update();
+    }
+    // a row the stroke will change: one it passed, or (without Alt) one under such a row
+    bool inStroke(const QModelIndex& index) const {
+        for (QModelIndex at = index; at.isValid(); at = _strokeOnlyThis ? QModelIndex() : at.parent()) {
+            if (_strokeSet.contains(at.data(EntityTreeModel::IdRole).toUuid())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    int _stroke { -1 };   // the toggle being stroked, or -1
+    bool _strokeOn { false };
+    bool _strokeOnlyThis { false };
+    QList<QUuid> _strokeRows;   // in the order passed
+    QSet<QUuid> _strokeSet;
+    QPersistentModelIndex _strokeLast;
+    int _strokeY { 0 };
+    QTimer _scroll;
+
     // the tree's viewport top in the gutter's coordinates: the rows' heights there are the gutter's
     int offset() const {
         return _panel->_tree->viewport()->mapTo(window(), QPoint()).y() - mapTo(window(), QPoint()).y();
@@ -417,7 +525,7 @@ bool HierarchyPanel::isOn(Toggle toggle, const QUuid& id) const {
     return false;
 }
 
-bool HierarchyPanel::clickToggle(Toggle toggle, const QUuid& id, bool onlyThis) {
+bool HierarchyPanel::strokeTarget(Toggle toggle, const QUuid& id, bool onlyThis, bool& on) const {
     if (!_model || id.isNull() || !_model->indexForId(id).isValid()) {
         return false;
     }
@@ -425,12 +533,11 @@ bool HierarchyPanel::clickToggle(Toggle toggle, const QUuid& id, bool onlyThis) 
     if (toggle == Lock && (!_canLock || !_model->isLoaded(id))) {
         return false;
     }
-    QList<QUuid> ids = onlyThis ? QList<QUuid> { id } : withDescendants(id);
-    bool on = !isOn(toggle, id);
+    on = !isOn(toggle, id);
     if (toggle == Scripts) {
         // only what has scripts to switch; a row without scripts of its own turns off what runs under it, or, when
         // nothing there runs, turns it all on again
-        ids = _readOnly ? QList<QUuid>() : scriptsToSwitch(ids);
+        const QList<QUuid> ids = _readOnly ? QList<QUuid>() : scriptsToSwitch(onlyThis ? QList<QUuid> { id } : withDescendants(id));
         if (ids.isEmpty()) {
             return false;
         }
@@ -438,7 +545,68 @@ bool HierarchyPanel::clickToggle(Toggle toggle, const QUuid& id, bool onlyThis) 
             on = std::any_of(ids.begin(), ids.end(), [this](const QUuid& each) { return !isOn(Scripts, each); });
         }
     }
+    return true;
+}
+
+QList<QUuid> HierarchyPanel::strokeIds(Toggle toggle, const QList<QUuid>& rows, bool onlyThis) const {
+    QList<QUuid> ids;
+    QSet<QUuid> seen;
+    for (const auto& row : rows) {
+        for (const auto& id : onlyThis ? QList<QUuid> { row } : withDescendants(row)) {
+            if (!seen.contains(id)) {
+                seen.insert(id);
+                ids << id;
+            }
+        }
+    }
+    if (toggle == Scripts) {
+        ids = _readOnly ? QList<QUuid>() : scriptsToSwitch(ids);
+    }
+    return ids;
+}
+
+bool HierarchyPanel::clickToggle(Toggle toggle, const QUuid& id, bool onlyThis) {
+    bool on = false;
+    if (!strokeTarget(toggle, id, onlyThis, on)) {
+        return false;
+    }
+    const QList<QUuid> ids = strokeIds(toggle, { id }, onlyThis);
+    if (ids.isEmpty()) {
+        return false;
+    }
     emit toggleRequested(toggle, ids, on);
+    return true;
+}
+
+bool HierarchyPanel::testStroke(Toggle toggle, const QList<QUuid>& rows, bool onlyThis) {
+    // the rows' toggles where the gutter draws them, found among the rows in sight
+    QList<QPoint> points;
+    for (const auto& id : rows) {
+        QModelIndex found;
+        for (QModelIndex at = _tree->indexAt(QPoint(0, 0)); at.isValid(); at = _tree->indexBelow(at)) {
+            if (at.data(EntityTreeModel::IdRole).toUuid() == id) {
+                found = at;
+                break;
+            }
+        }
+        if (!found.isValid()) {
+            return false;
+        }
+        QPoint center = _tree->viewport()->mapToGlobal(_tree->visualRect(found).center());
+        points << QPoint(GUTTER_PAD + (int)toggle * CELL + CELL / 2, _gutter->mapFromGlobal(center).y());
+    }
+    if (points.isEmpty()) {
+        return false;
+    }
+    const Qt::KeyboardModifiers modifiers = onlyThis ? Qt::AltModifier : Qt::NoModifier;
+    QMouseEvent press(QEvent::MouseButtonPress, points.first(), Qt::LeftButton, Qt::LeftButton, modifiers);
+    QCoreApplication::sendEvent(_gutter, &press);
+    for (const auto& point : points) {
+        QMouseEvent move(QEvent::MouseMove, point, Qt::NoButton, Qt::LeftButton, modifiers);
+        QCoreApplication::sendEvent(_gutter, &move);
+    }
+    QMouseEvent release(QEvent::MouseButtonRelease, points.last(), Qt::LeftButton, Qt::NoButton, modifiers);
+    QCoreApplication::sendEvent(_gutter, &release);
     return true;
 }
 

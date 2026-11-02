@@ -206,6 +206,8 @@ public slots:
     // what a click on a Hierarchy row's eye ("hide"), hand ("pick"), lock ("lock") or script mark ("scripts") does,
     // Alt held for onlyThis (Test.hierarchyToggle); false when the row isn't there or nothing could change
     bool clickHierarchyToggle(const QString& which, const QUuid& id, bool onlyThis);
+    // a stroke along a row toggle's column, from the first row to the last (Test.hierarchyStroke)
+    bool strokeHierarchyToggle(const QString& which, const QList<QUuid>& ids, bool onlyThis);
     // the row's toggles and what they amount to (Test.hierarchyToggles): hidden here (and whether the entity is
     // drawn), unpickable, locked, scripts off, the Hierarchy's note and the last scripts-off reminder
     QVariantMap hierarchyToggles(const QUuid& id) const;
