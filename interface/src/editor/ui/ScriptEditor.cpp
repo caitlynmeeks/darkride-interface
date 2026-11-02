@@ -16,6 +16,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QPointer>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QUrl>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
@@ -93,6 +94,13 @@ ScriptEditor::ScriptEditor(const PropertySpec& spec, QWidget* parent) : Property
     connect(_url, &PropertyEditor::liveValue, this, &PropertyEditor::liveValue);
     connect(_url, &PropertyEditor::committed, this, &PropertyEditor::committed);
     connect(_url, &PropertyEditor::editCancelled, this, &PropertyEditor::editCancelled);
+    connect(_url, &PropertyEditor::liveValue, this, [this](const QVariant& value) { showInlineNote(value.toString()); });
+    connect(_url, &PropertyEditor::committed, this, [this](const QVariant& value) { showInlineNote(value.toString()); });
+    _inlineNote = new QLabel("An inline script this long can't reach visitors. Host it as a file and give its address.", this);
+    _inlineNote->setObjectName("EditorScriptStatus");
+    _inlineNote->setWordWrap(true);
+    _inlineNote->hide();
+    layout->addWidget(_inlineNote);
 
     _statusRow = new QWidget(this);
     auto row = new QHBoxLayout(_statusRow);
@@ -124,6 +132,16 @@ ScriptEditor::ScriptEditor(const PropertySpec& spec, QWidget* parent) : Property
 
 ScriptEditor::~ScriptEditor() = default;
 
+void ScriptEditor::showInlineNote(const QString& text) {
+    // a script written into the field, not an address, reaches visitors only if it fits one entity packet with the
+    // rest of the entity: past that the world keeps it but every visitor gets no script and no error (servers, 11-01;
+    // the true edge is a little over 1 KB and varies, so the note comes at 1 KB)
+    static const int INLINE_SCRIPT_LIMIT_BYTES = 1024;
+    const QString script = text.trimmed();
+    const bool address = !script.contains('\n') && !QUrl(script).scheme().isEmpty();
+    _inlineNote->setVisible(_spec.key == "script" && !address && script.toUtf8().size() > INLINE_SCRIPT_LIMIT_BYTES);
+}
+
 bool ScriptEditor::isFor(const PropertySpec& spec) {
     return spec.kind == PropertyKind::Url && (spec.key == "script" || spec.key == "serverScripts");
 }
@@ -134,6 +152,7 @@ bool ScriptEditor::server() const {
 
 void ScriptEditor::setValue(const QVariant& value, bool mixed) {
     _url->setValue(value, mixed);
+    showInlineNote(mixed ? QString() : value.toString());
     const QString link = mixed ? QString("\n") : value.toString().trimmed();   // mixed: never equal to a real link
     if (link != _link) {
         _link = link;
