@@ -408,6 +408,11 @@ void PhysicsServer::sendStatsPacket() {
 
 // FROZEN (vehicle path): see the note at the top of this file.
 void PhysicsServer::handleOctreePacket(QSharedPointer<ReceivedMessage> message, SharedNodePointer senderNode) {
+    // World data is taken only from the world's own entity server: the node list's HMAC check names the sending
+    // node, not its type. A piggybacked packet inherits its carrier's sender. (Vehicle master plan entry 15.)
+    if (!senderNode || senderNode->getType() != NodeType::EntityServer) {
+        return;
+    }
     auto packetType = message->getType();
     qint64 receiveTime = message->getFirstPacketReceiveTime();
 
