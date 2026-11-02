@@ -1363,9 +1363,10 @@ bool LimitedNodeList::getLocalServerPortFromSharedMemory(const QString key, quin
 }
 
 void LimitedNodeList::flagTimeForConnectionStep(ConnectionStep connectionStep) {
-    QMetaObject::invokeMethod(this, "flagTimeForConnectionStep",
-                              Q_ARG(ConnectionStep, connectionStep),
-                              Q_ARG(quint64, usecTimestampNow()));
+    // a functor: finding a method by name and copying a custom type take Qt's global type-registry lock
+    QMetaObject::invokeMethod(this, [this, connectionStep, timestamp = usecTimestampNow()] {
+        flagTimeForConnectionStep(connectionStep, timestamp);
+    });
 }
 
 void LimitedNodeList::flagTimeForConnectionStep(ConnectionStep connectionStep, quint64 timestamp) {
