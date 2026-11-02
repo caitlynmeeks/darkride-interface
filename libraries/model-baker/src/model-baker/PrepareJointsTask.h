@@ -26,6 +26,11 @@ public:
     bool passthrough { false };
 };
 
+// A model's own Flow colliders (a VRM's) are in its joints' own axes, and Flow takes them in the rig's, which a joint's
+// rotation offset turns: turns them by the offsets (an .fst's are written in the rig's axes already)
+void turnFlowCollisionsToRigAxes(QVariantMap& collisions, const QHash<QString, int>& jointIndices,
+                                 const QMap<int, glm::quat>& jointRotationOffsets);
+
 class PrepareJointsTask {
 public:
     using Config = PrepareJointsConfig;

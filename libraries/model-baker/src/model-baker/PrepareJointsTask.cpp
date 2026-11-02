@@ -183,6 +183,25 @@ void applyJointDefaultPoses(const hifi::VariantHash& mapping, const std::vector<
     }
 }
 
+void turnFlowCollisionsToRigAxes(QVariantMap& collisions, const QHash<QString, int>& jointIndices,
+                                 const QMap<int, glm::quat>& jointRotationOffsets) {
+    for (auto itr = collisions.begin(); itr != collisions.end(); itr++) {
+        const int jointIndex = jointIndices.value(itr.key()) - 1;
+        if (!jointRotationOffsets.contains(jointIndex)) {
+            continue;
+        }
+        QVariantMap collision = itr.value().toMap();
+        QVariantMap offset = collision.value("offset").toMap();
+        const glm::vec3 turned = glm::inverse(jointRotationOffsets[jointIndex]) *
+            glm::vec3(offset.value("x").toFloat(), offset.value("y").toFloat(), offset.value("z").toFloat());
+        offset["x"] = turned.x;
+        offset["y"] = turned.y;
+        offset["z"] = turned.z;
+        collision["offset"] = offset;
+        itr.value() = collision;
+    }
+}
+
 void PrepareJointsTask::configure(const Config& config) {
     _passthrough = config.passthrough;
 }

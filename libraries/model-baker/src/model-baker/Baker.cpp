@@ -199,25 +199,9 @@ namespace baker {
             const FlowData& fstFlowData = input.get5();
             if (fstFlowData.shouldInitFlow() || fstFlowData.shouldInitCollisions()) {
                 hfmModelOut->flowData = fstFlowData;
-            } else if (!hfmModelOut->jointRotationOffsets.isEmpty()) {
-                // The model's colliders are in its joints' own axes, and Flow takes them in the rig's, which a joint's
-                // rotation offset turns (an .fst's collider offsets are written in those already)
-                QVariantMap& collisions = hfmModelOut->flowData._collisionsConfig;
-                for (auto itr = collisions.begin(); itr != collisions.end(); itr++) {
-                    const int jointIndex = hfmModelOut->jointIndices.value(itr.key()) - 1;
-                    if (!hfmModelOut->jointRotationOffsets.contains(jointIndex)) {
-                        continue;
-                    }
-                    QVariantMap collision = itr.value().toMap();
-                    QVariantMap offset = collision.value("offset").toMap();
-                    const glm::vec3 turned = glm::inverse(hfmModelOut->jointRotationOffsets[jointIndex]) *
-                        glm::vec3(offset.value("x").toFloat(), offset.value("y").toFloat(), offset.value("z").toFloat());
-                    offset["x"] = turned.x;
-                    offset["y"] = turned.y;
-                    offset["z"] = turned.z;
-                    collision["offset"] = offset;
-                    itr.value() = collision;
-                }
+            } else {
+                turnFlowCollisionsToRigAxes(hfmModelOut->flowData._collisionsConfig, hfmModelOut->jointIndices,
+                                            hfmModelOut->jointRotationOffsets);
             }
             hfmModelOut->shapeVertices = input.get6();
             hfmModelOut->shapes = input.get7();
