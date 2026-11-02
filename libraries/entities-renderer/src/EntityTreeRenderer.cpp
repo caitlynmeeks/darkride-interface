@@ -403,7 +403,22 @@ void EntityTreeRenderer::shutdown() {
     if (_entitiesScriptEngine) {
         _entitiesScriptEngine->disconnectNonEssentialSignals(); // disconnect all slots/signals from the script engine, except essential
     }
-    _shuttingDown = true;
+    {
+        std::unique_lock<std::mutex> lock(_spaceLock);
+        _shuttingDown = true;
+    }
+    // the space-update connections are direct calls (addPendingEntities): an entity still held elsewhere after the
+    // tree is cleared must not call into a renderer whose members are going, so every one is cut here, before clear()
+    if (_tree) {
+        _tree->withReadLock([&] {
+            _tree->recurseTreeWithOperation([&](const OctreeElementPointer& element, void*) {
+                std::static_pointer_cast<EntityTreeElement>(element)->forEachEntity([&](const EntityItemPointer& entity) {
+                    QObject::disconnect(entity.get(), &EntityItem::spaceUpdate, this, &EntityTreeRenderer::handleSpaceUpdate);
+                });
+                return true;
+            });
+        });
+    }
 
     clear(); // always clear() on shutdown
 }
@@ -436,15 +451,21 @@ void EntityTreeRenderer::addPendingEntities(const render::ScenePointer& scene, r
                 continue;
             }
             if (entity->getSpaceIndex() == -1) {
+                // the sphere is read before _spaceLock is taken: a parent lookup reads the tree, and the packet thread
+                // can hold the tree's write lock while it waits for _spaceLock in handleSpaceUpdate (master plan entry 10)
+                workload::Sphere sphere(entity->getWorldPosition(), entity->getBoundingRadius());
                 std::unique_lock<std::mutex> lock(_spaceLock);
                 auto spaceIndex = _space->allocateID();
-                workload::Sphere sphere(entity->getWorldPosition(), entity->getBoundingRadius());
                 workload::Transaction transaction;
                 SpatiallyNestablePointer nestable = std::static_pointer_cast<SpatiallyNestable>(entity);
                 transaction.reset(spaceIndex, sphere, workload::Owner(nestable));
                 _space->enqueueTransaction(transaction);
                 entity->setSpaceIndex(spaceIndex);
-                connect(entity.get(), &EntityItem::spaceUpdate, this, &EntityTreeRenderer::handleSpaceUpdate, Qt::QueuedConnection);
+                // a direct call, not a queued one: a queued delivery of the custom-type argument copied and destroyed it
+                // through Qt's global metatype registry lock twice per moving entity per frame, and while loaders parsed
+                // models the ride's frame waited behind them (the lock convoy, master plan entry 10). The slot only
+                // appends under _spaceLock, whichever thread emits
+                connect(entity.get(), &EntityItem::spaceUpdate, this, &EntityTreeRenderer::handleSpaceUpdate, Qt::DirectConnection);
             }
 
             auto entityID = entity->getEntityItemID();
@@ -1032,6 +1053,11 @@ void EntityTreeRenderer::update(bool simulate) {
 
 void EntityTreeRenderer::handleSpaceUpdate(std::pair<int32_t, glm::vec4> proxyUpdate) {
     std::unique_lock<std::mutex> lock(_spaceLock);
+    // a direct call can come from the packet thread after shutdown() (an entity that outlives this renderer): nothing
+    // is touched past the lock and the flag, which shutdown() set under the same lock
+    if (_shuttingDown) {
+        return;
+    }
     _spaceUpdates.emplace_back(proxyUpdate.first, proxyUpdate.second);
 }
 
