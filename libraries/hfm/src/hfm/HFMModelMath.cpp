@@ -259,6 +259,48 @@ static int clearIfNotPerVertex(QVector<T>& list, int vertexCount) {
     return 0;
 }
 
+// the indices BuildGraphicsMeshTask counts: without one it makes no drawable for the mesh
+static bool hasBakedIndex(const hfm::Mesh& mesh) {
+    for (const auto& part : mesh.parts) {
+        if (!part.triangleIndices.isEmpty() || !part.quadTrianglesIndices.isEmpty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int keepMeshesDrawable(hfm::Model& model) {
+    int changed = 0;
+    for (auto& mesh : model.meshes) {
+        if (mesh.parts.empty() || (!mesh.vertices.isEmpty() && hasBakedIndex(mesh))) {
+            continue;
+        }
+        if (mesh.vertices.isEmpty()) {
+            // nothing can name a vertex the mesh doesn't have: what would is dropped, then one vertex at the origin
+            mesh.normals.clear();
+            mesh.tangents.clear();
+            mesh.colors.clear();
+            mesh.texCoords.clear();
+            mesh.texCoords1.clear();
+            mesh.clusterIndices.clear();
+            mesh.clusterWeights.clear();
+            mesh.originalIndices.clear();
+            for (auto& blendshape : mesh.blendshapes) {
+                blendshape = hfm::Blendshape();  // the slot stays: the blendshape channels are numbered by it
+            }
+            for (auto& part : mesh.parts) {
+                part.triangleIndices.clear();
+                part.quadTrianglesIndices.clear();
+                part.quadIndices.clear();
+            }
+            mesh.vertices.push_back(glm::vec3(0.0f));
+        }
+        mesh.parts[0].triangleIndices = { 0, 0, 0 };
+        ++changed;
+    }
+    return changed;
+}
+
 MeshSanitizeResult sanitizeMesh(hfm::Mesh& mesh) {
     MeshSanitizeResult result;
     const int vertexCount = mesh.vertices.size();

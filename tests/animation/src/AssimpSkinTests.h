@@ -21,6 +21,7 @@ private slots:
     void testSkinPerMesh();
     void testUnpaddedJsonChunk();
     void testMorphTargetPastVertices();
+    void testPointsOnlyMeshKeptDrawable();
 };
 
 #endif // hifi_AssimpSkinTests_h

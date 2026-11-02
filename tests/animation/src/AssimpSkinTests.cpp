@@ -18,6 +18,7 @@
 #include <AccountManager.h>
 #include <AddressManager.h>
 #include <AssimpSerializer.h>
+#include <hfm/HFMModelMath.h>
 #include <DependencyManager.h>
 #include <NodeList.h>
 #include <ResourceCache.h>
@@ -258,6 +259,66 @@ void findMeshes(const HFMModel& model, int& glove, int& body) {
 
 }
 
+namespace {
+
+// a .glb of two meshes: 0 a triangle, 1 three points (a POINTS primitive, mode 0). The glTF reader keeps only
+// triangles, so mesh 1 comes out with a part and no index: the model baker made it no drawable and the renderer crashed.
+QByteArray makePointsGlb() {
+    const float POSITIONS[] = { 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+    const uint16_t INDICES[] = { 0, 1, 2 };
+    QByteArray bin;
+    bin.append((const char*)POSITIONS, sizeof(POSITIONS));
+    const int indicesOffset = bin.size();
+    bin.append((const char*)INDICES, sizeof(INDICES));
+    while (bin.size() % 4 != 0) {
+        bin.append('\0');
+    }
+    const int FLOAT = 5126;
+    const int UNSIGNED_SHORT = 5123;
+    const QJsonArray bufferViews{
+        QJsonObject{ { "buffer", 0 }, { "byteOffset", 0 }, { "byteLength", (int)sizeof(POSITIONS) } },
+        QJsonObject{ { "buffer", 0 }, { "byteOffset", indicesOffset }, { "byteLength", (int)sizeof(INDICES) } } };
+    const QJsonArray accessors{
+        QJsonObject{ { "bufferView", 0 }, { "componentType", FLOAT }, { "count", 3 }, { "type", "VEC3" },
+                     { "min", QJsonArray{ 0, 0, 0 } }, { "max", QJsonArray{ 1, 1, 0 } } },
+        QJsonObject{ { "bufferView", 1 }, { "componentType", UNSIGNED_SHORT }, { "count", 3 }, { "type", "SCALAR" } } };
+    const QJsonObject attributes{ { "POSITION", 0 } };
+    const QJsonObject gltf{
+        { "asset", QJsonObject{ { "version", "2.0" } } },
+        { "scene", 0 },
+        { "scenes", QJsonArray{ QJsonObject{ { "nodes", QJsonArray{ 0, 1 } } } } },
+        { "nodes", QJsonArray{ QJsonObject{ { "name", "Triangle" }, { "mesh", 0 } },
+                               QJsonObject{ { "name", "Points" }, { "mesh", 1 }, { "translation", QJsonArray{ 2, 0, 0 } } } } },
+        { "meshes", QJsonArray{
+            QJsonObject{ { "name", "Triangle" }, { "primitives", QJsonArray{ QJsonObject{ { "attributes", attributes }, { "indices", 1 } } } } },
+            QJsonObject{ { "name", "Points" }, { "primitives", QJsonArray{ QJsonObject{ { "attributes", attributes }, { "mode", 0 } } } } } } },
+        { "buffers", QJsonArray{ QJsonObject{ { "byteLength", bin.size() } } } },
+        { "bufferViews", bufferViews },
+        { "accessors", accessors },
+    };
+    QByteArray json = QJsonDocument(gltf).toJson(QJsonDocument::Compact);
+    while (json.size() % 4 != 0) {
+        json.append(' ');
+    }
+    QByteArray glb;
+    auto appendUint32 = [&glb](uint32_t value) {
+        value = qToLittleEndian(value);
+        glb.append((const char*)&value, sizeof(value));
+    };
+    appendUint32(0x46546C67);  // "glTF"
+    appendUint32(2);
+    appendUint32(12 + 8 + json.size() + 8 + bin.size());
+    appendUint32(json.size());
+    appendUint32(0x4E4F534A);  // "JSON"
+    glb.append(json);
+    appendUint32(bin.size());
+    appendUint32(0x004E4942);  // "BIN"
+    glb.append(bin);
+    return glb;
+}
+
+}
+
 void AssimpSkinTests::initTestCase() {
     // as AnimTests does: ResourceManager (which the serializer asks to normalize the model's URL) needs a NodeList
     DependencyManager::registerInheritance<LimitedNodeList, NodeList>();
@@ -396,4 +457,47 @@ void AssimpSkinTests::testMorphTargetPastVertices() {
     check(9, "bad target (vertex 9 of 4)");
     check(60000, "bad target (vertex 60000 of 4)");
     QVERIFY2(broken.isEmpty(), qPrintable(broken.join("; ")));
+}
+
+// A glTF mesh of points only (any reader can hand out a part with no face): after the read every mesh with parts can
+// be drawn, and the triangle mesh, the mesh count and the numbering are as read.
+void AssimpSkinTests::testPointsOnlyMeshKeptDrawable() {
+    AssimpSerializer serializer;
+    const HFMModel::Pointer model = serializer.read(makePointsGlb(), hifi::VariantHash(), hifi::URL("file:///points.glb"));
+    QVERIFY(model);
+    const size_t meshCount = model->meshes.size();
+    QVERIFY(meshCount >= 1);
+    int faceless = 0;
+    std::vector<QVector<int>> before;
+    for (const auto& mesh : model->meshes) {
+        int indices = 0;
+        for (const auto& part : mesh.parts) {
+            indices += part.triangleIndices.size() + part.quadTrianglesIndices.size();
+        }
+        faceless += (!mesh.parts.empty() && indices == 0) ? 1 : 0;
+        before.push_back(mesh.parts.empty() ? QVector<int>() : mesh.parts[0].triangleIndices);
+    }
+    qDebug() << "points.glb:" << meshCount << "meshes," << faceless << "with parts and no face as read";
+
+    QCOMPARE(hfm::keepMeshesDrawable(*model), faceless);
+
+    QCOMPARE(model->meshes.size(), meshCount);
+    for (size_t i = 0; i < model->meshes.size(); i++) {
+        const auto& mesh = model->meshes[i];
+        if (mesh.parts.empty()) {
+            continue;
+        }
+        QVERIFY(!mesh.vertices.isEmpty());
+        int indices = 0;
+        for (const auto& part : mesh.parts) {
+            indices += part.triangleIndices.size() + part.quadTrianglesIndices.size();
+            for (int index : part.triangleIndices) {
+                QVERIFY(index >= 0 && index < mesh.vertices.size());
+            }
+        }
+        QVERIFY(indices > 0);
+        if (!before[i].isEmpty()) {
+            QCOMPARE(mesh.parts[0].triangleIndices, before[i]);  // a mesh with faces is as read
+        }
+    }
 }

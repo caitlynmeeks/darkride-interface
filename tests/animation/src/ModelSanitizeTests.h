@@ -19,6 +19,10 @@ private slots:
     void testBadBlendshapesEmptied();
     void testFbxPolygonCutShort();
     void testObjFacePastVertices();
+    void testFbxSinglePointMeshKeptDrawable();
+    void testObjAllFacesPastKeptDrawable();
+    void testNoVertexMeshKeptDrawable();
+    void testDrawableMeshesUntouched();
 };
 
 #endif // hifi_ModelSanitizeTests_h

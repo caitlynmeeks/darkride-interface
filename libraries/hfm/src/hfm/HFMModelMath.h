@@ -57,6 +57,15 @@ struct MeshSanitizeResult {
 // together is only read, never copied.
 MeshSanitizeResult sanitizeMesh(hfm::Mesh& mesh);
 
+// The last step of every model read (ModelLoader::load, whichever reader): a mesh the model baker could make no drawable
+// for (no vertices, or no triangle or quad-triangle index in any of its parts) while it has parts is kept as one empty
+// (zero-area) triangle on its first vertex, so it is built and draws, picks and collides as nothing. The renderer makes
+// a draw item for every part of every mesh and reads its drawable unchecked, so such a mesh crashed the app. Meshes and
+// parts are never removed: materials and scripts name a model's parts by their number. A mesh with no vertices gets one
+// at its origin and loses what could only name vertices it doesn't have (per-vertex lists, skinning, blendshapes).
+// Returns the number of meshes changed; a model whose meshes all hold together is only read.
+int keepMeshesDrawable(hfm::Model& model);
+
 };
 
 #endif // #define hifi_hfm_ModelMath_h

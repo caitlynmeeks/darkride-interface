@@ -35,6 +35,20 @@ hfm::Mesh makeSquare() {
     return mesh;
 }
 
+// what the model baker needs to make a drawable for a mesh with parts: a vertex and a triangle or quad-triangle index
+// (BuildGraphicsMeshTask); the renderer reads the drawable of every part unchecked
+void verifyDrawable(const hfm::Mesh& mesh) {
+    if (mesh.parts.empty()) {
+        return;
+    }
+    QVERIFY(!mesh.vertices.isEmpty());
+    int indices = 0;
+    for (const auto& part : mesh.parts) {
+        indices += part.triangleIndices.size() + part.quadTrianglesIndices.size();
+    }
+    QVERIFY(indices > 0);
+}
+
 // every index of every part names a vertex the mesh has, and every list holds whole faces
 void verifyHoldsTogether(const hfm::Mesh& mesh) {
     const int vertexCount = mesh.vertices.size();
@@ -210,3 +224,130 @@ void ModelSanitizeTests::testObjFacePastVertices() {
     QCOMPARE(mesh.texCoords.size(), mesh.vertices.size());
     verifyHoldsTogether(mesh);
 }
+
+// Old High Fidelity content (the picture frame's default-image-model.fbx, the HQ water tank): a first mesh that is one
+// point, a vertex and a one-corner polygon. The last check leaves the polygon out, the mesh keeps its part with no
+// face, and the model baker would make it no drawable (the renderer crashed on it). Kept as one empty triangle; the
+// square beside it, and the mesh numbering, as read.
+void ModelSanitizeTests::testFbxSinglePointMeshKeptDrawable() {
+    const QByteArray FBX_TEXT =
+        "; FBX 7.4.0 project file\n"
+        "FBXHeaderExtension:  {\n"
+        "    FBXHeaderVersion: 1003\n"
+        "    FBXVersion: 7400\n"
+        "}\n"
+        "Objects:  {\n"
+        "    Geometry: 1000, \"Geometry::Point\", \"Mesh\" {\n"
+        "        Vertices: *3 {\n"
+        "            a: 0.5,0.5,0\n"
+        "        }\n"
+        "        PolygonVertexIndex: *1 {\n"
+        "            a: -1\n"
+        "        }\n"
+        "    }\n"
+        "    Geometry: 1001, \"Geometry::Square\", \"Mesh\" {\n"
+        "        Vertices: *12 {\n"
+        "            a: 0,0,0,1,0,0,1,1,0,0,1,0\n"
+        "        }\n"
+        "        PolygonVertexIndex: *6 {\n"
+        "            a: 0,1,-3,0,2,-4\n"
+        "        }\n"
+        "    }\n"
+        "}\n";
+
+    const HFMModel::Pointer model = FBXSerializer().read(FBX_TEXT, hifi::VariantHash(), QUrl("file:///single-point.fbx"));
+    QVERIFY(model);
+    QCOMPARE((int)model->meshes.size(), 2);
+    const int point = model->meshes[0].vertices.size() == 1 ? 0 : 1;
+    const int square = 1 - point;
+    QCOMPARE(model->meshes[point].vertices.size(), 1);
+    QVERIFY(model->meshes[square].vertices.size() > 1);  // the reader keeps a vertex per polygon corner
+    const auto squareParts = model->meshes[square].parts.size();
+    const auto squareIndices = model->meshes[square].parts[0].triangleIndices;
+
+    QCOMPARE(hfm::keepMeshesDrawable(*model), 1);
+
+    QCOMPARE((int)model->meshes.size(), 2);
+    const hfm::Mesh& kept = model->meshes[point];
+    QCOMPARE(kept.vertices.size(), 1);
+    QCOMPARE(kept.parts[0].triangleIndices, (QVector<int>{ 0, 0, 0 }));
+    verifyHoldsTogether(kept);
+    verifyDrawable(kept);
+    QCOMPARE(model->meshes[square].parts.size(), squareParts);
+    QCOMPARE(model->meshes[square].parts[0].triangleIndices, squareIndices);
+    QCOMPARE(hfm::keepMeshesDrawable(*model), 0);  // once kept, it holds
+}
+
+// An OBJ whose every face names a vertex past the file's: whatever part the reader keeps, the model can be drawn.
+void ModelSanitizeTests::testObjAllFacesPastKeptDrawable() {
+    const QByteArray OBJ_TEXT =
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 1 1 0\n"
+        "f 1 2 9\n"
+        "f 7 8 9\n";
+
+    const HFMModel::Pointer model = OBJSerializer().read(OBJ_TEXT, hifi::VariantHash(), QUrl());
+    QVERIFY(model);
+    hfm::keepMeshesDrawable(*model);
+    for (const auto& mesh : model->meshes) {
+        verifyHoldsTogether(mesh);
+        verifyDrawable(mesh);
+    }
+}
+
+// A mesh with parts and no vertex (every face named vertices it doesn't have): one vertex at its origin, one empty
+// triangle, and nothing left that names a vertex it doesn't have; the blendshape slot stays, emptied.
+void ModelSanitizeTests::testNoVertexMeshKeptDrawable() {
+    hfm::Model model;
+    hfm::Mesh mesh = makeSquare();
+    mesh.vertices.clear();
+    mesh.clusterIndices = { 0, 1, 2, 3 };
+    mesh.clusterWeights = { 1, 1, 1, 1 };
+    mesh.originalIndices = { 0, 1, 2, 3 };
+    hfm::sanitizeMesh(mesh);
+    model.meshes.push_back(mesh);
+
+    QCOMPARE(hfm::keepMeshesDrawable(model), 1);
+
+    const hfm::Mesh& kept = model.meshes[0];
+    QCOMPARE(kept.vertices.size(), 1);
+    QCOMPARE(kept.vertices[0], glm::vec3(0.0f));
+    QVERIFY(kept.normals.isEmpty());
+    QVERIFY(kept.texCoords.isEmpty());
+    QVERIFY(kept.clusterIndices.empty());
+    QVERIFY(kept.clusterWeights.empty());
+    QVERIFY(kept.originalIndices.isEmpty());
+    QCOMPARE(kept.blendshapes.size(), 1);
+    QVERIFY(kept.blendshapes[0].indices.isEmpty());
+    QCOMPARE(kept.parts.size(), (size_t)1);
+    verifyHoldsTogether(kept);
+    verifyDrawable(kept);
+}
+
+// A mesh the baker can draw is left alone, even with one part of no face beside a good one (the drawable is made); a
+// mesh with no part at all has nothing to draw and no draw item either.
+void ModelSanitizeTests::testDrawableMeshesUntouched() {
+    hfm::Model model;
+    model.meshes.push_back(makeSquare());
+    hfm::Mesh twoParts = makeSquare();
+    twoParts.parts.push_back(hfm::MeshPart());
+    model.meshes.push_back(twoParts);
+    hfm::Mesh noParts = makeSquare();
+    noParts.parts.clear();
+    model.meshes.push_back(noParts);
+    hfm::Mesh noVertexNoParts;
+    model.meshes.push_back(noVertexNoParts);
+    const auto before = model.meshes[0].parts[0].triangleIndices;
+    const int* data = before.constData();
+
+    QCOMPARE(hfm::keepMeshesDrawable(model), 0);
+
+    QCOMPARE(model.meshes[0].parts[0].triangleIndices, before);
+    QCOMPARE(model.meshes[0].parts[0].triangleIndices.constData(), data);  // read, not copied
+    QCOMPARE(model.meshes[1].parts.size(), (size_t)2);
+    QVERIFY(model.meshes[1].parts[1].triangleIndices.isEmpty());
+    QVERIFY(model.meshes[2].parts.empty());
+    QVERIFY(model.meshes[3].vertices.isEmpty());
+}
+

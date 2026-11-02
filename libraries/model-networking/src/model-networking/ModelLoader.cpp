@@ -12,7 +12,10 @@
 #include "ModelLoader.h"
 
 #include <DependencyManager.h>
+#include <hfm/HFMModelMath.h>
 #include <hfm/ModelFormatRegistry.h>
+
+#include "ModelNetworkingLogging.h"
 
 
 hfm::Model::Pointer ModelLoader::load(const hifi::ByteArray& data, const hifi::VariantHash& mapping, const hifi::URL& url, const std::string& webMediaType) const {
@@ -20,5 +23,14 @@ hfm::Model::Pointer ModelLoader::load(const hifi::ByteArray& data, const hifi::V
     if (!serializer) {
         return hfm::Model::Pointer();
     }
-    return serializer->read(data, mapping, url);
+    hfm::Model::Pointer model = serializer->read(data, mapping, url);
+    if (model) {
+        // a mesh with parts but nothing the baker can draw would crash the renderer (hfm::keepMeshesDrawable)
+        const int kept = hfm::keepMeshesDrawable(*model);
+        if (kept > 0) {
+            qCWarning(modelnetworking) << "ModelLoader:" << url << ":" << kept
+                                       << "meshes with no face (or no vertex) kept as an empty triangle";
+        }
+    }
+    return model;
 }
