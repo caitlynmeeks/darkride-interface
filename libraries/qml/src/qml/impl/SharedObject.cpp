@@ -482,12 +482,22 @@ void SharedObject::updateTextureAndFence(const TextureAndFence& newTextureAndFen
     _latestTextureAndFence = newTextureAndFence;
 }
 
+// A paused surface costs no timer wakeups: its 5 ms render timer (onTimer, which checks for a requested render) is
+// stopped with it and started again on resume. Both run on the main thread, the timer's own (the acquire and release
+// operators, the surface cache, the VR screen's pool of kept surfaces, which stay paused for a whole headset session).
+// A render requested while paused waits for the resume, which requests one anyway.
 void SharedObject::pause() {
     _paused = true;
+    if (_renderTimer) {
+        _renderTimer->stop();
+    }
 }
 
 void SharedObject::resume() {
     _paused = false;
+    if (_renderTimer && !_quit) {
+        _renderTimer->start();
+    }
     requestRender();
 }
 
