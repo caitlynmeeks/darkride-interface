@@ -178,10 +178,10 @@ Page {
             linkGiven = link;
             ApplicationInterface.wearAvatarLink(link);
         }
-        // a new avatar from the link given (a .glb's is the imported copy, on this computer) starts at scale 1 and is no
-        // favourite; any other change only forgets the link (its license or import was turned down)
+        // a new avatar from the link given (a .glb's or .vrm's is the imported copy, on this computer) starts at scale
+        // 1 and is no favourite; any other change only forgets the link (its license or import was turned down)
         function linkWorn(worn) {
-            var fromLink = worn === linkGiven || (/\.glb$/i.test(linkGiven) && /^file:.*\/Avatars\//.test(worn));
+            var fromLink = worn === linkGiven || (/\.(glb|vrm)$/i.test(linkGiven) && /^file:.*\/Avatars\//.test(worn));
             linkGiven = "";
             if (fromLink) {
                 MyAvatar.scale = 1;
@@ -387,7 +387,7 @@ Page {
         Section {
             title: "Wearing"
             footer: thumb.status !== "" ? thumb.status
-                : avatar.linking ? "A link to an avatar's .fst or .glb file. A .glb is set up for Darkride first, then you test it or keep it."
+                : avatar.linking ? "A link to an avatar's .fst, .glb or .vrm file. A .glb or .vrm is set up for Darkride first, then you test it or keep it."
                 : ""
             Item {
                 width: parent ? parent.width : 0
