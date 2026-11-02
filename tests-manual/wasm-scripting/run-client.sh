@@ -70,11 +70,14 @@ else
     R="$D/results/$NAME"
     rm -rf "$R"
 fi
-mkdir -p "$R/config/Tivoli Cloud VR - dev" "$R/data"
+# a dev build keeps its settings under "Tivoli Cloud VR - dev", a production package under "Tivoli Cloud VR"
+mkdir -p "$R/config/Tivoli Cloud VR - dev" "$R/config/Tivoli Cloud VR" "$R/data"
 if [ $SCRIPTED = 1 ]; then
     # small, in the bottom-right corner. No snapshotsLocation here: with one set, a client on QtScript that quits
     # within seconds of starting crashes in tivoli.js's start-up evaluation (KNOWN-ISSUES, 2026-10-25)
-    echo "{\"WindowGeometry\": \"@Rect(1110 470 800 600)\"}" > "$R/config/Tivoli Cloud VR - dev/Interface.json"
+    for _org in "Tivoli Cloud VR - dev" "Tivoli Cloud VR"; do
+        echo "{\"WindowGeometry\": \"@Rect(1110 470 800 600)\"}" > "$R/config/$_org/Interface.json"
+    done
 fi
 SESSION=scripting
 SANDBOX=$HOME/tivoli-sandboxes/wasm
