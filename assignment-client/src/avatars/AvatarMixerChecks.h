@@ -8,7 +8,7 @@
 //  Distributed under the MIT License.
 //
 //  Checks the avatar mixer makes on what an app sends before the shared avatar code reads it: an avatar's skeleton
-//  (the SkeletonData trait) and its identity. Each walks the data once, reading only lengths and counts, copies
+//  (the SkeletonData trait) and its identity, and the limits on the instance ids it adds. Each walks the data once, reading only lengths and counts, copies
 //  nothing and allocates nothing, and returns why the data isn't what an app sends, or an empty string when it is.
 //  The mixer drops data that fails, so nothing past a buffer is read here or relayed to anyone's app.
 //
@@ -16,6 +16,7 @@
 #ifndef hifi_AvatarMixerChecks_h
 #define hifi_AvatarMixerChecks_h
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 
@@ -138,6 +139,56 @@ inline QString identityRefusal(const QByteArray& identity) {
     }
     return QString();
 }
+
+// The instance ids an avatar may have of one kind (avatar entities, grabs, menu parameters): live ones, and all ones
+// (a deleted one stays listed as a negative version, so a late older version can't bring it back). They keep the
+// mixer's lists, and its relay to each listener, bounded (performance, avatars 11-02).
+struct InstanceLimits {
+    int maxLive;
+    int maxAll;
+};
+const InstanceLimits AVATAR_ENTITY_LIMITS { 256, 1024 };   // the app wears at most 128 (MAX_NUM_AVATAR_ENTITIES)
+const InstanceLimits GRAB_LIMITS { 64, 1024 };             // two hands and a few far grabs; each grab is a new id
+const InstanceLimits MENU_PARAMETERS_LIMITS { 4, 4 };      // the app has one
+
+/// Why a new instance id isn't taken (empty when it is), given how many of its kind are live and listed. A delete
+/// for an id not listed yet is listed too, so it counts toward all but not toward live.
+inline QString newInstanceRefusal(int live, int all, bool isDelete, const InstanceLimits& limits) {
+    if (all >= limits.maxAll) {
+        return QStringLiteral("more than %1 ids of one kind").arg(limits.maxAll);
+    }
+    if (!isDelete && live >= limits.maxLive) {
+        return QStringLiteral("more than %1 of one kind at once").arg(limits.maxLive);
+    }
+    return QString();
+}
+
+/// How fast an avatar may add new instance ids: a burst of 256 (a whole outfit, or an avatar switch), then 5 a second
+/// (fast play: catching and throwing, a scripted grab per click).
+class NewInstanceRate {
+public:
+    static const int BURST = 256;
+    static const int PER_SECOND = 5;
+
+    /// Takes one new id's place at nowUsecs; false when the burst is used up and none has come back yet.
+    bool take(quint64 nowUsecs) {
+        if (nowUsecs > _lastUsecs) {
+            if (_lastUsecs != 0) {
+                _available = std::min<double>(BURST, _available + double(nowUsecs - _lastUsecs) * PER_SECOND / 1.0e6);
+            }
+            _lastUsecs = nowUsecs;
+        }
+        if (_available < 1.0) {
+            return false;
+        }
+        _available -= 1.0;
+        return true;
+    }
+
+private:
+    double _available { BURST };
+    quint64 _lastUsecs { 0 };
+};
 
 }
 

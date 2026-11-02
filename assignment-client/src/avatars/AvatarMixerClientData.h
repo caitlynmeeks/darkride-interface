@@ -21,6 +21,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QUrl>
 
+#include "AvatarMixerChecks.h"
 #include "MixerAvatar.h"
 #include <AssociatedTraitValues.h>
 #include <NodeData.h>
@@ -211,6 +212,8 @@ private:
     // thread, the traits' on a worker)
     std::atomic<quint64> _lastRefusedDataLogUsecs { 0 };
     std::atomic<int> _refusedDataSinceLog { 0 };
+    // how fast this avatar adds new instance ids (read with the traits, on one worker at a time)
+    avatar_mixer_checks::NewInstanceRate _newInstanceRate;
     TraitsCheckTimestamp _lastReceivedTraitsChange;
 
     AvatarTraits::TraitMessageSequence _currentTraitsMessageSequence{ 0 };

@@ -41,6 +41,14 @@ private slots:
     void aLongNameIsDropped();
     void aNameAtTheLimitPasses();
     void aShortIdentityIsDropped();
+
+    void newIdsWithinTheLimitsAreTaken();
+    void tooManyLiveIdsAreRefused();
+    void aDeleteDoesntCountAsLive();
+    void tooManyListedIdsAreRefused();
+    void aBurstOfNewIdsIsTakenThenTheRate();
+    void theRateComesBackNoHigherThanTheBurst();
+    void aClockGoingBackGivesNothing();
 };
 
 #endif // hifi_AvatarMixerChecksTests_h

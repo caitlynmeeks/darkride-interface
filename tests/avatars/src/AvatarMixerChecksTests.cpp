@@ -173,3 +173,63 @@ void AvatarMixerChecksTests::aShortIdentityIsDropped() {
         QVERIFY2(!identityRefusal(whole.left(length)).isEmpty(), qPrintable(QString("cut at %1").arg(length)));
     }
 }
+
+void AvatarMixerChecksTests::newIdsWithinTheLimitsAreTaken() {
+    QCOMPARE(newInstanceRefusal(0, 0, false, AVATAR_ENTITY_LIMITS), QString());
+    QCOMPARE(newInstanceRefusal(127, 400, false, AVATAR_ENTITY_LIMITS), QString());
+    QCOMPARE(newInstanceRefusal(2, 900, false, GRAB_LIMITS), QString());
+    QCOMPARE(newInstanceRefusal(0, 0, false, MENU_PARAMETERS_LIMITS), QString());
+}
+
+void AvatarMixerChecksTests::tooManyLiveIdsAreRefused() {
+    QVERIFY(!newInstanceRefusal(AVATAR_ENTITY_LIMITS.maxLive, 300, false, AVATAR_ENTITY_LIMITS).isEmpty());
+    QVERIFY(!newInstanceRefusal(GRAB_LIMITS.maxLive, 64, false, GRAB_LIMITS).isEmpty());
+}
+
+void AvatarMixerChecksTests::aDeleteDoesntCountAsLive() {
+    QCOMPARE(newInstanceRefusal(GRAB_LIMITS.maxLive, 64, true, GRAB_LIMITS), QString());
+}
+
+void AvatarMixerChecksTests::tooManyListedIdsAreRefused() {
+    QVERIFY(!newInstanceRefusal(10, AVATAR_ENTITY_LIMITS.maxAll, false, AVATAR_ENTITY_LIMITS).isEmpty());
+    QVERIFY(!newInstanceRefusal(0, GRAB_LIMITS.maxAll, true, GRAB_LIMITS).isEmpty());
+    QVERIFY(!newInstanceRefusal(1, MENU_PARAMETERS_LIMITS.maxAll, false, MENU_PARAMETERS_LIMITS).isEmpty());
+}
+
+void AvatarMixerChecksTests::aBurstOfNewIdsIsTakenThenTheRate() {
+    NewInstanceRate rate;
+    const quint64 start = 1000000;
+    for (int i = 0; i < NewInstanceRate::BURST; i++) {
+        QVERIFY2(rate.take(start), qPrintable(QString("id %1 of the burst").arg(i)));
+    }
+    QVERIFY(!rate.take(start));
+    QVERIFY(!rate.take(start + 100000));   // 0.1 s: half an id back
+    QVERIFY(rate.take(start + 200000));    // 0.2 s: one
+    QVERIFY(!rate.take(start + 200000));
+    // a second later: five more
+    int taken = 0;
+    while (rate.take(start + 1200000)) {
+        taken++;
+    }
+    QCOMPARE(taken, NewInstanceRate::PER_SECOND);
+}
+
+void AvatarMixerChecksTests::theRateComesBackNoHigherThanTheBurst() {
+    NewInstanceRate rate;
+    QVERIFY(rate.take(1000000));
+    int taken = 0;
+    while (rate.take(1000000 + 3600ULL * 1000000)) {
+        taken++;
+    }
+    QCOMPARE(taken, NewInstanceRate::BURST);
+}
+
+void AvatarMixerChecksTests::aClockGoingBackGivesNothing() {
+    NewInstanceRate rate;
+    for (int i = 0; i < NewInstanceRate::BURST; i++) {
+        rate.take(5000000);
+    }
+    QVERIFY(!rate.take(1000000));
+    QVERIFY(!rate.take(5000000));
+    QVERIFY(rate.take(5200000));
+}
