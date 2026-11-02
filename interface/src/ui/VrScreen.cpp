@@ -31,6 +31,7 @@
 #include <SharedUtil.h>
 #include <SpatiallyNestable.h>
 #include <controllers/Actions.h>
+#include <controllers/UserInputMapper.h>
 #include <ui/OffscreenQmlSurface.h>
 
 #include "Application.h"
@@ -56,7 +57,17 @@ const float PIECE_THICKNESS = 0.01f;
 // tablet's rate, and the side panels and the bar a rate that costs next to nothing while they animate (timing run, 11-01)
 const int MIDDLE_MAX_FPS = 90;
 const int SIDE_MAX_FPS = 30;
-const int DRAG_INTERVAL_MS = 11;     // about 90 Hz, only while the bar is held
+const int DRAG_INTERVAL_MS = 11;     // about 90 Hz, only while the bar or a grip is held
+// The grip, as the hand controllers' scripts read it (controllerDispatcherUtils.js: a grab starts above BUMPER_ON_VALUE
+// and ends below TRIGGER_OFF_VALUE)
+const float GRIP_ON_VALUE = 0.5f;
+const float GRIP_OFF_VALUE = 0.1f;
+// a laser just past a panel's edge still has it
+const float POINT_MARGIN = 0.02f;
+// A squeeze next to something the hand can pick up picks it up, as ever: the near grab's reach (nearGrabEntity.js: its
+// bounding box within NEAR_GRAB_DISTANCE of the hand, its centre within NEAR_GRAB_RADIUS), and its laser leaves the screen
+const float NEAR_GRAB_DISTANCE = 0.14f;
+const float NEAR_GRAB_RADIUS = 1.0f;
 const int REMAKE_DELAY_MS = 500;
 // The warm-up (the surface pool; performance's placement, 11-01 20:3x). At headset entry it runs back to back, a step
 // per event-loop turn, inside the entry's own gap: the runtime shows its transition until our first frame. A step makes
@@ -217,8 +228,17 @@ void VrScreen::showPieces(bool dialogOnly) {
         connect(entities.data(), &EntityScriptingInterface::mouseReleaseOnEntity, this, &VrScreen::mouseReleased),
         // the bar's capsule brightens while a laser is on it (ScreenGrabBar.qml)
         connect(entities.data(), &EntityScriptingInterface::hoverEnterEntity, this, [this](const EntityItemID& id) { barHovered(id, true); }),
-        connect(entities.data(), &EntityScriptingInterface::hoverLeaveEntity, this, [this](const EntityItemID& id) { barHovered(id, false); })
+        connect(entities.data(), &EntityScriptingInterface::hoverLeaveEntity, this, [this](const EntityItemID& id) { barHovered(id, false); }),
+        // the grips: the input mapper says when one changes (nothing polls them)
+        connect(DependencyManager::get<UserInputMapper>().data(), &UserInputMapper::inputEvent, this, &VrScreen::gripChanged)
     };
+    if (_gripInputs[0] == -1) {
+        auto mapper = DependencyManager::get<UserInputMapper>();
+        _gripInputs[0] = (int)mapper->findDeviceInput("Standard.LeftGrip").getID();
+        _gripInputs[1] = (int)mapper->findDeviceInput("Standard.RightGrip").getID();
+    }
+    // a grip already squeezed before the show (or let go while hidden) is no new squeeze
+    _gripHeld[0] = _gripHeld[1] = false;
     faceHead();
     _shown = true;
     // what isn't warm yet is made now, as before, and kept at the next hide
@@ -348,7 +368,7 @@ Arrangement VrScreen::arrangement() const {
     pixels.left = toVec2(panels->screenSlotSize("left"));
     pixels.middle = toVec2(panels->screenSlotSize("middle"));
     pixels.right = toVec2(panels->screenSlotSize(SLOT_RIGHT));
-    return arrange(pixels, degreesPerPixel());
+    return arrange(pixels, degreesPerPixel(), _distance);
 }
 
 Pose VrScreen::placedPiece(const Arrangement& places, Piece piece) const {
@@ -719,10 +739,14 @@ void VrScreen::movePieces() {
     }
 }
 
-void VrScreen::updateHead() {
+glm::vec3 VrScreen::headNow() const {
     auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
-    _head = qApp->isHMDMode() ? avatar->getHMDSensorPosition()
+    return qApp->isHMDMode() ? avatar->getHMDSensorPosition()
         : transformPoint(glm::inverse(avatar->getSensorToWorldMatrix()), qApp->getCamera().getPosition());
+}
+
+void VrScreen::updateHead() {
+    _head = headNow();
 }
 
 void VrScreen::slotSizeChanged(const QString& slot) {
@@ -812,9 +836,103 @@ void VrScreen::mousePressed(const EntityItemID& id, const PointerEvent& event) {
 }
 
 void VrScreen::mouseReleased(const EntityItemID& id, const PointerEvent& event) {
-    if (_dragging && id == EntityItemID(_pieces[Bar]) && event.getButton() == PointerEvent::PrimaryButton) {
+    if (_dragging && !_dragByGrip && id == EntityItemID(_pieces[Bar]) && event.getButton() == PointerEvent::PrimaryButton) {
         endDrag();
     }
+}
+
+void VrScreen::gripChanged(int input, float value) {
+    const int hand = input == _gripInputs[0] ? 0 : input == _gripInputs[1] ? 1 : -1;
+    if (hand < 0) {
+        return;
+    }
+    const bool rightHand = hand == 1;
+    if (!_gripHeld[hand] && value > GRIP_ON_VALUE) {
+        _gripHeld[hand] = true;
+        if (!_shown || _dragging) {
+            return;
+        }
+        // the hand whose laser is on any panel or the bar, unless the squeeze is picking something up (once a squeeze, a
+        // line for the Quest's logs)
+        const int piece = pointedPiece(rightHand);
+        const bool pickUp = piece >= 0 && nearGrabbable(rightHand);
+        qCDebug(interfaceapp) << "VR screen: the" << (rightHand ? "right" : "left") << "grip," <<
+            (piece < 0 ? "its laser off the screen" : pickUp ? "next to something to pick up" : "on the screen");
+        if (piece >= 0 && !pickUp) {
+            startDrag(rightHand, true);
+        }
+    } else if (_gripHeld[hand] && value < GRIP_OFF_VALUE) {
+        _gripHeld[hand] = false;
+        if (_dragging && _dragByGrip && _dragRightHand == rightHand) {
+            endDrag();
+        }
+    }
+}
+
+int VrScreen::pointedPiece(bool rightHand) const {
+    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    const controller::Pose hand = avatar->getControllerPoseInSensorFrame(
+        rightHand ? controller::Action::RIGHT_HAND : controller::Action::LEFT_HAND);
+    if (!hand.isValid()) {
+        return -1;
+    }
+    // a hand's laser runs along its pose's up axis
+    const glm::vec3 direction = hand.getRotation() * Vectors::UP;
+    const Arrangement places = arrangement();
+    for (int piece = 0; piece < PIECE_COUNT; ++piece) {
+        if (!_pieces[piece].isNull() && rayHits(placedPiece(places, (Piece)piece), hand.getTranslation(), direction, POINT_MARGIN)) {
+            return piece;
+        }
+    }
+    return -1;
+}
+
+bool VrScreen::nearGrabbable(bool rightHand) const {
+    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    const controller::Pose hand = avatar->getControllerPoseInSensorFrame(
+        rightHand ? controller::Action::RIGHT_HAND : controller::Action::LEFT_HAND);
+    auto renderer = qApp->getEntities();
+    EntityTreePointer tree = renderer ? renderer->getTree() : nullptr;
+    if (!hand.isValid() || !tree) {
+        return false;
+    }
+    const float scale = avatar->getSensorToWorldScale();
+    const glm::vec3 grabPoint = transformPoint(avatar->getSensorToWorldMatrix(), hand.getTranslation());
+    const float reach = NEAR_GRAB_DISTANCE * scale;
+    const float radius = NEAR_GRAB_RADIUS * scale;
+    const PickFilter filter(PickFilter::getBitMask(PickFilter::FlagBit::DOMAIN_ENTITIES) |
+        PickFilter::getBitMask(PickFilter::FlagBit::AVATAR_ENTITIES));
+    bool found = false;
+    // once, at the squeeze: what's within a hand's reach, as the near grab sees it (entityIsGrabbable)
+    tree->withReadLock([&] {
+        QVector<QUuid> ids;
+        tree->evalEntitiesInSphere(grabPoint, reach, filter, ids);
+        for (const QUuid& id : ids) {
+            const EntityItemPointer entity = tree->findEntityByID(id);
+            if (!entity) {
+                continue;
+            }
+            const EntityTypes::EntityType type = entity->getType();
+            const bool grabbable = (entity->getGrabProperties().getGrabbable() && !entity->getLocked() &&
+                type != EntityTypes::Unknown && type != EntityTypes::Light && type != EntityTypes::PolyLine &&
+                type != EntityTypes::Zone) || entity->getCloneable();
+            if (!grabbable || glm::distance(grabPoint, entity->getWorldPosition()) > radius) {
+                continue;
+            }
+            bool success = false;
+            const AABox box = entity->getAABox(success);
+            if (success && glm::distance(grabPoint, glm::clamp(grabPoint, box.getMinimumPoint(), box.getMaximumPoint())) <= reach) {
+                found = true;
+                return;
+            }
+        }
+    });
+    return found;
+}
+
+float VrScreen::handPush(const controller::Pose& hand) const {
+    // how far the hand is out from the head, toward the screen
+    return glm::dot(hand.getTranslation() - headNow(), directionOf(_yaw, _pitch));
 }
 
 void VrScreen::beginDrag() {
@@ -831,14 +949,28 @@ void VrScreen::beginDrag() {
         const glm::vec3 toBar = bar - hand.getTranslation();
         return glm::length(toBar - direction * glm::dot(toBar, direction));
     };
-    _dragRightHand = right.isValid() && (!left.isValid() || missBy(right) <= missBy(left));
-    const glm::vec3 direction = (_dragRightHand ? right : left).getRotation() * Vectors::UP;
+    startDrag(right.isValid() && (!left.isValid() || missBy(right) <= missBy(left)), false);
+}
+
+void VrScreen::startDrag(bool rightHand, bool byGrip) {
+    auto avatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    const controller::Pose hand = avatar->getControllerPoseInSensorFrame(
+        rightHand ? controller::Action::RIGHT_HAND : controller::Action::LEFT_HAND);
+    if (!hand.isValid()) {
+        return;
+    }
+    const glm::vec3 direction = hand.getRotation() * Vectors::UP;
+    _dragRightHand = rightHand;
+    _dragByGrip = byGrip;
     _dragStartHandYaw = yawOf(direction);
     _dragStartHandPitch = pitchOf(direction);
+    _dragStartHandPush = handPush(hand);
     _dragStartYaw = _yaw;
     _dragStartPitch = _pitch;
+    _dragStartDistance = _distance;
     _dragging = true;
     _dragTimer.start();
+    qCDebug(interfaceapp) << "VR screen: moving, by the" << (rightHand ? "right" : "left") << (byGrip ? "grip" : "bar");
 }
 
 void VrScreen::dragTick() {
@@ -849,9 +981,11 @@ void VrScreen::dragTick() {
         endDrag();
         return;
     }
+    // it follows the hand's laser around the head, and the hand's push away or pull in, within its bounds
     const glm::vec3 direction = hand.getRotation() * Vectors::UP;
     _yaw = _dragStartYaw + yawDifference(yawOf(direction), _dragStartHandYaw);
     _pitch = glm::clamp(_dragStartPitch + pitchOf(direction) - _dragStartHandPitch, MIN_PITCH_DEGREES, MAX_PITCH_DEGREES);
+    _distance = pushedDistance(_dragStartDistance, handPush(hand) - _dragStartHandPush);
     movePieces();
 }
 
@@ -860,11 +994,13 @@ void VrScreen::endDrag() {
         return;
     }
     _dragging = false;
+    _dragByGrip = false;
     _dragTimer.stop();
     // it turns to face you where you are now, and stays
     updateHead();
     movePieces();
     tellState();
+    qCDebug(interfaceapp) << "VR screen: put down, yaw" << _yaw << "pitch" << _pitch << "distance" << _distance;
 }
 
 void VrScreen::tellState() {

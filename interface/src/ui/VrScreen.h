@@ -3,7 +3,8 @@
 //  interface/src/ui
 //
 //  The VR screen's headset side (team/editor-ui/VR-SCREEN-PLAN.md): the menu button brings it up in front of you or hides
-//  it, its grab bar moves it, and it stays where you put it in your play space. Its pieces are local Web entities under
+//  it, its grab bar or either hand's grip on any panel moves it (and pushes it away or pulls it in), and it stays where
+//  you put it in your play space. Its pieces are local Web entities under
 //  the avatar's sensor-to-world joint, made only while it's shown: anything under the avatar is refreshed every frame, so
 //  hiding deletes them. Their QML surfaces are made ahead, at headset entry, and kept paused while the screen is hidden
 //  (a surface pool): making one and its first draw block the main thread. Panels moves the pages in and out of the slots.
@@ -29,6 +30,7 @@
 #include <DependencyManager.h>
 #include <PointerEvent.h>
 #include <EntityItemID.h>
+#include <controllers/Pose.h>
 
 #include "VrScreenLayout.h"
 
@@ -112,7 +114,14 @@ private:
     void barHovered(const EntityItemID& id, bool hovered);
     void mousePressed(const EntityItemID& id, const PointerEvent& event);
     void mouseReleased(const EntityItemID& id, const PointerEvent& event);
+    // the grip: a hand's grip squeezed while its laser is on the screen moves it, as the bar does
+    void gripChanged(int input, float value);
+    int pointedPiece(bool rightHand) const;
+    bool nearGrabbable(bool rightHand) const;
+    glm::vec3 headNow() const;
+    float handPush(const controller::Pose& hand) const;
     void beginDrag();
+    void startDrag(bool rightHand, bool byGrip);
     void dragTick();
     void endDrag();
     void tellState();
@@ -124,12 +133,14 @@ private:
     bool _wasHeadset { false };
     uint64_t _lastToggle { 0 };
     std::array<QUuid, PIECE_COUNT> _pieces;
-    std::array<QMetaObject::Connection, 5> _entityConnections;
+    std::array<QMetaObject::Connection, 6> _entityConnections;
 
-    // the screen's place, in the play space: the head it's arranged around and its turn around that head
+    // the screen's place, in the play space: the head it's arranged around, its turn around that head and how far it is
+    // (kept from show to show: how far you like it)
     glm::vec3 _head { 0.0f };
     float _yaw { 0.0f };
     float _pitch { vrscreen::DEFAULT_PITCH_DEGREES };
+    float _distance { vrscreen::DISTANCE };
 
     // the surface pool: every surface of the screen's (handed out or kept), and the kept ones by address
     bool _keeping { false };   // in the headset, or a Desktop test
@@ -150,12 +161,19 @@ private:
     QList<QSharedPointer<OffscreenQmlSurface>> _warmUnpaused;   // back to back: drawing; paused at the settle step
     int _warmFps { 0 };
 
-    // a drag: only while the bar is held does anything here run per frame
+    // a drag: only while the bar or a grip is held does anything here run per frame
     QTimer _dragTimer;
     bool _dragging { false };
+    bool _dragByGrip { false };   // the grip's release ends it, not the trigger's (and the other way round)
     bool _dragRightHand { true };
     float _dragStartHandYaw { 0.0f };
     float _dragStartHandPitch { 0.0f };
+    float _dragStartHandPush { 0.0f };
     float _dragStartYaw { 0.0f };
     float _dragStartPitch { 0.0f };
+    float _dragStartDistance { vrscreen::DISTANCE };
+
+    // the grips, Standard.LeftGrip and RightGrip, heard only while the screen is shown: held, by hand
+    int _gripInputs[2] { -1, -1 };
+    bool _gripHeld[2] { false, false };
 };
