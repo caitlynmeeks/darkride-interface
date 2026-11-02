@@ -48,6 +48,9 @@ const float DEFAULT_DELTA = 0.55f;
 const float DEFAULT_RADIUS = 0.01f;
 const float DEFAULT_MAX_ANGLE = 45.0f;  // degrees a bone may swing away from its rest direction
 const float DEFAULT_LIFT = 0.0f;        // degrees each bone's rest direction is curled up from the model's pose
+// Whether a bone collides along its length (Flow's way) or at its tip only (a VRM spring bone's: hair whose roots
+// start inside the head's collider would otherwise be pushed out of it on every step)
+const bool DEFAULT_TIP_COLLISION = false;
 
 // The reference step: the settings are expressed per 1/60 s. Each frame is simulated in one step of the
 // frame's own length, or in up to FLOW_MAX_STEPS_PER_FRAME equal steps when it is longer than a step and a
@@ -85,6 +88,7 @@ struct FlowPhysicsSettings {
     float _radius{ DEFAULT_RADIUS };
     float _maxAngle{ DEFAULT_MAX_ANGLE };
     float _lift{ DEFAULT_LIFT };
+    bool _tipCollision{ DEFAULT_TIP_COLLISION };
 
     // Physical meanings. Gravity keeps what the old step produced at 60 Hz (gravity * delta^2 per frame^2,
     // a factor of 3600 per second^2: -0.0096 is about -10.5 m/s^2). Stiffness is a spring toward the rest
@@ -141,7 +145,7 @@ public:
     void setPosition(const glm::vec3& position) { _position = _endPosition = position; }
     // Moves `point` so that the segment from `segmentStart` to `point`, thickened by `pointRadius`,
     // clears the shape. Returns true when it had to.
-    bool pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius) const;
+    bool pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius, bool tipOnly = false) const;
 
     QUuid _entityID;
     FlowCollisionType _type { FlowCollisionType::CollisionSphere };
@@ -165,7 +169,7 @@ public:
     FlowCollisionSystem() {};
     void addCollisionSphere(int jointIndex, const FlowCollisionSettings& settings, const glm::vec3& position = { 0.0f, 0.0f, 0.0f }, bool isSelfCollision = true, bool isTouch = false);
     // Pushes `point` out of every active shape; returns true when any shape moved it.
-    bool pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius) const;
+    bool pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius, bool tipOnly = false) const;
 
     std::vector<FlowCollider>& getSelfCollisions() { return _selfCollisions; };
     std::vector<FlowCollider>& getSelfTouchCollisions() { return _selfTouchCollisions; };

@@ -238,6 +238,7 @@ void AnimSkeleton::buildSkeletonFromJoints(const std::vector<HFMJoint>& joints, 
         }
     }
 
+    _jointRotationOffsets = jointOffsets;
     for (int k = 0; k < _jointsSize; k++) {
         if (jointOffsets.contains(k)) {
             AnimPose localOffset(jointOffsets[k], glm::vec3());
