@@ -123,7 +123,7 @@ void FBXWriter::encodeNode(QDataStream& out, const FBXNode& node) {
     device->seek(nodeEndPos);
 }
 
-void FBXWriter::encodeFBXProperty(QDataStream& out, const QVariant& prop) {
+void FBXWriter::encodeFBXProperty(QDataStream& out, const FBXProperty& prop) {
     auto type = prop.userType();
     switch (type) {
         case QMetaType::Short:
@@ -174,16 +174,16 @@ void FBXWriter::encodeFBXProperty(QDataStream& out, const QVariant& prop) {
         }
         default:
         {
-            if (prop.canConvert<QVector<float>>()) {
-                writeVector(out, 'f', prop.value<QVector<float>>());
-            } else if (prop.canConvert<QVector<double>>()) {
-                writeVector(out, 'd', prop.value<QVector<double>>());
-            } else if (prop.canConvert<QVector<qint64>>()) {
-                writeVector(out, 'l', prop.value<QVector<qint64>>());
-            } else if (prop.canConvert<QVector<qint32>>()) {
-                writeVector(out, 'i', prop.value<QVector<qint32>>());
-            } else if (prop.canConvert<QVector<bool>>()) {
-                writeVector(out, 'b', prop.value<QVector<bool>>());
+            if (const QVector<float>* values = prop.array<float>()) {
+                writeVector(out, 'f', *values);
+            } else if (const QVector<double>* values = prop.array<double>()) {
+                writeVector(out, 'd', *values);
+            } else if (const QVector<qint64>* values = prop.array<qint64>()) {
+                writeVector(out, 'l', *values);
+            } else if (const QVector<qint32>* values = prop.array<qint32>()) {
+                writeVector(out, 'i', *values);
+            } else if (const QVector<bool>* values = prop.array<bool>()) {
+                writeVector(out, 'b', *values);
             } else {
                 qDebug() << "Unsupported property type in FBXWriter::encodeNode: " << type << prop;
                 throw("Unsupported property type in FBXWriter::encodeNode: " + QString::number(type) + " " + prop.toString());
