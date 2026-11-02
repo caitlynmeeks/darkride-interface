@@ -297,7 +297,21 @@ void shareNext(const SharePointer& share) {
     QString error;
     bool started;
     if (fileNow) {
-        started = upload->start(share->files[share->next], share->remoteFolder, error);
+        const QFileInfo file(share->files[share->next]);
+        if (share->next == 0 && share->modelIsLocal && file.suffix().toLower() == "vrm") {
+            // a VRM is a binary glTF: it goes up named .glb, the name every version of the app reads (before 1.1.3 a
+            // .vrm reached no reader, and people on those versions would see the default avatar)
+            QFile vrm(file.absoluteFilePath());
+            started = vrm.open(QIODevice::ReadOnly);
+            if (started) {
+                started = upload->startData(vrm.readAll(), file.completeBaseName() + ".glb", share->remoteFolder,
+                                            "model/gltf-binary", error);
+            } else {
+                error = "cannot read " + file.fileName();
+            }
+        } else {
+            started = upload->start(share->files[share->next], share->remoteFolder, error);
+        }
         if (started && share->next == 0 && share->modelIsLocal) {
             share->fstLines[share->modelLine] = "filename = " + upload->fileName();
         }
