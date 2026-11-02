@@ -171,15 +171,19 @@ VRMInfo readVRM(const QByteArray& glb) {
             }
         }
     }
-    auto use = [&](Blendshapes blendshape, const QString& preset, float weight) {
+    auto use = [&](Blendshapes blendshape, const QString& preset, float weight, float proceduralGain = 1.0f) {
         for (BlendshapeSource source : expressions.value(preset)) {
             source.weight *= weight;
+            source.proceduralGain = proceduralGain;
             info.blendshapes[(int)blendshape].append(source);
         }
     };
-    // What voice drives, one to one: the "aa" viseme is the mouth wide open and "ou" pursed lips
-    use(Blendshapes::JawOpen, "aa", 1.0f);
-    use(Blendshapes::LipsFunnel, "ou", 1.0f);
+    // What voice drives, one to one. Head.cpp opens JawOpen to 0.35 at the loudest and nearer 0.1 in talking, as High
+    // Fidelity's avatars' jaw shapes were made for, so the procedural face drives the "aa" viseme, a mouth wide open at
+    // 1, half as hard again (three times was too much in talking); and "ou" less, as with the jaw barely open it pursed
+    // the lips oddly (Seed-san)
+    use(Blendshapes::JawOpen, "aa", 1.0f, 1.5f);
+    use(Blendshapes::LipsFunnel, "ou", 1.0f, 0.5f);
     if (expressions.contains("blinkLeft") && expressions.contains("blinkRight")) {
         use(Blendshapes::EyeBlink_L, "blinkLeft", 1.0f);
         use(Blendshapes::EyeBlink_R, "blinkRight", 1.0f);

@@ -148,6 +148,10 @@ public:
     float getEyeLookScale() const { return _eyeLookScale; }
     // how much of its eye-look expressions per radian of gaze, where its eyes look by expression (hfm::Model's)
     float getEyeLookExpressionScale() const { return _eyeLookExpressionScale; }
+    // how much of the procedural face's movement a blendshape takes (hfm::Model::proceduralBlendshapeGains)
+    float getProceduralBlendshapeGain(int index) const {
+        return index >= 0 && index < _proceduralBlendshapeGains.size() ? _proceduralBlendshapeGains[index] : 1.0f;
+    }
     bool jointStatesEmpty() const;
     int getJointStateCount() const;
     int indexOfJoint(const QString& jointName) const;
@@ -525,6 +529,7 @@ protected:
     float _eyeLookScale { 1.0f };  // the model's (hfm::Model::eyeLookScale and eyeLookMaxAngle)
     float _eyeLookMaxAngle { 25.0f * RADIANS_PER_DEGREE };
     float _eyeLookExpressionScale { 0.0f };
+    QVector<float> _proceduralBlendshapeGains;
     void initNodeConstraints(const HFMModel& hfmModel);
     void applyNodeConstraints(AnimPoseVec& relativePoses, AnimPoseVec& absolutePoses) const;
     glm::quat modelAxesRotation(const AnimPoseVec& absolutePoses, int joint) const;

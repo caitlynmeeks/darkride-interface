@@ -199,6 +199,20 @@ void Head::simulate(float deltaTime) {
         _mouth4,
         _transientBlendshapeCoefficients);
 
+    // The model's gains for them: its shapes for the voice's mouth can move further than the engine's own, which the
+    // procedural face was tuned for (an ARKit jawOpen, a VRM's "aa"). Only the procedural face's weights are scaled;
+    // what input drives, such as face tracking, reaches the shapes at full range.
+    if (_owningAvatar) {
+        auto skeletonModel = static_cast<Avatar*>(_owningAvatar)->getSkeletonModel();
+        if (skeletonModel) {
+            const Rig& rig = skeletonModel->getRig();
+            for (Blendshapes blendshape : { Blendshapes::JawOpen, Blendshapes::MouthSmile_L, Blendshapes::MouthSmile_R,
+                                            Blendshapes::LipsUpperClose, Blendshapes::LipsFunnel }) {
+                _transientBlendshapeCoefficients[(int)blendshape] *= rig.getProceduralBlendshapeGain((int)blendshape);
+            }
+        }
+    }
+
     if (getProceduralAnimationFlag(HeadData::LidAdjustmentProceduralBlendshapeAnimation) &&
         !getSuppressProceduralAnimationFlag(HeadData::LidAdjustmentProceduralBlendshapeAnimation)) {
 

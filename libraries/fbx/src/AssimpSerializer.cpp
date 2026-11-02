@@ -564,6 +564,10 @@ aiAnimMesh* AssimpSerializer::getBlendshapeByName(QString name, aiMesh* mMesh) {
 }
 
 void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
+    // A model worn as an avatar without an .fst, or whose .fst says "autoHumanoid = true", takes other names for the
+    // blendshapes it has no shape of the engine's name for, such as ARKit's (findBlendshapeSource); any other model only
+    // its own names and the .fst's bs lines
+    const bool autoHumanoid = mapping.value("autoHumanoid").toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
     // The model's own blend shapes (hfm::Model::ownBlendshapeNames), when the .fst asks for them, as FBXSerializer keeps
     // them: each of a mesh's shapes that no standard name takes, by its name, in a slot after the standard ones
     const hifi::VariantHash ownBlendshapeDefaults = mapping.value("blendshapeDefault").toHash();
@@ -700,6 +704,10 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
         if (mMesh->mNumAnimMeshes > 0) {
             bool isBlendshapeChannelNamesEmpty = hfmModel->blendshapeChannelNames.size() == 0;
             QSet<QString> standardShapes;   // this mesh's shapes the standard names take
+            QStringList morphTargetNames;
+            for (size_t i = 0; i < mMesh->mNumAnimMeshes; i++) {
+                morphTargetNames << QString(mMesh->mAnimMeshes[i]->mName.C_Str());
+            }
 
             for (size_t i = 0; i < (int)Blendshapes::BlendshapeCount; i++) {
                 const QString fromName = BLENDSHAPE_NAMES[i];
@@ -723,6 +731,12 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
                 } else if (vrm.blendshapes.contains((int)i)) {
                     // a VRM's expression, which may blend several morph targets
                     sources = vrm.blendshapes.value((int)i);
+                } else if (autoHumanoid) {
+                    // its own name, or another the model may use for it, such as ARKit's
+                    BlendshapeSource source = findBlendshapeSource((int)i, morphTargetNames);
+                    if (!source.name.isEmpty()) {
+                        sources.append(source);
+                    }
                 } else {
                     sources.append({ fromName, 1.0f });
                 }
@@ -747,6 +761,13 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
                     }
                     standardShapes.insert(animMesh->mName.C_Str());
                     animMeshes.push_back({ animMesh, source.weight });
+                    if (source.proceduralGain != 1.0f) {
+                        if (hfmModel->proceduralBlendshapeGains.size() <= (int)i) {
+                            hfmModel->proceduralBlendshapeGains.resize((int)Blendshapes::BlendshapeCount);
+                            hfmModel->proceduralBlendshapeGains.fill(1.0f);
+                        }
+                        hfmModel->proceduralBlendshapeGains[(int)i] = source.proceduralGain;
+                    }
                 }
                 if (animMeshes.size() == 1) {
                     fillBlendshape(*blendshapePtr, mMesh, animMeshes[0].first, animMeshes[0].second);

@@ -1520,6 +1520,8 @@ bool GLTFSerializer::buildGeometry(HFMModel& hfmModel, const hifi::VariantHash& 
                 // Build list of blendshapes from FST and model
                 typedef QPair<int, float> WeightedIndex;
                 hifi::VariantHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
+                const bool autoHumanoid =
+                    mapping.value("autoHumanoid").toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
                 QMultiHash<QString, WeightedIndex> blendshapeIndices;
 
                 for (int i = 0;; ++i) {
@@ -1536,8 +1538,21 @@ bool GLTFSerializer::buildGeometry(HFMModel& hfmModel, const hifi::VariantHash& 
                                 WeightedIndex(i, blendshapeMapping.at(1).toFloat()));
                         }
                     } else {
-                        // Use blendshape from model.
-                        if (gltfMesh.extras.targetNames.contains(blendshapeName)) {
+                        // Use blendshape from model: its own name, or, for a model worn as an avatar without an .fst or
+                        // whose .fst says "autoHumanoid = true", another it may use for it, such as ARKit's
+                        if (autoHumanoid) {
+                            BlendshapeSource source = findBlendshapeSource(i, QStringList(gltfMesh.extras.targetNames.toList()));
+                            if (!source.name.isEmpty()) {
+                                blendshapeIndices.insert(source.name, WeightedIndex(i, source.weight));
+                                if (source.proceduralGain != 1.0f) {
+                                    if (hfmModel.proceduralBlendshapeGains.size() <= i) {
+                                        hfmModel.proceduralBlendshapeGains.resize((int)Blendshapes::BlendshapeCount);
+                                        hfmModel.proceduralBlendshapeGains.fill(1.0f);
+                                    }
+                                    hfmModel.proceduralBlendshapeGains[i] = source.proceduralGain;
+                                }
+                            }
+                        } else if (gltfMesh.extras.targetNames.contains(blendshapeName)) {
                             blendshapeIndices.insert(blendshapeName, WeightedIndex(i, 1.0f));
                         }
                     }

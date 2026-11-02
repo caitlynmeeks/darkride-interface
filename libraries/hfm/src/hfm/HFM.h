@@ -443,6 +443,10 @@ public:
     QStringList ownBlendshapeNames;
     QVector<float> ownBlendshapeDefaults;
     std::vector<NodeConstraint> nodeConstraints;
+    // How much of the procedural face's movement each engine blendshape takes (BlendshapeSource::proceduralGain): less
+    // where the model's target for it moves further than the shapes the procedural face was tuned for. Empty, or a
+    // blendshape past its end, is 1.
+    QVector<float> proceduralBlendshapeGains;
     // How far the eye joints turn as the gaze does: by the gaze's turn times eyeLookScale, up to eyeLookMaxAngle (radians).
     // A VRM says how far its eyes may turn (lookAt); VRoid's flat irises leave their eye-whites past about 10 degrees.
     float eyeLookScale { 1.0f };
