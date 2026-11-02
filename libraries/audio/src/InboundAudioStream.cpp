@@ -19,6 +19,7 @@
 #include <NodeList.h>
 
 #include "AudioLogging.h"
+#include "AudioRefusals.h"
 
 const bool InboundAudioStream::DEFAULT_DYNAMIC_JITTER_BUFFER_ENABLED = true;
 const int InboundAudioStream::DEFAULT_STATIC_JITTER_FRAMES = 1;
@@ -251,9 +252,11 @@ int InboundAudioStream::parseStreamProperties(PacketType type, const QByteArray&
 }
 
 bool InboundAudioStream::changeFrameSize(int numFrameSamples) {
+    static AudioRefusals frameSizeRefusals("changes between mono and stereo within a second of a stream's last");
     const quint64 MIN_USECS_BETWEEN_FRAME_SIZE_CHANGES = USECS_PER_SECOND;
     quint64 now = usecTimestampNow();
     if (_lastFrameSizeChange != 0 && now - _lastFrameSizeChange < MIN_USECS_BETWEEN_FRAME_SIZE_CHANGES) {
+        frameSizeRefusals.count();
         return false;
     }
     _lastFrameSizeChange = now;

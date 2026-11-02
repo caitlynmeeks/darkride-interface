@@ -24,6 +24,7 @@
 #include "InjectedAudioStream.h"
 
 #include "AudioLogging.h"
+#include "AudioRefusals.h"
 #include "AudioHelpers.h"
 #include "AudioMixer.h"
 
@@ -439,6 +440,9 @@ bool AudioMixerClientData::containsValidPosition(ReceivedMessage& message) const
     return true;
 }
 
+static AudioRefusals injectorLimitRefusals("new injected sounds from senders already playing 64");
+static AudioRefusals nullIdentifierRefusals("injected sound packets or stops using the microphone's stream identifier");
+
 void AudioMixerClientData::processStreamPacket(ReceivedMessage& message, ConcurrentAddedStreams &addedStreams) {
 
     if (!containsValidPosition(message)) {
@@ -512,6 +516,7 @@ void AudioMixerClientData::processStreamPacket(ReceivedMessage& message, Concurr
 
         // the null identifier is the microphone stream's
         if (streamIdentifier.isNull()) {
+            nullIdentifierRefusals.count(getNodeID().toString());
             return;
         }
 
@@ -521,6 +526,7 @@ void AudioMixerClientData::processStreamPacket(ReceivedMessage& message, Concurr
 
         if (streamIt == _audioStreams.end()) {
             if (!makeRoomForInjector()) {
+                injectorLimitRefusals.count(getNodeID().toString());
                 return;
             }
 
@@ -628,6 +634,7 @@ void AudioMixerClientData::parseStopInjectorPacket(QSharedPointer<ReceivedMessag
 
     // the null identifier is the microphone stream's
     if (streamID.isNull()) {
+        nullIdentifierRefusals.count(getNodeID().toString());
         return;
     }
 

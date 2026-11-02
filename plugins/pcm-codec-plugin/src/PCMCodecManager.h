@@ -12,6 +12,10 @@
 #ifndef hifi__PCMCodecManager_h
 #define hifi__PCMCodecManager_h
 
+#include <atomic>
+
+#include <QtCore/QDateTime>
+#include <QtCore/QDebug>
 #include <QtCore/QtEndian>
 
 #include <plugins/CodecPlugin.h>
@@ -79,11 +83,11 @@ public:
     }
 
     virtual void decode(const QByteArray& encodedBuffer, QByteArray& decodedBuffer) override {
-        // qUncompress allocates the size the data's first 4 bytes (big-endian) say before it starts: a frame is at
-        // most 960 bytes (240 stereo samples), so anything that says more than a few frames isn't decoded
-        const quint32 MAX_DECODED_BYTES = 4 * 960;
+        // qUncompress allocates the size the data's first 4 bytes (big-endian) say before it starts, so anything
+        // that says more than a few frames isn't decoded
         if (encodedBuffer.size() < 4 ||
             qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(encodedBuffer.constData())) > MAX_DECODED_BYTES) {
+            countRefusal();
             decodedBuffer.clear();
             return;
         }
@@ -96,6 +100,23 @@ public:
 
 private:
     static const char* NAME;
+
+    // a frame is at most 960 bytes (240 stereo samples)
+    static constexpr quint32 MAX_DECODED_BYTES = 4 * 960;
+
+    // one log line at most every 10 s, with how many frames weren't decoded (decoders run on several threads)
+    static void countRefusal() {
+        static std::atomic<int> refused { 0 };
+        static std::atomic<qint64> lastLog { 0 };
+        const qint64 LOG_INTERVAL_MSECS = 10 * 1000;
+        ++refused;
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        qint64 last = lastLog.load();
+        if ((last == 0 || now - last >= LOG_INTERVAL_MSECS) && lastLog.compare_exchange_strong(last, now)) {
+            qDebug() << "zlib codec: refused" << refused.exchange(0) << "frames too short or declaring more than"
+                     << MAX_DECODED_BYTES << "bytes";
+        }
+    }
 };
 
 #endif // hifi__PCMCodecManager_h
