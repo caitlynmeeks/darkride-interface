@@ -27,7 +27,11 @@ const float PARKED_PITCH_DEGREES = 35.0f;        // let go above this, the scree
 const float MIN_PITCH_DEGREES = -60.0f;          // low like a dashboard
 const float MAX_PITCH_DEGREES = 75.0f;
 const glm::vec2 BAR_SIZE { 0.24f, 0.035f };
-const float BAR_GAP = 0.04f;                     // under the middle panel
+// The bar's capsule (ScreenGrabBar.qml) is this much of the bar's height, centred on it; mary's 2 cm (11-02) is between
+// the middle panel's bottom edge and the capsule's top, so the bar's own top (the laser's target) is a little nearer
+const float CAPSULE_HEIGHT = 0.47f;
+const float CAPSULE_GAP = 0.02f;
+const float BAR_GAP = CAPSULE_GAP - BAR_SIZE.y * (1.0f - CAPSULE_HEIGHT) * 0.5f;
 
 // A layout pixel's size by angle sets the type's size. The tablet's is 0.058 degrees (0.525 mm a pixel at about 0.515 m).
 const float DEFAULT_DEGREES_PER_PIXEL = 0.058f;
