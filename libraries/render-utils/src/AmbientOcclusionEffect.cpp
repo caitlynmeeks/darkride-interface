@@ -115,7 +115,10 @@ void AmbientOcclusionFramebuffer::allocate() {
         }
         auto width = sideSize.x;
         auto height = sideSize.y;
-        auto format = gpu::Element{ gpu::VEC4, gpu::NINT2_10_10_10, gpu::RGBA };
+        // half floats: a signed 10-10-10-2 format (NINT2_10_10_10) is not one OpenGL can draw into, so on macOS and on
+        // Intel's driver this framebuffer was incomplete and the effect drew nothing at all (2026-11-01); the normals are
+        // signed, which half floats hold as they are, so the passes that write and read them are unchanged
+        auto format = gpu::Element{ gpu::VEC4, gpu::HALF, gpu::RGBA };
         _normalTexture = gpu::Texture::createRenderBuffer(format, width, height, gpu::Texture::SINGLE_MIP, 
                                                           gpu::Sampler(gpu::Sampler::FILTER_MIN_MAG_POINT, gpu::Sampler::WRAP_CLAMP));
         _normalFramebuffer = gpu::FramebufferPointer(gpu::Framebuffer::create("ssaoNormals"));
