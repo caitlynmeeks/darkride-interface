@@ -353,10 +353,6 @@ void EntityRenderer::updateInScene(const ScenePointer& scene, Transaction& trans
 // Returns true if the item needs to have updateInscene called because of internal rendering
 // changes (animation, fading, etc)
 bool EntityRenderer::needsRenderUpdate() const {
-
-    if (!_visible && wasPreviouslyVisible()) return true;    
-    if (_visible && !wasPreviouslyVisible()) return true;
-
     if (isFading()) {
         return true;
     }
@@ -458,15 +454,27 @@ void EntityRenderer::doRenderUpdateSynchronous(const ScenePointer& scene,
             if (checkType == EntityTypes::Material) return;
         }
 
-        bool hasChanged = evaluateEntityZoneCullState(entity);  // Run local zone culling logic 
-        if ( entity->getLocallyVisible() == false ) {_visible = false; hasChanged = true;}
+        // zone culling: the flag was decided when the zones around the avatar changed (EntityTreeRenderer); while a
+        // zone is active an entity that updates (it moved, or it is new) tests its bound against the zone's box
+        {
+            auto treeRenderer = DependencyManager::get<EntityTreeRenderer>();
+            if (treeRenderer && treeRenderer->getZoneCullState().active && EntityTreeRenderer::isZoneCullable(entity)) {
+                _zoneCulled = !treeRenderer->getZoneCullState().touches(_bound.calcCenter(),
+                                                                       0.5f * _bound.getLargestDimension() * SQRT_THREE);
+            }
+        }
+        if (!entity->getLocallyVisible() || _zoneCulled) {
+            _visible = false;
+        }
         setIsVisibleInSecondaryCamera(entity->isVisibleInSecondaryCamera());
         setRenderLayer(entity->getRenderLayer());
         setPrimitiveMode(entity->getPrimitiveMode());
         _canCastShadow = entity->getCanCastShadow();
         setCullWithParent(entity->getCullWithParent());
         _cauterized = entity->getCauterized();
-        entity->setNeedsRenderUpdate(hasChanged);
+        // the entity's own change flag is cleared by this update; a locally invisible or culled entity no longer asks
+        // for another update every frame, as the old zone-culling bookkeeping had it do
+        entity->setNeedsRenderUpdate(false);
     });
 
     // A group's card shows while any of its Model children is visible (impostorCardVisible), which the group's own
@@ -571,7 +579,7 @@ bool EntityRenderer::impostorCardVisible(const EntityItemPointer& entity) const 
     if (_visible) {
         return true;
     }
-    if (!entity->getLocallyVisible() || _zoneCullState == ZoneCullingState::ZoneCull_Culled || entity->getVisible() ||
+    if (!entity->getLocallyVisible() || _zoneCulled || entity->getVisible() ||
         entity->getType() == EntityTypes::Model) {
         return false;
     }
@@ -704,82 +712,6 @@ EntityRenderer::ImpostorStandIn EntityRenderer::findImpostorStandIn(const Entity
         }
     }
     return standIn;
-}
-
-// Bool = if the state has changed or not
-bool EntityRenderer::evaluateEntityZoneCullState(const EntityItemPointer& entity){
-
-    // Shapes aren't cooperating with zone culling, namely they are culled but not coming back
-    // when they should not be culled. It may have to do with where they sit
-    // in the entity tree render pipeline. For now, as a workaround, do not cull shapes.
-    // They are generally very cheap to render anyway so it is a trivial gain
-
-    // if (entity->getType() == EntityTypes::Shape) return false; 
-    
-    QVector<QUuid> skiplist;
-    bool hasChanged = false;
-    auto entityTreeRenderer = DependencyManager::get<EntityTreeRenderer>();
-    if (entityTreeRenderer) skiplist = entityTreeRenderer->getZoneCullSkiplist();
-    _prevZoneCullState = _zoneCullState;
-    if (skiplist.count() > 0) 
-    {
-        if (skiplist.indexOf(entity->getID()) > -1)  // Zone Culling is active and I'm on the skip list, dont cull me
-        {
-            _zoneCullState = ZoneCullingState::ZoneCull_Skipped;
-            if (!_visible && wasPreviouslyVisible()) 
-            {
-                _visible = true;  // show again if it was zone-culled previously
-                hasChanged = true;
-                setPreviouslyVisible(false);    
-            }
-        }
-        else 
-        {
-            _zoneCullState = ZoneCullingState::ZoneCull_Culled;
-            if (_visible)
-            {
-                _visible = false;
-                hasChanged = true;
-                setPreviouslyVisible(true); // remember it wasn't visible to ben if it was zone-culled previously
-            } 
-            else 
-            {
-                setPreviouslyVisible(false);
-                hasChanged = true;   // Non-models need this to update. Why? Position in render pipeline?
-            }
-        }
-
-    }
-    else 
-    { // Nothing on my skiplist so zone culling is not switched on
-        _zoneCullState = ZoneCullingState::ZoneCull_Inactive;
-        if (!_visible && wasPreviouslyVisible()) 
-        {
-            _visible = true;  // show again if it was zone-culled previously
-            hasChanged = true;
-            setPreviouslyVisible(true); // remember it wasn't visible to ben if it was zone-culled previously     
-            // Non-model entities (lights, etc) need to be marked changed in order to update.  I don't know why.
-            // May have to do with their position in the render pipeline.  
-        } 
-        //else if (entity->getType() != EntityTypes::Model) hasChanged = true;
-    }
-
-    return hasChanged;
-}
-
-// QObject::connect(&a, &Counter::valueChanged,&b, &Counter::setValue);
-// QObject::connect(this, &EntityRenderer::requestRenderUpdate, this,
-// QObject::disconnect(this, &EntityRenderer::requestRenderUpdate, this, nullptr);
-
-void EntityRenderer::handleSpecialUpdate() {
-    qDebug() << _entity->getName() << ", " << _entity->getID()  << ", STATIC RECEIVED A HANDLE SPECIAL UPDATE REQUEST";
-    // We'll need to hit the do render or whatever and be sure to change the state against the skiplist state
-    //const bool hasChanged = renderable->evaluateEntityZoneCullState(renderable->getEntity());
-    //if (hasChanged || _isEditMode)
-    //{
-    //    updateInScene(scene, transaction);
-    //    le->getEntity()->setNeedsRenderUpdate(true);
-    //}
 }
 
 void EntityRenderer::onAddToScene(const EntityItemPointer& entity) {

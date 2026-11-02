@@ -283,6 +283,8 @@ void ZoneEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scen
     if (zoneCullingChanged) {
         _zoneCullingProperties = entity->getZoneCullingProperties();
         updateZoneCullingFromEntity(entity);
+        // the zone's culling mode changed: the tree renderer decides again whether this zone culls, at its next check
+        DependencyManager::get<EntityTreeRenderer>()->zoneCullingZoneChanged(entity->getID());
     }
 
     if (toneMappingChanged) {

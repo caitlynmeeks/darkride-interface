@@ -1171,7 +1171,8 @@ namespace {
         with(range(add(spec("bloom.bloomIntensity", "Bloom Intensity", K::Float, "zone")), 0, 1, 0.001, 3), "bloomMode=enabled");
         with(range(add(spec("bloom.bloomThreshold", "Bloom Threshold", K::Float, "zone")), 0, 1, 0.001, 3), "bloomMode=enabled");
         with(range(add(spec("bloom.bloomSize", "Bloom Size", K::Float, "zone")), 0, 2, 0.001, 3), "bloomMode=enabled");
-        en("zoneCullingMode", "Zone Culling", "zone", { "inherit:Inherit", "outside:Cull Outside", "disabled:Disabled" });
+        en("zoneCullingMode", "Zone Culling", "zone", { "inherit:Inherit", "outside:Cull Outside",
+                                                        "outsideNoLoad:Cull Outside, Don't Load", "disabled:Disabled" });
         en("toneMappingMode", "Tone Mapping", "zone", { "inherit:Inherit", "rgb:RGB", "srgb:sRGB", "reinhard:Reinhard", "filmic:Filmic" });
         with(range(add(spec("toneMapping.exposure", "Exposure", K::Float, "zone")), -4, 4, 0.25, 2), "toneMappingMode in rgb,srgb,reinhard,filmic");
         en("avatarPriority", "Avatar Priority", "zone", { "inherit:Inherit", "crowd:Crowd", "hero:Hero" });

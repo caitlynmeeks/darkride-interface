@@ -118,9 +118,6 @@ void ShapeEntityRenderer::removeReflectionProbe() {
 }
 
 bool ShapeEntityRenderer::needsRenderUpdate() const {
-    if (_visible != wasPreviouslyVisible())
-        return true;
-
     if (resultWithReadLock<bool>([&] {
             auto mat = _materials.find("0");
             if (mat != _materials.end() && mat->second.top().material && mat->second.top().material->isProcedural() &&

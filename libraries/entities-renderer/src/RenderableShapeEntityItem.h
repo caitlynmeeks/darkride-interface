@@ -31,7 +31,6 @@ public:
 protected:
     ShapeKey getShapeKey() override;
     Item::Bound getBound() override;
-    virtual bool evaluateEntityZoneCullState(const EntityItemPointer& entity) override { return false; }
 
 private:
     virtual bool needsRenderUpdate() const override;
