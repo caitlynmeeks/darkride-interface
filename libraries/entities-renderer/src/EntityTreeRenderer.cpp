@@ -282,6 +282,11 @@ void EntityTreeRenderer::interruptIfStillRunning(QWeakPointer<ScriptEngine> weak
         old->interruptRunningCall();
         if (attempt < MAX_INTERRUPTIONS) {
             interruptIfStillRunning(weakOld, attempt + 1);
+        } else {
+            // given up on: its world's things go, and the visitor's own scripts start without waiting for it any more
+            qCWarning(entitiesrenderer) << "the entities engine of the world left did not stop; going on without it:"
+                                        << old->getFilename();
+            entitiesEngineStopped(old->getWorldId());
         }
     });
 }
@@ -290,15 +295,21 @@ void EntityTreeRenderer::interruptIfStillRunning(QWeakPointer<ScriptEngine> weak
 // connected to worldScriptsStopped), and the visitor's own scripts start again once every engine of a world left has.
 void EntityTreeRenderer::retireEntitiesScriptEngine(const ScriptEnginePointer& old) {
     const int world = old->getWorldId();
-    _entitiesEnginesStopping++;
-    connect(old.data(), &ScriptEngine::doneRunning, this, [this, world] {
-        if (!_shuttingDown) {
-            emit worldScriptsStopped(world);
-        }
-        if (--_entitiesEnginesStopping == 0 && !_shuttingDown && _entitiesScriptEngine) {
-            restartKeptEntityScripts();
-        }
-    }, Qt::QueuedConnection);
+    _entitiesEnginesStopping.insert(world);
+    connect(old.data(), &ScriptEngine::doneRunning, this, [this, world] { entitiesEngineStopped(world); },
+            Qt::QueuedConnection);
+}
+
+// The engine of the world `world` has stopped, or was given up on (interruptIfStillRunning); once for each.
+void EntityTreeRenderer::entitiesEngineStopped(int world) {
+    if (_shuttingDown || !_entitiesEnginesStopping.remove(world)) {
+        return;
+    }
+    emit worldScriptsStopped(world);
+    // not into an engine being stopped itself (a content reload makes its new engine after stopping the old one)
+    if (_entitiesEnginesStopping.isEmpty() && _entitiesScriptEngine && !_entitiesScriptEngine->isStopping()) {
+        restartKeptEntityScripts();
+    }
 }
 
 void EntityTreeRenderer::restartKeptEntityScripts() {

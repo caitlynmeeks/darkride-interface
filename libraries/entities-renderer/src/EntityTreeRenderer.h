@@ -298,6 +298,7 @@ private:
     void resetEntitiesScriptEngine();
     void replaceEntitiesScriptEngine();
     void retireEntitiesScriptEngine(const ScriptEnginePointer& old);
+    void entitiesEngineStopped(int world);
     void interruptIfStillRunning(QWeakPointer<ScriptEngine> old, int attempt);
     void restartKeptEntityScripts();
 
@@ -332,7 +333,7 @@ private:
 
     bool _wantScripts;
     ScriptEnginePointer _entitiesScriptEngine;
-    int _entitiesEnginesStopping { 0 };  // engines of worlds left that haven't stopped yet (replaceEntitiesScriptEngine)
+    QSet<int> _entitiesEnginesStopping;  // the world ids of engines of worlds left not stopped yet (retireEntitiesScriptEngine)
 
     void playEntityCollisionSound(const EntityItemPointer& entity, const Collision& collision);
 
