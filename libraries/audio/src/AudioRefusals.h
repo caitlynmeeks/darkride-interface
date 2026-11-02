@@ -35,9 +35,9 @@ public:
         if ((last == 0 || now - last >= LOG_INTERVAL_USECS) && _lastLog.compare_exchange_strong(last, now)) {
             int refused = _count.exchange(0);
             if (lastFrom.isEmpty()) {
-                qCDebug(audio).noquote() << "Refused" << refused << _what;
+                qCWarning(audio).noquote() << "Refused" << refused << _what;
             } else {
-                qCDebug(audio).noquote() << "Refused" << refused << _what << "(the last from" << lastFrom + ")";
+                qCWarning(audio).noquote() << "Refused" << refused << _what << "(the last from" << lastFrom + ")";
             }
         }
     }

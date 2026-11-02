@@ -113,7 +113,7 @@ private:
         qint64 now = QDateTime::currentMSecsSinceEpoch();
         qint64 last = lastLog.load();
         if ((last == 0 || now - last >= LOG_INTERVAL_MSECS) && lastLog.compare_exchange_strong(last, now)) {
-            qDebug() << "zlib codec: refused" << refused.exchange(0) << "frames too short or declaring more than"
+            qWarning() << "zlib codec: refused" << refused.exchange(0) << "frames too short or declaring more than"
                      << MAX_DECODED_BYTES << "bytes";
         }
     }
