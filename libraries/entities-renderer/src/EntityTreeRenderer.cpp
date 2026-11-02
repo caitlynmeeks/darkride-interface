@@ -410,9 +410,10 @@ void EntityTreeRenderer::updateContentFromThisComputer() {
     }
     const DomainHandler& domainHandler = DependencyManager::get<NodeList>()->getDomainHandler();
     // between worlds (no address yet) nothing is local; a serverless world file decides for its own tree
-    // (DomainSession::prepareServerlessDomainContents), so this tree keeps refusing while it is the one
+    // (DomainSession::prepareServerlessDomainContents), so this tree keeps refusing while it is the one; under the
+    // strict network rule (DARKRIDE_SCRIPT_NETWORK_STRICT=1) every world counts as remote, as for the scripts
     const bool local = domainHandler.isConnected() && !domainHandler.isServerless() &&
-                       ScriptNetworkPolicy::isWorldLocal();
+                       !ScriptNetworkPolicy::isStrict() && ScriptNetworkPolicy::isWorldLocal();
     entityTree->setRefusesContentFromThisComputer(!local);
     const int decision = local ? 0 : 1;
     if (_contentFromThisComputerLogged.exchange(decision) != decision) {
