@@ -296,14 +296,21 @@ void EntityTreeRenderer::interruptIfStillRunning(QWeakPointer<ScriptEngine> weak
 // connected to worldScriptsStopped), and the visitor's own scripts start again once every engine of a world left has.
 void EntityTreeRenderer::retireEntitiesScriptEngine(const ScriptEnginePointer& old) {
     const int world = old->getWorldId();
-    // from here on its code gets nothing done (security #32): what its unload, its scriptEnding or a callback still
-    // calls is refused, so nothing of it reaches the next world (an entity whose script would load in the next engine);
-    // what it made outside the engine goes now
-    ScriptCaller::retireWorld(world);
-    emit worldLeft(world);
+    markWorldLeft(world);  // done already when the world's entities were cleared; a content reload comes here first
     _entitiesEnginesStopping.insert(world);
     connect(old.data(), &ScriptEngine::doneRunning, this, [this, world] { entitiesEngineStopped(world); },
             Qt::QueuedConnection);
+}
+
+// From here on the world's code gets nothing done (security #32): what its leaveEntity or unload handlers, its
+// scriptEnding or a late callback still call is refused, so nothing of it reaches the next world (an entity whose
+// script would load in the next engine); what it made outside the engine goes now. Once per world.
+void EntityTreeRenderer::markWorldLeft(int world) {
+    if (world <= 0 || ScriptCaller::isRetired(world)) {
+        return;
+    }
+    ScriptCaller::retireWorld(world);
+    emit worldLeft(world);
 }
 
 // The engine of the world `world` has stopped, or was given up on (interruptIfStillRunning); once for each.
@@ -368,6 +375,11 @@ void EntityTreeRenderer::stopDomainAndNonOwnedEntities() {
 }
 
 void EntityTreeRenderer::clearDomainAndNonOwnedEntities() {
+    // first of all: from here on the world's code gets nothing done (its leaveEntity and unload handlers run after this,
+    // and an entity it asks for now is refused under the tree lock the erase below takes, never made after the erase)
+    if (_entitiesScriptEngine) {
+        markWorldLeft(_entitiesScriptEngine->getWorldId());
+    }
     stopDomainAndNonOwnedEntities();
     // the avatar entities a world's script made (a hat it handed out) go with the world: deleted the usual way, so
     // the visitor's avatar stops carrying them too (MyAvatar's avatar-entity data, sent on to the next world)
@@ -411,6 +423,9 @@ void EntityTreeRenderer::clearDomainAndNonOwnedEntities() {
 }
 
 void EntityTreeRenderer::clear() {
+    if (_entitiesScriptEngine && !_shuttingDown) {
+        markWorldLeft(_entitiesScriptEngine->getWorldId());  // before its leaveEntity handlers, as at a world change
+    }
     leaveAllEntities();
     resetZoneCulling();
     // unload and stop the engine

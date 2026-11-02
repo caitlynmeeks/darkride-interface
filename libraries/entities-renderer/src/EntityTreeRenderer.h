@@ -303,6 +303,7 @@ private:
     void resetEntitiesScriptEngine();
     void replaceEntitiesScriptEngine();
     void retireEntitiesScriptEngine(const ScriptEnginePointer& old);
+    void markWorldLeft(int world);
     void entitiesEngineStopped(int world);
     void interruptIfStillRunning(QWeakPointer<ScriptEngine> old, int attempt);
     void restartKeptEntityScripts();

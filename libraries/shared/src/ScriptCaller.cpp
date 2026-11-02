@@ -23,8 +23,8 @@ thread_local int threadWorld = 0;  // markThreadAsWorld's
 QMutex retiredLock;
 QSet<int> retiredWorlds;                // under retiredLock
 std::atomic<int> highestRetired { 0 };  // no world above it was left: a newer world's call never takes the lock
-thread_local int refusalsLoggedFor = 0;            // the world whose refusals this thread has logged
-thread_local QSet<QByteArray>* refusalsLogged = nullptr;  // its refused members, each logged once
+thread_local int refusalsLoggedFor = 0;        // the world whose refusals this thread has logged
+thread_local QSet<QByteArray> refusalsLogged;  // its refused members, each logged once
 }
 
 int ScriptCaller::world() {
@@ -64,16 +64,13 @@ bool ScriptCaller::isRetired() {
 
 void ScriptCaller::logRetiredRefusal(const char* object, const char* member) {
     const int caller = world();
-    if (!refusalsLogged) {
-        refusalsLogged = new QSet<QByteArray>();  // one small set per thread that ever refused, for its life
-    }
     if (refusalsLoggedFor != caller) {
         refusalsLoggedFor = caller;
-        refusalsLogged->clear();
+        refusalsLogged.clear();
     }
     const QByteArray key = QByteArray(object) + "." + member;
-    if (!refusalsLogged->contains(key)) {
-        refusalsLogged->insert(key);
+    if (!refusalsLogged.contains(key)) {
+        refusalsLogged.insert(key);
         qCWarning(shared).nospace() << key.constData() << ": a script of a world that was left (" << caller
                                     << ") may do nothing more; refused (shown once for the world)";
     }
