@@ -18,6 +18,7 @@
 
 #include <DependencyManager.h>
 #include <PathUtils.h>
+#include <ScriptCaller.h>
 
 #include "NetworkLogging.h"
 #include "NodeList.h"
@@ -26,6 +27,7 @@ namespace {
 
 const QStringList WEB_SCHEMES { "http", "https", "ws", "wss" };
 const QString ASSET_SCHEME = "atp";
+const QString WORLD_LEFT = "the world the script belongs to was left";
 
 bool inIPv4Block(quint32 address, quint32 block, int bits) {
     const quint32 mask = bits == 0 ? 0 : (0xffffffffu << (32 - bits));
@@ -177,6 +179,12 @@ bool ScriptNetworkPolicy::applies(const QUrl& origin, bool worldIsLocal) {
 
 ScriptNetworkPolicy::Decision ScriptNetworkPolicy::check(const QUrl& target, const QUrl& origin, bool worldIsLocal) {
     Decision decision;
+    if (ScriptCaller::isRetired()) {
+        // a script of a world that was left reaches nothing more, wherever it came from (security #32)
+        decision.allowed = false;
+        decision.reason = WORLD_LEFT;
+        return decision;
+    }
     if (!applies(origin, worldIsLocal)) {
         return decision;
     }
@@ -268,6 +276,14 @@ void ScriptNetworkPolicy::decide(const QUrl& target, const QUrl& origin, QObject
         return;
     }
     QHostInfo::lookupHost(target.host(), context, [callback](const QHostInfo& info) {
+        if (ScriptCaller::isRetired()) {
+            // the world was left while the name was looked up (the callback runs on the script's own thread)
+            Decision decision;
+            decision.allowed = false;
+            decision.reason = WORLD_LEFT;
+            callback(decision);
+            return;
+        }
         if (info.error() != QHostInfo::NoError) {
             Decision decision;
             decision.allowed = false;

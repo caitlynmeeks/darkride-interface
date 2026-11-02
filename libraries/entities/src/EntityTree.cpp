@@ -37,6 +37,7 @@
 #include "EntityDynamicFactoryInterface.h"
 #include "WebEntityItem.h"
 #include "ScriptAddressCheck.h"
+#include "ScriptCaller.h"
 
 static const quint64 DELETED_ENTITIES_EXTRA_USECS_TO_CONSIDER = USECS_PER_MSEC * 50;
 const float EntityTree::DEFAULT_MAX_TMP_ENTITY_LIFETIME = 60 * 60; // 1 hour
@@ -79,6 +80,28 @@ OctreeElementPointer EntityTree::createNewElement(unsigned char* octalCode) {
     return std::static_pointer_cast<OctreeElement>(newElement);
 }
 
+QVector<EntityItemID> EntityTree::getWorldsAvatarEntityIDs() const {
+    QVector<EntityItemID> ids;
+    QReadLocker locker(&_entityMapLock);
+    for (const auto& entity : _entityMap) {
+        if (entity && entity->isMyAvatarEntity() && entity->getLocalOwner() == entity::LocalOwner::WORLD) {
+            ids.push_back(entity->getEntityItemID());
+        }
+    }
+    return ids;
+}
+
+QVector<EntityItemID> EntityTree::getKeptEntityIDsWithScripts() const {
+    QVector<EntityItemID> ids;
+    QReadLocker locker(&_entityMapLock);
+    for (const auto& entity : _entityMap) {
+        if (entity && entity->isKeptOnWorldChange() && !entity->getScript().isEmpty()) {
+            ids.push_back(entity->getEntityItemID());
+        }
+    }
+    return ids;
+}
+
 void EntityTree::eraseDomainAndNonOwnedEntities() {
     emit clearingEntities();
 
@@ -98,7 +121,7 @@ void EntityTree::eraseDomainAndNonOwnedEntities() {
                 element->cleanupDomainAndNonOwnedEntities();
             }
             if (!getIsServer()) {
-                if (entity->isLocalEntity() || entity->isMyAvatarEntity()) {
+                if (entity->isKeptOnWorldChange()) {
                     savedEntities[entity->getEntityItemID()] = entity;
                 } else {
                     int32_t spaceIndex = entity->getSpaceIndex();
@@ -121,7 +144,7 @@ void EntityTree::eraseDomainAndNonOwnedEntities() {
 
         foreach (EntityItemWeakPointer entityItem, _needsParentFixup) {
             auto entity = entityItem.lock();
-            if (entity && (entity->isLocalEntity() || entity->isMyAvatarEntity())) {
+            if (entity && entity->isKeptOnWorldChange()) {
                 needParentFixup.push_back(entityItem);
             }
         }
@@ -781,6 +804,12 @@ EntityItemPointer EntityTree::addEntity(const EntityItemID& entityID, const Enti
         return nullptr;
     }
 
+    if (ScriptCaller::isRetired()) {
+        // a world that was left makes nothing more, whichever way it asks (security #32)
+        ScriptCaller::logRetiredRefusal("Entities", "addEntity");
+        return nullptr;
+    }
+
     // construct the instance of the entity
     EntityTypes::EntityType type = props.getType();
     EntityItemPointer result = EntityTypes::constructEntityItem(type, entityID, props);
@@ -788,6 +817,15 @@ EntityItemPointer EntityTree::addEntity(const EntityItemID& entityID, const Enti
     if (result) {
         if (recordCreationTime) {
             result->recordCreationTime();
+        }
+        if (result->isLocalEntity()) {
+            // who made it, before anything else can see it: a world's script (the guards mark its calls on its own
+            // thread) or the visitor's side (the app, the visitor's own scripts)
+            result->setLocalOwner(ScriptCaller::isWorld() ? entity::LocalOwner::WORLD : entity::LocalOwner::VISITOR);
+        } else if (result->isMyAvatarEntity() && ScriptCaller::isWorld()) {
+            // an avatar entity a world's script made (a hat the world hands out) is the world's: it may change it
+            // while the visitor is there, and it is never saved with the visitor's avatar (MyAvatar)
+            result->setLocalOwner(entity::LocalOwner::WORLD);
         }
         // Recurse the tree and store the entity in the correct tree element
         AddEntityOperator theOperator(getThisPointer(), result);

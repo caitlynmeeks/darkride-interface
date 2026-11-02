@@ -122,6 +122,11 @@ public:
 
     void cleanupAllOverlays();
 
+    /// The 2D overlays the world `world`'s scripts made (tagged with ScriptCaller::world() when added) go: the world
+    /// was left (EntityTreeRenderer::worldLeft). A 3D overlay is a local entity, and goes with the world's entities.
+    /// Main thread.
+    void removeWorld2DOverlays(int world);
+
 public slots:
     /**jsdoc
      * Adds an overlay to the scene.
@@ -748,6 +753,7 @@ private:
 
     mutable QMutex _mutex { QMutex::Recursive };
     QMap<QUuid, Overlay::Pointer> _overlays;
+    QHash<QUuid, int> _worldOverlays;  // a 2D overlay a world's script made: the world (ScriptCaller::world()); under _mutex
     QList<Overlay::Pointer> _overlaysToDelete;
 
     unsigned int _stackOrder { 1 };

@@ -82,6 +82,7 @@
 #include "WorldMessages.h"
 #include "RefusedGlobal.h"
 #include "ScriptApiPolicy.h"
+#include "ScriptCaller.h"
 #include "BaseScriptEngine.h"
 #include "DataViewClass.h"
 #include "EventTypes.h"
@@ -123,6 +124,15 @@ Q_DECLARE_METATYPE(QScriptEngine::FunctionSignature)
 int functionSignatureMetaID = qRegisterMetaType<QScriptEngine::FunctionSignature>();
 
 int scriptEnginePointerMetaID = qRegisterMetaType<ScriptEnginePointer>();
+
+// Entities.getMultipleEntityProperties is a plain function on the Entities object, not one of its guarded members, so
+// the guard doesn't mark a world's call to it: it is marked here, so that the entities a world's script may not see
+// stay hidden from it (security #28).
+static QScriptValue getMultipleEntityPropertiesMarked(QScriptContext* context, QScriptEngine* engine) {
+    auto scriptEngine = qobject_cast<ScriptEngine*>(engine);
+    ScriptCaller::WorldScope caller(scriptEngine && scriptEngine->isEntityClientScript());
+    return EntityScriptingInterface::getMultipleEntityProperties(context, engine);
+}
 
 static QScriptValue debugPrint(QScriptContext* context, QScriptEngine* engine) {
     QString message = "";
@@ -568,6 +578,10 @@ void ScriptEngine::waitTillDoneRunning() {
     }
 }
 
+bool ScriptEngine::worldWasLeft() const {
+    return ScriptCaller::isRetired(_worldId);
+}
+
 QString ScriptEngine::getFilename() const {
     QStringList fileNameParts = _fileNameString.split("/");
     QString lastPart;
@@ -985,7 +999,7 @@ void ScriptEngine::registerStandardGlobals() {
     registerGlobalObject("Audio", DependencyManager::get<AudioScriptingInterface>().data());
 
     registerGlobalObject("Entities", DependencyManager::get<EntityScriptingInterface>().data());
-    registerFunction("Entities", "getMultipleEntityProperties", EntityScriptingInterface::getMultipleEntityProperties);
+    registerFunction("Entities", "getMultipleEntityProperties", getMultipleEntityPropertiesMarked);
     registerGlobalObject("Quat", &_quatLibrary);
     registerGlobalObject("Vec3", &_vec3Library);
     registerGlobalObject("Mat4", &_mat4Library);
@@ -1147,7 +1161,10 @@ GuardedObjectClass* ScriptEngine::guardClass() {
         gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
         gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
         gate.deniesSignal = &ScriptApiPolicy::deniesSignal;
+        gate.checksDelivery = &ScriptApiPolicy::checksDelivery;
+        gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
+        gate.allowsAfterWorldLeft = &ScriptApiPolicy::allowsAfterWorldLeft;
         _guardClass = std::make_unique<GuardedObjectClass>(this, std::move(gate));
     }
     return _guardClass.get();
@@ -1432,6 +1449,12 @@ void ScriptEngine::run() {
         // (because we're a client script)
         hifi::scripting::setLocalAccessSafeThread(true);
     }
+    if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
+        // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
+        // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
+        // makes a new one for each engine, never from a pool) and ends with it.
+        ScriptCaller::markThreadAsWorld(_worldId);
+    }
 
     auto filenameParts = _fileNameString.split("/");
     auto name = filenameParts.size() > 0 ? filenameParts[filenameParts.size() - 1] : "unknown";
@@ -1649,6 +1672,22 @@ void ScriptEngine::stopAllTimersForEntityScript(const EntityItemID& entityID) {
 
 }
 
+void ScriptEngine::interruptRunningCall() {
+    // on the engine's own thread: a script in a long call handles queued calls every second (setProcessEventsInterval),
+    // so this runs inside the stuck call and ends it there. A signal handler's call is not an evaluation to abort
+    // (QScriptEngine::isEvaluating is false): an error is thrown into it instead, again each second while it runs on
+    QMetaObject::invokeMethod(this, [this] {
+        if (!isStopping()) {
+            return;
+        }
+        if (isEvaluating()) {
+            abortEvaluation();
+        } else if (auto context = currentContext()) {
+            context->throwError("Stopped: the script's engine was stopped");
+        }
+    }, Qt::QueuedConnection);
+}
+
 void ScriptEngine::stop(bool marshal) {
     _isStopping = true; // this can be done on any thread
 
@@ -1708,6 +1747,12 @@ void ScriptEngine::timerFired() {
             scriptWarningMessage("Script.timerFired() while shutting down is ignored... parent script:" + getFilename());
             return; // bail early
         }
+    }
+
+    // an entities engine being stopped or whose world was left calls no more timers: a world's code ends with the
+    // world, and a script stuck in a loop in one would start it again after each interruption
+    if (_context == ENTITY_CLIENT_SCRIPT && (_isStopping || worldWasLeft())) {
+        return;
     }
 
     QTimer* callingTimer = reinterpret_cast<QTimer*>(sender());
@@ -2150,10 +2195,10 @@ QVariantMap ScriptEngine::fetchModuleSource(const QString& modulePath, const boo
             loop->quit();
         });
 
-        // this helps detect the case where stop() is invoked during the download
+        // this helps detect the case where stop() is invoked (or the world is left) during the download
         //  but not seen in time to abort processing in onload()...
         connect(monitor.get(), &QTimer::timeout, this, [this, loop] {
-            if (isStopping()) {
+            if (isStopping() || worldWasLeft()) {
                 loop->exit(-1);
             }
         });
@@ -2357,6 +2402,11 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
     QUrl capturedSandboxURL = currentSandboxURL;
 
     auto evaluateScripts = [=](const QMap<QUrl, QString>& data, const QMap<QUrl, QString>& status) {
+        if (isWorldEnding()) {
+            // came after the world's engine was stopped or its world left: nothing of it runs
+            loader->deleteLater();
+            return;
+        }
         auto parentURL = _parentURL;
         for (QUrl url : urls) {
             QString contents = data[url];
@@ -2399,9 +2449,18 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
 
     loader->start(processLevelMaxRetries);
 
-    if (!callback.isFunction() && !loader->isFinished()) {
+    if (!callback.isFunction() && !loader->isFinished() && !isWorldEnding()) {
+        // the script's queued callbacks run while it waits: a world's script's wait ends when its engine stops or its
+        // world is left (checked every 500 ms, as Script.require does), and what comes later is not evaluated
         QEventLoop loop;
+        QTimer monitor;
         QObject::connect(loader, &BatchLoader::finished, &loop, &QEventLoop::quit);
+        QObject::connect(&monitor, &QTimer::timeout, &loop, [this, &loop] {
+            if (isWorldEnding()) {
+                loop.exit(-1);
+            }
+        });
+        monitor.start(500);
         loop.exec();
     }
 }
@@ -2951,27 +3010,6 @@ void ScriptEngine::unloadEntityScript(const EntityItemID& entityID, bool shouldR
 
         stopAllTimersForEntityScript(entityID);
     }
-}
-
-void ScriptEngine::unloadEntityScriptsOfGoneEntities() {
-    if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "unloadEntityScriptsOfGoneEntities", Qt::QueuedConnection);
-        return;
-    }
-    QList<EntityItemID> entityIDs;
-    {
-        QReadLocker locker { &_entityScriptsLock };
-        entityIDs = _entityScripts.keys();
-    }
-    int unloaded = 0;
-    for (const auto& entityID : entityIDs) {
-        if (entityIsGone(_context, entityID)) {
-            unloadEntityScript(entityID, true);
-            unloaded++;
-        }
-    }
-    qCDebug(scriptengine) << "after a world was left: of" << entityIDs.size() << "entity scripts listed," << unloaded
-                         << "were of entities that are gone, and are unloaded";
 }
 
 QList<EntityItemID> ScriptEngine::getListOfEntityScriptIDs() {

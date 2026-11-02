@@ -29,6 +29,9 @@ public:
 
     unsigned int addPick(PickQuery::PickType type, const std::shared_ptr<PickQuery> pick);
     void removePick(unsigned int uid);
+    /// The picks the world `world`'s scripts made (tagged with ScriptCaller::world() when added) go: its scripts have
+    /// stopped. Returns how many went.
+    int removeWorldPicks(int world);
     void enablePick(unsigned int uid) const;
     void disablePick(unsigned int uid) const;
     bool isPickEnabled(unsigned int uid) const;
@@ -91,6 +94,7 @@ protected:
     std::unordered_map<PickQuery::PickType, std::unordered_map<unsigned int, std::shared_ptr<PickQuery>>> _picks;
     unsigned int _nextPickToUpdate[PickQuery::NUM_PICK_TYPES] { 0, 0, 0, 0 };
     std::unordered_map<unsigned int, PickQuery::PickType> _typeMap;
+    std::unordered_map<unsigned int, int> _worldPicks;  // made by a world's scripts: the world's id
     unsigned int _nextPickID { INVALID_PICK_ID + 1 };
 
     PickCacheOptimizer<PickRay> _rayPickCacheOptimizer;

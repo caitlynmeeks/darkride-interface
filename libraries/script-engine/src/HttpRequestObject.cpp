@@ -99,9 +99,24 @@ void HttpRequestObject::send(const QVariant& data) {
         }, _worldIsLocal);
     }
     if (!_async && _readyState != DONE) {
-        QEventLoop loop;
-        connect(this, &HttpRequestObject::requestComplete, &loop, &QEventLoop::quit);
-        loop.exec();
+        // the script's queued callbacks run while it waits: a world's script's wait ends when its engine stops or its
+        // world is left (checked every 500 ms), and the request is aborted, so nothing of it answers later
+        auto ending = [this] { return isEnding(); };
+        if (!ending()) {
+            QEventLoop loop;
+            QTimer monitor;
+            connect(this, &HttpRequestObject::requestComplete, &loop, &QEventLoop::quit);
+            connect(&monitor, &QTimer::timeout, &loop, [&loop, ending] {
+                if (ending()) {
+                    loop.exit(-1);
+                }
+            });
+            monitor.start(500);
+            loop.exec();
+        }
+        if (_readyState != DONE && ending()) {
+            abort();
+        }
     }
 }
 
@@ -152,7 +167,9 @@ void HttpRequestObject::onDownloadProgress(qint64 received, qint64 total) {
 }
 
 void HttpRequestObject::onTimeout() {
-    emit timedOut();
+    if (!isEnding()) {
+        emit timedOut();
+    }
     abortRequest();
     _errorCode = QNetworkReply::TimeoutError;
     setReadyState(DONE);
@@ -276,7 +293,10 @@ QVariant HttpRequestObject::getResponseHeader(const QString& name) const {
 void HttpRequestObject::setReadyState(ReadyState state) {
     if (state != _readyState) {
         _readyState = state;
-        emit readyStateChanged();
+        // a world's script hears no answer once its engine stops or its world is left
+        if (!isEnding()) {
+            emit readyStateChanged();
+        }
     }
 }
 
@@ -295,6 +315,7 @@ HttpRequestObject* HttpRequestFactory::createRequest(const QString& origin) {
                 engine->scriptWarningMessage(line);
             }
         });
+        request->setEndingCheck([engine] { return !engine || engine->isWorldEnding(); });
     }
     return request;
 }

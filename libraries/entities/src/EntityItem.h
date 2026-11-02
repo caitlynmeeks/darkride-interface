@@ -76,6 +76,17 @@ enum class HostType {
     AVATAR,
     LOCAL
 };
+
+/// Who made a local entity on this computer, recorded once when it is added (EntityTree::addEntity) and never changed
+/// or sent anywhere: the visitor's side (the app and the visitor's own scripts) or a world's script. An avatar entity
+/// a world's script made is recorded as the world's too (it is never saved with the visitor's avatar); other
+/// avatar entities and domain entities record none. Of the local entities a world's scripts use only those a world's
+/// script made; of the avatar entities they change only those.
+enum class LocalOwner : uint8_t {
+    NONE = 0,
+    VISITOR,
+    WORLD
+};
 }
 
 /// EntityItem class this is the base class for all entity types. It handles the basic properties and functionality available
@@ -572,6 +583,26 @@ public:
     
     virtual void setEntityHostType(entity::HostType hostType) { _hostType = hostType; }
 
+    /// Who made this local or avatar entity (NONE for domain entities and for avatar entities no world's script made);
+    /// safe to read from any thread without the entity's lock.
+    entity::LocalOwner getLocalOwner() const { return static_cast<entity::LocalOwner>(_localOwner.load()); }
+    /// Records who made a local or avatar entity. Called once, by EntityTree::addEntity, before the entity is in the
+    /// tree.
+    void setLocalOwner(entity::LocalOwner owner) { _localOwner.store(static_cast<uint8_t>(owner)); }
+    /// The world's own content: a domain entity, or a local or avatar entity a world's script made.
+    bool isMadeByWorld() const { return isDomainEntity() || getLocalOwner() == entity::LocalOwner::WORLD; }
+    /// The visitor's own: a local entity the app or the visitor's own scripts made, or one of the visitor's avatar
+    /// entities that no world's script made.
+    bool isVisitorsOwn() const {
+        return (isLocalEntity() && getLocalOwner() == entity::LocalOwner::VISITOR) ||
+               (isMyAvatarEntity() && getLocalOwner() != entity::LocalOwner::WORLD);
+    }
+    /// Kept when the visitor leaves a world: the local entities and the visitor's own avatar entities, except those a
+    /// world's script made, which go with the world's domain entities.
+    bool isKeptOnWorldChange() const {
+        return (isLocalEntity() || isMyAvatarEntity()) && getLocalOwner() != entity::LocalOwner::WORLD;
+    }
+
     // if this entity is an avatar entity, which avatar is it associated with?
     QUuid getOwningAvatarID() const { return _owningAvatarID; }
     QUuid getOwningAvatarIDForProperties() const;
@@ -842,6 +873,7 @@ protected:
     QUuid _sourceUUID; /// the server node UUID we came from
 
     entity::HostType _hostType { entity::HostType::DOMAIN };
+    std::atomic<uint8_t> _localOwner { static_cast<uint8_t>(entity::LocalOwner::NONE) };
     bool _transitingWithAvatar{ false };
     bool _transformDrivenLocally { false };
     QUuid _owningAvatarID;

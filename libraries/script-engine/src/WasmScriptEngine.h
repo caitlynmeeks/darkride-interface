@@ -123,6 +123,7 @@ public:
     void run() override;
     void stop(bool marshal = false) override;
     void waitTillDoneRunning() override;
+    void interruptRunningCall() override { stop(); }
 
     // The entity-script contract, for an entities engine: a JavaScript entity script runs in the guest, a
     // .wasm one in an instance of its module (one per URL), reached through the module's entity_* exports.

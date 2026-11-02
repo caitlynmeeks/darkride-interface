@@ -17,6 +17,7 @@
 #include <QtScript/QScriptEngine>
 
 #include <GuardedObject.h>
+#include <ScriptCaller.h>
 
 QTEST_MAIN(GuardedObjectTests)
 
@@ -48,6 +49,7 @@ public:
 signals:
     void countChanged(int count);
     void secretChanged(const QString& secret);
+    void pointed(const QString& id, int n);
 private:
     int _count { 0 };
     int _limit { 0 };
@@ -64,7 +66,12 @@ struct Fixture {
         gate.deniesPropertyWrite = [](const QMetaObject*, const QByteArray& name) { return name == "count"; };
         gate.deniesPropertyRead = [](const QMetaObject*, const QByteArray& name) { return name == "label"; };
         gate.deniesSignal = [](const QMetaObject*, const QByteArray& name) { return name == "secretChanged"; };
+        gate.checksDelivery = [](const QMetaObject*, const QByteArray& name) { return name == "pointed"; };
+        gate.holdsBackDelivery = [](const QMetaObject*, const QByteArray& name, const QVariantList& arguments) {
+            return name == "pointed" && arguments.value(0).toString() == "hidden";
+        };
         gate.refusalLine = [](const QString& object, const QString& member) { return object + "." + member + " is for the visitor's own scripts"; };
+        gate.allowsAfterWorldLeft = [](const QMetaObject*, const QByteArray& name) { return name == "add"; };
         guard = new GuardedObjectClass(&engine, gate);   // owned by the engine's lifetime in the fixture
         QScriptValue raw = engine.newQObject(&probe, QScriptEngine::QtOwnership,
                                              QScriptEngine::ExcludeSuperClassMethods | QScriptEngine::ExcludeDeleteLater);
@@ -162,4 +169,65 @@ void GuardedObjectTests::testDeniedSignals() {
              QString("function"));
     f.probe.setCount(5);
     QCOMPARE(f.run("heard"), QString("5"));
+}
+
+void GuardedObjectTests::testCheckedSignals() {
+    Fixture f;
+    // a signal checked at each delivery: connect and disconnect, each connected function hears only what the gate
+    // lets through
+    QCOMPARE(f.run("var heard = []; function hear(id, n) { heard.push(id + n); } probe.pointed.connect(hear); "
+                   "typeof probe.pointed.connect"), QString("function"));
+    emit f.probe.pointed("hidden", 1);
+    emit f.probe.pointed("seen", 2);
+    QCOMPARE(f.run("heard.join(',')"), QString("seen2"));
+    // with a receiver, by function and by method name: `this` is the receiver
+    QCOMPARE(f.run("var listener = { got: [], take: function (id, n) { this.got.push(id + n); } }; "
+                   "probe.pointed.connect(listener, listener.take); probe.pointed.connect(listener, 'take'); 'ok'"),
+             QString("ok"));
+    emit f.probe.pointed("hidden", 3);
+    emit f.probe.pointed("seen", 4);
+    QCOMPARE(f.run("heard.join(',') + ' ' + listener.got.join(',')"), QString("seen2,seen4 seen4,seen4"));
+    // disconnect finds what connect made: no more deliveries to that function; an unknown one is an error
+    QCOMPARE(f.run("probe.pointed.disconnect(hear); probe.pointed.disconnect(listener, 'take'); 'ok'"), QString("ok"));
+    emit f.probe.pointed("seen", 5);
+    QCOMPARE(f.run("heard.join(',') + ' ' + listener.got.join(',')"), QString("seen2,seen4 seen4,seen4,seen5"));
+    QVERIFY(f.run("probe.pointed.disconnect(hear)").startsWith("EXCEPTION"));
+    QVERIFY(f.run("probe.pointed.connect(42)").startsWith("EXCEPTION"));
+    // the signal itself is out of reach: it can't be fired
+    QVERIFY(f.run("probe.pointed('seen', 6)").startsWith("EXCEPTION"));
+    QCOMPARE(f.run("listener.got.length"), QString("3"));
+    // a signal that isn't checked is the signal itself, as before
+    QCOMPARE(f.run("typeof probe.countChanged"), QString("function"));
+}
+
+void GuardedObjectTests::testWorldLeft() {
+    // security #32: a script of a world that was left gets nothing done through the guard (calls, reads, writes,
+    // signals, on the globals and on what they handed back), but for what the gate still allows it
+    const int LEFT = 9101;
+    Fixture f;
+    f.probe.setCount(3);
+    QCOMPARE(f.run("var me = probe.self(); var heard = 0; probe.countChanged.connect(function () { heard++; }); me.count"),
+             QString("3"));
+    {
+        ScriptCaller::WorldScope world(LEFT);
+        ScriptCaller::retireWorld(LEFT);
+        QCOMPARE(f.run("String(probe.self())"), QString("undefined"));
+        QCOMPARE(f.run("String(probe.count)"), QString("undefined"));
+        QCOMPARE(f.run("String(me.count)"), QString("undefined"));
+        QCOMPARE(f.run("probe.limit = 6; me.limit = 7; 'ok'"), QString("ok"));
+        QCOMPARE(f.probe.limit(), 0);
+        QVERIFY(f.run("probe.countChanged.connect(function () {})").startsWith("EXCEPTION"));
+        // what the gate allows after a world was left still works, on a handed-back object too
+        QCOMPARE(f.run("probe.add(2, 3) + me.add(1, 1)"), QString("7"));
+    }
+    // another world's script and the visitor's own are not refused
+    {
+        ScriptCaller::WorldScope world(LEFT + 1);
+        QCOMPARE(f.run("probe.count"), QString("3"));
+    }
+    {
+        ScriptCaller::WorldScope world(5);  // older than the world left, but never left itself
+        QCOMPARE(f.run("probe.limit = 4; probe.limit"), QString("4"));
+    }
+    QCOMPARE(f.run("me.count"), QString("3"));
 }

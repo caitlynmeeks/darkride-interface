@@ -13,6 +13,7 @@
 
 #include <DependencyManager.h>
 #include <MessagesClient.h>
+#include <ScriptCaller.h>
 
 #include "ScriptEngineLogging.h"
 
@@ -29,16 +30,17 @@ WorldMessages::WorldMessages(QObject* parent) : QObject(parent) {
     if (!messages) {
         return;
     }
-    // relayed on this object's thread (the engine's); the app's channels never reach a world's scripts
+    // relayed on this object's thread (the engine's); the app's channels never reach a world's scripts, and nothing
+    // reaches a world that was left (ScriptCaller::isRetired: the engine's thread is the world's)
     connect(messages.data(), &MessagesClient::messageReceived, this,
             [this](QString channel, QString message, QUuid sender, bool localOnly, bool fromOwnScripts) {
-                if (!isAppChannel(channel)) {
+                if (!isAppChannel(channel) && !ScriptCaller::isRetired()) {
                     emit messageReceived(channel, message, sender, localOnly, fromOwnScripts);
                 }
             });
     connect(messages.data(), &MessagesClient::dataReceived, this,
             [this](QString channel, QByteArray data, QUuid sender, bool localOnly, bool fromOwnScripts) {
-                if (!isAppChannel(channel)) {
+                if (!isAppChannel(channel) && !ScriptCaller::isRetired()) {
                     emit dataReceived(channel, data, sender, localOnly, fromOwnScripts);
                 }
             });

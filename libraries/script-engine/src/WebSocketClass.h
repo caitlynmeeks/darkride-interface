@@ -226,6 +226,8 @@ public slots:
     void close(QWebSocketProtocol::CloseCode closeCode, QString reason);
 
 private:
+    /// True, with the connection closed, when the script is a world's whose engine stops or whose world was left.
+    bool closeIfWorldEnding();
     QWebSocket* _webSocket;
     QScriptEngine* _engine;
 

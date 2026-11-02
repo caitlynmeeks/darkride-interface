@@ -234,6 +234,11 @@ public:
     // Stop any evaluating scripts and wait for the scripting thread to finish.
     virtual void waitTillDoneRunning();
 
+    /// From another thread, the call a stopped engine is still in is made to end (a script stuck in a loop), on the
+    /// engine's own thread within a second (a running script handles queued calls each second): its evaluation
+    /// aborted, or an error thrown into a signal handler's call. The WebAssembly engine's stop interrupts its call.
+    virtual void interruptRunningCall();
+
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // NOTE - these are NOT intended to be public interfaces available to scripts, the are only Q_INVOKABLE so we can
     //        properly ensure they are only called on the correct thread
@@ -638,11 +643,6 @@ public:
      */
     Q_INVOKABLE virtual void unloadAllEntityScripts(bool blockingCall = false);
 
-    // Unloads the client entity scripts whose entities are no longer in the tree, on this engine's thread, after
-    // whatever loads are queued before it: a world left while its scripts were still being loaded (EntityTreeRenderer
-    // asks for it once the world's entities are erased).
-    Q_INVOKABLE void unloadEntityScriptsOfGoneEntities();
-
     /**jsdoc
      * Calls a method in an entity script.
      * @function Script.callEntityScriptMethod
@@ -711,6 +711,16 @@ public:
 
     // this is used by code in ScriptEngines.cpp during the "reload all" operation
     bool isStopping() const { return _isStopping; }
+    /// The id of the world whose scripts a client's entities engine runs (ScriptCaller::world() on its thread); set by
+    /// its maker before it runs. 0: none given (ScriptCaller::ANY_WORLD on its thread).
+    void setWorldId(int worldId) { _worldId = worldId; }
+    int getWorldId() const { return _worldId; }
+    /// Whether the world this engine runs the scripts of was left (ScriptCaller::retireWorld): its scripts' calls are
+    /// refused, and a wait of theirs (a synchronous request, Script.include, Script.require) ends, as when it stops.
+    bool worldWasLeft() const;
+    /// A world's entities engine (it has a world id) that is stopping or whose world was left: its scripts' requests
+    /// end and their answers are dropped (a synchronous one stops waiting). The visitor's own engines: never.
+    bool isWorldEnding() const { return _worldId != 0 && (isStopping() || worldWasLeft()); }
 
     bool isDebuggable() const { return _debuggable; }
 
@@ -1022,6 +1032,7 @@ protected:
     std::atomic<bool> _isFinished { false };
     std::atomic<bool> _isRunning { false };
     std::atomic<bool> _isStopping { false };
+    int _worldId { 0 };  // setWorldId
     bool _isInitialized { false };
     QHash<QTimer*, CallbackData> _timerFunctionMap;
     QSet<QUrl> _includedURLs;

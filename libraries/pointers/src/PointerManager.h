@@ -25,6 +25,9 @@ public:
 
     unsigned int addPointer(std::shared_ptr<Pointer> pointer);
     void removePointer(unsigned int uid);
+    /// The pointers the world `world`'s scripts made (tagged with ScriptCaller::world() when added) go, with their
+    /// picks and visuals: its scripts have stopped. Returns how many went.
+    int removeWorldPointers(int world);
     void enablePointer(unsigned int uid) const;
     void disablePointer(unsigned int uid) const;
     bool isPointerEnabled(unsigned int uid) const;
@@ -57,6 +60,7 @@ public:
 private:
     std::shared_ptr<Pointer> find(unsigned int uid) const;
     std::unordered_map<unsigned int, std::shared_ptr<Pointer>> _pointers;
+    std::unordered_map<unsigned int, int> _worldPointers;  // made by a world's scripts: the world's id
     unsigned int _nextPointerID { MOUSE_POINTER_ID + 1 };
 
 signals:

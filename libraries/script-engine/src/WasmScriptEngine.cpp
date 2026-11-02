@@ -37,6 +37,7 @@
 #include <PointerEvent.h>
 #include <ResourceCache.h>
 #include <ResourceManager.h>
+#include <ScriptCaller.h>
 #include <SettingHandle.h>
 #include <SharedUtil.h>
 #include <shared/LocalFileAccessGate.h>
@@ -464,6 +465,12 @@ void WasmScriptEngine::run() {
     if (QThread::currentThread() != qApp->thread() && _context == Context::CLIENT_SCRIPT) {
         hifi::scripting::setLocalAccessSafeThread(true);
     }
+    if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
+        // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
+        // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
+        // makes a new one for each engine, never from a pool) and ends with it.
+        ScriptCaller::markThreadAsWorld(_worldId);
+    }
     QSharedPointer<ScriptEngines> scriptEngines(_scriptEngines);
     if (!scriptEngines || scriptEngines->isStopped()) {
         return;
@@ -540,7 +547,10 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         gate.deniesPropertyWrite = &ScriptApiPolicy::deniesPropertyWrite;
         gate.deniesPropertyRead = &ScriptApiPolicy::deniesPropertyRead;
         gate.deniesSignal = &ScriptApiPolicy::deniesSignal;
+        gate.checksDelivery = &ScriptApiPolicy::checksDelivery;
+        gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
+        gate.allowsAfterWorldLeft = &ScriptApiPolicy::allowsAfterWorldLeft;
         instance->host->setMemberGate(std::move(gate));
     }
     instance->host->setLogger([this](int level, const QString& text) {
@@ -914,8 +924,8 @@ int WasmScriptEngine::addTimer(const ScriptCallback& callback, int intervalMS, b
             _timers.erase(found);
             entry.timer->deleteLater();
         }
-        if (!_isFinished) {
-            // the callback knows its instance; it is called on this thread, the engine's
+        if (!_isFinished && !worldWasLeft()) {
+            // the callback knows its instance; it is called on this thread, the engine's (none for a world left)
             auto target = entry.callback.target.lock();
             if (target) {
                 QVariant result;
@@ -1591,7 +1601,7 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
     }
     BatchLoader* loader = new BatchLoader(QList<QUrl>({ QUrl(url) }));
     connect(loader, &BatchLoader::finished, this, [this, url, result](const QMap<QUrl, QString>& data, const QMap<QUrl, QString>& status) {
-        if (isStopping()) {
+        if (isStopping() || worldWasLeft()) {
             (*result)["status"] = "Stopped";
             return;
         }
@@ -1608,7 +1618,7 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
         QTimer monitor;
         connect(loader, &BatchLoader::finished, &loop, &QEventLoop::quit);
         connect(&monitor, &QTimer::timeout, this, [this, &loop] {
-            if (isStopping()) {
+            if (isStopping() || worldWasLeft()) {
                 loop.exit(-1);
             }
         });

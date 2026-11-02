@@ -20,6 +20,7 @@ private slots:
     void testAppChannels();
     void testSenderMark();
     void testWorldRelay();
+    void testWorldLeft();
 };
 
 #endif // hifi_WorldMessagesTests_h

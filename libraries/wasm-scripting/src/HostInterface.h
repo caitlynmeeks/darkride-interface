@@ -117,7 +117,13 @@ public:
         std::function<bool(const QMetaObject*, const QByteArray&)> deniesPropertyWrite;
         std::function<bool(const QMetaObject*, const QByteArray&)> deniesPropertyRead;
         std::function<bool(const QMetaObject*, const QByteArray&)> deniesSignal;   // unset: an allowed class's every signal
+        // a signal whose deliveries are checked one by one, and a delivery (its arguments) the script doesn't get;
+        // unset: every delivery of an allowed signal
+        std::function<bool(const QMetaObject*, const QByteArray&)> checksDelivery;
+        std::function<bool(const QMetaObject*, const QByteArray&, const QVariantList&)> holdsBackDelivery;
         std::function<QString(const QString&, const QString&)> refusalLine;
+        // what a script of a world that was left (ScriptCaller::isRetired) may still use; unset: nothing
+        std::function<bool(const QMetaObject*, const QByteArray&)> allowsAfterWorldLeft;
     };
     void setMemberGate(MemberGate gate) { _gate = std::move(gate); }
     bool hasMemberGate() const { return bool(_gate.allowsClass); }
@@ -200,6 +206,9 @@ private:
     bool classAllowed(const QMetaObject* meta) const;
     /// Logs the refusal and gives the line for the error.
     QString refuse(const QMetaObject* meta, const QByteArray& member) const;
+    /// True (logged once per world) when the caller is a script of a world that was left and the member isn't one it
+    /// may still use: the call, read, write or connect is refused, answering undefined.
+    bool refusedAfterWorldLeft(const QMetaObject* meta, const QByteArray& member) const;
     /// A description with the members the gate denies left out (writes denied: writable false).
     QVariantMap gatedDescription(const QMetaObject* meta, QVariantMap description) const;
     /// A method's parameter types, resolved once (a type no library has registered yet is looked up again next time).

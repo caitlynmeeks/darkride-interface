@@ -67,6 +67,19 @@ GuardedObjectClass::Kind GuardedObjectClass::kindOf(const QScriptValue& raw, con
     return Absent;
 }
 
+bool GuardedObjectClass::refusedAfterWorldLeft(const QScriptValue& raw, const QByteArray& member) const {
+    if (!ScriptCaller::isRetired()) {
+        return false;
+    }
+    const QObject* object = raw.toQObject();
+    const QMetaObject* meta = object ? object->metaObject() : nullptr;
+    if (meta && _gate.allowsAfterWorldLeft && _gate.allowsAfterWorldLeft(meta, member)) {
+        return false;
+    }
+    ScriptCaller::logRetiredRefusal(meta ? meta->className() : "?", member.constData());
+    return true;
+}
+
 QScriptClass::QueryFlags GuardedObjectClass::queryProperty(const QScriptValue& object, const QScriptString& name,
                                                            QueryFlags flags, uint* id) {
     Q_UNUSED(flags);
@@ -96,11 +109,23 @@ QScriptValue GuardedObjectClass::property(const QScriptValue& object, const QScr
             return function;
         }
         case Property: {
+            if (refusedAfterWorldLeft(raw, member.toUtf8())) {
+                return QScriptValue();
+            }
             QScriptValue value = raw.property(member);
             return value.isQObject() ? wrap(value) : value;
         }
-        case Signal:
+        case Signal: {
+            if (refusedAfterWorldLeft(raw, member.toUtf8())) {
+                return QScriptValue();   // nothing to connect to
+            }
+            const QObject* sender = raw.toQObject();
+            if (sender && _gate.checksDelivery && _gate.holdsBackDelivery &&
+                _gate.checksDelivery(sender->metaObject(), member.toUtf8())) {
+                return guardSignal(object, member);
+            }
             return raw.property(member);   // connect() and disconnect() live on the signal itself
+        }
         case Absent:
         default:
             return QScriptValue();
@@ -114,6 +139,9 @@ void GuardedObjectClass::setProperty(QScriptValue& object, const QScriptString& 
     const Kind kind = kindOf(raw, member, writable);
     if (kind != Property || !writable) {
         refuse(raw, member);
+        return;
+    }
+    if (refusedAfterWorldLeft(raw, member)) {
         return;
     }
     Q_UNUSED(id);
@@ -157,6 +185,118 @@ QScriptValue GuardedObjectClass::unwrap(const QScriptValue& value) const {
     return value;
 }
 
+QScriptValue GuardedObjectClass::guardSignal(const QScriptValue& guard, const QString& member) {
+    QScriptValue bundle = engine()->newObject();
+    bundle.setProperty("guard", guard);
+    bundle.setProperty("member", member);
+    QScriptValue signal = engine()->newObject();
+    QScriptValue connect = engine()->newFunction(connectChecked);
+    connect.setData(bundle);
+    QScriptValue disconnect = engine()->newFunction(disconnectChecked);
+    disconnect.setData(bundle);
+    signal.setProperty("connect", connect, QScriptValue::ReadOnly | QScriptValue::Undeletable);
+    signal.setProperty("disconnect", disconnect, QScriptValue::ReadOnly | QScriptValue::Undeletable);
+    return signal;
+}
+
+namespace {
+
+// connect(function), connect(receiver, function) or connect(receiver, "method"), as QtScript's own signals take
+bool handlerOf(QScriptContext* context, QScriptValue& receiver, QScriptValue& function) {
+    if (context->argumentCount() >= 2) {
+        receiver = context->argument(0);
+        function = context->argument(1);
+        if (function.isString() && receiver.isObject()) {
+            function = receiver.property(function.toString());
+        }
+    } else {
+        function = context->argument(0);
+    }
+    return function.isFunction();
+}
+
+bool sameReceiver(const QScriptValue& a, const QScriptValue& b) {
+    const bool aGiven = a.isObject();
+    const bool bGiven = b.isObject();
+    return aGiven == bGiven && (!aGiven || a.strictlyEquals(b));
+}
+
+} // namespace
+
+QScriptValue GuardedObjectClass::connectChecked(QScriptContext* context, QScriptEngine* engine) {
+    QScriptValue bundle = context->callee().data();
+    QScriptValue guard = bundle.property("guard");
+    auto guardClass = static_cast<GuardedObjectClass*>(guard.scriptClass());
+    const QString member = bundle.property("member").toString();
+    QScriptValue receiver;
+    QScriptValue function;
+    if (!guardClass || !handlerOf(context, receiver, function)) {
+        return context->throwError(QScriptContext::TypeError, member + ".connect: the handler is not a function");
+    }
+    QScriptValue data = engine->newObject();
+    data.setProperty("bundle", bundle);
+    data.setProperty("receiver", receiver.isObject() ? receiver : QScriptValue());
+    data.setProperty("function", function);
+    QScriptValue checked = engine->newFunction(deliverChecked);
+    checked.setData(data);
+    QScriptValue raw = guard.data();
+    QScriptValue signal = raw.property(member);
+    QScriptValue result = signal.property("connect").call(signal, QScriptValueList() << checked);
+    if (engine->hasUncaughtException()) {
+        return result;
+    }
+    guardClass->_checkedConnections[qMakePair(static_cast<const QObject*>(raw.toQObject()), member)].append(
+        { receiver.isObject() ? receiver : QScriptValue(), function, checked });
+    return result;
+}
+
+QScriptValue GuardedObjectClass::disconnectChecked(QScriptContext* context, QScriptEngine* engine) {
+    Q_UNUSED(engine);
+    QScriptValue bundle = context->callee().data();
+    QScriptValue guard = bundle.property("guard");
+    auto guardClass = static_cast<GuardedObjectClass*>(guard.scriptClass());
+    const QString member = bundle.property("member").toString();
+    QScriptValue receiver;
+    QScriptValue function;
+    if (!guardClass || !handlerOf(context, receiver, function)) {
+        return context->throwError(QScriptContext::TypeError, member + ".disconnect: the handler is not a function");
+    }
+    QScriptValue raw = guard.data();
+    auto found = guardClass->_checkedConnections.find(qMakePair(static_cast<const QObject*>(raw.toQObject()), member));
+    if (found != guardClass->_checkedConnections.end()) {
+        for (int i = 0; i < found->size(); ++i) {
+            const CheckedConnection& connection = found->at(i);
+            if (connection.function.strictlyEquals(function) && sameReceiver(connection.receiver, receiver)) {
+                QScriptValue signal = raw.property(member);
+                QScriptValue result = signal.property("disconnect").call(signal, QScriptValueList() << connection.checked);
+                found->remove(i);
+                return result;
+            }
+        }
+    }
+    return context->throwError(member + ".disconnect: the function is not connected");
+}
+
+QScriptValue GuardedObjectClass::deliverChecked(QScriptContext* context, QScriptEngine* engine) {
+    Q_UNUSED(engine);
+    QScriptValue data = context->callee().data();
+    QScriptValue bundle = data.property("bundle");
+    QScriptValue guard = bundle.property("guard");
+    auto guardClass = static_cast<GuardedObjectClass*>(guard.scriptClass());
+    const QObject* sender = guard.data().toQObject();
+    QScriptValueList values;
+    QVariantList arguments;
+    for (int i = 0; i < context->argumentCount(); ++i) {
+        values << context->argument(i);
+        arguments << context->argument(i).toVariant();
+    }
+    if (!guardClass || !sender ||
+        guardClass->gate().holdsBackDelivery(sender->metaObject(), bundle.property("member").toString().toUtf8(), arguments)) {
+        return QScriptValue();
+    }
+    return data.property("function").call(data.property("receiver"), values);
+}
+
 QScriptValue GuardedObjectClass::forward(QScriptContext* context, QScriptEngine* engine) {
     QScriptValue bundle = context->callee().data();
     QScriptValue raw = bundle.property("raw");
@@ -169,6 +309,9 @@ QScriptValue GuardedObjectClass::forward(QScriptContext* context, QScriptEngine*
     }
     // the guard is a world's script's: what the call runs knows it (ScriptCaller)
     ScriptCaller::WorldScope caller(true);
+    if (guardClass && guardClass->refusedAfterWorldLeft(raw, bundle.property("member").toString().toUtf8())) {
+        return QScriptValue();   // undefined: a world that was left gets nothing done
+    }
     QScriptValue result = method.call(raw, arguments);
     if (engine->hasUncaughtException()) {
         return result;   // the exception stays raised for the caller

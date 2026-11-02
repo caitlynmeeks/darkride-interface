@@ -20,6 +20,8 @@ private slots:
     void testBypassAttempts();
     void testHandedBackObjects();
     void testDeniedSignals();
+    void testCheckedSignals();
+    void testWorldLeft();
 };
 
 #endif // hifi_GuardedObjectTests_h

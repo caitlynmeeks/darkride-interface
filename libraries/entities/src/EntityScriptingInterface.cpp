@@ -41,6 +41,8 @@
 #include <EntityScriptClient.h>
 #include <Profile.h>
 #include "GrabPropertyGroup.h"
+#include "ScriptCaller.h"
+#include <QtCore/QSet>
 
 const QString GRABBABLE_USER_DATA = "{\"grabbableKey\":{\"grabbable\":true}}";
 const QString NOT_GRABBABLE_USER_DATA = "{\"grabbableKey\":{\"grabbable\":false}}";
@@ -438,6 +440,14 @@ void synchronizeEditedGrabProperties(EntityItemProperties& properties, const QSt
 QUuid EntityScriptingInterface::addEntityInternal(const EntityItemProperties& properties, entity::HostType entityHostType) {
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "addEntity");
+        return QUuid();
+    }
+    if (properties.parentIDChanged() && !worldMayParentTo(properties.getParentID(), "addEntity")) {
+        return QUuid();
+    }
+
     _activityTracking.addedEntityCount++;
 
     EntityItemProperties propertiesWithSimID = properties;
@@ -473,6 +483,124 @@ QUuid EntityScriptingInterface::addEntityInternal(const EntityItemProperties& pr
     } else {
         return QUuid();
     }
+}
+
+namespace {
+
+// What a world's script may do with an entity it names (security #28).
+enum class WorldReach { FULL, READ, HIDDEN };
+
+WorldReach worldReachOf(const EntityItem& entity) {
+    switch (entity.getEntityHostType()) {
+        case entity::HostType::DOMAIN:
+            return WorldReach::FULL;
+        case entity::HostType::AVATAR:
+            // the world may change the avatar entities a world's script made; others' and the visitor's own it reads
+            return entity.getLocalOwner() == entity::LocalOwner::WORLD ? WorldReach::FULL : WorldReach::READ;
+        case entity::HostType::LOCAL:
+        default:
+            // fail closed: only a local entity recorded as a world's script's is the world's
+            return entity.getLocalOwner() == entity::LocalOwner::WORLD ? WorldReach::FULL : WorldReach::HIDDEN;
+    }
+}
+
+void logWorldRefusal(const char* method, const char* what) {
+    // once per method on this thread (each engine runs on its own thread): a world's script may call in a loop
+    thread_local QSet<const char*> said;
+    if (!said.contains(method)) {
+        said.insert(method);
+        qCWarning(entities).nospace() << "Entities." << method << ": a world's script may not " << what
+                                      << "; refused (shown once)";
+    }
+}
+
+} // namespace
+
+QUuid EntityScriptingInterface::forWorldRead(const QUuid& id) const {
+    if (!ScriptCaller::isWorld() || id.isNull()) {
+        return id;
+    }
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "read");
+        return QUuid();
+    }
+    if (!_entityTree) {
+        return id;
+    }
+    EntityItemPointer entity;
+    _entityTree->withReadLock([&] { entity = _entityTree->findEntityByEntityItemID(id); });
+    return (entity && worldReachOf(*entity) == WorldReach::HIDDEN) ? QUuid() : id;
+}
+
+QVector<QUuid> EntityScriptingInterface::readableByWorld(const QVector<QUuid>& ids) const {
+    if (!ScriptCaller::isWorld() || ids.isEmpty()) {
+        return ids;
+    }
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "find");
+        return QVector<QUuid>();
+    }
+    if (!_entityTree) {
+        return ids;
+    }
+    QVector<QUuid> readable;
+    readable.reserve(ids.size());
+    _entityTree->withReadLock([&] {
+        for (const auto& id : ids) {
+            EntityItemPointer entity = _entityTree->findEntityByEntityItemID(id);
+            if (!entity || worldReachOf(*entity) != WorldReach::HIDDEN) {
+                readable.push_back(id);
+            }
+        }
+    });
+    return readable;
+}
+
+bool EntityScriptingInterface::worldMayUse(const QUuid& id) const {
+    if (!ScriptCaller::isWorld()) {
+        return true;
+    }
+    if (ScriptCaller::isRetired()) {
+        return false;
+    }
+    if (!_entityTree || id.isNull()) {
+        return true;
+    }
+    EntityItemPointer entity;
+    _entityTree->withReadLock([&] { entity = _entityTree->findEntityByEntityItemID(id); });
+    return !entity || worldReachOf(*entity) == WorldReach::FULL;
+}
+
+bool EntityScriptingInterface::worldMayChange(const QUuid& id, const char* method) const {
+    if (worldMayUse(id)) {
+        return true;
+    }
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", method);
+    } else {
+        logWorldRefusal(method, "change the visitor's own entities or the app's");
+    }
+    return false;
+}
+
+bool EntityScriptingInterface::worldMaySend(const QUuid& id, const char* method) const {
+    if (worldMayUse(id)) {
+        return true;
+    }
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", method);
+    } else {
+        logWorldRefusal(method, "send events or messages into an entity that isn't the world's");
+    }
+    return false;
+}
+
+bool EntityScriptingInterface::worldMayParentTo(const QUuid& parentID, const char* method) const {
+    if (!forWorldRead(parentID).isNull() || parentID.isNull()) {
+        return true;
+    }
+    logWorldRefusal(method, "attach things to the visitor's own entities or the app's");
+    return false;
 }
 
 bool EntityScriptingInterface::addLocalEntityCopy(EntityItemProperties& properties, EntityItemID& id, bool isClone) {
@@ -538,7 +666,11 @@ QUuid EntityScriptingInterface::addModelEntity(const QString& name,
     return addEntity(properties);
 }
 
-QUuid EntityScriptingInterface::cloneEntity(const QUuid& entityIDToClone) {
+QUuid EntityScriptingInterface::cloneEntity(const QUuid& entityIDToCloneAsNamed) {
+    const QUuid entityIDToClone = forWorldRead(entityIDToCloneAsNamed);  // hidden from a world's script: as if it didn't exist
+    if (entityIDToClone.isNull()) {
+        return QUuid();
+    }
     EntityItemID newEntityID;
     EntityItemProperties properties = getEntityProperties(entityIDToClone);
     bool cloneAvatarEntity = properties.getCloneAvatarEntity();
@@ -563,13 +695,15 @@ QUuid EntityScriptingInterface::cloneEntity(const QUuid& entityIDToClone) {
     }
 }
 
-EntityItemProperties EntityScriptingInterface::getEntityProperties(const QUuid& entityID) {
+EntityItemProperties EntityScriptingInterface::getEntityProperties(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     const EntityPropertyFlags noSpecificProperties;
     return getEntityProperties(entityID, noSpecificProperties);
 }
 
-EntityItemProperties EntityScriptingInterface::getEntityProperties(const QUuid& entityID,
+EntityItemProperties EntityScriptingInterface::getEntityProperties(const QUuid& entityIDAsNamed,
                                                                    EntityPropertyFlags desiredProperties) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     bool scalesWithParent{ false };
@@ -625,7 +759,12 @@ QScriptValue EntityScriptingInterface::getMultipleEntityProperties(QScriptContex
     const int ARGUMENT_EXTENDED_DESIRED_PROPERTIES = 1;
 
     auto entityScriptingInterface = DependencyManager::get<EntityScriptingInterface>();
-    const auto entityIDs = qscriptvalue_cast<QVector<QUuid>>(context->argument(ARGUMENT_ENTITY_IDS));
+    auto entityIDs = qscriptvalue_cast<QVector<QUuid>>(context->argument(ARGUMENT_ENTITY_IDS));
+    for (auto& entityID : entityIDs) {
+        // hidden from a world's script: as if it didn't exist (each answer stays at its id's place). The QtScript
+        // engine marks a world's call to this function itself (it isn't a guarded member: ScriptEngine.cpp).
+        entityID = entityScriptingInterface->forWorldRead(entityID);
+    }
     return entityScriptingInterface->getMultipleEntityPropertiesInternal(engine, entityIDs,
                                                                          context->argument(
                                                                              ARGUMENT_EXTENDED_DESIRED_PROPERTIES));
@@ -746,6 +885,11 @@ QScriptValue EntityScriptingInterface::getMultipleEntityPropertiesInternal(QScri
 // in addition to the current technique which would be Entities.EditEntity("ID",{"name":"kitty"});
 QUuid EntityScriptingInterface::editEntity(const QUuid& id, const EntityItemProperties& scriptSideProperties) {
     PROFILE_RANGE(script_entities, __FUNCTION__);
+
+    if (!worldMayChange(id, "editEntity") ||
+        (scriptSideProperties.parentIDChanged() && !worldMayParentTo(scriptSideProperties.getParentID(), "editEntity"))) {
+        return QUuid();
+    }
 
     _activityTracking.editedEntityCount++;
 
@@ -948,6 +1092,9 @@ QUuid EntityScriptingInterface::editEntity(const QUuid& id, const EntityItemProp
 }
 
 void EntityScriptingInterface::deleteEntity(const QUuid& id) {
+    if (!worldMayChange(id, "deleteEntity")) {
+        return;
+    }
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     _activityTracking.deletedEntityCount++;
@@ -992,7 +1139,8 @@ void EntityScriptingInterface::deleteEntity(const QUuid& id) {
     }
 }
 
-QString EntityScriptingInterface::getEntityType(const QUuid& entityID) {
+QString EntityScriptingInterface::getEntityType(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     QString toReturn;
     _entityTree->withReadLock([&] {
         EntityItemPointer entity = _entityTree->findEntityByEntityItemID(entityID);
@@ -1004,11 +1152,13 @@ QString EntityScriptingInterface::getEntityType(const QUuid& entityID) {
 }
 
 
-QObject* EntityScriptingInterface::getEntityObject(const QUuid& id) {
+QObject* EntityScriptingInterface::getEntityObject(const QUuid& idAsNamed) {
+    const QUuid id = forWorldRead(idAsNamed);  // hidden from a world's script: as if it didn't exist
     return EntityTree::getEntityObject(id);
 }
 
-bool EntityScriptingInterface::isLoaded(const QUuid& id) {
+bool EntityScriptingInterface::isLoaded(const QUuid& idAsNamed) {
+    const QUuid id = forWorldRead(idAsNamed);  // hidden from a world's script: as if it didn't exist
     bool toReturn = false;
     _entityTree->withReadLock([&] {
         EntityItemPointer entity = _entityTree->findEntityByEntityItemID(id);
@@ -1019,7 +1169,8 @@ bool EntityScriptingInterface::isLoaded(const QUuid& id) {
     return toReturn;
 }
 
-bool EntityScriptingInterface::isAddedEntity(const QUuid& id) {
+bool EntityScriptingInterface::isAddedEntity(const QUuid& idAsNamed) {
+    const QUuid id = forWorldRead(idAsNamed);  // hidden from a world's script: as if it didn't exist
     bool toReturn = false;
     _entityTree->withReadLock([&] {
         EntityItemPointer entity = _entityTree->findEntityByEntityItemID(id);
@@ -1028,7 +1179,8 @@ bool EntityScriptingInterface::isAddedEntity(const QUuid& id) {
     return toReturn;
 }
 
-QSizeF EntityScriptingInterface::textSize(const QUuid& id, const QString& text) {
+QSizeF EntityScriptingInterface::textSize(const QUuid& idAsNamed, const QString& text) {
+    const QUuid id = forWorldRead(idAsNamed);  // hidden from a world's script: as if it didn't exist
     return EntityTree::textSize(id, text);
 }
 
@@ -1038,6 +1190,9 @@ void EntityScriptingInterface::setEntitiesScriptEngine(QSharedPointer<EntitiesSc
 }
 
 void EntityScriptingInterface::callEntityMethod(const QUuid& id, const QString& method, const QStringList& params) {
+    if (!worldMayChange(id, "callEntityMethod")) {
+        return;
+    }
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     std::lock_guard<std::recursive_mutex> lock(_entitiesScriptEngineLock);
@@ -1049,6 +1204,10 @@ void EntityScriptingInterface::callEntityMethod(const QUuid& id, const QString& 
 
 void EntityScriptingInterface::callEntityServerMethod(const QUuid& id, const QString& method, const QStringList& params) {
     PROFILE_RANGE(script_entities, __FUNCTION__);
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "callEntityServerMethod");
+        return;
+    }
     DependencyManager::get<EntityScriptClient>()->callEntityServerMethod(id, method, params);
 }
 
@@ -1412,10 +1571,11 @@ bool EntityPropertyMetadataRequest::serverScripts(EntityItemID entityID, QScript
     return true;
 }
 
-bool EntityScriptingInterface::queryPropertyMetadata(const QUuid& entityID,
+bool EntityScriptingInterface::queryPropertyMetadata(const QUuid& entityIDAsNamed,
                                                      QScriptValue property,
                                                      QScriptValue scopeOrCallback,
                                                      QScriptValue methodOrName) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     auto name = property.toString();
     auto handler = makeScopedHandlerObject(scopeOrCallback, methodOrName);
     QPointer<BaseScriptEngine> engine = dynamic_cast<BaseScriptEngine*>(handler.engine());
@@ -1470,7 +1630,8 @@ bool EntityScriptingInterface::getServerScriptStatus(const QUuid& entityID, cons
     return true;
 }
 
-bool EntityScriptingInterface::queryPropertyMetadata(const QUuid& entityID, const QString& property, const ScriptCallback& callback) {
+bool EntityScriptingInterface::queryPropertyMetadata(const QUuid& entityIDAsNamed, const QString& property, const ScriptCallback& callback) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     // as EntityPropertyMetadataRequest answers a QtScript handler, with the error's fields and the result as maps
     if (property == "script") {
         using LocalScriptStatusRequest = QFutureWatcher<QVariant>;
@@ -1646,6 +1807,9 @@ bool EntityScriptingInterface::setPoints(QUuid entityID, std::function<bool(Line
 }
 
 bool EntityScriptingInterface::setAllPoints(const QUuid& entityID, const QVector<glm::vec3>& points) {
+    if (!worldMayChange(entityID, "setAllPoints")) {
+        return false;
+    }
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     EntityItemPointer entity = static_cast<EntityItemPointer>(_entityTree->findEntityByEntityItemID(entityID));
@@ -1665,6 +1829,9 @@ bool EntityScriptingInterface::setAllPoints(const QUuid& entityID, const QVector
 }
 
 bool EntityScriptingInterface::appendPoint(const QUuid& entityID, const glm::vec3& point) {
+    if (!worldMayChange(entityID, "appendPoint")) {
+        return false;
+    }
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     EntityItemPointer entity = static_cast<EntityItemPointer>(_entityTree->findEntityByEntityItemID(entityID));
@@ -1731,6 +1898,9 @@ bool EntityScriptingInterface::actionWorker(const QUuid& entityID,
 QUuid EntityScriptingInterface::addAction(const QString& actionTypeString,
                                           const QUuid& entityID,
                                           const QVariantMap& arguments) {
+    if (!worldMayChange(entityID, "addAction")) {
+        return QUuid();
+    }
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     QUuid actionID = QUuid::createUuid();
@@ -1763,6 +1933,9 @@ QUuid EntityScriptingInterface::addAction(const QString& actionTypeString,
 }
 
 bool EntityScriptingInterface::updateAction(const QUuid& entityID, const QUuid& actionID, const QVariantMap& arguments) {
+    if (!worldMayChange(entityID, "updateAction")) {
+        return false;
+    }
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     return actionWorker(entityID, [&](EntitySimulationPointer simulation, EntityItemPointer entity) {
@@ -1775,6 +1948,9 @@ bool EntityScriptingInterface::updateAction(const QUuid& entityID, const QUuid& 
 }
 
 bool EntityScriptingInterface::deleteAction(const QUuid& entityID, const QUuid& actionID) {
+    if (!worldMayChange(entityID, "deleteAction")) {
+        return false;
+    }
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     bool success = false;
@@ -1789,7 +1965,8 @@ bool EntityScriptingInterface::deleteAction(const QUuid& entityID, const QUuid& 
     return success;
 }
 
-QVector<QUuid> EntityScriptingInterface::getActionIDs(const QUuid& entityID) {
+QVector<QUuid> EntityScriptingInterface::getActionIDs(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     QVector<QUuid> result;
@@ -1801,7 +1978,8 @@ QVector<QUuid> EntityScriptingInterface::getActionIDs(const QUuid& entityID) {
     return result;
 }
 
-QVariantMap EntityScriptingInterface::getActionArguments(const QUuid& entityID, const QUuid& actionID) {
+QVariantMap EntityScriptingInterface::getActionArguments(const QUuid& entityIDAsNamed, const QUuid& actionID) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     QVariantMap result;
@@ -1831,7 +2009,8 @@ EntityItemPointer EntityScriptingInterface::checkForTreeEntityAndTypeMatch(const
     return entity;
 }
 
-int EntityScriptingInterface::getJointParent(const QUuid& entityID, int index) {
+int EntityScriptingInterface::getJointParent(const QUuid& entityIDAsNamed, int index) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
         return modelEntity->getJointParent(index);
@@ -1840,7 +2019,8 @@ int EntityScriptingInterface::getJointParent(const QUuid& entityID, int index) {
     }
 }
 
-glm::vec3 EntityScriptingInterface::getAbsoluteJointTranslationInObjectFrame(const QUuid& entityID, int jointIndex) {
+glm::vec3 EntityScriptingInterface::getAbsoluteJointTranslationInObjectFrame(const QUuid& entityIDAsNamed, int jointIndex) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
         return modelEntity->getAbsoluteJointTranslationInObjectFrame(jointIndex);
@@ -1849,7 +2029,8 @@ glm::vec3 EntityScriptingInterface::getAbsoluteJointTranslationInObjectFrame(con
     }
 }
 
-glm::quat EntityScriptingInterface::getAbsoluteJointRotationInObjectFrame(const QUuid& entityID, int jointIndex) {
+glm::quat EntityScriptingInterface::getAbsoluteJointRotationInObjectFrame(const QUuid& entityIDAsNamed, int jointIndex) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
         return modelEntity->getAbsoluteJointRotationInObjectFrame(jointIndex);
@@ -1861,6 +2042,9 @@ glm::quat EntityScriptingInterface::getAbsoluteJointRotationInObjectFrame(const 
 bool EntityScriptingInterface::setAbsoluteJointTranslationInObjectFrame(const QUuid& entityID,
                                                                         int jointIndex,
                                                                         glm::vec3 translation) {
+    if (!worldMayChange(entityID, "setAbsoluteJointTranslationInObjectFrame")) {
+        return false;
+    }
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto now = usecTimestampNow();
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
@@ -1884,6 +2068,9 @@ bool EntityScriptingInterface::setAbsoluteJointTranslationInObjectFrame(const QU
 bool EntityScriptingInterface::setAbsoluteJointRotationInObjectFrame(const QUuid& entityID,
                                                                      int jointIndex,
                                                                      glm::quat rotation) {
+    if (!worldMayChange(entityID, "setAbsoluteJointRotationInObjectFrame")) {
+        return false;
+    }
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto now = usecTimestampNow();
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
@@ -1904,7 +2091,8 @@ bool EntityScriptingInterface::setAbsoluteJointRotationInObjectFrame(const QUuid
     return false;
 }
 
-glm::vec3 EntityScriptingInterface::getLocalJointTranslation(const QUuid& entityID, int jointIndex) {
+glm::vec3 EntityScriptingInterface::getLocalJointTranslation(const QUuid& entityIDAsNamed, int jointIndex) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
         return modelEntity->getLocalJointTranslation(jointIndex);
@@ -1913,7 +2101,8 @@ glm::vec3 EntityScriptingInterface::getLocalJointTranslation(const QUuid& entity
     }
 }
 
-glm::quat EntityScriptingInterface::getLocalJointRotation(const QUuid& entityID, int jointIndex) {
+glm::quat EntityScriptingInterface::getLocalJointRotation(const QUuid& entityIDAsNamed, int jointIndex) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
         return modelEntity->getLocalJointRotation(jointIndex);
@@ -1923,6 +2112,9 @@ glm::quat EntityScriptingInterface::getLocalJointRotation(const QUuid& entityID,
 }
 
 bool EntityScriptingInterface::setLocalJointTranslation(const QUuid& entityID, int jointIndex, glm::vec3 translation) {
+    if (!worldMayChange(entityID, "setLocalJointTranslation")) {
+        return false;
+    }
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto now = usecTimestampNow();
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
@@ -1976,6 +2168,9 @@ void EntityScriptingInterface::clearVehicleControls(const QUuid& entityID) {
 }
 
 bool EntityScriptingInterface::setLocalJointRotation(const QUuid& entityID, int jointIndex, glm::quat rotation) {
+    if (!worldMayChange(entityID, "setLocalJointRotation")) {
+        return false;
+    }
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto now = usecTimestampNow();
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
@@ -1997,6 +2192,9 @@ bool EntityScriptingInterface::setLocalJointRotation(const QUuid& entityID, int 
 }
 
 bool EntityScriptingInterface::setLocalJointRotations(const QUuid& entityID, const QVector<glm::quat>& rotations) {
+    if (!worldMayChange(entityID, "setLocalJointRotations")) {
+        return false;
+    }
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto now = usecTimestampNow();
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
@@ -2023,6 +2221,9 @@ bool EntityScriptingInterface::setLocalJointRotations(const QUuid& entityID, con
 }
 
 bool EntityScriptingInterface::setLocalJointTranslations(const QUuid& entityID, const QVector<glm::vec3>& translations) {
+    if (!worldMayChange(entityID, "setLocalJointTranslations")) {
+        return false;
+    }
     if (auto entity = checkForTreeEntityAndTypeMatch(entityID, EntityTypes::Model)) {
         auto now = usecTimestampNow();
         auto modelEntity = std::dynamic_pointer_cast<ModelEntityItem>(entity);
@@ -2051,11 +2252,15 @@ bool EntityScriptingInterface::setLocalJointTranslations(const QUuid& entityID, 
 bool EntityScriptingInterface::setLocalJointsData(const QUuid& entityID,
                                                   const QVector<glm::quat>& rotations,
                                                   const QVector<glm::vec3>& translations) {
+    if (!worldMayChange(entityID, "setLocalJointsData")) {
+        return false;
+    }
     // for a model with 80 joints, sending both these in one edit packet causes the packet to be too large.
     return setLocalJointRotations(entityID, rotations) || setLocalJointTranslations(entityID, translations);
 }
 
-int EntityScriptingInterface::getJointIndex(const QUuid& entityID, const QString& name) {
+int EntityScriptingInterface::getJointIndex(const QUuid& entityIDAsNamed, const QString& name) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (!_entityTree) {
         return -1;
     }
@@ -2064,7 +2269,8 @@ int EntityScriptingInterface::getJointIndex(const QUuid& entityID, const QString
     return result;
 }
 
-QStringList EntityScriptingInterface::getJointNames(const QUuid& entityID) {
+QStringList EntityScriptingInterface::getJointNames(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (!_entityTree) {
         return QStringList();
     }
@@ -2073,7 +2279,8 @@ QStringList EntityScriptingInterface::getJointNames(const QUuid& entityID) {
     return result;
 }
 
-QVariantMap EntityScriptingInterface::getModelExtras(const QUuid& entityID) {
+QVariantMap EntityScriptingInterface::getModelExtras(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     if (!_entityTree) {
         return QVariantMap();
     }
@@ -2082,7 +2289,8 @@ QVariantMap EntityScriptingInterface::getModelExtras(const QUuid& entityID) {
     return result;
 }
 
-QVector<QUuid> EntityScriptingInterface::getChildrenIDs(const QUuid& parentID) {
+QVector<QUuid> EntityScriptingInterface::getChildrenIDs(const QUuid& parentIDAsNamed) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     QVector<QUuid> result;
     if (!_entityTree) {
         return result;
@@ -2104,10 +2312,12 @@ QVector<QUuid> EntityScriptingInterface::getChildrenIDs(const QUuid& parentID) {
         parent->forEachChild([&](SpatiallyNestablePointer child) { result.push_back(child->getID()); });
     });
 
-    return result;
+    return readableByWorld(result);  // a world's script doesn't see the visitor's or the app's local children
 }
 
-bool EntityScriptingInterface::isChildOfParent(const QUuid& childID, const QUuid& parentID) {
+bool EntityScriptingInterface::isChildOfParent(const QUuid& childIDAsNamed, const QUuid& parentIDAsNamed) {
+    const QUuid childID = forWorldRead(childIDAsNamed);  // hidden from a world's script: as if it didn't exist
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool isChild = false;
 
     if (!_entityTree) {
@@ -2129,7 +2339,8 @@ bool EntityScriptingInterface::isChildOfParent(const QUuid& childID, const QUuid
     return isChild;
 }
 
-QString EntityScriptingInterface::getNestableType(const QUuid& id) {
+QString EntityScriptingInterface::getNestableType(const QUuid& idAsNamed) {
+    const QUuid id = forWorldRead(idAsNamed);  // hidden from a world's script: as if it didn't exist
     QSharedPointer<SpatialParentFinder> parentFinder = DependencyManager::get<SpatialParentFinder>();
     if (!parentFinder) {
         return "unknown";
@@ -2147,7 +2358,8 @@ QString EntityScriptingInterface::getNestableType(const QUuid& id) {
     return SpatiallyNestable::nestableTypeToString(nestableType);
 }
 
-QVector<QUuid> EntityScriptingInterface::getChildrenIDsOfJoint(const QUuid& parentID, int jointIndex) {
+QVector<QUuid> EntityScriptingInterface::getChildrenIDsOfJoint(const QUuid& parentIDAsNamed, int jointIndex) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     QVector<QUuid> result;
     if (!_entityTree) {
         return result;
@@ -2172,56 +2384,87 @@ QVector<QUuid> EntityScriptingInterface::getChildrenIDsOfJoint(const QUuid& pare
             }
         });
     });
-    return result;
+    return readableByWorld(result);  // a world's script doesn't see the visitor's or the app's local children
 }
 
 QUuid EntityScriptingInterface::getKeyboardFocusEntity() const {
     QUuid result;
     QMetaObject::invokeMethod(qApp, "getKeyboardFocusEntity", Qt::DirectConnection, Q_RETURN_ARG(QUuid, result));
-    return result;
+    return forWorldRead(result);
 }
 
 void EntityScriptingInterface::setKeyboardFocusEntity(const QUuid& id) {
+    if (!worldMayChange(id, "setKeyboardFocusEntity")) {
+        return;
+    }
     QMetaObject::invokeMethod(qApp, "setKeyboardFocusEntity", Qt::DirectConnection, Q_ARG(const QUuid&, id));
 }
 
 void EntityScriptingInterface::sendMousePressOnEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendMousePressOnEntity")) {
+        return;
+    }
     emit mousePressOnEntity(id, event);
 }
 
 void EntityScriptingInterface::sendMouseMoveOnEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendMouseMoveOnEntity")) {
+        return;
+    }
     emit mouseMoveOnEntity(id, event);
 }
 
 void EntityScriptingInterface::sendMouseReleaseOnEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendMouseReleaseOnEntity")) {
+        return;
+    }
     emit mouseReleaseOnEntity(id, event);
 }
 
 void EntityScriptingInterface::sendClickDownOnEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendClickDownOnEntity")) {
+        return;
+    }
     emit clickDownOnEntity(id, event);
 }
 
 void EntityScriptingInterface::sendHoldingClickOnEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendHoldingClickOnEntity")) {
+        return;
+    }
     emit holdingClickOnEntity(id, event);
 }
 
 void EntityScriptingInterface::sendClickReleaseOnEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendClickReleaseOnEntity")) {
+        return;
+    }
     emit clickReleaseOnEntity(id, event);
 }
 
 void EntityScriptingInterface::sendHoverEnterEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendHoverEnterEntity")) {
+        return;
+    }
     emit hoverEnterEntity(id, event);
 }
 
 void EntityScriptingInterface::sendHoverOverEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendHoverOverEntity")) {
+        return;
+    }
     emit hoverOverEntity(id, event);
 }
 
 void EntityScriptingInterface::sendHoverLeaveEntity(const EntityItemID& id, const PointerEvent& event) {
+    if (!worldMaySend(id, "sendHoverLeaveEntity")) {
+        return;
+    }
     emit hoverLeaveEntity(id, event);
 }
 
-bool EntityScriptingInterface::wantsHandControllerPointerEvents(const QUuid& id) {
+bool EntityScriptingInterface::wantsHandControllerPointerEvents(const QUuid& idAsNamed) {
+    const QUuid id = forWorldRead(idAsNamed);  // hidden from a world's script: as if it didn't exist
     bool result = false;
     if (_entityTree) {
         _entityTree->withReadLock([&] {
@@ -2235,10 +2478,16 @@ bool EntityScriptingInterface::wantsHandControllerPointerEvents(const QUuid& id)
 }
 
 void EntityScriptingInterface::emitScriptEvent(const EntityItemID& entityID, const QVariant& message) {
+    if (!worldMaySend(entityID, "emitScriptEvent")) {
+        return;
+    }
     EntityTree::emitScriptEvent(entityID, message);
 }
 
 void EntityScriptingInterface::sendToQml(const EntityItemID& entityID, const QVariant& message) {
+    if (!worldMaySend(entityID, "sendToQml")) {
+        return;
+    }
     EntityTree::sendToQml(entityID, message);
 }
 
@@ -2253,7 +2502,8 @@ bool EntityScriptingInterface::AABoxIntersectsCapsule(const glm::vec3& low,
     return aaBox.findCapsulePenetration(start, end, radius, penetration);
 }
 
-void EntityScriptingInterface::getMeshes(const QUuid& entityID, const ScriptCallback& callback) {
+void EntityScriptingInterface::getMeshes(const QUuid& entityIDAsNamed, const ScriptCallback& callback) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     PROFILE_RANGE(script_entities, __FUNCTION__);
     EntityItemPointer entity = static_cast<EntityItemPointer>(_entityTree->findEntityByEntityItemID(entityID));
     MeshProxyList result;
@@ -2267,7 +2517,8 @@ void EntityScriptingInterface::getMeshes(const QUuid& entityID, const ScriptCall
     }
 }
 
-void EntityScriptingInterface::getMeshes(const QUuid& entityID, QScriptValue callback) {
+void EntityScriptingInterface::getMeshes(const QUuid& entityIDAsNamed, QScriptValue callback) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
     EntityItemPointer entity = static_cast<EntityItemPointer>(_entityTree->findEntityByEntityItemID(entityID));
@@ -2291,7 +2542,8 @@ void EntityScriptingInterface::getMeshes(const QUuid& entityID, QScriptValue cal
     }
 }
 
-glm::mat4 EntityScriptingInterface::getEntityTransform(const QUuid& entityID) {
+glm::mat4 EntityScriptingInterface::getEntityTransform(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     glm::mat4 result;
     if (_entityTree) {
         _entityTree->withReadLock([&] {
@@ -2306,7 +2558,8 @@ glm::mat4 EntityScriptingInterface::getEntityTransform(const QUuid& entityID) {
     return result;
 }
 
-glm::mat4 EntityScriptingInterface::getEntityLocalTransform(const QUuid& entityID) {
+glm::mat4 EntityScriptingInterface::getEntityLocalTransform(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     glm::mat4 result;
     if (_entityTree) {
         _entityTree->withReadLock([&] {
@@ -2321,7 +2574,8 @@ glm::mat4 EntityScriptingInterface::getEntityLocalTransform(const QUuid& entityI
     return result;
 }
 
-QString EntityScriptingInterface::getStaticCertificateJSON(const QUuid& entityID) {
+QString EntityScriptingInterface::getStaticCertificateJSON(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     QByteArray result;
     if (_entityTree) {
         _entityTree->withReadLock([&] {
@@ -2334,7 +2588,8 @@ QString EntityScriptingInterface::getStaticCertificateJSON(const QUuid& entityID
     return result;
 }
 
-bool EntityScriptingInterface::verifyStaticCertificateProperties(const QUuid& entityID) {
+bool EntityScriptingInterface::verifyStaticCertificateProperties(const QUuid& entityIDAsNamed) {
+    const QUuid entityID = forWorldRead(entityIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool result = false;
     if (_entityTree) {
         _entityTree->withReadLock([&] {
@@ -2354,9 +2609,10 @@ const EntityPropertyInfo EntityScriptingInterface::getPropertyInfo(const QString
 }
 
 glm::vec3 EntityScriptingInterface::worldToLocalPosition(glm::vec3 worldPosition,
-                                                         const QUuid& parentID,
+                                                         const QUuid& parentIDAsNamed,
                                                          int parentJointIndex,
                                                          bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 localPosition =
         SpatiallyNestable::worldToLocal(worldPosition, parentID, parentJointIndex, scalesWithParent, success);
@@ -2368,9 +2624,10 @@ glm::vec3 EntityScriptingInterface::worldToLocalPosition(glm::vec3 worldPosition
 }
 
 glm::quat EntityScriptingInterface::worldToLocalRotation(glm::quat worldRotation,
-                                                         const QUuid& parentID,
+                                                         const QUuid& parentIDAsNamed,
                                                          int parentJointIndex,
                                                          bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::quat localRotation =
         SpatiallyNestable::worldToLocal(worldRotation, parentID, parentJointIndex, scalesWithParent, success);
@@ -2382,9 +2639,10 @@ glm::quat EntityScriptingInterface::worldToLocalRotation(glm::quat worldRotation
 }
 
 glm::vec3 EntityScriptingInterface::worldToLocalVelocity(glm::vec3 worldVelocity,
-                                                         const QUuid& parentID,
+                                                         const QUuid& parentIDAsNamed,
                                                          int parentJointIndex,
                                                          bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 localVelocity =
         SpatiallyNestable::worldToLocalVelocity(worldVelocity, parentID, parentJointIndex, scalesWithParent, success);
@@ -2396,9 +2654,10 @@ glm::vec3 EntityScriptingInterface::worldToLocalVelocity(glm::vec3 worldVelocity
 }
 
 glm::vec3 EntityScriptingInterface::worldToLocalAngularVelocity(glm::vec3 worldAngularVelocity,
-                                                                const QUuid& parentID,
+                                                                const QUuid& parentIDAsNamed,
                                                                 int parentJointIndex,
                                                                 bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 localAngularVelocity =
         SpatiallyNestable::worldToLocalAngularVelocity(worldAngularVelocity, parentID, parentJointIndex, scalesWithParent,
@@ -2411,9 +2670,10 @@ glm::vec3 EntityScriptingInterface::worldToLocalAngularVelocity(glm::vec3 worldA
 }
 
 glm::vec3 EntityScriptingInterface::worldToLocalDimensions(glm::vec3 worldDimensions,
-                                                           const QUuid& parentID,
+                                                           const QUuid& parentIDAsNamed,
                                                            int parentJointIndex,
                                                            bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 localDimensions =
         SpatiallyNestable::worldToLocalDimensions(worldDimensions, parentID, parentJointIndex, scalesWithParent, success);
@@ -2425,9 +2685,10 @@ glm::vec3 EntityScriptingInterface::worldToLocalDimensions(glm::vec3 worldDimens
 }
 
 glm::vec3 EntityScriptingInterface::localToWorldPosition(glm::vec3 localPosition,
-                                                         const QUuid& parentID,
+                                                         const QUuid& parentIDAsNamed,
                                                          int parentJointIndex,
                                                          bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 worldPosition =
         SpatiallyNestable::localToWorld(localPosition, parentID, parentJointIndex, scalesWithParent, success);
@@ -2439,9 +2700,10 @@ glm::vec3 EntityScriptingInterface::localToWorldPosition(glm::vec3 localPosition
 }
 
 glm::quat EntityScriptingInterface::localToWorldRotation(glm::quat localRotation,
-                                                         const QUuid& parentID,
+                                                         const QUuid& parentIDAsNamed,
                                                          int parentJointIndex,
                                                          bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::quat worldRotation =
         SpatiallyNestable::localToWorld(localRotation, parentID, parentJointIndex, scalesWithParent, success);
@@ -2453,9 +2715,10 @@ glm::quat EntityScriptingInterface::localToWorldRotation(glm::quat localRotation
 }
 
 glm::vec3 EntityScriptingInterface::localToWorldVelocity(glm::vec3 localVelocity,
-                                                         const QUuid& parentID,
+                                                         const QUuid& parentIDAsNamed,
                                                          int parentJointIndex,
                                                          bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 worldVelocity =
         SpatiallyNestable::localToWorldVelocity(localVelocity, parentID, parentJointIndex, scalesWithParent, success);
@@ -2467,9 +2730,10 @@ glm::vec3 EntityScriptingInterface::localToWorldVelocity(glm::vec3 localVelocity
 }
 
 glm::vec3 EntityScriptingInterface::localToWorldAngularVelocity(glm::vec3 localAngularVelocity,
-                                                                const QUuid& parentID,
+                                                                const QUuid& parentIDAsNamed,
                                                                 int parentJointIndex,
                                                                 bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 worldAngularVelocity =
         SpatiallyNestable::localToWorldAngularVelocity(localAngularVelocity, parentID, parentJointIndex, scalesWithParent,
@@ -2482,9 +2746,10 @@ glm::vec3 EntityScriptingInterface::localToWorldAngularVelocity(glm::vec3 localA
 }
 
 glm::vec3 EntityScriptingInterface::localToWorldDimensions(glm::vec3 localDimensions,
-                                                           const QUuid& parentID,
+                                                           const QUuid& parentIDAsNamed,
                                                            int parentJointIndex,
                                                            bool scalesWithParent) {
+    const QUuid parentID = forWorldRead(parentIDAsNamed);  // hidden from a world's script: as if it didn't exist
     bool success;
     glm::vec3 worldDimensions =
         SpatiallyNestable::localToWorldDimensions(localDimensions, parentID, parentJointIndex, scalesWithParent, success);

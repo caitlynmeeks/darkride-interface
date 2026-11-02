@@ -747,7 +747,7 @@ void EntityTreeElement::cleanupDomainAndNonOwnedEntities() {
     withWriteLock([&] {
         EntityItems savedEntities;
         foreach(EntityItemPointer entity, _entityItems) {
-            if (!(entity->isLocalEntity() || entity->isMyAvatarEntity())) {
+            if (!entity->isKeptOnWorldChange()) {
                 entity->preDelete();
                 entity->_element = NULL;
             } else {

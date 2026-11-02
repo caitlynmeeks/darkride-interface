@@ -2485,6 +2485,31 @@ private:
     void queueEntityMessage(PacketType packetType, EntityItemID entityID, const EntityItemProperties& properties);
     bool addLocalEntityCopy(EntityItemProperties& propertiesWithSimID, EntityItemID& id, bool isClone = false);
 
+    // What a world's script may do with an entity (security #28). The caller is a world's script when
+    // ScriptCaller::isWorld() is true: the script API guards mark each call a world's script makes, on its own thread,
+    // so these run at the start of the call, before any hop to another thread. For the app and the visitor's own
+    // scripts they change nothing. A domain entity and a local or avatar entity a world's script made are the world's
+    // to use; other avatar entities (the visitor's own and other people's) the world may read but not change or send
+    // events into;
+    // any other local entity (the app's, the visitor's own scripts', or one made by a path that recorded no owner) is
+    // hidden: the call answers as for an id that doesn't exist. An id that isn't an entity is left to the call.
+public:
+    /// The id, or a null id when the caller is a world's script and may not read the entity.
+    QUuid forWorldRead(const QUuid& id) const;
+    /// The ids a world's caller may read (the others left out); all of them for everyone else.
+    QVector<QUuid> readableByWorld(const QVector<QUuid>& ids) const;
+    /// False when the caller is a world's script and may not change the entity or send it events: true for a domain
+    /// entity, one a world's script made, an id that isn't an entity, and for every caller but a world's script.
+    bool worldMayUse(const QUuid& id) const;
+private:
+    /// False (and the refusal logged once per method on this thread) when the caller is a world's script and may not
+    /// change the entity: true for a domain entity or a local entity a world's script made.
+    bool worldMayChange(const QUuid& id, const char* method) const;
+    /// The same rule for pointer events and messages into an entity.
+    bool worldMaySend(const QUuid& id, const char* method) const;
+    /// False (logged) when a world's caller names a parent it may not read.
+    bool worldMayParentTo(const QUuid& parentID, const char* method) const;
+
     EntityItemPointer checkForTreeEntityAndTypeMatch(const QUuid& entityID,
                                                      EntityTypes::EntityType entityType = EntityTypes::Unknown);
 

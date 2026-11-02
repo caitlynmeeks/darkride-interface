@@ -185,6 +185,10 @@ void ScriptEngines::addScriptEngine(ScriptEnginePointer engine) {
     }
 }
 
+void ScriptEngines::releaseWhenFinished(ScriptEnginePointer engine) {
+    connect(engine.data(), &ScriptEngine::finished, this, &ScriptEngines::onScriptFinished, Qt::DirectConnection);
+}
+
 void ScriptEngines::removeScriptEngine(ScriptEnginePointer engine) {
     // If we're not already in the middle of stopping all scripts, then we should remove ourselves
     // from the list of running scripts. We don't do this if we're in the process of stopping all scripts

@@ -16,6 +16,7 @@
 #include <OffscreenUi.h>
 #include <render/Scene.h>
 #include <RegisteredMetaTypes.h>
+#include <ScriptCaller.h>
 
 #include "Application.h"
 #include "InterfaceLogging.h"
@@ -62,6 +63,7 @@ void Overlays::cleanupAllOverlays() {
     {
         QMutexLocker locker(&_mutex);
         overlays.swap(_overlays);
+        _worldOverlays.clear();
     }
 
     foreach(Overlay::Pointer overlay, overlays) {
@@ -159,9 +161,33 @@ Overlay::Pointer Overlays::take2DOverlay(const QUuid& id) {
     QMutexLocker locker(&_mutex);
     auto overlayIter = _overlays.find(id);
     if (overlayIter != _overlays.end()) {
+        _worldOverlays.remove(id);
         return _overlays.take(id);
     }
     return nullptr;
+}
+
+void Overlays::removeWorld2DOverlays(int world) {
+    // _overlaysToDelete is drained on the main thread without the lock (cleanupOverlaysToDelete)
+    Q_ASSERT(QThread::currentThread() == thread());
+    QList<QUuid> removed;
+    {
+        QMutexLocker locker(&_mutex);
+        for (auto it = _worldOverlays.begin(); it != _worldOverlays.end();) {
+            if (ScriptCaller::belongsTo(it.value(), world)) {
+                if (auto overlay = _overlays.take(it.key())) {
+                    _overlaysToDelete.push_back(overlay);
+                    removed.push_back(it.key());
+                }
+                it = _worldOverlays.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    for (const auto& id : removed) {
+        emit overlayDeleted(id);
+    }
 }
 
 Overlay::Pointer Overlays::get2DOverlay(const QUuid& id) const {
@@ -773,11 +799,18 @@ QUuid Overlays::addOverlay(const QString& type, const QVariant& properties) {
     }
 
     if (type == ImageOverlay::TYPE || type == TextOverlay::TYPE || type == RectangleOverlay::TYPE) {
+        if (ScriptCaller::isRetired()) {
+            ScriptCaller::logRetiredRefusal("Overlays", "addOverlay");
+            return QUuid();
+        }
         if (QThread::currentThread() != thread()) {
-            QUuid result;
+            // made on the main thread: it records its maker, a world's script (which world) or not (ScriptCaller)
+            const int byWorld = ScriptCaller::world();
             PROFILE_RANGE(script, __FUNCTION__);
-            BLOCKING_INVOKE_METHOD(this, "addOverlay", Q_RETURN_ARG(QUuid, result), Q_ARG(const QString&, type), Q_ARG(const QVariant&, properties));
-            return result;
+            return BLOCKING_INVOKE(this, [&] {
+                ScriptCaller::WorldScope caller(byWorld);
+                return addOverlay(type, properties);
+            });
         }
 
         Overlay::Pointer overlay;
@@ -823,6 +856,9 @@ QUuid Overlays::add2DOverlay(const Overlay::Pointer& overlay) {
     {
         QMutexLocker locker(&_mutex);
         _overlays[thisID] = overlay;
+        if (int world = ScriptCaller::world()) {
+            _worldOverlays[thisID] = world;
+        }
     }
 
     return thisID;
@@ -835,11 +871,17 @@ QUuid Overlays::cloneOverlay(const QUuid& id) {
 
     Overlay::Pointer overlay = get2DOverlay(id);
     if (overlay) {
+        if (ScriptCaller::isRetired()) {
+            ScriptCaller::logRetiredRefusal("Overlays", "cloneOverlay");
+            return QUuid();
+        }
         if (QThread::currentThread() != thread()) {
-            QUuid result;
+            const int byWorld = ScriptCaller::world();
             PROFILE_RANGE(script, __FUNCTION__);
-            BLOCKING_INVOKE_METHOD(this, "cloneOverlay", Q_RETURN_ARG(QUuid, result), Q_ARG(const QUuid&, id));
-            return result;
+            return BLOCKING_INVOKE(this, [&] {
+                ScriptCaller::WorldScope caller(byWorld);
+                return cloneOverlay(id);
+            });
         }
         return add2DOverlay(Overlay::Pointer(overlay->createClone(), [](Overlay* ptr) { ptr->deleteLater(); }));
     }

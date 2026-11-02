@@ -252,6 +252,15 @@ public:
     uint64_t getLastMovingAssemblyInViewTime() const { return _lastMovingAssemblyInView; }
 
 signals:
+    /// The world `world` (its entities engine's id, ScriptCaller::world() on its thread) was left, at a world change or
+    /// a content reload, before its scripts unload and its engine stops: its code gets nothing more done
+    /// (ScriptCaller::retireWorld), and what its scripts made outside the engine (tagged with that id) goes now, each
+    /// owner removing its own.
+    void worldLeft(int world);
+    /// The entities engine of the world `world` has stopped (or was given up on): nothing of that world's scripts runs
+    /// any more. Its owners remove what they hold of the world again (nothing, as the world's calls are refused since
+    /// worldLeft).
+    void worldScriptsStopped(int world);
     void enterEntity(const EntityItemID& entityItemID);
     void leaveEntity(const EntityItemID& entityItemID);
     void collisionWithEntity(const EntityItemID& idA, const EntityItemID& idB, const Collision& collision);
@@ -292,6 +301,12 @@ private:
     render::ItemID renderableIdForEntity(const EntityItemPointer& entity) const { return renderableIdForEntityId(entity->getID()); }
 
     void resetEntitiesScriptEngine();
+    void replaceEntitiesScriptEngine();
+    void retireEntitiesScriptEngine(const ScriptEnginePointer& old);
+    void markWorldLeft(int world);
+    void entitiesEngineStopped(int world);
+    void interruptIfStillRunning(QWeakPointer<ScriptEngine> old, int attempt);
+    void restartKeptEntityScripts();
 
     void findBestZoneAndMaybeContainingEntities(QSet<EntityItemID>& entitiesContainingAvatar);
 
@@ -324,6 +339,7 @@ private:
 
     bool _wantScripts;
     ScriptEnginePointer _entitiesScriptEngine;
+    QSet<int> _entitiesEnginesStopping;  // the world ids of engines of worlds left not stopped yet (retireEntitiesScriptEngine)
 
     void playEntityCollisionSound(const EntityItemPointer& entity, const Collision& collision);
 
@@ -351,8 +367,6 @@ private:
     unsigned int _mouseRayPickID;
     std::function<RayToEntityIntersectionResult(unsigned int)> _getPrevRayPickResultOperator;
     std::function<void(unsigned int, bool)> _setPrecisionPickingOperator;
-
-    bool _mouseAndPreloadSignalHandlersConnected { false };
 
     class LayeredZone {
     public:

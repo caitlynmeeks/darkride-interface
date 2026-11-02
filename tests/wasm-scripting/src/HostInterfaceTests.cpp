@@ -13,6 +13,7 @@
 #include <QtCore/QCborValue>
 
 #include <HostInterface.h>
+#include <ScriptCaller.h>
 #include <ObjectTable.h>
 #include <SignalRelay.h>
 #include <ValueCodec.h>
@@ -518,6 +519,41 @@ void HostInterfaceTests::testLog() {
 // The member gate (the script API policy for a world's scripts) holds at the host boundary itself: the module's
 // exports, reached exactly as a guest reaches them, with no shim in between. Nothing a guest does on its side can
 // reach a denied member.
+void HostInterfaceTests::testCheckedDeliveries() {
+    // a signal the gate checks at each delivery: the deliveries it holds back never reach the module, the others do
+    Fixture f;
+    QString error;
+    QVERIFY2(f.start(error), qPrintable(error));
+    HostInterface::MemberGate gate;
+    gate.allowsClass = [](const QMetaObject* meta) { return QByteArray(meta->className()) == "Probe"; };
+    gate.checksDelivery = [](const QMetaObject*, const QByteArray& name) { return name == "countChanged"; };
+    gate.holdsBackDelivery = [](const QMetaObject*, const QByteArray& name, const QVariantList& arguments) {
+        return name == "countChanged" && arguments.value(0).toInt() == 13;
+    };
+    f.host->setMemberGate(gate);
+    const int32_t probe = f.probeHandle();
+    const int32_t byName = f.connect(probe, "countChanged");
+    QVERIFY(byName > 0);
+    f.probe.setCount(13);
+    QCOMPARE(f.i32("events"), 0);
+    f.probe.setCount(4);
+    QCOMPARE(f.i32("events"), 1);
+    QCOMPARE(f.lastArguments().toList(), QVariantList { 4 });
+    // by its signature too
+    std::vector<WasmValue> results;
+    QVERIFY(f.instance->call("disconnect", { byName }, results, error));
+    const int32_t bySignature = f.connect(probe, "countChanged(int)");
+    QVERIFY(bySignature > 0);
+    f.probe.setCount(13);
+    QCOMPARE(f.i32("events"), 1);
+    f.probe.setCount(5);
+    QCOMPARE(f.i32("events"), 2);
+    // a signal the gate doesn't check: every delivery
+    QVERIFY(f.connect(probe, "positionChanged(glm::vec3)") > 0);
+    f.probe.setPosition(glm::vec3(13.0f));
+    QCOMPARE(f.i32("events"), 3);
+}
+
 void HostInterfaceTests::testMemberGate() {
     Fixture f;
     QString error;
@@ -601,4 +637,39 @@ void HostInterfaceTests::testMemberGate() {
         }
     }
     QVERIFY(warnings >= 10);
+}
+
+void HostInterfaceTests::testWorldLeft() {
+    // security #32: a script of a world that was left gets nothing done through a gated host (calls, reads, writes,
+    // connects, on a handed-back object too), but for what the gate still allows it; undefined, no error
+    const int LEFT = 9201;
+    Fixture f;
+    QString error;
+    QVERIFY2(f.start(error), qPrintable(error));
+    HostInterface::MemberGate gate;
+    gate.allowsClass = [](const QMetaObject* meta) { return QByteArray(meta->className()) == "Probe"; };
+    gate.deniesMethod = [](const QMetaObject*, const QByteArray&) { return false; };
+    gate.deniesPropertyWrite = [](const QMetaObject*, const QByteArray&) { return false; };
+    gate.deniesPropertyRead = [](const QMetaObject*, const QByteArray&) { return false; };
+    gate.allowsAfterWorldLeft = [](const QMetaObject*, const QByteArray& name) { return name == "add"; };
+    f.host->setMemberGate(gate);
+    const int32_t probe = f.probeHandle();
+    f.probe.setCount(3);
+    const QVariant self = f.call(probe, "self", {});
+    {
+        ScriptCaller::WorldScope world(LEFT);
+        ScriptCaller::retireWorld(LEFT);
+        QVERIFY(!f.call(probe, "describeSelf", {}).isValid() || f.call(probe, "describeSelf", {}).isNull());
+        QVERIFY(!f.get(probe, "count").isValid() || f.get(probe, "count").isNull());
+        f.set(probe, "count", 9);
+        QCOMPARE(f.probe.count(), 3);
+        QCOMPARE(f.connect(probe, "countChanged"), 0);
+        QCOMPARE(f.call(probe, "add", { 2, 3 }), QVariant(5));
+    }
+    {
+        ScriptCaller::WorldScope world(LEFT + 1);
+        QCOMPARE(f.get(probe, "count"), QVariant(3));
+        QVERIFY(f.connect(probe, "countChanged") != 0);
+    }
+    Q_UNUSED(self);
 }

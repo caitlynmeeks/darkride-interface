@@ -73,6 +73,11 @@ public:
     }
     /// Where a refusal is logged (the script's own log).
     void setLogger(std::function<void(const QString&)> logger) { _logger = std::move(logger); }
+    /// Whether the requesting script is a world's whose engine is stopping or whose world was left
+    /// (ScriptEngine::isWorldEnding): a synchronous request stops waiting, and no answer reaches the script; set by
+    /// the factory.
+    void setEndingCheck(std::function<bool()> ending) { _ending = std::move(ending); }
+    bool isEnding() const { return _ending && _ending(); }
     int unsent() const { return UNSENT; }
     int opened() const { return OPENED; }
     int headersReceived() const { return HEADERS_RECEIVED; }
@@ -137,6 +142,7 @@ private:
     int _redirects { 0 };
     int _generation { 0 };       // abort() moves it on, so a judgement that comes late is dropped
     std::function<void(const QString&)> _logger;
+    std::function<bool()> _ending;
 };
 
 /// The "Http" global: makes requests for the script that asked.

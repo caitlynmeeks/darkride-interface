@@ -623,6 +623,17 @@ QString HostInterface::refuse(const QMetaObject* meta, const QByteArray& member)
     return line;
 }
 
+bool HostInterface::refusedAfterWorldLeft(const QMetaObject* meta, const QByteArray& member) const {
+    if (!gated(meta) || !ScriptCaller::isRetired()) {
+        return false;
+    }
+    if (_gate.allowsAfterWorldLeft && _gate.allowsAfterWorldLeft(meta, member)) {
+        return false;
+    }
+    ScriptCaller::logRetiredRefusal(meta->className(), member.constData());
+    return true;
+}
+
 QVariantMap HostInterface::gatedDescription(const QMetaObject* meta, QVariantMap description) const {
     if (!classAllowed(meta)) {
         // the class name alone: nothing to call, read, write or connect; logged, so a content class missing from
@@ -940,6 +951,9 @@ QVariant HostInterface::callWithCbor(ObjectTable::Handle handle, const QByteArra
             firstError = candidateError;
         }
     }
+    if (bestIndex >= 0 && refusedAfterWorldLeft(meta, meta->method(bestIndex).name())) {
+        return QVariant();  // undefined: a world that was left gets nothing done
+    }
     if (bestIndex < 0) {
         if (everyFailureTooFew) {
             _callErrorType = QStringLiteral("SyntaxError");
@@ -989,6 +1003,9 @@ QVariant HostInterface::getByName(ObjectTable::Handle handle, const QByteArray& 
         error = refuse(meta, propertyName);
         return QVariant();
     }
+    if (refusedAfterWorldLeft(meta, propertyName)) {
+        return QVariant();
+    }
     return property.read(object);
 }
 
@@ -1018,6 +1035,9 @@ bool HostInterface::setWithCbor(ObjectTable::Handle handle, const QByteArray& na
     if (gated(meta) && (!classAllowed(meta) || _gate.deniesPropertyWrite(meta, name))) {
         error = refuse(meta, name);
         return false;
+    }
+    if (refusedAfterWorldLeft(meta, name)) {
+        return true;  // dropped, as a refused write is on QtScript
     }
     QVariant typed;
     const int type = property.userType();
@@ -1075,23 +1095,32 @@ int HostInterface::connect(ObjectTable::Handle handle, const QString& signal, QS
         error = refuse(object->metaObject(), signal.toUtf8());
         return 0;
     }
-    if (gated(object->metaObject()) && _gate.deniesSignal) {
+    const QMetaObject* meta = object->metaObject();
+    QByteArray name;
+    if (gated(meta)) {
         // the signal the relay would join, by whichever name it is given (its name, its signature, its index)
-        const QMetaObject* meta = object->metaObject();
         int index = -1;
         if (signal.startsWith('#')) {
             index = signal.mid(1).toInt();
         } else if (signal.contains('(')) {
             index = meta->indexOfSignal(QMetaObject::normalizedSignature(signal.toUtf8().constData()).constData());
         }
-        const QByteArray name = (index >= 0 && index < meta->methodCount()) ? meta->method(index).name()
-                                                                              : signal.toUtf8();
-        if (_gate.deniesSignal(meta, name)) {
+        name = (index >= 0 && index < meta->methodCount()) ? meta->method(index).name() : signal.toUtf8();
+        if (_gate.deniesSignal && _gate.deniesSignal(meta, name)) {
             error = refuse(meta, name);
             return 0;
         }
+        if (refusedAfterWorldLeft(meta, name)) {
+            error = QString("%1.%2: the world was left").arg(QString::fromUtf8(meta->className()), QString::fromUtf8(name));
+            return 0;
+        }
     }
-    return _relay.connect(object, signal, [this](int connection, const QVariantList& arguments) {
+    // a signal the gate checks at each delivery (one about an entity the world may not see doesn't arrive)
+    const bool checkEach = gated(meta) && _gate.checksDelivery && _gate.holdsBackDelivery && _gate.checksDelivery(meta, name);
+    return _relay.connect(object, signal, [this, checkEach, meta, name](int connection, const QVariantList& arguments) {
+        if (checkEach && _gate.holdsBackDelivery(meta, name, arguments)) {
+            return;
+        }
         QString deliveryError;
         deliverSignal(connection, arguments, deliveryError);
     }, error);

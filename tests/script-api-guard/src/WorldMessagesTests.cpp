@@ -15,11 +15,16 @@
 
 #include "WorldMessagesTests.h"
 
+#include <atomic>
+
+#include <QtCore/QThread>
+
 #include <AccountManager.h>
 #include <AddressManager.h>
 #include <DependencyManager.h>
 #include <MessagesClient.h>
 #include <NodeList.h>
+#include <ScriptCaller.h>
 
 #include <WorldMessages.h>
 
@@ -122,4 +127,37 @@ void WorldMessagesTests::testWorldRelay() {
     QCOMPARE(heardByWorld.size(), 1);
     QCOMPARE(heardByWorld[0].channel, QString("Hifi-Teleport-Disabler"));
     QVERIFY(heardByWorld[0].fromOwnScripts);
+}
+
+void WorldMessagesTests::testWorldLeft() {
+    // security #32: once its world is left, a world's Messages relays nothing more to its scripts, on the channels it
+    // subscribed to as on any other. Its relay runs on its engine's thread, marked as the world's.
+    const int LEFT = 9401;
+    auto messages = DependencyManager::get<MessagesClient>();
+    QThread engineThread;
+    engineThread.start();
+    auto world = new WorldMessages(nullptr);
+    world->moveToThread(&engineThread);
+    QMetaObject::invokeMethod(world, [] { ScriptCaller::markThreadAsWorld(LEFT); }, Qt::BlockingQueuedConnection);
+    std::atomic<int> heard { 0 };
+    QObject::connect(world, &WorldMessages::messageReceived, world, [&] { heard++; }, Qt::DirectConnection);
+    QObject::connect(world, &WorldMessages::dataReceived, world, [&] { heard++; }, Qt::DirectConnection);
+    world->subscribe("world.game");
+
+    messages->sendLocalMessage("world.game", "while there");
+    QTRY_COMPARE(heard.load(), 1);
+
+    ScriptCaller::retireWorld(LEFT);
+    messages->sendLocalMessage("world.game", "after leaving");
+    messages->sendData("world.game", QByteArray("x"), true);
+    messages->sendLocalMessage("another.channel", "after leaving");
+    // a marker through the same thread: once it has run, every message sent before it has been relayed or dropped
+    std::atomic<bool> drained { false };
+    QMetaObject::invokeMethod(world, [&] { drained = true; }, Qt::QueuedConnection);
+    QTRY_VERIFY(drained.load());
+    QCOMPARE(heard.load(), 1);
+
+    world->deleteLater();
+    engineThread.quit();
+    QVERIFY(engineThread.wait(5000));
 }
