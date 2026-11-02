@@ -12,16 +12,19 @@
 #include "AvatarMixerClientData.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <udt/PacketHeaders.h>
 
 #include <DependencyManager.h>
 #include <NodeList.h>
+#include <SharedUtil.h>
 #include <EntityTree.h>
 #include <ZoneEntityItem.h>
 #include <WebEntityItem.h>
 #include <ScriptAddressCheck.h>
 
 #include "AvatarLogging.h"
+#include "AvatarMixerChecks.h"
 
 #include "AvatarMixerWorker.h"
 
@@ -30,6 +33,17 @@
 // server's (ScriptAddressCheck), is never passed on. Its data is read from a zero-padded copy and passed on only when it
 // reads cleanly.
 static const int READ_PADDING = 1 << 20;
+
+// AvatarMixerChecks reads the skeleton by these offsets
+static_assert(sizeof(AvatarSkeletonTrait::Header) == avatar_mixer_checks::SKELETON_HEADER_SIZE, "skeleton header");
+static_assert(offsetof(AvatarSkeletonTrait::Header, numJoints) == avatar_mixer_checks::SKELETON_NUM_JOINTS_AT, "numJoints");
+static_assert(offsetof(AvatarSkeletonTrait::Header, stringTableLength) == avatar_mixer_checks::SKELETON_TABLE_LENGTH_AT,
+              "stringTableLength");
+static_assert(sizeof(AvatarSkeletonTrait::JointData) == avatar_mixer_checks::SKELETON_JOINT_SIZE, "joint record");
+static_assert(offsetof(AvatarSkeletonTrait::JointData, stringStart) == avatar_mixer_checks::SKELETON_STRING_START_AT,
+              "stringStart");
+static_assert(offsetof(AvatarSkeletonTrait::JointData, stringLength) == avatar_mixer_checks::SKELETON_STRING_LENGTH_AT,
+              "stringLength");
 
 namespace {
 
@@ -265,13 +279,22 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
             AvatarTraits::TraitWireSize traitSize;
             message.readPrimitive(&traitSize);
 
-            if (traitSize < -1 || traitSize > message.getBytesLeftToRead()) {
-                qWarning() << "Refusing to process simple trait of size" << traitSize << "from" << message.getSenderSockAddr();
+            // a simple trait has no deleted form (DELETED_TRAIT_SIZE is for instances)
+            if (traitSize < 0 || traitSize > message.getBytesLeftToRead()) {
+                logRefusedData("a traits packet", QString("a trait of size %1").arg(traitSize), sendingNode.getUUID());
                 break;
             }
 
             if (packetTraitVersion > _lastReceivedTraitVersions[traitType]) {
-                _avatar->processTrait(traitType, message.read(traitSize));
+                QByteArray traitData = message.read(traitSize);
+                const QString refusal = traitType == AvatarTraits::SkeletonData
+                    ? avatar_mixer_checks::skeletonRefusal(traitData) : QString();
+                if (!refusal.isEmpty()) {
+                    // dropped: nothing is unpacked or passed on, and the version stays, so a good one still applies
+                    logRefusedData("a skeleton", refusal, sendingNode.getUUID());
+                    continue;
+                }
+                _avatar->processTrait(traitType, traitData);
                 _lastReceivedTraitVersions[traitType] = packetTraitVersion;
                 anyTraitsChanged = true;
             } else {
@@ -466,6 +489,19 @@ void AvatarMixerClientData::removeFromRadiusIgnoringSet(const QUuid& other) {
     if (ignoredOtherIter != _radiusIgnoredOthers.cend()) {
         _radiusIgnoredOthers.erase(ignoredOtherIter);
     }
+}
+
+void AvatarMixerClientData::logRefusedData(const QString& what, const QString& reason, const QUuid& sender) {
+    static const quint64 LOG_INTERVAL_USECS = 60 * USECS_PER_SECOND;
+    const quint64 now = usecTimestampNow();
+    const int refused = ++_refusedDataSinceLog;
+    quint64 last = _lastRefusedDataLogUsecs.load();
+    if ((last != 0 && now - last < LOG_INTERVAL_USECS) || !_lastRefusedDataLogUsecs.compare_exchange_strong(last, now)) {
+        return;
+    }
+    _refusedDataSinceLog -= refused;
+    qCWarning(avatars) << "Avatar" << sender << "sent" << what << "the mixer dropped:" << reason
+                       << QString("(%1 dropped from it since the last line)").arg(refused);
 }
 
 void AvatarMixerClientData::resetSentTraitData(Node::LocalID nodeLocalID) {
