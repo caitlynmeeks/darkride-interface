@@ -70,12 +70,14 @@ private:
     void ask();
     void answered(int32_t callback, const QVariantList& arguments);
     void showStatus();
+    void showInlineNote(const QString& text);   // a written-in script too long to reach visitors
     void reload();
     void updatePolling();
 
     TextEditor* _url { nullptr };
     QWidget* _statusRow { nullptr };
     QLabel* _status { nullptr };
+    QLabel* _inlineNote { nullptr };
     QPushButton* _reload { nullptr };
     QTimer _poll;
     QList<QUuid> _ids;
