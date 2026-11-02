@@ -189,7 +189,7 @@
     // FROZEN (vehicle path): see the note at the top of this file.
     function sit(vehicle, seat) {
         var isDriver = !!seat.driver;
-        seated = { vehicleID: vehicle.id, seat: seat, driver: isDriver };
+        seated = { vehicleID: vehicle.id, seat: seat, driver: isDriver, world: worldNow() };
         MyAvatar.collisionsEnabled = false;
         MyAvatar.hmdLeanRecenterEnabled = false;
         var roles = rolesToOverride();
@@ -225,7 +225,10 @@
     }
 
     // FROZEN (vehicle path): see the note at the top of this file.
-    function stand() {
+    // worldChanged: the vehicle stayed behind in the world just left (the engine has already dropped the avatar's
+    // parent and stood it where the seat carried it: vehicle master plan entry 12), so the avatar's own state is
+    // restored and nothing else: no step beside a vehicle that is not there, no edit of its driver
+    function stand(worldChanged) {
         if (!seated) {
             return;
         }
@@ -237,22 +240,26 @@
         var wasDriver = seated.driver;
         seated = null;
         Script.update.disconnect(update);
-        Entities.clearVehicleControls(vehicleID);
-        if (wasDriver) {
-            var properties = Entities.getEntityProperties(vehicleID, ["vehicle"]);
-            if (properties && properties.vehicle && properties.vehicle.driver === MyAvatar.sessionUUID) {
-                Entities.editEntity(vehicleID, { vehicle: { driver: Uuid.NULL } });
+        if (worldChanged) {
+            MyAvatar.parentID = Uuid.NULL;   // dropped by the engine already; nothing if so
+        } else {
+            Entities.clearVehicleControls(vehicleID);
+            if (wasDriver) {
+                var properties = Entities.getEntityProperties(vehicleID, ["vehicle"]);
+                if (properties && properties.vehicle && properties.vehicle.driver === MyAvatar.sessionUUID) {
+                    Entities.editEntity(vehicleID, { vehicle: { driver: Uuid.NULL } });
+                }
             }
+            // step out beside the vehicle, upright whatever way up the vehicle lies: the level right of where the seat
+            // faces, half a metre up. goToLocation, not setting position and orientation: those race the physics step,
+            // which hands back the pose the avatar had in the seat (a tilted one in a car on its side); goToLocation is
+            // applied between steps and finds a free spot if the one asked for is inside something
+            var position = MyAvatar.position;
+            var level = Quat.cancelOutRollAndPitch(MyAvatar.orientation);
+            var right = Quat.getRight(level);
+            MyAvatar.parentID = Uuid.NULL;
+            MyAvatar.goToLocation(Vec3.sum(position, Vec3.sum(Vec3.multiply(1.5, right), { x: 0, y: 0.5, z: 0 })), true, level, false);
         }
-        // step out beside the vehicle, upright whatever way up the vehicle lies: the level right of where the seat
-        // faces, half a metre up. goToLocation, not setting position and orientation: those race the physics step,
-        // which hands back the pose the avatar had in the seat (a tilted one in a car on its side); goToLocation is
-        // applied between steps and finds a free spot if the one asked for is inside something
-        var position = MyAvatar.position;
-        var level = Quat.cancelOutRollAndPitch(MyAvatar.orientation);
-        var right = Quat.getRight(level);
-        MyAvatar.parentID = Uuid.NULL;
-        MyAvatar.goToLocation(Vec3.sum(position, Vec3.sum(Vec3.multiply(1.5, right), { x: 0, y: 0.5, z: 0 })), true, level, false);
         for (var i = 0; i < DRIVE_KEYS.length; i++) {
             MyAvatar.enableDriveKey(DRIVE_KEYS[i]);
         }
@@ -267,7 +274,13 @@
             Camera.mode = previousCameraMode;
             previousCameraMode = null;
         }
-        print("vehicles.js: standing up from " + vehicleID);
+        print("vehicles.js: standing up from " + vehicleID + (worldChanged ? " (left behind in another world)" : ""));
+    }
+
+    // the world the avatar sat down in, as a world change is told apart from a vehicle deleted under the avatar: the
+    // address changes the moment a new world is asked for, before its entities arrive
+    function worldNow() {
+        return location.hostname + "|" + location.domainID;
     }
 
     // metres from the aircraft's belly to whatever is below it (not itself or its parts)
@@ -312,7 +325,9 @@
         }
         var properties = Entities.getEntityProperties(seated.vehicleID, ["id", "position", "rotation", "velocity", "vehicle", "dimensions"]);
         if (!properties || properties.id !== seated.vehicleID) {
-            stand();   // the vehicle is gone (a deleted entity's properties come back as defaults, a null id among them)
+            // the vehicle is gone (a deleted entity's properties come back as defaults, a null id among them), or the
+            // avatar left for another world and the vehicle stayed behind
+            stand(seated.world !== worldNow());
             return;
         }
         if (seated.airship && Vec3.distance(MyAvatar.position, properties.position) > HELM_REACH) {

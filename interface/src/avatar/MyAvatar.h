@@ -1841,6 +1841,10 @@ public:
     // results are in sensor frame (-z forward)
     glm::mat4 deriveBodyFromHMDSensor() const;
 
+    // the sensor matrix the follow works in: sensorToWorld on the ground, sensorToLocal in a frame (vehicle master
+    // plan entry 11: the room is fixed to the car, so the follow sees in a car what it sees on the ground)
+    glm::mat4 getFollowSensorMatrix() const;
+
     glm::mat4 getSpine2RotationRigSpace() const;
 
     glm::vec3 computeCounterBalance();
@@ -2783,6 +2787,7 @@ signals:
 
 private slots:
     void leaveDomain();
+    void dropParentForWorldChange();
     void updateCollisionCapsuleCache();
 
 protected:
@@ -2912,6 +2917,12 @@ private:
     void nextLocalAttitude(const glm::vec3& position, const glm::quat& orientation, const glm::vec3& velocity);
     // steps into or out of a frame when the avatar's position says so, with an exact handover of pose and velocity
     void updateFrameMembership();
+    // drops the parent that carries the avatar (a frame or a seat) and stands it at the pose it was carried to: the
+    // world is changing, or the parent is gone (vehicle master plan entry 12)
+    void dropParent(const char* reason);
+    glm::vec3 _carriedWorldPosition { 0.0f };
+    glm::quat _carriedWorldOrientation;
+    bool _carriedWorldPoseKnown { false };
     // the frame trace's carry columns (item 5) and the carry's counter, after the frame's harvest each frame
     void traceCarry(bool inFrame);
     glm::vec3 _carryLastLocal { 0.0f };

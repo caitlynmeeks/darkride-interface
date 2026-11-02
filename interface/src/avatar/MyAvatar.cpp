@@ -289,6 +289,9 @@ MyAvatar::MyAvatar(QThread* thread) :
 
     // when we leave a domain we lift whatever restrictions that domain may have placed on our scale
     connect(&domainHandler, &DomainHandler::disconnectedFromDomain, this, &MyAvatar::leaveDomain);
+    // a world change clears the entity tree on the domain handler's reset (queued ahead of disconnectedFromDomain):
+    // a frame or a seat the avatar rides stays behind, so the avatar leaves it first (vehicle master plan entry 12)
+    connect(&domainHandler, &DomainHandler::resetting, this, &MyAvatar::dropParentForWorldChange);
 
     _bodySensorMatrix = deriveBodyFromHMDSensor();
 
@@ -3131,7 +3134,24 @@ void MyAvatar::updateFrameMembership() {
         return;
     }
     QUuid currentFrame = getFrameID();
-    if (currentFrame.isNull() && !getParentID().isNull()) {
+    QUuid parentID = getParentID();
+    if (!parentID.isNull()) {
+        // the pose the parent carries the avatar at, remembered for when the parent goes (entry 12)
+        bool success = false;
+        Transform carried = getTransform(success);
+        if (success) {
+            _carriedWorldPosition = carried.getTranslation();
+            _carriedWorldOrientation = carried.getRotation();
+            _carriedWorldPoseKnown = true;
+        } else {
+            // the parent cannot be found: the world changed and the tree was cleared, the car was deleted under the
+            // rider, or it left the interest set. Carried by nothing the avatar can go nowhere (every move fails on
+            // the missing parent), so it is stood where the parent last carried it.
+            dropParent("parent not found");
+            return;
+        }
+    }
+    if (currentFrame.isNull() && !parentID.isNull()) {
         // parented to something that is not a frame (a seat, a hand): that is a script's business
         return;
     }
@@ -3179,6 +3199,43 @@ void MyAvatar::updateFrameMembership() {
     setLocalTransformAndVelocities(local, localVelocity, getLocalAngularVelocity());
     _characterController.setFrame(targetFrame);
     _characterController.setLinearVelocity(localVelocity);
+}
+
+// Drops the parent that carries the avatar (a frame, or a seat a script parented it to) and stands the avatar, upright,
+// at the pose the parent last carried it to: the world is changing (the car stays behind; in another instance of the
+// same world an entity with the same ID would stand in for it), or the parent is gone. Vehicle master plan entry 12.
+void MyAvatar::dropParent(const char* reason) {
+    QUuid parentID = getParentID();
+    if (parentID.isNull()) {
+        return;
+    }
+    bool success = false;
+    Transform carried = getTransform(success);
+    if (success) {
+        _carriedWorldPosition = carried.getTranslation();
+        _carriedWorldOrientation = carried.getRotation();
+        _carriedWorldPoseKnown = true;
+    }
+    qCDebug(interfaceapp) << "MyAvatar: dropping parent" << parentID << "(" << reason << ")";
+    setParentID(QUuid());
+    if (_carriedWorldPoseKnown) {
+        glm::quat upright = cancelOutRollAndPitch(_carriedWorldOrientation);
+        if (isSeated()) {
+            endSit(_carriedWorldPosition, upright);
+        } else {
+            setWorldTransform(_carriedWorldPosition, upright);
+        }
+    } else if (isSeated()) {
+        endSit(getLocalPosition(), getLocalOrientation());
+    }
+    setWorldVelocity(glm::vec3(0.0f));
+    _characterController.setFrame(QUuid());
+    _characterController.setLinearVelocity(glm::vec3(0.0f));
+    _carriedWorldPoseKnown = false;
+}
+
+void MyAvatar::dropParentForWorldChange() {
+    dropParent("the world is changing");
 }
 
 QString MyAvatar::getScriptedMotorFrame() const {
@@ -4641,6 +4698,9 @@ void MyAvatar::leaveDomain() {
     clearScaleRestriction();
     saveAvatarScale();
     prepareResetTraitInstances();
+    // a frame or a seat the avatar rides stays in the world left behind (entry 12; normally dropped already when the
+    // domain handler reset, which comes first on a world change)
+    dropParent("left the world");
 }
 
 void MyAvatar::saveAvatarScale() {
@@ -4720,7 +4780,9 @@ void MyAvatar::goToLocation(const glm::vec3& newPosition,
     qCDebug(interfaceapp).nospace() << "MyAvatar goToLocation - moving to " << newPosition.x << ", "
         << newPosition.y << ", " << newPosition.z;
 
-    if (hasParent()) {
+    // by the parent ID, not the cached parent pointer: a parent that is gone (a car left behind in another world) has
+    // no pointer, and its ID would stay (entry 12)
+    if (!getParentID().isNull()) {
         qCDebug(interfaceapp) << "MyAvatar clearing parentID" << getParentID();
         setParentID(QUuid());
     }
@@ -6252,8 +6314,14 @@ void MyAvatar::FollowHelper::prePhysicsUpdate(MyAvatar& myAvatar, const glm::mat
         }
     }
 
-    glm::mat4 desiredWorldMatrix = myAvatar.getSensorToWorldMatrix() * desiredBodyMatrix;
-    glm::mat4 currentWorldMatrix = myAvatar.getSensorToWorldMatrix() * currentBodyMatrix;
+    // Into the coordinates the character steps in: the domain on the ground, the frame's own in a frame (vehicle master
+    // plan entry 11). The room relative to a frame (sensorToLocal) is constant while riding whatever the car does, as
+    // sensorToWorld is on the ground; built with sensorToWorld, the wanted pose carried the previous frame's presented
+    // car pose into a conversion with this step's simulated one, and the target lay behind the body by the car's
+    // motion over a frame, while the step came back in the frame's coordinates and was applied as a world one.
+    glm::mat4 sensorToWorldMatrix = myAvatar.getFollowSensorMatrix();
+    glm::mat4 desiredWorldMatrix = sensorToWorldMatrix * desiredBodyMatrix;
+    glm::mat4 currentWorldMatrix = sensorToWorldMatrix * currentBodyMatrix;
 
     AnimPose followWorldPose(currentWorldMatrix);
 
@@ -6290,11 +6358,12 @@ glm::mat4 MyAvatar::FollowHelper::postPhysicsUpdate(MyAvatar& myAvatar, const gl
         float dt = myAvatar.getCharacterController()->getFollowTime();
         decrementTimeRemaining(dt);
 
-        // apply follow displacement to the body matrix.
+        // apply follow displacement to the body matrix: the step is in the coordinates the character stepped in (the
+        // frame's own in a frame), and so is the matrix it comes back into the room with (entry 11)
         glm::vec3 worldLinearDisplacement = myAvatar.getCharacterController()->getFollowLinearDisplacement();
         glm::quat worldAngularDisplacement = myAvatar.getCharacterController()->getFollowAngularDisplacement();
 
-        glm::mat4 sensorToWorldMatrix = myAvatar.getSensorToWorldMatrix();
+        glm::mat4 sensorToWorldMatrix = myAvatar.getFollowSensorMatrix();
         glm::mat4 worldToSensorMatrix = glm::inverse(sensorToWorldMatrix);
 
         glm::vec3 sensorLinearDisplacement = transformVectorFast(worldToSensorMatrix, worldLinearDisplacement);
@@ -6311,6 +6380,14 @@ glm::mat4 MyAvatar::FollowHelper::postPhysicsUpdate(MyAvatar& myAvatar, const gl
     } else {
         return currentBodyMatrix;
     }
+}
+
+// The sensor matrix the follow works in: into the coordinates the character steps in, so the domain on the ground and
+// the frame's own in a frame (sensorToLocal, the avatar's local pose x inverse(body in the room), kept by
+// updateSensorToWorldMatrix; constant while riding whatever the car does). Vehicle master plan entry 11.
+glm::mat4 MyAvatar::getFollowSensorMatrix() const {
+    PhysicsWorld* world = _characterController.getWorld();
+    return (world && !world->isRoot()) ? getSensorToLocalMatrix() : getSensorToWorldMatrix();
 }
 
 bool MyAvatar::FollowHelper::getForceActivateRotation() const {

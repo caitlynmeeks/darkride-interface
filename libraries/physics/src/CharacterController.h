@@ -101,7 +101,8 @@ public:
     void getPositionAndOrientation(glm::vec3& position, glm::quat& rotation) const;
 
     void setParentVelocity(const glm::vec3& parentVelocity);
-    void setFollowParameters(const glm::mat4& desiredWorldMatrix, float timeRemaining);
+    // the pose the follow steps the character toward, in the character's own world (the frame's coordinates in a frame)
+    void setFollowParameters(const glm::mat4& desiredBodyMatrix, float timeRemaining);
     float getFollowTime() const { return _followTime; }
     glm::vec3 getFollowLinearDisplacement() const;
     glm::quat getFollowAngularDisplacement() const;

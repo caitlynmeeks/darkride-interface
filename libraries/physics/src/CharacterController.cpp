@@ -593,15 +593,14 @@ void CharacterController::setParentVelocity(const glm::vec3& velocity) {
 }
 
 // FROZEN (vehicle path): see the note at the top of this file.
-void CharacterController::setFollowParameters(const glm::mat4& desiredWorldBodyMatrix, float timeRemaining) {
+void CharacterController::setFollowParameters(const glm::mat4& desiredBodyMatrix, float timeRemaining) {
     _followTimeRemaining = timeRemaining;
-    // the desired pose comes from the HMD, in the domain; the character wants it in its own world
-    glm::quat rotation = glm::normalize(glm::quat_cast(desiredWorldBodyMatrix));
-    glm::vec3 position = glm::vec3(desiredWorldBodyMatrix[3]);
-    if (_world && !_world->isRoot()) {
-        rotation = _world->toLocal(rotation);
-        position = _world->toLocal(position);
-    }
+    // the desired pose comes from the HMD, already in the character's own world: in a frame, its coordinates
+    // (MyAvatar::FollowHelper::prePhysicsUpdate builds it with the sensor-to-local matrix, which is constant while the
+    // frame moves; converting a domain pose here with the frame's simulated transform paired two moments, vehicle master
+    // plan entry 11)
+    glm::quat rotation = glm::normalize(glm::quat_cast(desiredBodyMatrix));
+    glm::vec3 position = glm::vec3(desiredBodyMatrix[3]);
     _followDesiredRotation = rotation;
     _followDesiredPosition = position + rotation * _shapeLocalOffset;
 }
