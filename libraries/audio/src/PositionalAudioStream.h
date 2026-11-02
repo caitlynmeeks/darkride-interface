@@ -54,6 +54,9 @@ public:
 
     virtual AudioStreamStats getAudioStreamStats() const override;
 
+    /// a position the mix can use: finite and within MAX_POSITION_COORDINATE of the origin on each axis
+    static bool isUsablePosition(const glm::vec3& position);
+
     void updateLastPopOutputLoudnessAndTrailingLoudness();
     float getLastPopOutputTrailingLoudness() const { return _lastPopOutputTrailingLoudness; }
     float getLastPopOutputLoudness() const { return _lastPopOutputLoudness; }

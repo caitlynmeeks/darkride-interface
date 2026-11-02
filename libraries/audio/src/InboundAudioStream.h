@@ -139,6 +139,11 @@ protected:
 
     /// writes silent frames to the buffer that may be dropped to reduce latency caused by the buffer
     virtual int writeDroppableSilentFrames(int silentFrames);
+
+    /// remakes the ring buffer for another frame size (a sender changing between mono and stereo) and forgets the frame
+    /// last popped, which was in the old buffer; at most once a second, since each change allocates. False when
+    /// refused: the stream keeps its frame size.
+    bool changeFrameSize(int numFrameSamples);
     
 protected:
 
@@ -147,6 +152,7 @@ protected:
 
     bool _lastPopSucceeded { false };
     AudioRingBuffer::ConstIterator _lastPopOutput;
+    quint64 _lastFrameSizeChange { 0 };   // usecs, 0 before the first change
     
     bool _dynamicJitterBufferEnabled { DEFAULT_DYNAMIC_JITTER_BUFFER_ENABLED };
     int _staticJitterBufferFrames { DEFAULT_STATIC_JITTER_FRAMES };

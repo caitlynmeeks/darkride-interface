@@ -147,7 +147,9 @@ int InboundAudioStream::parseData(ReceivedMessage& message) {
             // OnTime packet and this packet were lost. If we're using a codec this will 
             // also result in allowing the codec to interpolate lost data. Then
             // fall through to the "on time" logic to actually handle this packet
-            int packetsDropped = arrivalInfo._seqDiffFromExpected;
+            // (no more than the buffer keeps: frames past that would be dropped below, after decoding each one)
+            int packetsDropped = std::min(arrivalInfo._seqDiffFromExpected,
+                                          _desiredJitterBufferFrames + MAX_FRAMES_OVER_DESIRED);
             lostAudioData(packetsDropped);
 
             // fall through to OnTime case
@@ -234,6 +236,10 @@ int InboundAudioStream::parseData(ReceivedMessage& message) {
 int InboundAudioStream::parseStreamProperties(PacketType type, const QByteArray& packetAfterSeqNum, int& numAudioSamples) {
     if (type == PacketType::SilentAudioFrame) {
         quint16 numSilentSamples = 0;
+        if (packetAfterSeqNum.size() < (int)sizeof(quint16)) {
+            numAudioSamples = 0;
+            return packetAfterSeqNum.size();
+        }
         memcpy(&numSilentSamples, packetAfterSeqNum.constData(), sizeof(quint16));
         numAudioSamples = numSilentSamples;
         return sizeof(quint16);
@@ -242,6 +248,20 @@ int InboundAudioStream::parseStreamProperties(PacketType type, const QByteArray&
         numAudioSamples = AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL;
         return 0;
     }
+}
+
+bool InboundAudioStream::changeFrameSize(int numFrameSamples) {
+    const quint64 MIN_USECS_BETWEEN_FRAME_SIZE_CHANGES = USECS_PER_SECOND;
+    quint64 now = usecTimestampNow();
+    if (_lastFrameSizeChange != 0 && now - _lastFrameSizeChange < MIN_USECS_BETWEEN_FRAME_SIZE_CHANGES) {
+        return false;
+    }
+    _lastFrameSizeChange = now;
+
+    _ringBuffer.resizeForFrameSize(numFrameSamples);
+    _lastPopOutput = AudioRingBuffer::ConstIterator();
+    _lastPopSucceeded = false;
+    return true;
 }
 
 int InboundAudioStream::lostAudioData(int numPackets) {

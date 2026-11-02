@@ -174,7 +174,7 @@ void AudioMixerClientData::optionallyReplicatePacket(ReceivedMessage& message, c
 }
 
 void AudioMixerClientData::negotiateAudioFormat(ReceivedMessage& message, const SharedNodePointer& node) {
-    quint8 numberOfCodecs;
+    quint8 numberOfCodecs = 0;
     message.readPrimitive(&numberOfCodecs);
     std::vector<QString> codecs;
     for (auto i = 0; i < numberOfCodecs; i++) {
@@ -318,15 +318,21 @@ void AudioMixerClientData::parseRadiusIgnoreRequest(QSharedPointer<ReceivedMessa
 
 void AudioMixerClientData::parseSoloRequest(QSharedPointer<ReceivedMessage> message, const SharedNodePointer& node) {
 
-    uint8_t addToSolo;
+    uint8_t addToSolo = 0;
     message->readPrimitive(&addToSolo);
+
+    // each one is looked for in every frame's mix: each node at most once, and a world's worth of them at most
+    const size_t MAX_SOLOED_NODES = 256;
 
     while (message->getBytesLeftToRead()) {
         // parse out the UUID being soloed from the packet
         QUuid soloedUUID = QUuid::fromRfc4122(message->readWithoutCopy(NUM_BYTES_RFC4122_UUID));
 
         if (addToSolo) {
-            _soloedNodes.push_back(soloedUUID);
+            if (_soloedNodes.size() < MAX_SOLOED_NODES &&
+                std::find(_soloedNodes.begin(), _soloedNodes.end(), soloedUUID) == _soloedNodes.end()) {
+                _soloedNodes.push_back(soloedUUID);
+            }
         } else {
             auto it = std::remove(std::begin(_soloedNodes), std::end(_soloedNodes), soloedUUID);
             _soloedNodes.erase(it, std::end(_soloedNodes));
@@ -420,13 +426,13 @@ bool AudioMixerClientData::containsValidPosition(ReceivedMessage& message) const
             break;
     }
 
-    glm::vec3 peekPosition;
+    glm::vec3 peekPosition { 0.0f };
     message.readPrimitive(&peekPosition);
 
     // reset the position the message was at before we were called
     message.seek(posBefore);
 
-    if (glm::any(glm::isnan(peekPosition))) {
+    if (!PositionalAudioStream::isUsablePosition(peekPosition)) {
         return false;
     }
 
@@ -465,11 +471,11 @@ void AudioMixerClientData::processStreamPacket(ReceivedMessage& message, Concurr
             // determine if the stream is stereo or not
             bool isStereo;
             if (packetType == PacketType::SilentAudioFrame || packetType == PacketType::ReplicatedSilentAudioFrame) {
-                SilentSamplesBytes numSilentSamples;
+                SilentSamplesBytes numSilentSamples = 0;
                 message.readPrimitive(&numSilentSamples);
                 isStereo = numSilentSamples == AudioConstants::NETWORK_FRAME_SAMPLES_STEREO;
             } else {
-                ChannelFlag channelFlag;
+                ChannelFlag channelFlag = 0;
                 message.readPrimitive(&channelFlag);
                 isStereo = channelFlag == 1;
             }
@@ -504,12 +510,21 @@ void AudioMixerClientData::processStreamPacket(ReceivedMessage& message, Concurr
 
         QUuid streamIdentifier = QUuid::fromRfc4122(message.readWithoutCopy(NUM_BYTES_RFC4122_UUID));
 
+        // the null identifier is the microphone stream's
+        if (streamIdentifier.isNull()) {
+            return;
+        }
+
         auto streamIt = std::find_if(_audioStreams.begin(), _audioStreams.end(), [&streamIdentifier](const SharedStreamPointer& stream) {
             return stream->getStreamIdentifier() == streamIdentifier;
         });
 
         if (streamIt == _audioStreams.end()) {
-            bool isStereo;
+            if (!makeRoomForInjector()) {
+                return;
+            }
+
+            bool isStereo = false;
             message.readPrimitive(&isStereo);
 
             // we don't have this injected stream yet, so add it
@@ -577,8 +592,44 @@ int AudioMixerClientData::checkBuffersBeforeFrameSend() {
     return (int)_audioStreams.size();
 }
 
+bool AudioMixerClientData::makeRoomForInjector() {
+    // an app plays at most 40 sounds at once (AudioInjectorManager), and each sends a stop when it ends; past this, a
+    // new sound takes the place of one that has gone quiet (its stop lost), or isn't mixed
+    const int MAX_INJECTOR_STREAMS = 64;
+    const int MIN_QUIET_FRAMES_TO_REPLACE = 50;   // half a second
+
+    int numInjectors = 0;
+    auto quietest = _audioStreams.end();
+    for (auto it = _audioStreams.begin(); it != _audioStreams.end(); ++it) {
+        if ((*it)->getType() == PositionalAudioStream::Injector) {
+            ++numInjectors;
+            if (quietest == _audioStreams.end() ||
+                (*it)->getConsecutiveNotMixedCount() > (*quietest)->getConsecutiveNotMixedCount()) {
+                quietest = it;
+            }
+        }
+    }
+    if (numInjectors < MAX_INJECTOR_STREAMS) {
+        return true;
+    }
+    if (quietest == _audioStreams.end() || (*quietest)->getConsecutiveNotMixedCount() < MIN_QUIET_FRAMES_TO_REPLACE) {
+        return false;
+    }
+
+    // as when its stop arrives
+    QUuid streamID = (*quietest)->getStreamIdentifier();
+    _audioStreams.erase(quietest);
+    emit injectorStreamFinished(streamID);
+    return true;
+}
+
 void AudioMixerClientData::parseStopInjectorPacket(QSharedPointer<ReceivedMessage> packet) {
     auto streamID = QUuid::fromRfc4122(packet->readWithoutCopy(NUM_BYTES_RFC4122_UUID));
+
+    // the null identifier is the microphone stream's
+    if (streamID.isNull()) {
+        return;
+    }
 
     auto it = std::find_if(std::begin(_audioStreams), std::end(_audioStreams), [&](auto stream) {
         return streamID == stream->getStreamIdentifier();

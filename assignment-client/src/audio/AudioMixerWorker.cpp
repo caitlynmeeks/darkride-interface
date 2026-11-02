@@ -744,8 +744,11 @@ float computeGain(float masterAvatarGain,
     } else if (streamToAdd.getType() == PositionalAudioStream::Microphone) {
         glm::vec3 rotatedListenerPosition = glm::inverse(streamToAdd.getOrientation()) * relativePosition;
 
-        // source directivity is based on angle of emission, in local coordinates
-        glm::vec3 direction = glm::normalize(rotatedListenerPosition);
+        // source directivity is based on angle of emission, in local coordinates (a listener at the source is in front)
+        float rotatedListenerDistance2 = glm::dot(rotatedListenerPosition, rotatedListenerPosition);
+        const float MIN_DIRECTION_LENGTH2 = 1.0e-30f;
+        glm::vec3 direction = rotatedListenerDistance2 > MIN_DIRECTION_LENGTH2
+            ? rotatedListenerPosition * (1.0f / sqrtf(rotatedListenerDistance2)) : glm::vec3(0.0f, 0.0f, -1.0f);
         float angleOfDelivery = fastAcosf(glm::clamp(-direction.z, -1.0f, 1.0f));   // UNIT_NEG_Z is "forward"
 
         const float MAX_OFF_AXIS_ATTENUATION = 0.2f;

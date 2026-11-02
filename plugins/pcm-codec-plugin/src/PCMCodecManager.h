@@ -12,6 +12,8 @@
 #ifndef hifi__PCMCodecManager_h
 #define hifi__PCMCodecManager_h
 
+#include <QtCore/QtEndian>
+
 #include <plugins/CodecPlugin.h>
 
 class PCMCodec : public CodecPlugin, public Encoder, public Decoder {
@@ -77,6 +79,14 @@ public:
     }
 
     virtual void decode(const QByteArray& encodedBuffer, QByteArray& decodedBuffer) override {
+        // qUncompress allocates the size the data's first 4 bytes (big-endian) say before it starts: a frame is at
+        // most 960 bytes (240 stereo samples), so anything that says more than a few frames isn't decoded
+        const quint32 MAX_DECODED_BYTES = 4 * 960;
+        if (encodedBuffer.size() < 4 ||
+            qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(encodedBuffer.constData())) > MAX_DECODED_BYTES) {
+            decodedBuffer.clear();
+            return;
+        }
         decodedBuffer = qUncompress(encodedBuffer);
     }
 
