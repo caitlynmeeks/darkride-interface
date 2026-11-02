@@ -17,11 +17,15 @@ const int GZIP_WINDOWS_BIT = 31;
 const int GZIP_CHUNK_SIZE = 4096;
 const int DEFAULT_MEM_LEVEL = 8;
 
-bool gunzip(QByteArray source, QByteArray &destination) {
+bool gunzip(QByteArray source, QByteArray &destination, int maxSize) {
     destination.clear();
     if (source.length() == 0) {
         return true;
     }
+    if (maxSize <= 0) {
+        return false;
+    }
+    const int limit = qMin(maxSize, GZIP_MAX_SIZE_CEILING);
 
     z_stream strm;
     strm.zalloc = Z_NULL;
@@ -66,10 +70,17 @@ bool gunzip(QByteArray source, QByteArray &destination) {
                 case Z_MEM_ERROR:
                 case Z_STREAM_ERROR:
                     inflateEnd(&strm);
+                    destination.clear();
                     return false;
             }
 
             int available = (GZIP_CHUNK_SIZE - strm.avail_out);
+            if (available > limit - destination.size()) {
+                // the content is larger than the limit: refused
+                inflateEnd(&strm);
+                destination.clear();
+                return false;
+            }
             if (available > 0) {
                 destination.append((char*)out, available);
             }
@@ -85,7 +96,11 @@ bool gunzip(QByteArray source, QByteArray &destination) {
     }
 
     inflateEnd(&strm);
-    return status == Z_STREAM_END;
+    if (status != Z_STREAM_END) {
+        destination.clear();   // a stream that ends early
+        return false;
+    }
+    return true;
 }
 
 bool gzip(QByteArray source, QByteArray &destination, int compressionLevel) {
