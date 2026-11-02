@@ -21,6 +21,8 @@
 #include <QtCore/QtEndian>
 #include <QtCore/QFileInfo>
 
+#include <zlib.h>
+
 #include <shared/NsightHelpers.h>
 #include <hfm/ModelFormatLogging.h>
 
@@ -56,16 +58,33 @@ QDebug operator<<(QDebug debug, const FBXProperty& property) {
     return debug << property.scalar();
 }
 
-template<class T>
-int streamSize() {
-    return sizeof(T);
+namespace {
+
+// the largest array taken from a file, in bytes once read; real models stay far below it
+const qint64 MAX_FBX_ARRAY_BYTES = 1024LL * 1024 * 1024;
+// zlib's deflate expands data by at most about 1032 to 1, so a compressed array can't hold more than this per byte
+const qint64 MAX_DEFLATE_RATIO = 1032;
+
+// inflates a zlib stream into exactly outSize bytes; false when the data is corrupt, ends early or holds more
+bool inflateExactly(const char* in, qint64 inSize, char* out, qint64 outSize) {
+    z_stream stream {};
+    if (inflateInit(&stream) != Z_OK) {
+        return false;
+    }
+    stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(in));
+    stream.avail_in = static_cast<uInt>(inSize);
+    stream.next_out = reinterpret_cast<Bytef*>(out);
+    stream.avail_out = static_cast<uInt>(outSize);
+    const int result = inflate(&stream, Z_FINISH);
+    const bool complete = result == Z_STREAM_END && stream.total_out == static_cast<uLong>(outSize);
+    inflateEnd(&stream);
+    return complete;
 }
 
-template<bool>
-int streamSize() {
-    return 1;
-}
+} // namespace
 
+// A binary array: its element count, its encoding (0 plain, 1 zlib) and its length in the file, then the data. Every
+// size is checked against the bytes the file still holds before anything is allocated or read.
 template<class T>
 FBXProperty readBinaryArray(QDataStream& in, int& position) {
     quint32 arrayLength;
@@ -73,67 +92,52 @@ FBXProperty readBinaryArray(QDataStream& in, int& position) {
     quint32 compressedLength;
 
     in >> arrayLength;
-    if (arrayLength > std::numeric_limits<int>::max() / sizeof(T)) { // Upcoming byte containers are limited to max signed int
-        throw QString("FBX file most likely corrupt: binary data exceeds data limits");
-    }
     in >> encoding;
     in >> compressedLength;
-    if (compressedLength > std::numeric_limits<int>::max() / sizeof(T)) { // Upcoming byte containers are limited to max signed int
-        throw QString("FBX file most likely corrupt: compressed binary data exceeds data limits");
+    if (in.status() != QDataStream::Ok) {
+        throw QString("FBX file most likely corrupt: binary array header cut short");
     }
     position += sizeof(quint32) * 3;
 
+    const bool compressed = (encoding == FBX_PROPERTY_COMPRESSED_FLAG);
+    const qint64 arrayBytes = static_cast<qint64>(arrayLength) * static_cast<qint64>(sizeof(T));
+    const qint64 lengthInFile = compressed ? static_cast<qint64>(compressedLength) : arrayBytes;
+    if (arrayBytes > MAX_FBX_ARRAY_BYTES || lengthInFile > in.device()->bytesAvailable() ||
+        (compressed && arrayBytes > lengthInFile * MAX_DEFLATE_RATIO)) {
+        throw QString("FBX file most likely corrupt: binary array larger than the file allows");
+    }
+
+    hifi::ByteArray fileData(static_cast<int>(lengthInFile), Qt::Uninitialized);
+    if (in.readRawData(fileData.data(), fileData.size()) != fileData.size()) {
+        throw QString("FBX file most likely corrupt: binary array cut short");
+    }
+    position += static_cast<int>(lengthInFile);
+
+    hifi::ByteArray arrayData;
+    if (compressed && arrayBytes > 0) {
+        arrayData = hifi::ByteArray(static_cast<int>(arrayBytes), Qt::Uninitialized);
+        if (!inflateExactly(fileData.constData(), fileData.size(), arrayData.data(), arrayData.size())) {
+            throw QString("corrupt fbx file");
+        }
+    } else if (!compressed) {
+        arrayData = fileData;
+    }
+
     QVector<T> values;
     if ((int)QSysInfo::ByteOrder == (int)in.byteOrder()) {
-        values.resize(arrayLength);
-        hifi::ByteArray arrayData;
-        if (encoding == FBX_PROPERTY_COMPRESSED_FLAG) {
-            // preface encoded data with uncompressed length
-            hifi::ByteArray compressed(sizeof(quint32) + compressedLength, 0);
-            *((quint32*)compressed.data()) = qToBigEndian<quint32>(arrayLength * sizeof(T));
-            in.readRawData(compressed.data() + sizeof(quint32), compressedLength);
-            position += compressedLength;
-            arrayData = qUncompress(compressed);
-            if (arrayData.isEmpty() ||
-                (unsigned int)arrayData.size() != (sizeof(T) * arrayLength)) { // answers empty byte array if corrupt
-                throw QString("corrupt fbx file");
-            }
-        } else {
-            arrayData.resize(sizeof(T) * arrayLength);
-            position += sizeof(T) * arrayLength;
-            in.readRawData(arrayData.data(), arrayData.size());
-        }
-
+        values.resize(static_cast<int>(arrayLength));
         if (arrayData.size() > 0) {
-            memcpy(&values[0], arrayData.constData(), arrayData.size());
+            memcpy(values.data(), arrayData.constData(), arrayData.size());
         }
     } else {
-        values.reserve(arrayLength);
-        if (encoding == FBX_PROPERTY_COMPRESSED_FLAG) {
-            // preface encoded data with uncompressed length
-            hifi::ByteArray compressed(sizeof(quint32) + compressedLength, 0);
-            *((quint32*)compressed.data()) = qToBigEndian<quint32>(arrayLength * sizeof(T));
-            in.readRawData(compressed.data() + sizeof(quint32), compressedLength);
-            position += compressedLength;
-            hifi::ByteArray uncompressed = qUncompress(compressed);
-            if (uncompressed.isEmpty()) { // answers empty byte array if corrupt
-                throw QString("corrupt fbx file");
-            }
-            QDataStream uncompressedIn(uncompressed);
-            uncompressedIn.setByteOrder(QDataStream::LittleEndian);
-            uncompressedIn.setVersion(QDataStream::Qt_4_5); // for single/double precision switch
-            for (quint32 i = 0; i < arrayLength; i++) {
-                T value;
-                uncompressedIn >> value;
-                values.append(value);
-            }
-        } else {
-            for (quint32 i = 0; i < arrayLength; i++) {
-                T value;
-                in >> value;
-                position += streamSize<T>();
-                values.append(value);
-            }
+        values.reserve(static_cast<int>(arrayLength));
+        QDataStream arrayIn(arrayData);
+        arrayIn.setByteOrder(QDataStream::LittleEndian);
+        arrayIn.setVersion(QDataStream::Qt_4_5); // for single/double precision switch
+        for (quint32 i = 0; i < arrayLength; i++) {
+            T value;
+            arrayIn >> value;
+            values.append(value);
         }
     }
     return FBXProperty(std::move(values));
@@ -199,6 +203,9 @@ FBXProperty parseBinaryFBXProperty(QDataStream& in, int& position) {
         case 'R': {
             quint32 length;
             in >> length;
+            if (in.status() != QDataStream::Ok || static_cast<qint64>(length) > in.device()->bytesAvailable()) {
+                throw QString("FBX file most likely corrupt: string or raw data larger than the file allows");
+            }
             position += sizeof(quint32) + length;
             return QVariant::fromValue(in.device()->read(length));
         }
