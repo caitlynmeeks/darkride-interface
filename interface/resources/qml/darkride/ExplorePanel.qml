@@ -193,15 +193,15 @@ Page {
                 .concat(rest.filter(function (w) { return people(w) === 0; }));
         }
 
-        // a world's line under its name: who's there, or what Hop will do
+        // a world's line under its name: who's there, or what the visitor must do first. Nothing about an empty world
+        // (Caity 11-01, "quiet explore"): its picture and name invite; saying nobody's there makes Explore look deserted
         function summary(world, list) {
             var instances = world.instances || null;
             var here = people(world);
             if (!compatible(world.protocol)) return "Runs another version of Darkride.";
             if (here > 0) return here + (here === 1 ? " person here" : " people here");
-            if (list.length > 0) return "Open now. Be the first one in.";
-            if (instances && instances.canStart) return "Hop opens a new instance for you.";
-            return instances ? "Sign in to open this world." : "Nobody's here right now.";
+            if (list.length === 0 && instances && !instances.canStart) return "Sign in to open this world.";
+            return "";
         }
 
         function compatible(protocol) {
