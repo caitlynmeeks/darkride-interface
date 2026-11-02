@@ -576,6 +576,8 @@ public:
     bool isDomainEntity() const { return _hostType == entity::HostType::DOMAIN; } // CPM look
     bool isAvatarEntity() const { return _hostType == entity::HostType::AVATAR; }  // CPM look
     bool isMyAvatarEntity() const;  
+    // an avatar entity worn by the given avatar (its session id); never one of this computer's own avatar's
+    bool isAvatarEntityOf(const QUuid& avatarID) const;
     bool isLocalEntity() const { return _hostType == entity::HostType::LOCAL; }  // CPM look
 
     entity::HostType getEntityHostType() const { return _hostType; }
