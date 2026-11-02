@@ -148,16 +148,22 @@ struct InstanceLimits {
     int maxAll;
 };
 const InstanceLimits AVATAR_ENTITY_LIMITS { 256, 1024 };   // the app wears at most 128 (MAX_NUM_AVATAR_ENTITIES)
-const InstanceLimits GRAB_LIMITS { 64, 1024 };             // two hands and a few far grabs; each grab is a new id
+const InstanceLimits GRAB_LIMITS { 64, 4096 };             // two hands and a few far grabs; each grab is a new id, so a
+                                                           // long game session lists thousands (performance, avatars)
 const InstanceLimits MENU_PARAMETERS_LIMITS { 4, 4 };      // the app has one
 
-/// Why a new instance id isn't taken (empty when it is), given how many of its kind are live and listed. A delete
-/// for an id not listed yet is listed too, so it counts toward all but not toward live.
+/// Why a new instance id isn't taken (empty when it is), given how many of its kind are live and listed. An app
+/// deletes only ids it added, so a delete for an id not listed is refused: there is nothing of it to delete on anyone's
+/// app (an add the mixer refused was never passed on; after a mixer change the app sends its live ones again).
 inline QString newInstanceRefusal(int live, int all, bool isDelete, const InstanceLimits& limits) {
-    if (all >= limits.maxAll) {
-        return QStringLiteral("more than %1 ids of one kind").arg(limits.maxAll);
+    if (isDelete) {
+        return QStringLiteral("a delete for an id it never added");
     }
-    if (!isDelete && live >= limits.maxLive) {
+    if (all >= limits.maxAll) {
+        return QStringLiteral("more than %1 ids of one kind; new ones aren't passed on until this avatar reconnects")
+            .arg(limits.maxAll);
+    }
+    if (live >= limits.maxLive) {
         return QStringLiteral("more than %1 of one kind at once").arg(limits.maxLive);
     }
     return QString();

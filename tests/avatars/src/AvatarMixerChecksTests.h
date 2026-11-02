@@ -44,7 +44,8 @@ private slots:
 
     void newIdsWithinTheLimitsAreTaken();
     void tooManyLiveIdsAreRefused();
-    void aDeleteDoesntCountAsLive();
+    void aDeleteForAnUnlistedIdIsRefused();
+    void theCapSaysToReconnect();
     void tooManyListedIdsAreRefused();
     void aBurstOfNewIdsIsTakenThenTheRate();
     void theRateComesBackNoHigherThanTheBurst();
