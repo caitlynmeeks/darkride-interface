@@ -38,6 +38,8 @@ private slots:
     void testWorldThread();
     void testWorldSignalDeliveries();
     void testWorldChangeErase();
+    void testReplacedEngineIsFreed();
+    void testWorldMappingsGoWithEngine();
     void cleanupTestCase();
 
 private:

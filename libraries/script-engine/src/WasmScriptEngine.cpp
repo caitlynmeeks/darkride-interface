@@ -829,6 +829,7 @@ void WasmScriptEngine::stopEntityScript(const EntityItemID& entityID, const QStr
 
 void WasmScriptEngine::stop(bool marshal) {
     _isStopping = true;
+    removeWorldMappingsOnStop();
     if (marshal) {
         QMetaObject::invokeMethod(this, "stop");
         return;

@@ -115,6 +115,9 @@ namespace controller {
 
         void loadDefaultMapping(uint16 deviceID);
         void enableMapping(const QString& mappingName, bool enable = true);
+        /// The mappings a world's scripts made (Mapping::madeByWorld) go, disabled first: the world was left, or its
+        /// scripts' engine stopped. Returns how many went.
+        int removeWorldMappings();
 
         void setInputCalibrationData(const InputCalibrationData& data) { inputCalibrationData = data; }
         const InputCalibrationData& getInputCalibrationData() { return inputCalibrationData; }

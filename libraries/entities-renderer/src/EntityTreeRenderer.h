@@ -292,6 +292,8 @@ private:
     render::ItemID renderableIdForEntity(const EntityItemPointer& entity) const { return renderableIdForEntityId(entity->getID()); }
 
     void resetEntitiesScriptEngine();
+    void replaceEntitiesScriptEngine();
+    void restartKeptEntityScripts();
 
     void findBestZoneAndMaybeContainingEntities(QSet<EntityItemID>& entitiesContainingAvatar);
 
@@ -324,6 +326,7 @@ private:
 
     bool _wantScripts;
     ScriptEnginePointer _entitiesScriptEngine;
+    int _entitiesEnginesStopping { 0 };  // engines of worlds left that haven't stopped yet (replaceEntitiesScriptEngine)
 
     void playEntityCollisionSound(const EntityItemPointer& entity, const Collision& collision);
 
@@ -351,8 +354,6 @@ private:
     unsigned int _mouseRayPickID;
     std::function<RayToEntityIntersectionResult(unsigned int)> _getPrevRayPickResultOperator;
     std::function<void(unsigned int, bool)> _setPrecisionPickingOperator;
-
-    bool _mouseAndPreloadSignalHandlersConnected { false };
 
     class LayeredZone {
     public:

@@ -638,11 +638,6 @@ public:
      */
     Q_INVOKABLE virtual void unloadAllEntityScripts(bool blockingCall = false);
 
-    // Unloads the client entity scripts whose entities are no longer in the tree, on this engine's thread, after
-    // whatever loads are queued before it: a world left while its scripts were still being loaded (EntityTreeRenderer
-    // asks for it once the world's entities are erased).
-    Q_INVOKABLE void unloadEntityScriptsOfGoneEntities();
-
     /**jsdoc
      * Calls a method in an entity script.
      * @function Script.callEntityScriptMethod
@@ -943,6 +938,9 @@ signals:
 
 protected:
     void init();
+    /// When the client's entities engine stops (its world left, the content reloaded, a quit): the controller mappings
+    /// the world's scripts made go with it. They route to its functions, or move the visitor.
+    void removeWorldMappingsOnStop();
     /// From another thread, the entity scripts unloaded on the engine's thread and waited for here, while this
     /// thread's objects keep answering the unload handlers' blocking calls (waitServingCalls). A blocking invocation
     /// let the two threads wait on each other: a seated avatar's sit script asks MyAvatar for its animation roles in

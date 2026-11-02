@@ -810,6 +810,24 @@ void UserInputMapper::enableMapping(const QString& mappingName, bool enable) {
     }
 }
 
+int UserInputMapper::removeWorldMappings() {
+    Locker locker(_lock);
+    int removed = 0;
+    for (auto it = _mappingsByName.begin(); it != _mappingsByName.end();) {
+        if (it->second && it->second->madeByWorld) {
+            disableMapping(it->second);
+            it = _mappingsByName.erase(it);
+            removed++;
+        } else {
+            ++it;
+        }
+    }
+    if (removed > 0) {
+        qCDebug(controllers) << "Removed the" << removed << "mappings a world's scripts made";
+    }
+    return removed;
+}
+
 AxisValue UserInputMapper::getValue(const Endpoint::Pointer& endpoint, bool peek) {
     return peek ? endpoint->peek() : endpoint->value();
 }

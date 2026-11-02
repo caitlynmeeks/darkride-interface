@@ -72,6 +72,7 @@
 #include <UUID.h>
 
 #include <controllers/ScriptingInterface.h>
+#include <controllers/UserInputMapper.h>
 #include <AnimationObject.h>
 
 #include "ArrayBufferViewClass.h"
@@ -1667,8 +1668,15 @@ void ScriptEngine::stopAllTimersForEntityScript(const EntityItemID& entityID) {
 
 }
 
+void ScriptEngine::removeWorldMappingsOnStop() {
+    if (_context == ENTITY_CLIENT_SCRIPT && DependencyManager::isSet<controller::UserInputMapper>()) {
+        DependencyManager::get<controller::UserInputMapper>()->removeWorldMappings();
+    }
+}
+
 void ScriptEngine::stop(bool marshal) {
     _isStopping = true; // this can be done on any thread
+    removeWorldMappingsOnStop();
 
     if (marshal) {
         QMetaObject::invokeMethod(this, "stop");
@@ -2969,27 +2977,6 @@ void ScriptEngine::unloadEntityScript(const EntityItemID& entityID, bool shouldR
 
         stopAllTimersForEntityScript(entityID);
     }
-}
-
-void ScriptEngine::unloadEntityScriptsOfGoneEntities() {
-    if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "unloadEntityScriptsOfGoneEntities", Qt::QueuedConnection);
-        return;
-    }
-    QList<EntityItemID> entityIDs;
-    {
-        QReadLocker locker { &_entityScriptsLock };
-        entityIDs = _entityScripts.keys();
-    }
-    int unloaded = 0;
-    for (const auto& entityID : entityIDs) {
-        if (entityIsGone(_context, entityID)) {
-            unloadEntityScript(entityID, true);
-            unloaded++;
-        }
-    }
-    qCDebug(scriptengine) << "after a world was left: of" << entityIDs.size() << "entity scripts listed," << unloaded
-                         << "were of entities that are gone, and are unloaded";
 }
 
 QList<EntityItemID> ScriptEngine::getListOfEntityScriptIDs() {

@@ -193,6 +193,9 @@ public:
     bool isStopped() const { return _isStopped; }
 
     void addScriptEngine(ScriptEnginePointer);
+    /// For an engine its maker runs itself (an entities engine) rather than through loadScript: the engine leaves this
+    /// list when it finishes, as a loaded script's does, so it is freed once nothing else holds it.
+    void releaseWhenFinished(ScriptEnginePointer engine);
 
 signals:
     /// Once, at the first start of an app that has this review: the saved scripts from the network that would start

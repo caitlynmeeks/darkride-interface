@@ -91,6 +91,17 @@ QVector<EntityItemID> EntityTree::getWorldsAvatarEntityIDs() const {
     return ids;
 }
 
+QVector<EntityItemID> EntityTree::getKeptEntityIDsWithScripts() const {
+    QVector<EntityItemID> ids;
+    QReadLocker locker(&_entityMapLock);
+    for (const auto& entity : _entityMap) {
+        if (entity && entity->isKeptOnWorldChange() && !entity->getScript().isEmpty()) {
+            ids.push_back(entity->getEntityItemID());
+        }
+    }
+    return ids;
+}
+
 void EntityTree::eraseDomainAndNonOwnedEntities() {
     emit clearingEntities();
 

@@ -33,6 +33,7 @@
 #include <QProcessEnvironment>
 #include <QScriptSyntaxCheckResult>
 #include <QThreadPool>
+#include <QTimer>
 #include <QSet>
 #include <QStringList>
 
@@ -183,58 +184,114 @@ int EntityTreeRenderer::_entitiesScriptEngineCount = 0;
 void EntityTreeRenderer::resetEntitiesScriptEngine() {
     _entitiesScriptEngine = scriptEngineFactory(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT,
                                                 QString("about:Entities %1").arg(++_entitiesScriptEngineCount));
-    DependencyManager::get<ScriptEngines>()->runScriptInitializers(_entitiesScriptEngine);
+    ScriptEngine* engine = _entitiesScriptEngine.data();
+    auto scriptEngines = DependencyManager::get<ScriptEngines>();
+    // the engines' list is all that holds an entities engine once it is replaced (a world change, a reload): it leaves
+    // the list when it finishes, so it is freed and its thread ends
+    scriptEngines->releaseWhenFinished(_entitiesScriptEngine);
+    scriptEngines->runScriptInitializers(_entitiesScriptEngine);
     _entitiesScriptEngine->runInThread();
     auto entitiesScriptEngineProvider = qSharedPointerCast<EntitiesScriptEngineProvider>(_entitiesScriptEngine);
     auto entityScriptingInterface = DependencyManager::get<EntityScriptingInterface>();
     entityScriptingInterface->setEntitiesScriptEngine(entitiesScriptEngineProvider);
 
-    connect(_entitiesScriptEngine.data(), &ScriptEngine::entityScriptPreloadFinished, [&](const EntityItemID& entityID) {
+    connect(engine, &ScriptEngine::entityScriptPreloadFinished, [&](const EntityItemID& entityID) {
         EntityItemPointer entity = getTree()->findEntityByID(entityID);
         if (entity) {
             entity->setScriptHasFinishedPreload(true);
         }
     });
 
-    // Connect mouse events to entity script callbacks
-    if (!_mouseAndPreloadSignalHandlersConnected) {
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::mousePressOnEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "mousePressOnEntity", event);
+    // the pointer events reach this engine's entity scripts through connections of this engine's own, which go with
+    // it; an engine being stopped (a world left) gets none: its scripts are unloaded, the next world's are in its
+    // successor
+    auto toEntityScripts = [&](void (EntityScriptingInterface::*signal)(const EntityItemID&, const PointerEvent&),
+                               QStringList methods) {
+        connect(entityScriptingInterface.data(), signal, engine, [engine, methods](const EntityItemID& entityID, const PointerEvent& event) {
+            if (engine->isStopping()) {
+                return;
+            }
+            for (const auto& method : methods) {
+                engine->callEntityScriptMethod(entityID, method, event);
+            }
         });
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::mouseDoublePressOnEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "mouseDoublePressOnEntity", event);
-        });
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::mouseMoveOnEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "mouseMoveOnEntity", event);
-            // FIXME: this is a duplicate of mouseMoveOnEntity, but it seems like some scripts might use this naming
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "mouseMoveEvent", event);
-        });
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::mouseReleaseOnEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "mouseReleaseOnEntity", event);
-        });
+    };
+    toEntityScripts(&EntityScriptingInterface::mousePressOnEntity, { "mousePressOnEntity" });
+    toEntityScripts(&EntityScriptingInterface::mouseDoublePressOnEntity, { "mouseDoublePressOnEntity" });
+    // FIXME: mouseMoveEvent is a duplicate of mouseMoveOnEntity, but it seems like some scripts might use this naming
+    toEntityScripts(&EntityScriptingInterface::mouseMoveOnEntity, { "mouseMoveOnEntity", "mouseMoveEvent" });
+    toEntityScripts(&EntityScriptingInterface::mouseReleaseOnEntity, { "mouseReleaseOnEntity" });
+    toEntityScripts(&EntityScriptingInterface::clickDownOnEntity, { "clickDownOnEntity" });
+    toEntityScripts(&EntityScriptingInterface::holdingClickOnEntity, { "holdingClickOnEntity" });
+    toEntityScripts(&EntityScriptingInterface::clickReleaseOnEntity, { "clickReleaseOnEntity" });
+    toEntityScripts(&EntityScriptingInterface::hoverEnterEntity, { "hoverEnterEntity" });
+    toEntityScripts(&EntityScriptingInterface::hoverOverEntity, { "hoverOverEntity" });
+    toEntityScripts(&EntityScriptingInterface::hoverLeaveEntity, { "hoverLeaveEntity" });
+}
 
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::clickDownOnEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "clickDownOnEntity", event);
-        });
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::holdingClickOnEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "holdingClickOnEntity", event);
-        });
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::clickReleaseOnEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "clickReleaseOnEntity", event);
-        });
-
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::hoverEnterEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "hoverEnterEntity", event);
-        });
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::hoverOverEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "hoverOverEntity", event);
-        });
-        connect(entityScriptingInterface.data(), &EntityScriptingInterface::hoverLeaveEntity, _entitiesScriptEngine.data(), [&](const EntityItemID& entityID, const PointerEvent& event) {
-            _entitiesScriptEngine->callEntityScriptMethod(entityID, "hoverLeaveEntity", event);
-        });
-
-        _mouseAndPreloadSignalHandlersConnected = true;
+// Each world's entity scripts run in an entities engine of the world's own, which goes with the world, with all it
+// holds (globals, built-ins, signal handlers, timers). Once the world's entities are erased, the visitor's own entity
+// scripts (on the kept local and avatar entities) are unloaded too, the engine is stopped and a new one made for the
+// next world, and the visitor's scripts start again in the new one once the old one has stopped, so no code of the
+// world left runs beside them. Nothing waits here beyond the unload. Each engine is freed once it has stopped
+// (ScriptEngines::releaseWhenFinished).
+void EntityTreeRenderer::replaceEntitiesScriptEngine() {
+    if (!_wantScripts || !_entitiesScriptEngine || _shuttingDown) {
+        return;
     }
+    ScriptEnginePointer old = _entitiesScriptEngine;
+    old->unloadAllEntityScripts(true);
+    if (auto tree = getTree()) {
+        for (const auto& entityID : tree->getKeptEntityIDsWithScripts()) {
+            if (auto entity = tree->findEntityByEntityItemID(entityID)) {
+                // loaded again, through the preload, by the new engine; not inside anything until its script has
+                // preloaded there, so the next inside check gives it its enterEntity again
+                entity->scriptHasUnloaded();
+            }
+            _currentEntitiesInside.remove(entityID);
+        }
+    }
+
+    resetEntitiesScriptEngine();
+    // they start once every engine of a world left has stopped (two quick world changes: when both have), in the
+    // engine made last
+    _entitiesEnginesStopping++;
+    connect(old.data(), &ScriptEngine::doneRunning, this, [this] {
+        if (--_entitiesEnginesStopping == 0 && !_shuttingDown && _entitiesScriptEngine) {
+            restartKeptEntityScripts();
+        }
+    }, Qt::QueuedConnection);
+    old->stop();
+
+    // an engine still running a second later is stuck in a script's call: it is interrupted (the WebAssembly engine's
+    // stop interrupts a running call; QtScript's evaluation is aborted, as at a quit)
+    static const int OLD_ENGINE_STOP_TIME_MS = 1000;
+    QWeakPointer<ScriptEngine> weakOld = old.toWeakRef();
+    QTimer::singleShot(OLD_ENGINE_STOP_TIME_MS, this, [weakOld] {
+        auto old = weakOld.toStrongRef();
+        if (old && old->isRunning()) {
+            qCWarning(entitiesrenderer) << "the entities engine of the world left is still running"
+                                        << OLD_ENGINE_STOP_TIME_MS << "ms after it was stopped; interrupting it:"
+                                        << old->getFilename();
+            old->stop();
+            if (old->isEvaluating()) {
+                old->abortEvaluation();
+            }
+        }
+    });
+}
+
+void EntityTreeRenderer::restartKeptEntityScripts() {
+    auto tree = getTree();
+    if (!tree) {
+        return;
+    }
+    auto ids = tree->getKeptEntityIDsWithScripts();
+    for (const auto& entityID : ids) {
+        checkAndCallPreload(entityID);
+    }
+    qCDebug(entitiesrenderer) << "the visitor's own entity scripts started in the new entities engine:" << ids.size();
+    forceRecheckEntities();
 }
 
 void EntityTreeRenderer::stopDomainAndNonOwnedEntities() {
@@ -311,11 +368,9 @@ void EntityTreeRenderer::clearDomainAndNonOwnedEntities() {
 
     OctreeProcessor::clearDomainAndNonOwnedEntities();
 
-    // the world's entities are erased now: a script that started on the script thread since the unloads above were
-    // asked for (a load queued before the world was left) is unloaded after them
-    if (_entitiesScriptEngine) {
-        _entitiesScriptEngine->unloadEntityScriptsOfGoneEntities();
-    }
+    // the world's entities are erased now: its scripts' engine goes too (a script that started on the script thread
+    // since the unloads above were asked for, a load queued before the world was left, goes with it)
+    replaceEntitiesScriptEngine();
 }
 
 void EntityTreeRenderer::clear() {

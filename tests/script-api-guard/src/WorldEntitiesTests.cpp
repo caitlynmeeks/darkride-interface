@@ -25,6 +25,9 @@
 #include <PointerEvent.h>
 #include <ScriptApiPolicy.h>
 #include <ScriptEngine.h>
+#include <ScriptEngines.h>
+#include <controllers/UserInputMapper.h>
+#include <WasmScriptEngine.h>
 #include <ScriptCaller.h>
 #include <SpatialParentFinder.h>
 
@@ -457,6 +460,16 @@ void WorldEntitiesTests::testWorldChangeErase() {
     QVERIFY(!find(_tree, worldHat)->isKeptOnWorldChange());
     QVERIFY(!find(_tree, _domain)->isKeptOnWorldChange());
 
+    // the scripts started again in the next world's entities engine: the visitor's own, never the world's
+    const QString SCRIPT = "https://example.invalid/entity.js";
+    for (const auto& id : { _visitorLocal, visitorHat, _worldLocal, worldHat, _domain }) {
+        find(_tree, id)->setScript(SCRIPT);
+    }
+    auto keptScripts = _tree->getKeptEntityIDsWithScripts();
+    QCOMPARE(keptScripts.size(), 2);
+    QVERIFY(keptScripts.contains(EntityItemID(_visitorLocal)));
+    QVERIFY(keptScripts.contains(EntityItemID(visitorHat)));
+
     _tree->eraseDomainAndNonOwnedEntities();
     for (const auto& gone : { _domain, _avatar, _worldLocal, worldHat }) {
         QVERIFY2(!find(_tree, gone), qPrintable(gone.toString()));
@@ -465,6 +478,86 @@ void WorldEntitiesTests::testWorldChangeErase() {
         QVERIFY2(find(_tree, kept), qPrintable(kept.toString()));
     }
     QVERIFY(_tree->getWorldsAvatarEntityIDs().isEmpty());
+    keptScripts = _tree->getKeptEntityIDsWithScripts();
+    QCOMPARE(keptScripts.size(), 2);
+    QVERIFY(keptScripts.contains(EntityItemID(_visitorLocal)));
+    QVERIFY(keptScripts.contains(EntityItemID(visitorHat)));
+}
+
+void WorldEntitiesTests::testReplacedEngineIsFreed() {
+    // at a world change the entities engine is replaced (EntityTreeRenderer::replaceEntitiesScriptEngine): once it
+    // has finished, the engines' list lets go of it and it is freed, with whatever a world's scripts left in it
+    auto scriptEngines = DependencyManager::set<ScriptEngines>(ScriptEngine::CLIENT_SCRIPT);
+    auto makeEngine = [&](bool released) {
+        ScriptEnginePointer engine(new WasmScriptEngine(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT, "about:Entities test"),
+                                   &QObject::deleteLater);
+        scriptEngines->addScriptEngine(engine);
+        engine->setScriptEngines(scriptEngines);
+        if (released) {
+            scriptEngines->releaseWhenFinished(engine);
+        }
+        return engine;
+    };
+    ScriptEnginePointer released = makeEngine(true);
+    ScriptEnginePointer kept = makeEngine(false);
+    QWeakPointer<ScriptEngine> releasedWeak = released.toWeakRef();
+    QWeakPointer<ScriptEngine> keptWeak = kept.toWeakRef();
+
+    // as at the end of the engine's run
+    emit released->finished(released->getFilename(), released);
+    emit kept->finished(kept->getFilename(), kept);
+    released.clear();
+    kept.clear();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(releasedWeak.isNull());
+    // an engine its maker runs itself, not released: still held by the list (the leak before)
+    QVERIFY(!keptWeak.isNull());
+    DependencyManager::destroy<ScriptEngines>();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void WorldEntitiesTests::testWorldMappingsGoWithEngine() {
+    // a world's controller mappings go when the client's entities engine stops (its world left); the visitor's own
+    // stay, and a client script's engine stopping removes none
+    auto mapper = DependencyManager::set<controller::UserInputMapper>();
+    QVERIFY(mapper->newMapping("visitor's mapping"));
+    mapper->enableMapping("visitor's mapping");
+    auto makeWorldMapping = [&] {
+        ScriptCaller::WorldScope world(true);
+        QVERIFY(mapper->newMapping("world's mapping"));
+        mapper->enableMapping("world's mapping");
+    };
+    auto visitorsMappingStays = [&] {
+        // a world may not take the name of a mapping that exists and isn't the world's
+        ScriptCaller::WorldScope world(true);
+        return !mapper->newMapping("visitor's mapping");
+    };
+
+    makeWorldMapping();
+    QCOMPARE(mapper->removeWorldMappings(), 1);
+    QCOMPARE(mapper->removeWorldMappings(), 0);
+    QVERIFY(visitorsMappingStays());
+
+    makeWorldMapping();
+    {
+        WasmScriptEngine clientScript(ScriptEngine::CLIENT_SCRIPT, NO_SCRIPT, "https://example.invalid/client.js");
+        clientScript.stop();
+    }
+    QCOMPARE(mapper->removeWorldMappings(), 1);  // still there after the client script's engine stopped
+
+    for (bool onWasm : { true, false }) {
+        makeWorldMapping();
+        if (onWasm) {
+            WasmScriptEngine entities(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT, "about:Entities test");
+            entities.stop();
+        } else {
+            ScriptEngine entities(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT, "about:Entities test");
+            entities.stop();
+        }
+        QCOMPARE(mapper->removeWorldMappings(), 0);  // gone with the entities engine's stop
+        QVERIFY(visitorsMappingStays());
+    }
+    DependencyManager::destroy<controller::UserInputMapper>();
 }
 
 void WorldEntitiesTests::cleanupTestCase() {
