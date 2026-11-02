@@ -369,7 +369,7 @@ float EditorCreate::lift(const EntityItemProperties& properties) {
 }
 
 bool EditorCreate::isModelFile(const QString& name) {
-    static const QStringList EXTENSIONS { "glb", "gltf", "fbx", "obj" };
+    static const QStringList EXTENSIONS { "glb", "gltf", "vrm", "fbx", "obj" };
     return EXTENSIONS.contains(QFileInfo(name).suffix().toLower());
 }
 
