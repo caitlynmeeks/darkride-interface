@@ -6,3 +6,5 @@ include_hifi_library_headers(gpu image)
 
 target_draco()
 target_assimp()
+
+target_zlib()
