@@ -24,6 +24,38 @@
 #include <shared/NsightHelpers.h>
 #include <hfm/ModelFormatLogging.h>
 
+FBXProperty::FBXProperty(const QVariant& value) {
+    const int type = value.userType();
+    if (type == qMetaTypeId<QVector<float>>()) {
+        _array = value.value<QVector<float>>();
+    } else if (type == qMetaTypeId<QVector<double>>()) {
+        _array = value.value<QVector<double>>();
+    } else if (type == qMetaTypeId<QVector<qint64>>()) {
+        _array = value.value<QVector<qint64>>();
+    } else if (type == qMetaTypeId<QVector<qint32>>()) {
+        _array = value.value<QVector<qint32>>();
+    } else if (type == qMetaTypeId<QVector<bool>>()) {
+        _array = value.value<QVector<bool>>();
+    } else {
+        _value = value;
+    }
+}
+
+QDebug operator<<(QDebug debug, const FBXProperty& property) {
+    if (const QVector<float>* values = property.array<float>()) {
+        return debug << *values;
+    } else if (const QVector<double>* values = property.array<double>()) {
+        return debug << *values;
+    } else if (const QVector<qint64>* values = property.array<qint64>()) {
+        return debug << *values;
+    } else if (const QVector<qint32>* values = property.array<qint32>()) {
+        return debug << *values;
+    } else if (const QVector<bool>* values = property.array<bool>()) {
+        return debug << *values;
+    }
+    return debug << property.scalar();
+}
+
 template<class T>
 int streamSize() {
     return sizeof(T);
@@ -35,7 +67,7 @@ int streamSize() {
 }
 
 template<class T>
-QVariant readBinaryArray(QDataStream& in, int& position) {
+FBXProperty readBinaryArray(QDataStream& in, int& position) {
     quint32 arrayLength;
     quint32 encoding;
     quint32 compressedLength;
@@ -104,10 +136,10 @@ QVariant readBinaryArray(QDataStream& in, int& position) {
             }
         }
     }
-    return QVariant::fromValue(values);
+    return FBXProperty(std::move(values));
 }
 
-QVariant parseBinaryFBXProperty(QDataStream& in, int& position) {
+FBXProperty parseBinaryFBXProperty(QDataStream& in, int& position) {
     char ch;
     in.device()->getChar(&ch);
     position++;
@@ -403,7 +435,7 @@ FBXNode FBXSerializer::parseFBX(QIODevice* device) {
 }
 
 
-glm::vec3 FBXSerializer::getVec3(const QVariantList& properties, int index) {
+glm::vec3 FBXSerializer::getVec3(const FBXPropertyList& properties, int index) {
     return glm::vec3(properties.value(index).value<double>(), properties.value(index + 1).value<double>(),
         properties.value(index + 2).value<double>());
 }

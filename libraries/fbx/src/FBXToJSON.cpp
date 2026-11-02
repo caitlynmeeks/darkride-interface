@@ -63,16 +63,16 @@ FBXToJSON& FBXToJSON::operator<<(const FBXNode& fbxNode) {
             break;
            
         default:
-            if (prop.canConvert<QVector<float>>()) {
-                *this << prop.value<QVector<float>>();
-            } else if (prop.canConvert<QVector<double>>()) {
-                *this << prop.value<QVector<double>>();
-            } else if (prop.canConvert<QVector<bool>>()) {
-                *this << prop.value<QVector<bool>>();
-            } else if (prop.canConvert<QVector<qint32>>()) {
-                *this << prop.value<QVector<qint32>>();
-            } else if (prop.canConvert<QVector<qint64>>()) {
-                *this << prop.value<QVector<qint64>>();
+            if (const QVector<float>* values = prop.array<float>()) {
+                *this << *values;
+            } else if (const QVector<double>* values = prop.array<double>()) {
+                *this << *values;
+            } else if (const QVector<bool>* values = prop.array<bool>()) {
+                *this << *values;
+            } else if (const QVector<qint32>* values = prop.array<qint32>()) {
+                *this << *values;
+            } else if (const QVector<qint64>* values = prop.array<qint64>()) {
+                *this << *values;
             } else {
                 *this << "<unimplemented value>";
             }

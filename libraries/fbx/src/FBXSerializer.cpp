@@ -99,7 +99,7 @@ QString processID(const QString& id) {
     return id.mid(id.lastIndexOf(':') + 1);
 }
 
-QString getModelName(const QVariantList& properties) {
+QString getModelName(const FBXPropertyList& properties) {
     QString name;
     if (properties.size() == 3) {
         name = properties.value(1).toString();
@@ -110,7 +110,7 @@ QString getModelName(const QVariantList& properties) {
     return name;
 }
 
-QString getMaterialName(const QVariantList& properties) {
+QString getMaterialName(const FBXPropertyList& properties) {
     QString name;
     if (properties.size() == 1 || properties.value(1).toString().isEmpty()) {
         name = properties.value(0).toString();
@@ -121,7 +121,7 @@ QString getMaterialName(const QVariantList& properties) {
     return name;
 }
 
-QString getID(const QVariantList& properties, int index = 0) {
+QString getID(const FBXPropertyList& properties, int index = 0) {
     return processID(properties.value(index).toString());
 }
 
@@ -210,7 +210,7 @@ void printNode(const FBXNode& node, int indentLevel) {
     QDebug nodeDebug = qDebug(modelformat);
 
     nodeDebug.nospace() << spaces.data() << node.name.data() << ": ";
-    foreach (const QVariant& property, node.properties) {
+    foreach (const FBXProperty& property, node.properties) {
         nodeDebug << property;
     }
 
