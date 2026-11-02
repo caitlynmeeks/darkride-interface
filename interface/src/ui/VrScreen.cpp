@@ -214,7 +214,10 @@ void VrScreen::showPieces(bool dialogOnly) {
     _entityConnections = {
         connect(entities.data(), &EntityScriptingInterface::deletingEntity, this, &VrScreen::entityDeleted),
         connect(entities.data(), &EntityScriptingInterface::mousePressOnEntity, this, &VrScreen::mousePressed),
-        connect(entities.data(), &EntityScriptingInterface::mouseReleaseOnEntity, this, &VrScreen::mouseReleased)
+        connect(entities.data(), &EntityScriptingInterface::mouseReleaseOnEntity, this, &VrScreen::mouseReleased),
+        // the bar's capsule brightens while a laser is on it (ScreenGrabBar.qml)
+        connect(entities.data(), &EntityScriptingInterface::hoverEnterEntity, this, [this](const EntityItemID& id) { barHovered(id, true); }),
+        connect(entities.data(), &EntityScriptingInterface::hoverLeaveEntity, this, [this](const EntityItemID& id) { barHovered(id, false); })
     };
     faceHead();
     _shown = true;
@@ -378,6 +381,8 @@ void VrScreen::makePiece(Piece piece, const Arrangement& places) {
     // the screen is the visitor's own, not part of the world: no shadow of it on the floor or a car (and no draw of it in
     // the shadow pass; an entity casts one by default)
     properties.setCanCastShadow(false);
+    // the bar is a capsule on nothing (ScreenGrabBar.qml): drawn blended, its surface's clear is see-through
+    properties.setTransparentBackground(piece == Bar);
     properties.getGrab().setGrabbable(false);
     properties.setIgnorePickIntersection(false);
     properties.setAlpha(1.0f);
@@ -785,6 +790,18 @@ void VrScreen::displayChanged() {
     _wasHeadset = headset;
     if (!_keeping && isOn()) {
         startWarming();
+    }
+}
+
+void VrScreen::barHovered(const EntityItemID& id, bool hovered) {
+    if (!_shown || id != EntityItemID(_pieces[Bar])) {
+        return;
+    }
+    for (auto it = _surfaceUrls.cbegin(); it != _surfaceUrls.cend(); ++it) {
+        QQuickItem* root = it.value() == GRAB_BAR_URL ? it.key()->getRootItem() : nullptr;
+        if (root && root->property("hovered").toBool() != hovered) {
+            root->setProperty("hovered", hovered);
+        }
     }
 }
 

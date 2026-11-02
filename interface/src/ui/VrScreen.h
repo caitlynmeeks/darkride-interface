@@ -109,6 +109,7 @@ private:
     void entityDeleted(const EntityItemID& id);
     void displayChanged();
 
+    void barHovered(const EntityItemID& id, bool hovered);
     void mousePressed(const EntityItemID& id, const PointerEvent& event);
     void mouseReleased(const EntityItemID& id, const PointerEvent& event);
     void beginDrag();
@@ -123,7 +124,7 @@ private:
     bool _wasHeadset { false };
     uint64_t _lastToggle { 0 };
     std::array<QUuid, PIECE_COUNT> _pieces;
-    std::array<QMetaObject::Connection, 3> _entityConnections;
+    std::array<QMetaObject::Connection, 5> _entityConnections;
 
     // the screen's place, in the play space: the head it's arranged around and its turn around that head
     glm::vec3 _head { 0.0f };
