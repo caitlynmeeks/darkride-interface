@@ -453,6 +453,12 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
                     }
                     // else: We assume the sender really did believe it was the simulation owner when it sent
                 } else if (submittedID == senderID) {
+                    // Only the physics server simulates at its priority: a bid at or above it from any other node is
+                    // taken at one below, so the server's cars and vehicles stay its own (vehicle master plan entry 16).
+                    if (properties.getSimulationOwner().getPriority() >= SERVER_SIMULATION_PRIORITY &&
+                            (!senderNode || senderNode->getType() != NodeType::PhysicsServer)) {
+                        properties.setSimulationPriority(SERVER_SIMULATION_PRIORITY - 1);
+                    }
                     // the sender is trying to take or continue ownership
                     if (entity->getSimulatorID().isNull()) {
                         // the sender is taking ownership
@@ -478,8 +484,10 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
                         // (3) VOLUNTEER priority is promoted to RECRUIT
                         uint8_t oldPriority = entity->getSimulationPriority();
                         uint8_t newPriority = properties.getSimulationOwner().getPriority();
+                        // an equal bid wins once the lockout the entity keeps for its current owner has run out
+                        // (SimulationOwner::updateExpiry at each change of owner)
                         if (newPriority > oldPriority ||
-                             (newPriority == oldPriority && properties.getSimulationOwner().hasExpired())) {
+                             (newPriority == oldPriority && entity->getSimulationOwner().hasExpired())) {
                             simulationBlocked = false;
                             if (properties.getSimulationOwner().getPriority() == VOLUNTEER_SIMULATION_PRIORITY) {
                                 properties.setSimulationPriority(RECRUIT_SIMULATION_PRIORITY);
