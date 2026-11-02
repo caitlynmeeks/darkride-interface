@@ -21,10 +21,18 @@
 #include <BlendshapeConstants.h>
 #include <hfm/HFM.h>
 
+// A material's MToon (toon shading) settings, as 1.0's VRMC_materials_mtoon gives them (0.x's converted as three-vrm does)
+struct VRMToonMaterial {
+    glm::vec3 shadeColor { 0.0f };  // linear
+    float shadingShift { 0.0f };
+    float shadingToony { 0.9f };
+    float giEqualization { 0.9f };
+};
+
 // What Darkride uses of a VRM avatar (https://vrm.dev), from the VRM (0.x) or VRMC_vrm and VRMC_springBone (1.0)
 // extensions of a glTF binary: which nodes are which humanoid bones, which morph targets make the mouth shapes, blinks
 // and eye looks, its spring bones (hair, skirts, ears) and their colliders as Flow's, its node constraints, and how far
-// its eyes turn.
+// its eyes turn, and its MToon materials' toon shading.
 struct VRMInfo {
     int version { -1 };  // 0 for 0.x, 1 for 1.0; -1 if it isn't a VRM
     QHash<QString, QString> jointNames;  // a node's name: Darkride's name for its joint
@@ -40,6 +48,9 @@ struct VRMInfo {
     float eyeLookScale { 1.0f };
     float eyeLookMaxAngle { 25.0f };
     float eyeLookExpressionScale { 0.0f };  // where they look by expression: how much of one per degree of gaze
+    // its MToon materials' toon shading, by the material's name, and by its number for those whose names aren't theirs alone
+    QHash<QString, VRMToonMaterial> toonMaterialsByName;
+    QHash<int, VRMToonMaterial> toonMaterials;
     QString title;    // for the log
     QString authors;
 

@@ -236,6 +236,51 @@ void VRMReaderTests::testLookAtDefaults() {
     QVERIFY(std::abs(info.eyeLookExpressionScale - 1.0f / 90.0f) < 1.0e-5f);
 }
 
+// 0.x's MToon converted to 1.0's, as three-vrm converts it: the shade colour from sRGB to linear, and the shade shift
+// and toony stepped as 1.0 steps them; a material that isn't MToon gets none
+void VRMReaderTests::testToon0() {
+    QJsonObject vrm{ { "materialProperties", QJsonArray{
+        QJsonObject{ { "name", "Skin" }, { "shader", "VRM/MToon" },
+                     { "floatProperties", QJsonObject{ { "_ShadeShift", -0.2 }, { "_ShadeToony", 0.8 },
+                                                       { "_IndirectLightIntensity", 0.3 } } },
+                     { "vectorProperties", QJsonObject{ { "_ShadeColor", QJsonArray{ 0.5, 0.25, 1.0, 1.0 } } } } },
+        QJsonObject{ { "name", "Glass" }, { "shader", "VRM/UnlitTransparent" } } } } };
+    QJsonObject gltf = vrm0(vrm, QJsonArray());
+    gltf.insert("materials", QJsonArray{ QJsonObject{ { "name", "Skin" } }, QJsonObject{ { "name", "Glass" } } });
+    const VRMInfo info = readVRM(makeGlb(gltf));
+    QCOMPARE(info.toonMaterials.size(), 1);
+    QVERIFY(info.toonMaterials.contains(0));
+    QVERIFY(info.toonMaterialsByName.contains("Skin"));
+    const VRMToonMaterial& toon = info.toonMaterials[0];
+    // sRGB 0.5 is linear 0.214, 0.25 is 0.0508
+    QVERIFY(std::abs(toon.shadeColor.r - 0.2140f) < 0.001f);
+    QVERIFY(std::abs(toon.shadeColor.g - 0.0508f) < 0.001f);
+    QVERIFY(std::abs(toon.shadeColor.b - 1.0f) < 0.001f);
+    // toony: mix(0.8, 1, 0.5 + 0.5 * -0.2) = 0.88; shift: 0.2 - (1 - 0.88) = 0.08
+    QVERIFY(std::abs(toon.shadingToony - 0.88f) < 0.001f);
+    QVERIFY(std::abs(toon.shadingShift - 0.08f) < 0.001f);
+    QVERIFY(std::abs(toon.giEqualization - 0.7f) < 0.001f);
+}
+
+// 1.0's MToon, as it says; a material name used twice is found by number only
+void VRMReaderTests::testToon1() {
+    const QJsonObject mtoon{ { "VRMC_materials_mtoon", QJsonObject{ { "shadeColorFactor", QJsonArray{ 0.1, 0.2, 0.3 } },
+                                                                     { "shadingShiftFactor", -0.1 },
+                                                                     { "shadingToonyFactor", 0.95 } } } };
+    QJsonObject gltf = vrm1(QJsonObject{ { "specVersion", "1.0" } }, QJsonArray());
+    gltf.insert("materials", QJsonArray{ QJsonObject{ { "name", "Body" }, { "extensions", mtoon } },
+                                         QJsonObject{ { "name", "Body" }, { "extensions", mtoon } },
+                                         QJsonObject{ { "name", "Plain" } } });
+    const VRMInfo info = readVRM(makeGlb(gltf));
+    QCOMPARE(info.toonMaterials.size(), 2);
+    QVERIFY(info.toonMaterialsByName.isEmpty());
+    const VRMToonMaterial& toon = info.toonMaterials[1];
+    QVERIFY(std::abs(toon.shadeColor.g - 0.2f) < 0.001f);
+    QVERIFY(std::abs(toon.shadingShift + 0.1f) < 0.001f);
+    QVERIFY(std::abs(toon.shadingToony - 0.95f) < 0.001f);
+    QVERIFY(std::abs(toon.giEqualization - 0.9f) < 0.001f);
+}
+
 // Spring bones whose nodes loop, repeat a child or go deeper than any rig are read once each, to a depth of 256
 void VRMReaderTests::testLoopingNodes() {
     QJsonArray nodes{

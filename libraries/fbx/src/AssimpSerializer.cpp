@@ -456,6 +456,24 @@ void AssimpSerializer::processMaterials() {
 
         // TODO: scattering!
 
+        // a VRM's toon shading; MToon materials say they're unlit too, for loaders without it
+        if (vrm.isVRM()) {
+            const QString name = mMaterial->GetName().C_Str();
+            // by name, as Assimp may add or drop materials; else by number
+            auto byName = vrm.toonMaterialsByName.constFind(name);
+            auto byIndex = vrm.toonMaterials.constFind((int)materialIndex);
+            const VRMToonMaterial* toonMaterial = byName != vrm.toonMaterialsByName.constEnd() ? &byName.value()
+                : (byIndex != vrm.toonMaterials.constEnd() ? &byIndex.value() : nullptr);
+            if (toonMaterial) {
+                modelMaterial->setUnlit(false);
+                if (mMaterial->Get(AI_MATKEY_GLTF_PBRMETALLICROUGHNESS_BASE_COLOR_FACTOR, baseColor) == AI_SUCCESS) {
+                    modelMaterial->setAlbedo(glm::vec3(baseColor.r, baseColor.g, baseColor.b), false);
+                }
+                modelMaterial->setToon(toonMaterial->shadeColor, toonMaterial->shadingShift, toonMaterial->shadingToony,
+                                       toonMaterial->giEqualization, false);
+            }
+        }
+
         // textures
 
         aiString diffuseTexture;

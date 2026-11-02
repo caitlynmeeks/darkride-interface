@@ -16,6 +16,7 @@
 #include <QStringList>
 #include <QtEndian>
 
+#include <cmath>
 #include <functional>
 
 namespace {
@@ -436,6 +437,61 @@ VRMInfo readVRM(const QByteArray& glb) {
             }
             info.eyeLookScale = input > 0.0f ? output / input : 1.0f;
             info.eyeLookMaxAngle = smallest;
+        }
+    }
+
+    // MToon materials' toon shading
+    {
+        const QJsonArray materials = gltf["materials"].toArray();
+        QHash<QString, int> nameCounts;
+        for (const QJsonValue& material : materials) {
+            nameCounts[material.toObject()["name"].toString()]++;
+        }
+        auto add = [&](int index, const VRMToonMaterial& toon) {
+            info.toonMaterials[index] = toon;
+            const QString name = materials.at(index).toObject()["name"].toString();
+            if (!name.isEmpty() && nameCounts.value(name) == 1) {
+                info.toonMaterialsByName[name] = toon;
+            }
+        };
+        if (info.version == 1) {
+            for (int i = 0; i < materials.size(); i++) {
+                const QJsonObject mtoon = materials.at(i).toObject()["extensions"].toObject()["VRMC_materials_mtoon"].toObject();
+                if (mtoon.isEmpty()) {
+                    continue;
+                }
+                VRMToonMaterial toon;
+                const QJsonArray shade = mtoon["shadeColorFactor"].toArray();
+                toon.shadeColor = glm::vec3(shade.at(0).toDouble(0.0), shade.at(1).toDouble(0.0), shade.at(2).toDouble(0.0));
+                toon.shadingShift = (float)mtoon["shadingShiftFactor"].toDouble(0.0);
+                toon.shadingToony = (float)mtoon["shadingToonyFactor"].toDouble(0.9);
+                toon.giEqualization = (float)mtoon["giEqualizationFactor"].toDouble(0.9);
+                add(i, toon);
+            }
+        } else {
+            // 0.x's material properties are in the materials' order; its colours are sRGB, and its shade shift and
+            // toony step differently, converted as three-vrm's VRMMaterialsV0CompatPlugin does
+            const QJsonArray properties = vrm0["materialProperties"].toArray();
+            for (int i = 0; i < properties.size() && i < materials.size(); i++) {
+                const QJsonObject property = properties.at(i).toObject();
+                if (property["shader"].toString() != "VRM/MToon") {
+                    continue;
+                }
+                const QJsonObject floats = property["floatProperties"].toObject();
+                const QJsonArray shade = property["vectorProperties"].toObject()["_ShadeColor"].toArray();
+                auto toLinear = [](double value) {
+                    return (float)(value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4));
+                };
+                VRMToonMaterial toon;
+                toon.shadeColor = glm::vec3(toLinear(shade.at(0).toDouble(0.97)), toLinear(shade.at(1).toDouble(0.81)),
+                                            toLinear(shade.at(2).toDouble(0.86)));
+                const float shadeShift = (float)floats["_ShadeShift"].toDouble(0.0);
+                const float shadeToony = (float)floats["_ShadeToony"].toDouble(0.9);
+                toon.shadingToony = glm::mix(shadeToony, 1.0f, 0.5f + 0.5f * shadeShift);
+                toon.shadingShift = -shadeShift - (1.0f - toon.shadingToony);
+                toon.giEqualization = 1.0f - (float)floats["_IndirectLightIntensity"].toDouble(0.1);
+                add(i, toon);
+            }
         }
     }
 

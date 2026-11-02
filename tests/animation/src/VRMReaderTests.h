@@ -22,6 +22,8 @@ private slots:
     void testExpressions0();
     void testExpressions1();
     void testLookAtDefaults();
+    void testToon0();
+    void testToon1();
     void testLoopingNodes();
     void testClashingRename();
 };
