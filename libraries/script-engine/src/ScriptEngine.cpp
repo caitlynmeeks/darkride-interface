@@ -1673,11 +1673,11 @@ void ScriptEngine::stopAllTimersForEntityScript(const EntityItemID& entityID) {
 }
 
 void ScriptEngine::interruptRunningCall() {
-    if (isEvaluating()) {
+    // aborted on the engine's own thread: a script in a long call handles queued calls every second
+    // (setProcessEventsInterval), so this runs inside the stuck call, a signal handler's too, and ends it there
+    QMetaObject::invokeMethod(this, [this] {
         abortEvaluation();
-    } else if (auto context = currentContext()) {
-        context->throwError("Stopped: the script's engine was stopped");
-    }
+    }, Qt::QueuedConnection);
 }
 
 void ScriptEngine::stop(bool marshal) {
@@ -1741,9 +1741,9 @@ void ScriptEngine::timerFired() {
         }
     }
 
-    // an entities engine being stopped (its world left) calls no more timers: a script stuck in a loop in one would
-    // start it again after each interruption
-    if (_context == ENTITY_CLIENT_SCRIPT && _isStopping) {
+    // an entities engine being stopped or whose world was left calls no more timers: a world's code ends with the
+    // world, and a script stuck in a loop in one would start it again after each interruption
+    if (_context == ENTITY_CLIENT_SCRIPT && (_isStopping || worldWasLeft())) {
         return;
     }
 

@@ -924,8 +924,8 @@ int WasmScriptEngine::addTimer(const ScriptCallback& callback, int intervalMS, b
             _timers.erase(found);
             entry.timer->deleteLater();
         }
-        if (!_isFinished) {
-            // the callback knows its instance; it is called on this thread, the engine's
+        if (!_isFinished && !worldWasLeft()) {
+            // the callback knows its instance; it is called on this thread, the engine's (none for a world left)
             auto target = entry.callback.target.lock();
             if (target) {
                 QVariant result;

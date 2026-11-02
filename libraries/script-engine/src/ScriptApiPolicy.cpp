@@ -310,6 +310,9 @@ bool ScriptApiPolicy::holdsBackDelivery(const QMetaObject* meta, const QByteArra
     }
     // asked as the world's script the delivery is for (it runs on that script's thread, outside any call of its own)
     ScriptCaller::WorldScope world(true);
+    if (ScriptCaller::isRetired()) {
+        return true;    // a world that was left hears nothing more
+    }
     for (int index : rule->ids) {
         const QUuid id = idOf(arguments.value(index));
         if (id.isNull()) {
