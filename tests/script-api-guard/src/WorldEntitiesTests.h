@@ -40,6 +40,7 @@ private slots:
     void testWorldChangeErase();
     void testReplacedEngineIsFreed();
     void testWorldMappingsGoWithEngine();
+    void testWorldIds();
     void cleanupTestCase();
 
 private:

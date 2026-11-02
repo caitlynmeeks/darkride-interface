@@ -234,6 +234,11 @@ public:
     // Stop any evaluating scripts and wait for the scripting thread to finish.
     virtual void waitTillDoneRunning();
 
+    /// From another thread, the call a stopped engine is still in is made to end now (a script stuck in a loop): the
+    /// evaluation aborted, or an error thrown into the running call, as at a quit. The WebAssembly engine's stop
+    /// interrupts its running call.
+    virtual void interruptRunningCall();
+
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // NOTE - these are NOT intended to be public interfaces available to scripts, the are only Q_INVOKABLE so we can
     //        properly ensure they are only called on the correct thread
@@ -706,6 +711,10 @@ public:
 
     // this is used by code in ScriptEngines.cpp during the "reload all" operation
     bool isStopping() const { return _isStopping; }
+    /// The id of the world whose scripts a client's entities engine runs (ScriptCaller::world() on its thread); set by
+    /// its maker before it runs. 0: none given (ScriptCaller::ANY_WORLD on its thread).
+    void setWorldId(int worldId) { _worldId = worldId; }
+    int getWorldId() const { return _worldId; }
 
     bool isDebuggable() const { return _debuggable; }
 
@@ -938,9 +947,6 @@ signals:
 
 protected:
     void init();
-    /// When the client's entities engine stops (its world left, the content reloaded, a quit): the controller mappings
-    /// the world's scripts made go with it. They route to its functions, or move the visitor.
-    void removeWorldMappingsOnStop();
     /// From another thread, the entity scripts unloaded on the engine's thread and waited for here, while this
     /// thread's objects keep answering the unload handlers' blocking calls (waitServingCalls). A blocking invocation
     /// let the two threads wait on each other: a seated avatar's sit script asks MyAvatar for its animation roles in
@@ -1020,6 +1026,7 @@ protected:
     std::atomic<bool> _isFinished { false };
     std::atomic<bool> _isRunning { false };
     std::atomic<bool> _isStopping { false };
+    int _worldId { 0 };  // setWorldId
     bool _isInitialized { false };
     QHash<QTimer*, CallbackData> _timerFunctionMap;
     QSet<QUrl> _includedURLs;

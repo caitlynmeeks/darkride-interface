@@ -11,22 +11,38 @@
 #include "ScriptCaller.h"
 
 namespace {
-thread_local bool callerIsWorld = false;
-thread_local bool threadIsWorld = false;
+thread_local int callerWorld = 0;  // a WorldScope's
+thread_local int threadWorld = 0;  // markThreadAsWorld's
+}
+
+int ScriptCaller::world() {
+    return callerWorld != 0 ? callerWorld : threadWorld;
 }
 
 bool ScriptCaller::isWorld() {
-    return callerIsWorld || threadIsWorld;
+    return world() != 0;
 }
 
-void ScriptCaller::markThreadAsWorld() {
-    threadIsWorld = true;
+bool ScriptCaller::belongsTo(int tag, int world) {
+    return tag != 0 && (tag == world || tag == ANY_WORLD);
 }
 
-ScriptCaller::WorldScope::WorldScope(bool world) : _outer(callerIsWorld) {
-    callerIsWorld = _outer || world;
+void ScriptCaller::markThreadAsWorld(int world) {
+    threadWorld = world != 0 ? world : ANY_WORLD;
+}
+
+ScriptCaller::WorldScope::WorldScope(bool world) : _outer(callerWorld) {
+    if (world && callerWorld == 0) {
+        callerWorld = threadWorld != 0 ? threadWorld : ANY_WORLD;
+    }
+}
+
+ScriptCaller::WorldScope::WorldScope(int world) : _outer(callerWorld) {
+    if (world != 0 && callerWorld == 0) {
+        callerWorld = world;
+    }
 }
 
 ScriptCaller::WorldScope::~WorldScope() {
-    callerIsWorld = _outer;
+    callerWorld = _outer;
 }

@@ -10,6 +10,8 @@
 
 #include "PickManager.h"
 
+#include <ScriptCaller.h>
+
 std::shared_ptr<Pointer> PointerManager::find(unsigned int uid) const {
     return resultWithReadLock<std::shared_ptr<Pointer>>([&] {
         auto itr = _pointers.find(uid);
@@ -28,6 +30,9 @@ unsigned int PointerManager::addPointer(std::shared_ptr<Pointer> pointer) {
             if (_nextPointerID < UINT32_MAX) {
                 result = _nextPointerID++;
                 _pointers[result] = pointer;
+                if (int world = ScriptCaller::world()) {
+                    _worldPointers[result] = world;
+                }
             }
         });
     }
@@ -35,9 +40,34 @@ unsigned int PointerManager::addPointer(std::shared_ptr<Pointer> pointer) {
 }
 
 void PointerManager::removePointer(unsigned int uid) {
+    std::shared_ptr<Pointer> removed;  // destroyed outside the lock: its destructor removes its pick and visuals
     withWriteLock([&] {
-        _pointers.erase(uid);
+        auto it = _pointers.find(uid);
+        if (it != _pointers.end()) {
+            removed = it->second;
+            _pointers.erase(it);
+        }
+        _worldPointers.erase(uid);
     });
+}
+
+int PointerManager::removeWorldPointers(int world) {
+    std::vector<std::shared_ptr<Pointer>> removed;  // destroyed outside the lock, as in removePointer
+    withWriteLock([&] {
+        for (auto tag = _worldPointers.begin(); tag != _worldPointers.end();) {
+            if (!ScriptCaller::belongsTo(tag->second, world)) {
+                ++tag;
+                continue;
+            }
+            auto it = _pointers.find(tag->first);
+            if (it != _pointers.end()) {
+                removed.push_back(it->second);
+                _pointers.erase(it);
+            }
+            tag = _worldPointers.erase(tag);
+        }
+    });
+    return (int)removed.size();
 }
 
 void PointerManager::enablePointer(unsigned int uid) const {

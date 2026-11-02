@@ -372,7 +372,7 @@ void WorldEntitiesTests::testWorldThread() {
     QUuid visitorsAsSeen;
     QThread* worldThread = QThread::create([&] {
         before = ScriptCaller::isWorld();
-        ScriptCaller::markThreadAsWorld();
+        ScriptCaller::markThreadAsWorld(7);
         after = ScriptCaller::isWorld();
         {
             ScriptCaller::WorldScope notWorld(false);
@@ -517,47 +517,73 @@ void WorldEntitiesTests::testReplacedEngineIsFreed() {
 }
 
 void WorldEntitiesTests::testWorldMappingsGoWithEngine() {
-    // a world's controller mappings go when the client's entities engine stops (its world left); the visitor's own
-    // stay, and a client script's engine stopping removes none
+    // a world's controller mappings go when that world's entities engine has stopped (removeWorldMappings with its
+    // id, from EntityTreeRenderer::worldScriptsStopped); the visitor's own stay, and so do the next world's
     auto mapper = DependencyManager::set<controller::UserInputMapper>();
     QVERIFY(mapper->newMapping("visitor's mapping"));
     mapper->enableMapping("visitor's mapping");
-    auto makeWorldMapping = [&] {
-        ScriptCaller::WorldScope world(true);
-        QVERIFY(mapper->newMapping("world's mapping"));
-        mapper->enableMapping("world's mapping");
+    auto makeMapping = [&](int world, const QString& name) {
+        ScriptCaller::WorldScope scope(world);
+        QVERIFY(mapper->newMapping(name));
+        mapper->enableMapping(name);
     };
-    auto visitorsMappingStays = [&] {
-        // a world may not take the name of a mapping that exists and isn't the world's
-        ScriptCaller::WorldScope world(true);
-        return !mapper->newMapping("visitor's mapping");
+    auto exists = [&](const QString& name) {
+        // a world may not take the name of a mapping that exists and isn't its own world's
+        ScriptCaller::WorldScope scope(99);
+        return !mapper->newMapping(name);
     };
 
-    makeWorldMapping();
-    QCOMPARE(mapper->removeWorldMappings(), 1);
-    QCOMPARE(mapper->removeWorldMappings(), 0);
-    QVERIFY(visitorsMappingStays());
-
-    makeWorldMapping();
+    makeMapping(5, "world 5's mapping");
+    makeMapping(6, "world 6's mapping");
+    QCOMPARE(mapper->removeWorldMappings(5), 1);
+    QVERIFY(!exists("world 5's mapping"));
+    QVERIFY(exists("world 6's mapping"));
+    QVERIFY(exists("visitor's mapping"));
     {
-        WasmScriptEngine clientScript(ScriptEngine::CLIENT_SCRIPT, NO_SCRIPT, "https://example.invalid/client.js");
-        clientScript.stop();
+        // a world switches only its own world's mappings
+        ScriptCaller::WorldScope scope(7);
+        mapper->enableMapping("world 6's mapping", false);
     }
-    QCOMPARE(mapper->removeWorldMappings(), 1);  // still there after the client script's engine stopped
+    QCOMPARE(mapper->removeWorldMappings(6), 1);
+    QCOMPARE(mapper->removeWorldMappings(6), 0);
+    QVERIFY(exists("visitor's mapping"));
 
-    for (bool onWasm : { true, false }) {
-        makeWorldMapping();
-        if (onWasm) {
-            WasmScriptEngine entities(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT, "about:Entities test");
-            entities.stop();
-        } else {
-            ScriptEngine entities(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT, "about:Entities test");
-            entities.stop();
-        }
-        QCOMPARE(mapper->removeWorldMappings(), 0);  // gone with the entities engine's stop
-        QVERIFY(visitorsMappingStays());
+    // one a guard marked on a thread with no world of its own counts as every world's
+    {
+        ScriptCaller::WorldScope scope(true);
+        QCOMPARE(ScriptCaller::world(), ScriptCaller::ANY_WORLD);
+        QVERIFY(mapper->newMapping("any world's mapping"));
     }
+    QCOMPARE(mapper->removeWorldMappings(8), 1);
+    QVERIFY(exists("visitor's mapping"));
     DependencyManager::destroy<controller::UserInputMapper>();
+}
+
+void WorldEntitiesTests::testWorldIds() {
+    QCOMPARE(ScriptCaller::world(), 0);
+    {
+        ScriptCaller::WorldScope outer(4);
+        QCOMPARE(ScriptCaller::world(), 4);
+        ScriptCaller::WorldScope inner(9);  // an outer scope's world stays
+        QCOMPARE(ScriptCaller::world(), 4);
+    }
+    QCOMPARE(ScriptCaller::world(), 0);
+    int onThread = 0, scopedOnThread = 0;
+    QThread* worldThread = QThread::create([&] {
+        ScriptCaller::markThreadAsWorld(12);
+        onThread = ScriptCaller::world();
+        ScriptCaller::WorldScope guard(true);  // a guard's mark on a world's own thread is that world's
+        scopedOnThread = ScriptCaller::world();
+    });
+    worldThread->start();
+    QVERIFY(worldThread->wait(5000));
+    delete worldThread;
+    QCOMPARE(onThread, 12);
+    QCOMPARE(scopedOnThread, 12);
+    QVERIFY(ScriptCaller::belongsTo(12, 12));
+    QVERIFY(!ScriptCaller::belongsTo(12, 13));
+    QVERIFY(ScriptCaller::belongsTo(ScriptCaller::ANY_WORLD, 13));
+    QVERIFY(!ScriptCaller::belongsTo(0, 13));
 }
 
 void WorldEntitiesTests::cleanupTestCase() {

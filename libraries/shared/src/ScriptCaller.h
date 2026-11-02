@@ -20,23 +20,35 @@
 /// queued or blocking invoke) loses it, so whatever reads it must run in the call itself, as the controller mappings'
 /// checks (UserInputMapper::newMapping and enableMapping, RouteBuilderProxy::to) do.
 namespace ScriptCaller {
+    /// A call a guard marks as a world's script's on a thread with no world of its own (tests, a hop no one carried
+    /// the world across): it counts as every world's.
+    constexpr int ANY_WORLD = -1;
+
+    /// Which world's script makes the current call: 0 when it is no world's (the app's or the visitor's own), else the
+    /// id of the world's entities engine (markThreadAsWorld), or ANY_WORLD.
+    int world();
     bool isWorld();
+    /// What a world's script made (tagged with world() then) belongs to the world `world` whose scripts stopped.
+    bool belongsTo(int tag, int world);
 
-    /// Marks every call made on this thread from now on as a world's script's, for the rest of the thread's life. Set
-    /// once, when the thread of an engine that runs only a world's scripts starts (the entities script engine, on
-    /// both engines), so that a call the guards don't mark still counts as the world's. Nothing clears it, a
-    /// WorldScope included.
-    void markThreadAsWorld();
+    /// Marks every call made on this thread from now on as the world `world`'s script's (> 0, or ANY_WORLD), for the
+    /// rest of the thread's life. Set once, when the thread of an engine that runs only a world's scripts starts (the
+    /// entities script engine, on both engines; its id is the engine's), so that a call the guards don't mark still
+    /// counts as the world's. Nothing clears it, a WorldScope included.
+    void markThreadAsWorld(int world);
 
-    /// Marks the calls made while it lives as a world's script's (when `world` is true).
+    /// Marks the calls made while it lives as a world's script's: this thread's world, or ANY_WORLD on a thread with
+    /// none (when `world` is true); or the world given (a world() read on the caller's thread before a hop). An outer
+    /// scope's world stays.
     class WorldScope {
     public:
         explicit WorldScope(bool world);
+        explicit WorldScope(int world);
         ~WorldScope();
         WorldScope(const WorldScope&) = delete;
         WorldScope& operator=(const WorldScope&) = delete;
     private:
-        bool _outer;
+        int _outer;
     };
 }
 

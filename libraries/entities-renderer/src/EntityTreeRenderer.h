@@ -252,6 +252,10 @@ public:
     uint64_t getLastMovingAssemblyInViewTime() const { return _lastMovingAssemblyInView; }
 
 signals:
+    /// The entities engine of the world `world` (its id, ScriptCaller::world() on its thread) has stopped, at a world
+    /// change or a content reload: nothing of that world's scripts runs any more, and what they made outside the
+    /// engine (tagged with that id) goes now, each owner removing its own.
+    void worldScriptsStopped(int world);
     void enterEntity(const EntityItemID& entityItemID);
     void leaveEntity(const EntityItemID& entityItemID);
     void collisionWithEntity(const EntityItemID& idA, const EntityItemID& idB, const Collision& collision);
@@ -293,6 +297,8 @@ private:
 
     void resetEntitiesScriptEngine();
     void replaceEntitiesScriptEngine();
+    void retireEntitiesScriptEngine(const ScriptEnginePointer& old);
+    void interruptIfStillRunning(QWeakPointer<ScriptEngine> old, int attempt);
     void restartKeptEntityScripts();
 
     void findBestZoneAndMaybeContainingEntities(QSet<EntityItemID>& entitiesContainingAvatar);

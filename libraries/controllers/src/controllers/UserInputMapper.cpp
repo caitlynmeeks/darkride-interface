@@ -747,12 +747,12 @@ Endpoint::Pointer UserInputMapper::compositeEndpointFor(Endpoint::Pointer first,
 
 Mapping::Pointer UserInputMapper::newMapping(const QString& mappingName) {
     Locker locker(_lock);
-    const bool byWorld = ScriptCaller::isWorld();
+    const int byWorld = ScriptCaller::world();
     auto existing = _mappingsByName.find(mappingName);
     if (existing != _mappingsByName.end()) {
         qCWarning(controllers) << "Refusing to recreate mapping named " << mappingName;
-        if (byWorld && !existing->second->madeByWorld) {
-            // a world's script doesn't take the name of the app's or the visitor's own mapping
+        if (byWorld && !ScriptCaller::belongsTo(existing->second->madeByWorld, byWorld)) {
+            // a world's script doesn't take the name of the app's or the visitor's own mapping, or another world's
             qCWarning(controllers) << "A world's script may not make a mapping named" << mappingName
                                    << "(the name of a mapping of the app or the visitor's own scripts)";
             return Mapping::Pointer();
@@ -798,7 +798,7 @@ void UserInputMapper::enableMapping(const QString& mappingName, bool enable) {
     }
 
     auto mapping = iterator->second;
-    if (ScriptCaller::isWorld() && !mapping->madeByWorld) {
+    if (ScriptCaller::isWorld() && !ScriptCaller::belongsTo(mapping->madeByWorld, ScriptCaller::world())) {
         // a world's script switches its own mappings only, never the app's or the visitor's own
         qCWarning(controllers) << "A world's script may not" << (enable ? "enable" : "disable") << "the mapping" << mappingName;
         return;
@@ -810,11 +810,11 @@ void UserInputMapper::enableMapping(const QString& mappingName, bool enable) {
     }
 }
 
-int UserInputMapper::removeWorldMappings() {
+int UserInputMapper::removeWorldMappings(int world) {
     Locker locker(_lock);
     int removed = 0;
     for (auto it = _mappingsByName.begin(); it != _mappingsByName.end();) {
-        if (it->second && it->second->madeByWorld) {
+        if (it->second && ScriptCaller::belongsTo(it->second->madeByWorld, world)) {
             disableMapping(it->second);
             it = _mappingsByName.erase(it);
             removed++;

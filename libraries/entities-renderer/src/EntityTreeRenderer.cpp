@@ -185,6 +185,8 @@ void EntityTreeRenderer::resetEntitiesScriptEngine() {
     _entitiesScriptEngine = scriptEngineFactory(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT,
                                                 QString("about:Entities %1").arg(++_entitiesScriptEngineCount));
     ScriptEngine* engine = _entitiesScriptEngine.data();
+    // what this engine's scripts make outside it is tagged with this id (ScriptCaller::world()), and goes when it stops
+    engine->setWorldId(_entitiesScriptEngineCount);
     auto scriptEngines = DependencyManager::get<ScriptEngines>();
     // the engines' list is all that holds an entities engine once it is replaced (a world change, a reload): it leaves
     // the list when it finishes, so it is freed and its thread ends
@@ -240,6 +242,13 @@ void EntityTreeRenderer::replaceEntitiesScriptEngine() {
         return;
     }
     ScriptEnginePointer old = _entitiesScriptEngine;
+    // the visitor's scripts start once every engine of a world left has stopped (two quick world changes: when both
+    // have), in the engine made last. Counted, and the new engine made, before the unload below: its wait serves
+    // queued calls, which may be an earlier engine's stop or the next world's first scripts, so neither reaches the
+    // engine going now.
+    retireEntitiesScriptEngine(old);
+    resetEntitiesScriptEngine();
+
     old->unloadAllEntityScripts(true);
     if (auto tree = getTree()) {
         for (const auto& entityID : tree->getKeptEntityIDsWithScripts()) {
@@ -251,34 +260,45 @@ void EntityTreeRenderer::replaceEntitiesScriptEngine() {
             _currentEntitiesInside.remove(entityID);
         }
     }
+    old->stop();
 
-    resetEntitiesScriptEngine();
-    // they start once every engine of a world left has stopped (two quick world changes: when both have), in the
-    // engine made last
+    interruptIfStillRunning(old.toWeakRef(), 1);
+}
+
+// An engine still running a second after it was stopped is stuck in a script's call: the call is interrupted, and again
+// each second while the engine runs on (a stuck signal handler can be called again before the engine's loop ends).
+void EntityTreeRenderer::interruptIfStillRunning(QWeakPointer<ScriptEngine> weakOld, int attempt) {
+    static const int OLD_ENGINE_STOP_TIME_MS = 1000;
+    static const int MAX_INTERRUPTIONS = 30;
+    QTimer::singleShot(OLD_ENGINE_STOP_TIME_MS, this, [this, weakOld, attempt] {
+        auto old = weakOld.toStrongRef();
+        if (!old || !old->isRunning() || _shuttingDown) {
+            return;
+        }
+        if (attempt == 1 || attempt == MAX_INTERRUPTIONS) {
+            qCWarning(entitiesrenderer) << "the entities engine of the world left is still running" << attempt
+                                        << "s after it was stopped; interrupting its call:" << old->getFilename();
+        }
+        old->interruptRunningCall();
+        if (attempt < MAX_INTERRUPTIONS) {
+            interruptIfStillRunning(weakOld, attempt + 1);
+        }
+    });
+}
+
+// Once the engine has stopped, no code of its world runs: what its scripts made outside it goes then (the owners
+// connected to worldScriptsStopped), and the visitor's own scripts start again once every engine of a world left has.
+void EntityTreeRenderer::retireEntitiesScriptEngine(const ScriptEnginePointer& old) {
+    const int world = old->getWorldId();
     _entitiesEnginesStopping++;
-    connect(old.data(), &ScriptEngine::doneRunning, this, [this] {
+    connect(old.data(), &ScriptEngine::doneRunning, this, [this, world] {
+        if (!_shuttingDown) {
+            emit worldScriptsStopped(world);
+        }
         if (--_entitiesEnginesStopping == 0 && !_shuttingDown && _entitiesScriptEngine) {
             restartKeptEntityScripts();
         }
     }, Qt::QueuedConnection);
-    old->stop();
-
-    // an engine still running a second later is stuck in a script's call: it is interrupted (the WebAssembly engine's
-    // stop interrupts a running call; QtScript's evaluation is aborted, as at a quit)
-    static const int OLD_ENGINE_STOP_TIME_MS = 1000;
-    QWeakPointer<ScriptEngine> weakOld = old.toWeakRef();
-    QTimer::singleShot(OLD_ENGINE_STOP_TIME_MS, this, [weakOld] {
-        auto old = weakOld.toStrongRef();
-        if (old && old->isRunning()) {
-            qCWarning(entitiesrenderer) << "the entities engine of the world left is still running"
-                                        << OLD_ENGINE_STOP_TIME_MS << "ms after it was stopped; interrupting it:"
-                                        << old->getFilename();
-            old->stop();
-            if (old->isEvaluating()) {
-                old->abortEvaluation();
-            }
-        }
-    });
 }
 
 void EntityTreeRenderer::restartKeptEntityScripts() {
@@ -378,6 +398,9 @@ void EntityTreeRenderer::clear() {
     resetZoneCulling();
     // unload and stop the engine
     if (_entitiesScriptEngine) {
+        if (!_shuttingDown) {
+            retireEntitiesScriptEngine(_entitiesScriptEngine);
+        }
         // do this here (instead of in deleter) to avoid marshalling unload signals back to this thread
         _entitiesScriptEngine->unloadAllEntityScripts(true);
         _entitiesScriptEngine->stop();

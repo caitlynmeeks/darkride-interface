@@ -6,6 +6,8 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 #include "PickManager.h"
+
+#include <ScriptCaller.h>
 #include "PerfStat.h"
 #include "Profile.h"
 
@@ -23,6 +25,9 @@ unsigned int PickManager::addPick(PickQuery::PickType type, const std::shared_pt
             _picks[type][id] = pick;
             _typeMap[id] = type;
             _totalPickCounts[type]++;
+            if (int world = ScriptCaller::world()) {
+                _worldPicks[id] = world;
+            }
         }
     });
     return id;
@@ -46,7 +51,29 @@ void PickManager::removePick(unsigned int uid) {
             _totalPickCounts[typeIt->second]--;
             _typeMap.erase(typeIt);
         }
+        _worldPicks.erase(uid);
     });
+}
+
+int PickManager::removeWorldPicks(int world) {
+    int removed = 0;
+    withWriteLock([&] {
+        for (auto tag = _worldPicks.begin(); tag != _worldPicks.end();) {
+            if (!ScriptCaller::belongsTo(tag->second, world)) {
+                ++tag;
+                continue;
+            }
+            auto typeIt = _typeMap.find(tag->first);
+            if (typeIt != _typeMap.end()) {
+                _picks[typeIt->second].erase(tag->first);
+                _totalPickCounts[typeIt->second]--;
+                _typeMap.erase(typeIt);
+                removed++;
+            }
+            tag = _worldPicks.erase(tag);
+        }
+    });
+    return removed;
 }
 
 QVariantMap PickManager::getPickProperties(unsigned int uid) const {

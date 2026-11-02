@@ -469,7 +469,7 @@ void WasmScriptEngine::run() {
         // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
         // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
         // makes a new one for each engine, never from a pool) and ends with it.
-        ScriptCaller::markThreadAsWorld();
+        ScriptCaller::markThreadAsWorld(_worldId);
     }
     QSharedPointer<ScriptEngines> scriptEngines(_scriptEngines);
     if (!scriptEngines || scriptEngines->isStopped()) {
@@ -829,7 +829,6 @@ void WasmScriptEngine::stopEntityScript(const EntityItemID& entityID, const QStr
 
 void WasmScriptEngine::stop(bool marshal) {
     _isStopping = true;
-    removeWorldMappingsOnStop();
     if (marshal) {
         QMetaObject::invokeMethod(this, "stop");
         return;

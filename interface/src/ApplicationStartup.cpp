@@ -1665,6 +1665,13 @@ void Application::init() {
         StartupProfiler::Scope step("init: entity tree renderer");
         getEntities()->init();
     }
+    // what a world's scripts made outside their entities engine goes once that engine has stopped (a world change, a
+    // content reload): their controller mappings, pointers and picks
+    connect(getEntities().data(), &EntityTreeRenderer::worldScriptsStopped, this, [](int world) {
+        DependencyManager::get<PointerManager>()->removeWorldPointers(world);
+        DependencyManager::get<PickManager>()->removeWorldPicks(world);
+        DependencyManager::get<controller::UserInputMapper>()->removeWorldMappings(world);
+    });
     getEntities()->setEntityLoadingPriorityFunction([this, editor = DependencyManager::get<Editor>()](const EntityItem& item) {
         auto dims = item.getScaledDimensions();
         auto maxSize = glm::compMax(dims);

@@ -43,9 +43,9 @@ void PointerScriptingInterface::setIncludeItemsVector(unsigned int uid, const QV
 unsigned int PointerScriptingInterface::createPointer(const PickQuery::PickType& type, const QVariant& properties) {
     // Interaction with managers should always happen on the main thread
     if (QThread::currentThread() != qApp->thread()) {
-        // the pointer's visuals are local entities made on the main thread: they record the caller as their maker, a
-        // world's script or the visitor's side (ScriptCaller)
-        const bool byWorld = ScriptCaller::isWorld();
+        // the pointer and its visuals (local entities) are made on the main thread: they record the caller as their
+        // maker, a world's script (which world) or the visitor's side (ScriptCaller)
+        const int byWorld = ScriptCaller::world();
         return BLOCKING_INVOKE(this, [&] {
             ScriptCaller::WorldScope caller(byWorld);
             return createPointer(type, properties);

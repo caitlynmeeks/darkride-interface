@@ -72,7 +72,6 @@
 #include <UUID.h>
 
 #include <controllers/ScriptingInterface.h>
-#include <controllers/UserInputMapper.h>
 #include <AnimationObject.h>
 
 #include "ArrayBufferViewClass.h"
@@ -1449,7 +1448,7 @@ void ScriptEngine::run() {
         // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
         // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
         // makes a new one for each engine, never from a pool) and ends with it.
-        ScriptCaller::markThreadAsWorld();
+        ScriptCaller::markThreadAsWorld(_worldId);
     }
 
     auto filenameParts = _fileNameString.split("/");
@@ -1668,15 +1667,16 @@ void ScriptEngine::stopAllTimersForEntityScript(const EntityItemID& entityID) {
 
 }
 
-void ScriptEngine::removeWorldMappingsOnStop() {
-    if (_context == ENTITY_CLIENT_SCRIPT && DependencyManager::isSet<controller::UserInputMapper>()) {
-        DependencyManager::get<controller::UserInputMapper>()->removeWorldMappings();
+void ScriptEngine::interruptRunningCall() {
+    if (isEvaluating()) {
+        abortEvaluation();
+    } else if (auto context = currentContext()) {
+        context->throwError("Stopped: the script's engine was stopped");
     }
 }
 
 void ScriptEngine::stop(bool marshal) {
     _isStopping = true; // this can be done on any thread
-    removeWorldMappingsOnStop();
 
     if (marshal) {
         QMetaObject::invokeMethod(this, "stop");
@@ -1734,6 +1734,12 @@ void ScriptEngine::timerFired() {
             scriptWarningMessage("Script.timerFired() while shutting down is ignored... parent script:" + getFilename());
             return; // bail early
         }
+    }
+
+    // an entities engine being stopped (its world left) calls no more timers: a script stuck in a loop in one would
+    // start it again after each interruption
+    if (_context == ENTITY_CLIENT_SCRIPT && _isStopping) {
+        return;
     }
 
     QTimer* callingTimer = reinterpret_cast<QTimer*>(sender());
