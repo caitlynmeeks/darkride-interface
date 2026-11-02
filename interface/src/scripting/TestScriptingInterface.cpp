@@ -547,6 +547,20 @@ bool TestScriptingInterface::hierarchyToggle(const QUuid& id, const QString& whi
     return DependencyManager::get<Editor>()->clickHierarchyToggle(which, id, onlyThis);
 }
 
+bool TestScriptingInterface::hierarchyStroke(const QString& which, const QVariantList& ids, bool onlyThis) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "hierarchyStroke", Q_RETURN_ARG(bool, result), Q_ARG(QString, which),
+                               Q_ARG(QVariantList, ids), Q_ARG(bool, onlyThis));
+        return result;
+    }
+    QList<QUuid> rows;
+    for (const auto& id : ids) {
+        rows << QUuid(id.toString());
+    }
+    return DependencyManager::get<Editor>()->strokeHierarchyToggle(which, rows, onlyThis);
+}
+
 QVariantMap TestScriptingInterface::hierarchyToggles(const QUuid& id) {
     if (QThread::currentThread() != thread()) {
         QVariantMap result;
