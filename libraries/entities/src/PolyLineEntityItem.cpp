@@ -10,6 +10,7 @@
 //
 
 #include "PolyLineEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <QDebug>
 
@@ -153,7 +154,7 @@ int PolyLineEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* da
     const unsigned char* dataAt = data;
 
     READ_ENTITY_PROPERTY(PROP_COLOR, glm::u8vec3, setColor);
-    READ_ENTITY_PROPERTY(PROP_TEXTURES, QString, setTextures);
+    READ_ENTITY_ADDRESSES_PROPERTY(PROP_TEXTURES, setTextures, EntityContentAddresses::clearTextures, "textures");
 
     READ_ENTITY_PROPERTY(PROP_LINE_POINTS, QVector<glm::vec3>, setLinePoints);
     READ_ENTITY_PROPERTY(PROP_STROKE_WIDTHS, QVector<float>, setStrokeWidths);

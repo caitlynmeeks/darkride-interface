@@ -7,6 +7,7 @@
 //
 
 #include "ImageEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include "EntityItemProperties.h"
 
@@ -84,7 +85,7 @@ int ImageEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* data,
     });
     READ_ENTITY_PROPERTY(PROP_BILLBOARD_MODE, BillboardMode, setBillboardMode);
 
-    READ_ENTITY_PROPERTY(PROP_IMAGE_URL, QString, setImageURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_IMAGE_URL, setImageURL, EntityContentAddresses::isOnThisComputer, "imageURL");
     READ_ENTITY_PROPERTY(PROP_EMISSIVE, bool, setEmissive);
     READ_ENTITY_PROPERTY(PROP_KEEP_ASPECT_RATIO, bool, setKeepAspectRatio);
     READ_ENTITY_PROPERTY(PROP_SUB_IMAGE, QRect, setSubImage);

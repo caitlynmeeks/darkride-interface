@@ -68,6 +68,53 @@
             }                                                                      \
         }
 
+// A content address read from the wire (a model, a picture, a page, ...) is emptied before the setter when the
+// tree refuses content from this computer and the address names it (ContentAddresses / EntityContentAddresses):
+// the entity never holds the address, and a copy, paste or export of it carries the empty value. CHECK is the
+// property's rule, NAME its script name, recorded for the tree's one-time warning. Only a property the packet
+// carries is looked at, once, as it arrives.
+#define READ_ENTITY_ADDRESS_PROPERTY(P,S,CHECK,NAME)                               \
+        if (propertyFlags.getHasProperty(P) && !args.readFailed) {                 \
+            QString fromBuffer;                                                    \
+            if (!OctreePacketData::fits(dataAt, bytesLeftToRead - bytesRead, fromBuffer)) { \
+                args.readFailed = true;                                            \
+            } else {                                                               \
+                int bytes = OctreePacketData::unpackDataFromBytes(dataAt, fromBuffer); \
+                dataAt += bytes;                                                   \
+                bytesRead += bytes;                                                \
+                if (args.refusesContentFromThisComputer && CHECK(fromBuffer)) {    \
+                    fromBuffer = QString();                                        \
+                    args.refusedAddresses << QStringLiteral(NAME);                 \
+                }                                                                  \
+                if (overwriteLocalData) {                                          \
+                    S(fromBuffer);                                                 \
+                }                                                                  \
+                somethingChanged = true;                                           \
+            }                                                                      \
+        }
+
+// The same for a property holding several addresses (textures, materialData, userData): CLEAR empties the ones that
+// name this computer inside the decoded value (EntityContentAddresses::clearTextures / clearMaterialData /
+// clearUserData) and says whether it did.
+#define READ_ENTITY_ADDRESSES_PROPERTY(P,S,CLEAR,NAME)                             \
+        if (propertyFlags.getHasProperty(P) && !args.readFailed) {                 \
+            QString fromBuffer;                                                    \
+            if (!OctreePacketData::fits(dataAt, bytesLeftToRead - bytesRead, fromBuffer)) { \
+                args.readFailed = true;                                            \
+            } else {                                                               \
+                int bytes = OctreePacketData::unpackDataFromBytes(dataAt, fromBuffer); \
+                dataAt += bytes;                                                   \
+                bytesRead += bytes;                                                \
+                if (args.refusesContentFromThisComputer && CLEAR(fromBuffer)) {    \
+                    args.refusedAddresses << QStringLiteral(NAME);                 \
+                }                                                                  \
+                if (overwriteLocalData) {                                          \
+                    S(fromBuffer);                                                 \
+                }                                                                  \
+                somethingChanged = true;                                           \
+            }                                                                      \
+        }
+
 #define SKIP_ENTITY_PROPERTY(P,T)                                                  \
         if (propertyFlags.getHasProperty(P) && !args.readFailed) {                 \
             T fromBuffer;                                                          \

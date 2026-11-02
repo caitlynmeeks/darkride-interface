@@ -10,6 +10,7 @@
 //
 
 #include "TextEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <glm/gtx/transform.hpp>
 
@@ -130,7 +131,7 @@ int TextEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* data, 
     READ_ENTITY_PROPERTY(PROP_TOP_MARGIN, float, setTopMargin);
     READ_ENTITY_PROPERTY(PROP_BOTTOM_MARGIN, float, setBottomMargin);
     READ_ENTITY_PROPERTY(PROP_UNLIT, bool, setUnlit);
-    READ_ENTITY_PROPERTY(PROP_FONT, QString, setFont);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_FONT, setFont, EntityContentAddresses::isPathOnThisComputer, "font");
     READ_ENTITY_PROPERTY(PROP_TEXT_EFFECT, TextEffect, setTextEffect);
     READ_ENTITY_PROPERTY(PROP_TEXT_EFFECT_COLOR, glm::u8vec3, setTextEffectColor);
     READ_ENTITY_PROPERTY(PROP_TEXT_EFFECT_THICKNESS, float, setTextEffectThickness);

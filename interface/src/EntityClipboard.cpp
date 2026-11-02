@@ -122,6 +122,10 @@ bool EntityClipboard::importEntities(const QString& urlOrFilename, const bool is
     _tree->withWriteLock([&] {
         _tree->eraseAllOctreeElements();
 
+        // an import follows the world's rule: into a world that isn't local, an address naming a file on this
+        // computer is emptied with a warning (it would show to no one else); a local world keeps it
+        _tree->setRefusesContentFromThisComputer(qApp->getEntities()->getTree()->refusesContentFromThisComputer());
+
         // FIXME: readFromURL() can take over the main event loop which may cause problems, especially if downloading the JSON 
         // from the Web.
         success = _tree->readFromURL(urlOrFilename, isObservable, callerId, true);

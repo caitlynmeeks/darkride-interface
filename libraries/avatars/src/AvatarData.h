@@ -1799,6 +1799,11 @@ protected:
     mutable HeadData* _headData { nullptr };
 
     QUrl _skeletonModelURL;
+    // a received model address (skeleton or attachment) refused for naming a file on this computer: the last one and
+    // how many, for the log
+    void noteRefusedModelAddress(const QUrl& address);
+    QUrl _refusedModelAddress;
+    int _refusedModelAddressCount { 0 };
     QVector<AttachmentData> _attachmentData;
     QVector<AttachmentData> _oldAttachmentData;
     QString _displayName;

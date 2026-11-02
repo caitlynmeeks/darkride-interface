@@ -21,6 +21,7 @@
 #include <QProcessEnvironment>
 #include <AccountManager.h>
 #include <AddressManager.h>
+#include <ContentAddresses.h>
 #include <AssetClient.h>
 #include <EntityNodeData.h>
 #include <OctreeSceneStats.h>
@@ -161,6 +162,13 @@ std::map<QString, QString> DomainSession::prepareServerlessDomainContents(QUrl d
     EntityTreePointer tmpTree(new EntityTree());
     tmpTree->setIsServerlessMode(true);
     tmpTree->createRootElement();
+    // a world file from a link (http, atp) isn't local: an address in it that names a file on this computer is
+    // emptied as it is read; a world file on this computer is the visitor's own and keeps every address
+    const bool ownFile = ContentAddresses::isOnThisComputer(domainURL.toString());
+    tmpTree->setRefusesContentFromThisComputer(!ownFile);
+    qCDebug(interfaceapp) << "Serverless world" << domainURL.toString(QUrl::RemoveQuery)
+                          << ": content addresses naming a file on this computer"
+                          << (ownFile ? "allowed (the world is a file here)" : "refused (the world is a link)");
     auto myAvatar = getMyAvatar();
     tmpTree->setMyAvatar(myAvatar);
     bool success = tmpTree->readFromByteArray(domainURL.toString(), data);

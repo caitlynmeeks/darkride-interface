@@ -10,6 +10,7 @@
 //
 
 #include "AnimationPropertyGroup.h"
+#include "EntityContentAddresses.h"
 
 #include <QJsonDocument>
 #include <OctreePacketData.h>
@@ -371,7 +372,7 @@ int AnimationPropertyGroup::readEntitySubclassDataFromBuffer(const unsigned char
     int bytesRead = 0;
     const unsigned char* dataAt = data;
 
-    READ_ENTITY_PROPERTY(PROP_ANIMATION_URL, QString, setURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_ANIMATION_URL, setURL, EntityContentAddresses::isOnThisComputer, "animation.url");
     READ_ENTITY_PROPERTY(PROP_ANIMATION_ALLOW_TRANSLATION, bool, setAllowTranslation);
     READ_ENTITY_PROPERTY(PROP_ANIMATION_FPS, float, setFPS);
     READ_ENTITY_PROPERTY(PROP_ANIMATION_FRAME_INDEX, float, setCurrentFrame);

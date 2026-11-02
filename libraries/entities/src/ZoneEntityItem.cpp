@@ -5,6 +5,7 @@
 
 
 #include "ZoneEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <glm/gtx/transform.hpp>
 #include <QDebug>
@@ -121,7 +122,8 @@ int ZoneEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* data, 
     const unsigned char* dataAt = data;
 
     READ_ENTITY_PROPERTY(PROP_SHAPE_TYPE, ShapeType, setShapeType);
-    READ_ENTITY_PROPERTY(PROP_COMPOUND_SHAPE_URL, QString, setCompoundShapeURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_COMPOUND_SHAPE_URL, setCompoundShapeURL,
+                                 EntityContentAddresses::isOnThisComputer, "compoundShapeURL");
 
     {
         int bytesFromKeylight;
@@ -192,7 +194,7 @@ int ZoneEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* data, 
 
     READ_ENTITY_PROPERTY(PROP_FLYING_ALLOWED, bool, setFlyingAllowed);
     READ_ENTITY_PROPERTY(PROP_GHOSTING_ALLOWED, bool, setGhostingAllowed);
-    READ_ENTITY_PROPERTY(PROP_FILTER_URL, QString, setFilterURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_FILTER_URL, setFilterURL, EntityContentAddresses::isOnThisComputer, "filterURL");
 
     READ_ENTITY_PROPERTY(PROP_KEY_LIGHT_MODE, uint32_t, setKeyLightMode);
     READ_ENTITY_PROPERTY(PROP_AMBIENT_LIGHT_MODE, uint32_t, setAmbientLightMode);

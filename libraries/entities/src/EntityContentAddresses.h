@@ -10,9 +10,9 @@
 //  The entity properties that name content to fetch (a model, a picture, a sound, a material, a page, ...) and the
 //  check for an address that names a file on this computer. A world's entities arrive from its server; one whose
 //  model is "file:///Users/me/car.glb" was built on its maker's computer and, on a visitor's, reads a file there. When
-//  the world isn't local those addresses are emptied as the entity arrives or as a world's script sets them; a copy,
-//  paste or export of such an entity carries the empty value. A world played from this computer (a local server, a
-//  world file here) keeps them.
+//  the world isn't local those addresses are emptied as the entity arrives (READ_ENTITY_ADDRESS_PROPERTY) or as a
+//  world's script sets them; a copy, paste or export of such an entity carries the empty value. A world played from
+//  this computer (a local server, a world file here) keeps them.
 //
 
 #pragma once
@@ -21,21 +21,31 @@
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 
+#include <ContentAddresses.h>
+
 class EntityItemProperties;
 
 namespace EntityContentAddresses {
 
-    // Whether the resource manager would read this address from a file on this computer. ResourceManager::normalizeURL
-    // turns every address without a known network scheme into a file: one, so this is true for "file:" in any case,
-    // a bare path ("/Users/...", "\\host\...", "//host/...", a relative name), a drive letter ("C:\...", "C:/...",
-    // which parse as a one-letter scheme) and any other unknown scheme. "/~/" names the app's own resources and is
-    // allowed unless it climbs out of them with "..". Empty, http, https, ftp, atp, tea and qrc addresses are not.
-    bool isOnThisComputer(const QString& address);
+    // The address rule is ContentAddresses' (libraries/networking, beside ResourceManager::normalizeURL whose reading
+    // it is): isOnThisComputer for what the resource manager fetches, isPathOnThisComputer for what other loaders
+    // read (a Web entity's page and script, a Text font).
+    inline bool isOnThisComputer(const QString& address) { return ContentAddresses::isOnThisComputer(address); }
+    inline bool isPathOnThisComputer(const QString& address) { return ContentAddresses::isPathOnThisComputer(address); }
 
-    // The narrower form for addresses the resource manager doesn't fetch (a Web entity's page and injected script,
-    // a Text entity's font): "file:" in any case, a drive letter, a bare absolute or "\\host" path, or "/~/" climbing
-    // out. A relative name is a font family, or a page beside the app's own, never a file read.
-    bool isPathOnThisComputer(const QString& address);
+    // The rules of the two properties that need their own: href is followed by AddressManager::handleUrl, where only
+    // a file: address loads a world file from this computer (a bare "/x,y,z" is a viewpoint, a bare name a world);
+    // materialURL's value "materialData" means the inline material and is never an address.
+    bool isWorldFileOnThisComputer(const QString& href);
+    bool isMaterialAddressOnThisComputer(const QString& materialURL);
+
+    // The three properties holding several addresses, each cleared in place: true when something was emptied. The
+    // wire read applies them to the decoded value (READ_ENTITY_ADDRESSES_PROPERTY) and clearThisComputer below to a
+    // properties object. clearUserData reports which part it emptied ("userData.impostor", "userData.procedural")
+    // when given a list.
+    bool clearTextures(QString& textures);
+    bool clearMaterialData(QString& materialData);
+    bool clearUserData(QString& userData, QStringList* cleared = nullptr);
 
     // Empties every content address in properties that names this computer and returns the script names of the
     // properties emptied ("modelURL", "animation.url", ...). Only a property the object carries as changed is looked at

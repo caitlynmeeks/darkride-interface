@@ -7,6 +7,7 @@
 //
 
 #include "MaterialEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include "EntityItemProperties.h"
 
@@ -62,14 +63,16 @@ int MaterialEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* da
     int bytesRead = 0;
     const unsigned char* dataAt = data;
 
-    READ_ENTITY_PROPERTY(PROP_MATERIAL_URL, QString, setMaterialURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_MATERIAL_URL, setMaterialURL,
+                                 EntityContentAddresses::isMaterialAddressOnThisComputer, "materialURL");
     READ_ENTITY_PROPERTY(PROP_MATERIAL_MAPPING_MODE, MaterialMappingMode, setMaterialMappingMode);
     READ_ENTITY_PROPERTY(PROP_MATERIAL_PRIORITY, quint16, setPriority);
     READ_ENTITY_PROPERTY(PROP_PARENT_MATERIAL_NAME, QString, setParentMaterialName);
     READ_ENTITY_PROPERTY(PROP_MATERIAL_MAPPING_POS, glm::vec2, setMaterialMappingPos);
     READ_ENTITY_PROPERTY(PROP_MATERIAL_MAPPING_SCALE, glm::vec2, setMaterialMappingScale);
     READ_ENTITY_PROPERTY(PROP_MATERIAL_MAPPING_ROT, float, setMaterialMappingRot);
-    READ_ENTITY_PROPERTY(PROP_MATERIAL_DATA, QString, setMaterialData);
+    READ_ENTITY_ADDRESSES_PROPERTY(PROP_MATERIAL_DATA, setMaterialData,
+                                   EntityContentAddresses::clearMaterialData, "materialData");
     READ_ENTITY_PROPERTY(PROP_MATERIAL_REPEAT, bool, setMaterialRepeat);
 
     return bytesRead;

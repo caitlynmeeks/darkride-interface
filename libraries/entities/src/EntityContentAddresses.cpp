@@ -20,77 +20,17 @@
 
 namespace EntityContentAddresses {
 
-    static const QString APP_RESOURCES_PREFIX = QStringLiteral("/~/");
     static const QString FILE_SCHEME = QStringLiteral("file");
     static const QString INLINE_MATERIAL = QStringLiteral("materialData");
 
-    // "/~/rest" is the app's own resources folder (PathUtils::expandToLocalDataAbsolutePath puts rest after the
-    // folder's path), which only ".." can leave: the rest is decoded once, as the loader decodes it, its separators
-    // made the same, its leading separators dropped (they only double the folder's own) and the path cleaned; what
-    // still starts with ".." climbs out.
-    static bool climbsOutOfResources(const QString& address) {
-        QString rest = QUrl::fromPercentEncoding(address.mid(APP_RESOURCES_PREFIX.size()).toUtf8());
-        rest.replace('\\', '/');
-        while (rest.startsWith('/')) {
-            rest.remove(0, 1);
-        }
-        const QString cleaned = QDir::cleanPath(rest);
-        return cleaned == QStringLiteral("..") || cleaned.startsWith(QStringLiteral("../"));
-    }
-
-    // "C:\...", "C:/..." or "C:" alone
-    static bool isDriveLetter(const QString& address) {
-        return address.size() >= 2 && address.at(0).isLetter() && address.at(1) == ':' &&
-               (address.size() == 2 || address.at(2) == '/' || address.at(2) == '\\');
-    }
-
-    bool isPathOnThisComputer(const QString& address) {
-        const QString trimmed = address.trimmed();
-        if (trimmed.isEmpty()) {
-            return false;
-        }
-        if (trimmed.startsWith(APP_RESOURCES_PREFIX)) {
-            return climbsOutOfResources(trimmed);
-        }
-        if (trimmed.startsWith('/') || trimmed.startsWith('\\') || isDriveLetter(trimmed)) {
-            return true;
-        }
-        return QUrl(trimmed).scheme() == FILE_SCHEME;   // QUrl lowercases the scheme, so "FILE:" is caught too
-    }
-
-    bool isOnThisComputer(const QString& address) {
-        const QString trimmed = address.trimmed();
-        if (trimmed.isEmpty()) {
-            return false;
-        }
-        if (trimmed.startsWith(APP_RESOURCES_PREFIX)) {
-            return climbsOutOfResources(trimmed);
-        }
-        // the schemes ResourceManager::createResourceRequest fetches over the network or from the app's own resources
-        // (getKnownUrls there, less file:); every other address is read as "file:///" + the address. Nearly every
-        // real address starts with one of them: that is settled by a prefix compare, before any parsing.
-        static const QStringList FETCHED_PREFIXES = { QStringLiteral("http://"), QStringLiteral("https://"),
-                                                      QStringLiteral("atp:"),    QStringLiteral("tea://"),
-                                                      QStringLiteral("qrc:"),    QStringLiteral("ftp://") };
-        for (const QString& prefix : FETCHED_PREFIXES) {
-            if (trimmed.startsWith(prefix, Qt::CaseInsensitive)) {
-                return false;
-            }
-        }
-        if (isPathOnThisComputer(trimmed)) {
-            return true;
-        }
-        static const QStringList FETCHED_SCHEMES = { QStringLiteral("http"), QStringLiteral("https"),
-                                                     QStringLiteral("ftp"),  QStringLiteral("atp"),
-                                                     QStringLiteral("tea"),  QStringLiteral("qrc") };
-        const QString scheme = QUrl(trimmed).scheme();
-        return scheme.isEmpty() || !FETCHED_SCHEMES.contains(scheme);
-    }
-
     // href is followed by AddressManager::handleUrl: a file: address loads a world file from this computer; a bare path
     // is a viewpoint ("/x,y,z"), a bare name a world's name, and another scheme is ignored
-    static bool isWorldFileOnThisComputer(const QString& href) {
+    bool isWorldFileOnThisComputer(const QString& href) {
         return QUrl(href.trimmed()).scheme() == FILE_SCHEME;
+    }
+
+    bool isMaterialAddressOnThisComputer(const QString& materialURL) {
+        return !materialURL.startsWith(INLINE_MATERIAL) && isOnThisComputer(materialURL);
     }
 
     static QString compactJson(const QJsonObject& object) {
@@ -122,7 +62,7 @@ namespace EntityContentAddresses {
     // the textures property: a Model's map of texture name -> address (readTexturesMap), each entry on this computer
     // emptied; what the Model renderer can't read is a ParticleEffect's or PolyLine's one address, or nothing at all,
     // and is emptied unless it is a fetched address (a value no renderer reads is lost to no one)
-    static bool clearTextures(QString& textures) {
+    bool clearTextures(QString& textures) {
         if (textures.isEmpty()) {
             return false;
         }
@@ -199,7 +139,7 @@ namespace EntityContentAddresses {
     }
 
     // the materialData property: an Entities.MaterialResource, "materials" one material or a list of them
-    static bool clearMaterialData(QString& materialData) {
+    bool clearMaterialData(QString& materialData) {
         if (materialData.trimmed().isEmpty()) {
             return false;
         }
@@ -249,19 +189,20 @@ namespace EntityContentAddresses {
     // the card readers (ImpostorCard.cpp:77, RenderableEntityItem.cpp:687) look only at userData that contains
     // "impostor", so the same contains() here skips what they skip; the procedural keys are checked for the same
     // reason before parsing. userData that isn't JSON is left as it is, as every reader leaves it.
-    static void clearUserData(QString& userData, QStringList& cleared) {
+    bool clearUserData(QString& userData, QStringList* cleared) {
         const bool mayHoldImpostor = userData.contains(IMPOSTOR_KEY);
         const bool mayHoldShader = userData.contains(QStringLiteral("shaderUrl")) ||
                                    userData.contains(QStringLiteral("ShaderURL")) ||
                                    userData.contains(QStringLiteral("channels"));
         if (!mayHoldImpostor && !mayHoldShader) {
-            return;
+            return false;
         }
         QJsonParseError error;
         QJsonDocument document = QJsonDocument::fromJson(userData.toUtf8(), &error);
         if (error.error != QJsonParseError::NoError || !document.isObject()) {
-            return;
+            return false;
         }
+        QStringList names;
         QJsonObject object = document.object();
         bool changed = false;
         if (mayHoldImpostor && object.value(IMPOSTOR_KEY).isObject()) {
@@ -271,7 +212,7 @@ namespace EntityContentAddresses {
             for (const QString& atlas : ATLASES) {
                 if (impostor.value(atlas).isString() && isOnThisComputer(impostor.value(atlas).toString())) {
                     object.remove(IMPOSTOR_KEY);
-                    cleared << QStringLiteral("userData.impostor");
+                    names << QStringLiteral("userData.impostor");
                     changed = true;
                     break;
                 }
@@ -283,18 +224,22 @@ namespace EntityContentAddresses {
                     QJsonObject procedural = object.value(PROCEDURAL_ENTITY_KEY).toObject();
                     if (clearProceduralAddresses(procedural)) {
                         object.insert(PROCEDURAL_ENTITY_KEY, procedural);
-                        cleared << QStringLiteral("userData.procedural");
+                        names << QStringLiteral("userData.procedural");
                         changed = true;
                     }
                 }
             } else if (clearProceduralAddresses(object)) {
-                cleared << QStringLiteral("userData.procedural");
+                names << QStringLiteral("userData.procedural");
                 changed = true;
             }
         }
         if (changed) {
             userData = compactJson(object);
+            if (cleared) {
+                *cleared << names;
+            }
         }
+        return changed;
     }
 
     QStringList clearThisComputer(EntityItemProperties& properties) {
@@ -328,10 +273,8 @@ namespace EntityContentAddresses {
                 [&] { ambientLight.setAmbientURL(QString()); }, isOnThisComputer);
         clearIf("imageURL", properties.imageURLChanged(), properties.getImageURL(),
                 [&] { properties.setImageURL(QString()); }, isOnThisComputer);
-        if (!properties.getMaterialURL().startsWith(INLINE_MATERIAL)) {
-            clearIf("materialURL", properties.materialURLChanged(), properties.getMaterialURL(),
-                    [&] { properties.setMaterialURL(QString()); }, isOnThisComputer);
-        }
+        clearIf("materialURL", properties.materialURLChanged(), properties.getMaterialURL(),
+                [&] { properties.setMaterialURL(QString()); }, isMaterialAddressOnThisComputer);
         clearIf("terrainURL", properties.terrainURLChanged(), properties.getTerrainURL(),
                 [&] { properties.setTerrainURL(QString()); }, isOnThisComputer);
         clearIf("grab.equippableIndicatorURL", grab.equippableIndicatorURLChanged(), grab.getEquippableIndicatorURL(),
@@ -366,9 +309,7 @@ namespace EntityContentAddresses {
         }
         if (properties.userDataChanged()) {
             QString userData = properties.getUserData();
-            const int before = cleared.size();
-            clearUserData(userData, cleared);
-            if (cleared.size() != before) {
+            if (clearUserData(userData, &cleared)) {
                 properties.setUserData(userData);
             }
         }

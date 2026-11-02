@@ -7,6 +7,7 @@
 //
 
 #include "WebEntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <glm/gtx/transform.hpp>
 
@@ -107,9 +108,11 @@ int WebEntityItem::readEntitySubclassDataFromBuffer(const unsigned char* data, i
     });
     READ_ENTITY_PROPERTY(PROP_BILLBOARD_MODE, BillboardMode, setBillboardMode);
 
-    READ_ENTITY_PROPERTY(PROP_SOURCE_URL, QString, setSourceUrl);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_SOURCE_URL, setSourceUrl,
+                                 EntityContentAddresses::isPathOnThisComputer, "sourceUrl");
     READ_ENTITY_PROPERTY(PROP_DPI, uint16_t, setDPI);
-    READ_ENTITY_PROPERTY(PROP_SCRIPT_URL, QString, setScriptURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_SCRIPT_URL, setScriptURL,
+                                 EntityContentAddresses::isPathOnThisComputer, "scriptURL");
     READ_ENTITY_PROPERTY(PROP_MAX_FPS, uint8_t, setMaxFPS);
     READ_ENTITY_PROPERTY(PROP_INPUT_MODE, WebInputMode, setInputMode);
     READ_ENTITY_PROPERTY(PROP_SHOW_KEYBOARD_FOCUS_HIGHLIGHT, bool, setShowKeyboardFocusHighlight);
