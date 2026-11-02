@@ -20,6 +20,8 @@ private slots:
     void testWeightsSumToOne();
     void testSkinPerMesh();
     void testUnpaddedJsonChunk();
+    void testMorphTargetPastVertices();
+    void testPointsOnlyMeshKeptDrawable();
 };
 
 #endif // hifi_AssimpSkinTests_h

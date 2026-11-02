@@ -17,6 +17,7 @@
 #include <BlendshapeConstants.h>
 #include <ResourceManager.h>
 #include <PathUtils.h>
+#include <hfm/HFMModelMath.h>
 #include <hfm/ModelFormatLogging.h>
 
 #include <assimp/Importer.hpp>
@@ -698,6 +699,18 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
                     fillBlendshape(meshPtr->blendshapes[index], mMesh, animMesh, 1.0f);
                 }
             }
+        }
+
+        // the reader's last check, the one the FBX and OBJ readers make (hfm::sanitizeMesh): the passes after a reader
+        // index the vertices with the parts' and the blendshapes' indices unchecked, so a face naming a vertex the
+        // mesh does not have, a per-vertex list of the wrong length or a blendshape that does not hold together is
+        // left out here, with its blendshape slot kept (the channels are numbered by it)
+        const hfm::MeshSanitizeResult sanitized = hfm::sanitizeMesh(*meshPtr);
+        if (sanitized.changed()) {
+            qCWarning(modelformat) << "AssimpSerializer::read" << url.fileName() << "mesh" << meshIndex << ":"
+                                   << sanitized.facesRemoved << "faces with a vertex past the mesh's" << meshPtr->vertices.size()
+                                   << "or cut short left out," << sanitized.listsCleared << "lists of the wrong length cleared,"
+                                   << sanitized.blendshapesCleared << "blendshapes emptied";
         }
     }
 
