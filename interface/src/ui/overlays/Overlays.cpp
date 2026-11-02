@@ -168,6 +168,8 @@ Overlay::Pointer Overlays::take2DOverlay(const QUuid& id) {
 }
 
 void Overlays::removeWorld2DOverlays(int world) {
+    // _overlaysToDelete is drained on the main thread without the lock (cleanupOverlaysToDelete)
+    Q_ASSERT(QThread::currentThread() == thread());
     QList<QUuid> removed;
     {
         QMutexLocker locker(&_mutex);

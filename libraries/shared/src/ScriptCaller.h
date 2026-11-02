@@ -43,7 +43,7 @@ namespace ScriptCaller {
     bool isRetired(int world);
     /// Whether the current call is a script's of a world that was left: refuse it.
     bool isRetired();
-    /// Logs, once per world, that a call of a world that was left was refused (e.g. "Entities", "addEntity").
+    /// Logs that a call of a world that was left was refused (e.g. "Entities", "addEntity"), once per world and member.
     void logRetiredRefusal(const char* object, const char* member);
 
     /// Marks every call made on this thread from now on as the world `world`'s script's (> 0, or ANY_WORLD), for the

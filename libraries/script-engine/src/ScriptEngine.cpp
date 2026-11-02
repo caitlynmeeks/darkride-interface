@@ -1673,10 +1673,18 @@ void ScriptEngine::stopAllTimersForEntityScript(const EntityItemID& entityID) {
 }
 
 void ScriptEngine::interruptRunningCall() {
-    // aborted on the engine's own thread: a script in a long call handles queued calls every second
-    // (setProcessEventsInterval), so this runs inside the stuck call, a signal handler's too, and ends it there
+    // on the engine's own thread: a script in a long call handles queued calls every second (setProcessEventsInterval),
+    // so this runs inside the stuck call and ends it there. A signal handler's call is not an evaluation to abort
+    // (QScriptEngine::isEvaluating is false): an error is thrown into it instead, again each second while it runs on
     QMetaObject::invokeMethod(this, [this] {
-        abortEvaluation();
+        if (!isStopping()) {
+            return;
+        }
+        if (isEvaluating()) {
+            abortEvaluation();
+        } else if (auto context = currentContext()) {
+            context->throwError("Stopped: the script's engine was stopped");
+        }
     }, Qt::QueuedConnection);
 }
 

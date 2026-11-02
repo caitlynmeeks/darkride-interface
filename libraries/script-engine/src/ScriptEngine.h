@@ -234,9 +234,9 @@ public:
     // Stop any evaluating scripts and wait for the scripting thread to finish.
     virtual void waitTillDoneRunning();
 
-    /// From another thread, the call a stopped engine is still in is made to end (a script stuck in a loop): its
-    /// evaluation is aborted on the engine's own thread, within a second (a running script handles queued calls each
-    /// second). The WebAssembly engine's stop interrupts its running call.
+    /// From another thread, the call a stopped engine is still in is made to end (a script stuck in a loop), on the
+    /// engine's own thread within a second (a running script handles queued calls each second): its evaluation
+    /// aborted, or an error thrown into a signal handler's call. The WebAssembly engine's stop interrupts its call.
     virtual void interruptRunningCall();
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
