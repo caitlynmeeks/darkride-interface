@@ -23,6 +23,8 @@
 #ifndef hifi_EntityTreeRenderer_h
 #define hifi_EntityTreeRenderer_h
 
+#include <atomic>
+
 #include <QtCore/QSet>
 #include <QtCore/QStack>
 #include <QtGui/QMouseEvent>
@@ -262,6 +264,9 @@ public slots:
     void updateEntityRenderStatus(bool shouldRenderEntities);
     void updateZone(const EntityItemID& id);
     void connectedToDomain();
+    // the tree refuses content addresses that name a file on this computer unless the world is local
+    // (ScriptNetworkPolicy::isWorldLocal, the connected socket's address); decided again at every domain change
+    void updateContentFromThisComputer();
 
     // optional slots that can be wired to menu items
     void setDisplayModelBounds(bool value) { _displayModelBounds = value; }
@@ -401,6 +406,7 @@ private:
     int _maxDeferredFramesLastSecond { 0 };
     uint64_t _countersSecondStart { 0 };
     uint64_t _lastMovingAssemblyInView { 0 };
+    std::atomic<int> _contentFromThisComputerLogged { -1 };   // the last decision logged (-1 none, 0 allowed, 1 refused)
     uint64_t _lastMovingAssemblyTest { 0 };
 
     std::unordered_set<EntityRendererPointer> _renderablesToUpdate;

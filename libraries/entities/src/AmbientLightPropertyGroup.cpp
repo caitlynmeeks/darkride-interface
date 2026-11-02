@@ -10,6 +10,7 @@
 //
 
 #include "AmbientLightPropertyGroup.h"
+#include "EntityContentAddresses.h"
 
 #include <QJsonDocument>
 #include <OctreePacketData.h>
@@ -150,7 +151,8 @@ int AmbientLightPropertyGroup::readEntitySubclassDataFromBuffer(const unsigned c
     const unsigned char* dataAt = data;
     
     READ_ENTITY_PROPERTY(PROP_AMBIENT_LIGHT_INTENSITY, float, setAmbientIntensity);
-    READ_ENTITY_PROPERTY(PROP_AMBIENT_LIGHT_URL, QString, setAmbientURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_AMBIENT_LIGHT_URL, setAmbientURL, EntityContentAddresses::isOnThisComputer,
+                                 "ambientLight.ambientURL");
 
     return bytesRead;
 }

@@ -19,6 +19,7 @@
 #include "DetailedMotionState.h"
 #include "DebugDraw.h"
 #include <AvatarConstants.h>
+#include <EntityContentAddresses.h>
 #include <QTimer>
 
 const float DISPLAYNAME_FADE_TIME = 0.5f;
@@ -588,6 +589,14 @@ void OtherAvatar::handleChangedAvatarEntityData() {
             // back to the default), and the entity flew off somewhere.  Marking all changed definitely fixes this,
             // and seems safe (per Seth).
             properties.markAllChanged();
+
+            // when the world isn't local the tree refuses content addresses that name a file on this computer, and
+            // the same rule empties them in another visitor's entities before the tree sees them; one warning per
+            // entity per property (the tree's), not per blob update
+            if (entityTree->refusesContentFromThisComputer()) {
+                entityTree->warnRefusedAddresses(EntityItemID(entityID),
+                                                 EntityContentAddresses::clearThisComputer(properties));
+            }
 
             // try to build the entity
             EntityItemPointer entity = entityTree->findEntityByEntityItemID(EntityItemID(entityID));

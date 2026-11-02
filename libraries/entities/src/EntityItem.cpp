@@ -10,6 +10,7 @@
 //
 
 #include "EntityItem.h"
+#include "EntityContentAddresses.h"
 
 #include <QtCore/QObject>
 #include <QtEndian>
@@ -855,9 +856,9 @@ int EntityItem::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
     // READ_ENTITY_PROPERTY(PROP_LOCALLY_VISIBLE, bool, setLocallyVisible);  // not sent over the wire
     READ_ENTITY_PROPERTY(PROP_NAME, QString, setName);
     READ_ENTITY_PROPERTY(PROP_LOCKED, bool, setLocked);
-    READ_ENTITY_PROPERTY(PROP_USER_DATA, QString, setUserData);
+    READ_ENTITY_ADDRESSES_PROPERTY(PROP_USER_DATA, setUserData, EntityContentAddresses::clearUserData, "userData");
     READ_ENTITY_PROPERTY(PROP_PRIVATE_USER_DATA, QString, setPrivateUserData);
-    READ_ENTITY_PROPERTY(PROP_HREF, QString, setHref);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_HREF, setHref, EntityContentAddresses::isWorldFileOnThisComputer, "href");
     READ_ENTITY_PROPERTY(PROP_DESCRIPTION, QString, setDescription);
     {  // When we own the simulation we don't accept updates to the entity's transform/velocities
         // we also want to ignore any duplicate packets that have the same "recently updated" values
@@ -1027,7 +1028,9 @@ int EntityItem::readEntityDataFromBuffer(const unsigned char* data, int bytesLef
     READ_ENTITY_PROPERTY(PROP_COLLISIONLESS, bool, setCollisionless);
     READ_ENTITY_PROPERTY(PROP_COLLISION_MASK, uint16_t, setCollisionMask);
     READ_ENTITY_PROPERTY(PROP_DYNAMIC, bool, setDynamic);
-    READ_ENTITY_PROPERTY(PROP_COLLISION_SOUND_URL, QString, setCollisionSoundURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_COLLISION_SOUND_URL, setCollisionSoundURL,
+                                 EntityContentAddresses::isOnThisComputer,
+                                 "collisionSoundURL");
     READ_ENTITY_PROPERTY(PROP_ACTION_DATA, QByteArray, setDynamicData);
 
     // Cloning

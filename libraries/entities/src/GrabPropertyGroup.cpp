@@ -10,6 +10,7 @@
 //
 
 #include "GrabPropertyGroup.h"
+#include "EntityContentAddresses.h"
 
 #include <OctreePacketData.h>
 
@@ -344,7 +345,8 @@ int GrabPropertyGroup::readEntitySubclassDataFromBuffer(const unsigned char* dat
     READ_ENTITY_PROPERTY(PROP_GRAB_LEFT_EQUIPPABLE_ROTATION_OFFSET, glm::quat, setEquippableLeftRotation);
     READ_ENTITY_PROPERTY(PROP_GRAB_RIGHT_EQUIPPABLE_POSITION_OFFSET, glm::vec3, setEquippableRightPosition);
     READ_ENTITY_PROPERTY(PROP_GRAB_RIGHT_EQUIPPABLE_ROTATION_OFFSET, glm::quat, setEquippableRightRotation);
-    READ_ENTITY_PROPERTY(PROP_GRAB_EQUIPPABLE_INDICATOR_URL, QString, setEquippableIndicatorURL);
+    READ_ENTITY_ADDRESS_PROPERTY(PROP_GRAB_EQUIPPABLE_INDICATOR_URL, setEquippableIndicatorURL,
+                                 EntityContentAddresses::isOnThisComputer, "grab.equippableIndicatorURL");
     READ_ENTITY_PROPERTY(PROP_GRAB_EQUIPPABLE_INDICATOR_SCALE, glm::vec3, setEquippableIndicatorScale);
     READ_ENTITY_PROPERTY(PROP_GRAB_EQUIPPABLE_INDICATOR_OFFSET, glm::vec3, setEquippableIndicatorOffset);
 

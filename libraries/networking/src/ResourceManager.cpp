@@ -163,6 +163,8 @@ static QUrl teaUrlOnFilesHost(const QUrl& teaUrl) {
     return files;
 }
 
+// ContentAddresses::isOnThisComputer answers "would this read a file on this computer" by this function's rule
+// (getKnownUrls, the file: fallback below): keep the two in step.
 QUrl ResourceManager::normalizeURL(const QUrl& originalUrl) {
     QUrl url = QUrl(normalizeURL(originalUrl.toString()));
     auto scheme = url.scheme();
