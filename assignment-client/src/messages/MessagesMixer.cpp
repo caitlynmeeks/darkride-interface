@@ -43,11 +43,24 @@ void MessagesMixer::handleMessages(QSharedPointer<ReceivedMessage> receivedMessa
     bool isText;
     MessagesClient::decodeMessagesPacket(receivedMessage, channel, isText, message, data, senderID);
 
+    // a message goes on as from the node that sent it
+    if (!senderNode) {
+        return;
+    }
+    senderID = senderNode->getUUID();
+
+    // looking a channel up never adds one
+    auto subscribers = _channelSubscribers.constFind(channel);
+    if (subscribers == _channelSubscribers.constEnd()) {
+        return;
+    }
+    const QSet<QUuid>& listeners = subscribers.value();
+
     auto nodeList = DependencyManager::get<NodeList>();
 
     nodeList->eachMatchingNode(
         [&](const SharedNodePointer& node)->bool {
-        return node->getActiveSocket() && _channelSubscribers[channel].contains(node->getUUID());
+        return node->getActiveSocket() && listeners.contains(node->getUUID());
     },
         [&](const SharedNodePointer& node) {
         auto packetList = isText ? MessagesClient::encodeMessagesPacket(channel, message, senderID) :
