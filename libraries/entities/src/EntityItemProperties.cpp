@@ -272,13 +272,15 @@ QString EntityItemProperties::getComponentModeAsString(uint32_t mode) {
 }
 
 inline void addZoneCullingComponentMode(QHash<QString, ZoneCullingComponentMode>& lookup, ZoneCullingComponentMode mode) {
-    lookup[ZoneCullingModeHelpers::getNameForZoneCullingComponentMode(mode)] = mode;
+    // the lookup lowercases what it is given, so the key is lowercase too: "outsideNoLoad" has capitals, the others none
+    lookup[ZoneCullingModeHelpers::getNameForZoneCullingComponentMode(mode).toLower()] = mode;
 }
 const QHash<QString, ZoneCullingComponentMode> stringToZoneCullingComponentMode = [] {
     QHash<QString, ZoneCullingComponentMode> toReturn;
     addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_INHERIT);
     addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_OUTSIDE);
     addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_DISABLED);
+    addZoneCullingComponentMode(toReturn, ZoneCullingComponentMode::ZONE_CULLING_OUTSIDE_NO_LOAD);
     return toReturn;
 }();
 QString EntityItemProperties::getZoneCullingComponentModeAsString(uint32_t mode) {
@@ -1546,7 +1548,9 @@ EntityPropertyFlags EntityItemProperties::getChangedProperties() const {
  * @property {Entities.AvatarPriorityMode} avatarPriority="inherit" - Configures the priority of updates from avatars in the 
  *     zone to other clients.
  *
- * @property {Entities.ZoneCullingMode} zoneCulling="inherit" - Configures the culling mode of entities inside the zone.
+ * @property {Entities.ZoneCullingMode} zoneCullingMode="inherit" - Zone culling: while you stand in the zone, whether the
+ *     world's entities outside it are drawn and, with <code>"outsideNoLoad"</code>, downloaded (ZONE-CULLING.md). The
+ *     innermost zone whose mode is not <code>"inherit"</code> decides.
  * 
  * @example <caption>Create a zone that casts a red key light along the x-axis.</caption>
  * var zone = Entities.addEntity({

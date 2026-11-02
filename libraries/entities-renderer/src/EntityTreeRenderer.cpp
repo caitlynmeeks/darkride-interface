@@ -273,7 +273,7 @@ void EntityTreeRenderer::stopDomainAndNonOwnedEntities() {
 
 void EntityTreeRenderer::clearDomainAndNonOwnedEntities() {
     stopDomainAndNonOwnedEntities();
-    _zoneCullSkipList.clear();  // in case skiplist from a culling zone in a previous domain remains
+    resetZoneCulling();
 
     std::unordered_map<EntityItemID, EntityRendererPointer> savedEntities;
     std::unordered_set<EntityRendererPointer> savedRenderables;
@@ -310,7 +310,7 @@ void EntityTreeRenderer::clearDomainAndNonOwnedEntities() {
 
 void EntityTreeRenderer::clear() {
     leaveAllEntities();
-    _zoneCullSkipList.clear();  // in case skiplist from a culling zone in a previous domain remains
+    resetZoneCulling();
     // unload and stop the engine
     if (_entitiesScriptEngine) {
         // do this here (instead of in deleter) to avoid marshalling unload signals back to this thread
@@ -347,6 +347,7 @@ void EntityTreeRenderer::clear() {
     _renderablesToUpdate.clear();
     _priorityRenderablesToUpdate.clear();
     _staticRenderablesToUpdate.clear();
+    resetZoneCulling();
     {
         std::lock_guard<std::mutex> lock(_deferredModelMeshesLock);
         _deferredModelMeshes.clear();
@@ -388,15 +389,15 @@ void EntityTreeRenderer::init() {
     connect(entityTree.get(), &EntityTree::addingEntity, this, &EntityTreeRenderer::addingEntity, Qt::QueuedConnection);
     connect(entityTree.get(), &EntityTree::entityScriptChanging, this, &EntityTreeRenderer::entityScriptChanging, Qt::QueuedConnection);
 
-    _zoneCullSkipList.clear();  // in case skiplist from a culling zone in a previous domain remains
+    resetZoneCulling();
 }
 
 void EntityTreeRenderer::connectedToDomain() {
     setSceneIsReady(false);
     MeshPartPayload::sceneIsReady = false;
-    _zoneCullSkipList.clear(); // in case skiplist from a culling zone in a previous domain remains
+    resetZoneCulling();
     _staticRenderablesToUpdate.clear();
-    evaluateZoneCullingStack();
+    forceRecheckEntities();
 }
 
 void EntityTreeRenderer::shutdown() {
@@ -1013,6 +1014,7 @@ void EntityTreeRenderer::update(bool simulate) {
                 render::Transaction transaction;
                 addPendingEntities(scene, transaction);
                 updateChangedEntities(scene, transaction);
+                drainZoneCullFlips(scene, transaction);
                 updateDeferredModelMeshes(scene, transaction);
                 scene->enqueueTransaction(transaction);
             }
@@ -1059,27 +1061,6 @@ void EntityTreeRenderer::handleSpaceUpdate(std::pair<int32_t, glm::vec4> proxyUp
         return;
     }
     _spaceUpdates.emplace_back(proxyUpdate.first, proxyUpdate.second);
-}
-
-// TO DO - zones with compound shapes rather than boxes
-
-// Make a list of all the entities inside entity. 
-void EntityTreeRenderer::updateZoneContentsLists(EntityItemID& entityID, bool hasCompoundShape) {
-    auto zoneItem = std::dynamic_pointer_cast<ZoneEntityItem>(getTree()->findEntityByEntityItemID(entityID)); // get a pointer to the zone entity item
-    glm::vec3 boundingBoxCorner = zoneItem->getWorldPosition() - (zoneItem->getScaledDimensions() * 0.5f); // get the bounding box corner of the zone
-    glm::vec3 scaledDimensions = zoneItem->getScaledDimensions(); // get zone dimensions
-    QVector<QUuid> result;
-    // _flags[AVATARS] looks like we can also pick and perhaps derender outside avatars.  have a look 
-    unsigned int searchFilter = PickFilter::getBitMask(PickFilter::FlagBit::DOMAIN_ENTITIES) |
-                                PickFilter::getBitMask(PickFilter::FlagBit::AVATAR_ENTITIES) |
-                                PickFilter::getBitMask(PickFilter::FlagBit::LOCAL_ENTITIES);
-    _tree->withReadLock([&] {
-        auto entityTree = std::static_pointer_cast<EntityTree>(_tree);  // get pointer to tree
-        AABox box(boundingBoxCorner, scaledDimensions);
-        entityTree->evalEntitiesInBox(box, PickFilter(searchFilter), result); // find all the stuff in the bounding box and put in uuid vector
-    });
-
-    zoneItem->updateZoneEntityItemContentList(result); // On the zone, tell it to rewrite its content list.    
 }
 
 void EntityTreeRenderer::findBestZoneAndMaybeContainingEntities(QSet<EntityItemID>& entitiesContainingAvatar) {
@@ -1139,84 +1120,187 @@ void EntityTreeRenderer::findBestZoneAndMaybeContainingEntities(QSet<EntityItemI
     });
 }
 
-QVector<QUuid> EntityTreeRenderer::getZoneCullSkiplist() {
-    QVector<QUuid> result;
-    if (_zoneCullingSuspended) {
-        return result;   // an empty list: zone culling is off
-    }
-    _getZoneCullSkiplistGuard.withReadLock([&] { result = _zoneCullSkipList; });
-    return result;
-}
-
 void EntityTreeRenderer::setZoneCullingSuspended(bool suspended) {
     if (_zoneCullingSuspended == suspended) {
         return;
     }
     _zoneCullingSuspended = suspended;
     _forceRecheckEntities = true;
-    _refreshAllRenderables = true;
 }
 
-void EntityTreeRenderer::evaluateZoneCullingStack() {
-    // Until 2026-10-19 a change of the zone stack also asked qApp for requeryOctree, whose new connection id made
-    // the entity server forget what this client holds and resend its whole view: once on every zone border crossed,
-    // and once about a second after every arrival, when the stack first fills (Tivoli's 14f41d044a). The client
-    // already holds what zone culling shows or hides; the recheck below is all a zone change needs.
-    if (!_forceRecheckEntities && _zoneCullingStack == _prevZoneCullingStack) return; // stack hasn't changed
-    _forceRecheckEntities = false;
-    _zoneCullSkipList.clear();    
+bool EntityTreeRenderer::ZoneCullState::touches(const glm::vec3& center, float radius) const {
+    const glm::vec3 local = glm::conjugate(rotation) * (center - position);
+    const glm::vec3 closest = glm::clamp(local, -halfDimensions, halfDimensions);
+    const glm::vec3 away = local - closest;
+    return glm::dot(away, away) <= radius * radius;
+}
 
-    for (int i = 0; !_zoneCullingSuspended && i < _zoneCullingStack.size(); ++i) { // stack of zones to determine where you are. pretty small list generally.
-        auto zoneItem = std::dynamic_pointer_cast<ZoneEntityItem>(getTree()->findEntityByEntityItemID(_zoneCullingStack[i])); // Get ref to each zone entity
-       
-        if (!zoneItem) continue;
-        // to do -- make seond parameter true if compound shape mode! zoneItem->); // second param should be if compound shape is on
-        uint32_t _zoneMode = zoneItem->getZoneCullingMode();
-    
-        switch (_zoneMode) {
-            case ZONE_CULLING_INHERIT:  // do nothing
-                break;
-            case ZONE_CULLING_OUTSIDE:
-                updateZoneContentsLists(_zoneCullingStack[i], false);  
-                _zoneCullSkipList += zoneItem->getZoneContentList(); // Add these items to the outer skiplist
-                break;
-            case ZONE_CULLING_DISABLED:
-                updateZoneContentsLists(_zoneCullingStack[i], false);  
-                _zoneCullSkipList.clear(); // Completely wipe the skiplist rendering EVERYTHING
-                break;
-        }
-
-        _ghostingAllowed = zoneItem->getGhostingAllowed();
+float EntityTreeRenderer::ZoneCullState::reachFrom(const glm::vec3& point) const {
+    float reach = 0.0f;
+    for (int corner = 0; corner < 8; corner++) {
+        const glm::vec3 local((corner & 1) ? halfDimensions.x : -halfDimensions.x,
+                              (corner & 2) ? halfDimensions.y : -halfDimensions.y,
+                              (corner & 4) ? halfDimensions.z : -halfDimensions.z);
+        reach = glm::max(reach, glm::distance(position + rotation * local, point));
     }
+    return reach;
+}
 
-    auto scene = _viewState->getMain3DScene();
-    render::Transaction transaction;
-    
-    // zone culling was suspended or resumed: every renderable looks at the skiplist again
-    if (_refreshAllRenderables) {
-        _refreshAllRenderables = false;
-        for (const auto& entry : _entitiesInScene) {
-            if (entry.second) {
-                entry.second->updateInScene(scene, transaction);
-                entry.second->getEntity()->setNeedsRenderUpdate(true);
-            }
+bool EntityTreeRenderer::isZoneCullable(const EntityItemPointer& entity) {
+    if (!entity || entity->isLocalEntity() || entity->isAvatarEntity()) {
+        return false;
+    }
+    switch (entity->getType()) {
+        case EntityTypes::Zone:
+        case EntityTypes::Gizmo:
+        case EntityTypes::Grid:
+        case EntityTypes::Material:
+            return false;
+        default:
+            return true;
+    }
+}
+
+void EntityTreeRenderer::zoneCullingZoneChanged(const EntityItemID& id) {
+    if (id == _zoneCullState.zoneId) {
+        _zoneCullDirty = true;
+    }
+    _forceRecheckEntities = true;
+}
+
+void EntityTreeRenderer::resetZoneCulling() {
+    _zoneCullState = ZoneCullState();
+    _zoneCullDirty = false;
+    _zoneCullFlips.clear();
+    _zoneCullFlipsNext = 0;
+}
+
+// The deciding zone, from the zones the avatar stands in (sorted smallest first): the innermost whose mode is not
+// "inherit". Compared by its id, mode and the suspension, plus the dirty mark the zone's own renderer sets when the
+// zone moves, turns, resizes or changes mode: no transform is read here on the frames nothing changed (on a ride
+// this runs every frame).
+void EntityTreeRenderer::updateZoneCullState() {
+    std::shared_ptr<ZoneEntityItem> deciding;
+    uint32_t mode = ZONE_CULLING_INHERIT;
+    for (const auto& layered : _layeredZones) {
+        auto zone = layered.zone.lock();
+        if (!zone) {
+            continue;
         }
-        scene->enqueueTransaction(transaction);
+        uint32_t zoneMode = zone->getZoneCullingMode();
+        if (zoneMode != ZONE_CULLING_INHERIT) {
+            deciding = zone;
+            mode = zoneMode;
+            break;
+        }
+    }
+    if (!_layeredZones.empty()) {
+        _ghostingAllowed = _layeredZones.getZoneInteractionProperties().second;
+    }
+    // a mode this client does not know (one added later) culls as "outside": a newer world degrades to plain culling
+    const bool active = deciding && !_zoneCullingSuspended && mode != ZONE_CULLING_DISABLED;
+    const QUuid zoneId = active ? deciding->getID() : QUuid();
+    const bool dontLoad = active && mode == ZONE_CULLING_OUTSIDE_NO_LOAD;
+    if (zoneId == _zoneCullState.zoneId && active == _zoneCullState.active && dontLoad == _zoneCullState.dontLoad &&
+        !_zoneCullDirty) {
         return;
     }
+    _zoneCullDirty = false;
+    _zoneCullState.active = active;
+    _zoneCullState.dontLoad = dontLoad;
+    _zoneCullState.zoneId = zoneId;
+    if (active) {
+        bool success = false;
+        Transform toCenter = deciding->getTransformToCenter(success);
+        _zoneCullState.position = success ? toCenter.getTranslation() : deciding->getWorldPosition();
+        _zoneCullState.rotation = success ? toCenter.getRotation() : deciding->getWorldOrientation();
+        _zoneCullState.halfDimensions = deciding->getScaledDimensions() * 0.5f;
+    }
+    decideZoneCulling();
+}
 
-    // Since statics are generally not in the update loop, force an update pass for them here
-    for (const auto& renderable : _staticRenderablesToUpdate) {
-        if (renderable) {
-            // const bool hasChanged = renderable->evaluateEntityZoneCullState(renderable->getEntity());//, _zoneCullSkipList);
-            // if (hasChanged || _isEditMode) {
-              renderable->updateInScene(scene, transaction);
-              renderable->getEntity()->setNeedsRenderUpdate(true);
-            // }
+// Once per change of the deciding zone: every renderer in the scene gets its flag from the zone's box and the
+// entity's bound (no octree query; one sphere test each). The renderers whose flag flipped, and any still waiting
+// from the last decision, are queued nearest first for the lane.
+void EntityTreeRenderer::decideZoneCulling() {
+    const uint64_t start = usecTimestampNow();
+    std::unordered_set<EntityRendererPointer> pending(_zoneCullFlips.begin() + _zoneCullFlipsNext, _zoneCullFlips.end());
+    for (const auto& entry : _entitiesInScene) {
+        const auto& renderable = entry.second;
+        if (!renderable) {
+            continue;
+        }
+        const auto& entity = renderable->getEntity();
+        bool culled = false;
+        if (_zoneCullState.active && isZoneCullable(entity)) {
+            const auto& bound = renderable->getWorldBound();
+            culled = !_zoneCullState.touches(bound.calcCenter(), 0.5f * bound.getLargestDimension() * SQRT_THREE);
+        }
+        if (renderable->isZoneCulled() != culled) {
+            renderable->setZoneCulled(culled);
+            pending.insert(renderable);
         }
     }
+    std::vector<std::pair<float, EntityRendererPointer>> sorted;
+    sorted.reserve(pending.size());
+    for (const auto& renderable : pending) {
+        sorted.emplace_back(glm::distance2(renderable->getWorldBound().calcCenter(), _avatarPosition), renderable);
+    }
+    std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    _zoneCullFlips.clear();
+    _zoneCullFlipsNext = 0;
+    _zoneCullFlips.reserve(sorted.size());
+    for (const auto& entry : sorted) {
+        _zoneCullFlips.push_back(entry.second);
+    }
+    const double decideMs = (usecTimestampNow() - start) / 1000.0;
+    FrameTrace::set("zonecull.decide_ms", decideMs);
+    qCDebug(entitiesrenderer) << "zone culling" << (_zoneCullState.active ? "on" : "off") << "for" << _entitiesInScene.size()
+                              << "entities:" << sorted.size() << "change, decided in" << decideMs << "ms";
+}
 
-    scene->enqueueTransaction(transaction);
+// The lane (entry 13 (c), (e)): after the budget, the flipped renderers are refreshed nearest first inside 0.5 ms a
+// frame; then, with the queue empty and time left, up to 8 changed Static entities (the budget's own loop leaves them
+// in _staticRenderablesToUpdate: Static means applied late, not per frame). On a frame where the budget overran (it
+// left renderables for the next frame) the lane yields entirely, so a crossing never stacks on a frame with no room.
+void EntityTreeRenderer::drainZoneCullFlips(const render::ScenePointer& scene, render::Transaction& transaction) {
+    static const uint64_t LANE_BUDGET_USECS = 500;
+    static const int STATICS_PER_FRAME = 8;
+    int flips = 0;
+    int statics = 0;
+    double laneMs = 0.0;
+    const bool pendingFlips = _zoneCullFlipsNext < _zoneCullFlips.size();
+    if ((pendingFlips || !_staticRenderablesToUpdate.isEmpty()) && _prevNumDeferredEntityUpdates == 0) {
+        const uint64_t start = usecTimestampNow();
+        const uint64_t expiry = start + LANE_BUDGET_USECS;
+        while (_zoneCullFlipsNext < _zoneCullFlips.size() && usecTimestampNow() <= expiry) {
+            const EntityRendererPointer renderable = _zoneCullFlips[_zoneCullFlipsNext++];
+            if (renderable && renderable->getEntity() && !renderable->getEntity()->isDead()) {
+                renderable->getEntity()->setNeedsRenderUpdate(true);
+                renderable->updateInScene(scene, transaction);
+                flips++;
+            }
+        }
+        if (_zoneCullFlipsNext >= _zoneCullFlips.size()) {
+            _zoneCullFlips.clear();
+            _zoneCullFlipsNext = 0;
+        }
+        while (_zoneCullFlips.empty() && statics < STATICS_PER_FRAME && !_staticRenderablesToUpdate.isEmpty() &&
+               usecTimestampNow() <= expiry) {
+            auto first = _staticRenderablesToUpdate.begin();
+            const EntityRendererPointer renderable = *first;
+            _staticRenderablesToUpdate.erase(first);
+            if (renderable && renderable->getEntity() && !renderable->getEntity()->isDead()) {
+                renderable->getEntity()->setNeedsRenderUpdate(true);
+                renderable->updateInScene(scene, transaction);
+                statics++;
+            }
+        }
+        laneMs = (usecTimestampNow() - start) / 1000.0;
+    }
+    FrameTrace::set("zonecull.lane_ms", laneMs);
+    FrameTrace::set("zonecull.flips", flips);
+    FrameTrace::set("zonecull.statics", statics);
 }
 
 void EntityTreeRenderer::checkEnterLeaveEntities() {
@@ -1241,9 +1325,8 @@ void EntityTreeRenderer::checkEnterLeaveEntities() {
             QSet<EntityItemID> entitiesContainingAvatar;
 
             findBestZoneAndMaybeContainingEntities(entitiesContainingAvatar);  // eCA now has a list of all the zones where the avatar is located
-            evaluateZoneCullingStack(); // stack hasn't changed
-
-            _prevZoneCullingStack = _zoneCullingStack;
+            _forceRecheckEntities = false;
+            updateZoneCullState();
 
             // Note: at this point we don't need to worry about the tree being locked, because we only deal with
             // EntityItemIDs from here. The callEntityScriptMethod() method is robust against attempting to call scripts
@@ -1255,15 +1338,6 @@ void EntityTreeRenderer::checkEnterLeaveEntities() {
                     if (!entitiesContainingAvatar.contains(entityID)) {
                         emit leaveEntity(entityID);
                         _entitiesScriptEngine->callEntityScriptMethod(entityID, "leaveEntity");
-
-                        auto entity = getEntity(entityID);
-                        // remove this zone ID from the zoneCullingStack
-                        if (entity && entity->getType() == EntityTypes::Zone) {
-                            // if it exists, remove it
-                            if (_zoneCullingStack.indexOf(entityID) != -1) { 
-                                _zoneCullingStack.removeAt(_zoneCullingStack.indexOf(entityID));
-                            }
-                        }
                     }
                 }
 
@@ -1272,14 +1346,6 @@ void EntityTreeRenderer::checkEnterLeaveEntities() {
                     if (!_currentEntitiesInside.contains(entityID)) {
                         emit enterEntity(entityID);
                         _entitiesScriptEngine->callEntityScriptMethod(entityID, "enterEntity");
-
-                        // Add this ID to the zoneCullingStack
-                        auto entity = getEntity(entityID);
-                        if (entity && entity->getType() == EntityTypes::Zone) {     
-                            if (_zoneCullingStack.indexOf(entityID) == -1) {
-                                _zoneCullingStack.append(entityID);
-                            }
-                        }
                     }
                 }
                 _currentEntitiesInside = entitiesContainingAvatar;
@@ -1310,7 +1376,6 @@ void EntityTreeRenderer::leaveDomainAndNonOwnedEntities() {
 
 void EntityTreeRenderer::leaveAllEntities() {
     if (_tree && !_shuttingDown) {
-        _zoneCullingStack.clear();
 
         // for all of our previous containing entities, if they are no longer containing then send them a leave event
         foreach(const EntityItemID& entityID, _currentEntitiesInside) {
@@ -1842,6 +1907,7 @@ void EntityTreeRenderer::updateZone(const EntityItemID& id) {
         if (_layeredZones.update(zone, _avatarPosition, this)) {
             applyLayeredZones();
         }
+        zoneCullingZoneChanged(id);
     }
 }
 

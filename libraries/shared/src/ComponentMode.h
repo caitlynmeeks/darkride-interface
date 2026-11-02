@@ -26,6 +26,7 @@ enum ZoneCullingComponentMode
     ZONE_CULLING_INHERIT,
     ZONE_CULLING_OUTSIDE,
     ZONE_CULLING_DISABLED,
+    ZONE_CULLING_OUTSIDE_NO_LOAD, // the load zone: culls as "outside", and the entity query stops at the zone
     ZONE_CULLING_MODE_ITEM_COUNT
 };
 
