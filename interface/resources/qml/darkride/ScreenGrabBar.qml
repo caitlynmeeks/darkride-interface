@@ -18,13 +18,16 @@ import "panel"
 Item {
     property bool hovered: false
 
+    // mary's numbers (11-02): about a fifth of the middle panel's width, about 15 mm tall at the screen's distance (the bar,
+    // the laser's target, is about twice that), quiet at rest; under the laser full and about 12 % wider, in 120 ms
     Rectangle {
         anchors.centerIn: parent
-        width: parent.width * 0.6
-        height: parent.height * 0.3
+        width: parent.width * (parent.hovered ? 0.9 : 0.8)
+        height: parent.height * 0.47
         radius: height / 2
         color: Theme.text
         opacity: parent.hovered ? 1.0 : 0.6
         Behavior on opacity { NumberAnimation { duration: 120 } }
+        Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
     }
 }
