@@ -100,8 +100,8 @@ bool Application::askToSetAvatarUrl(const QString& url) {
 }
 
 // The Avatar panel's Wear from Link…: Wear was pressed already, so an .fst link is worn at once unless it has a license
-// to agree to first; a .glb link is downloaded and imported (rigged, then Test Locally or Wear & Keep); any other model
-// link is worn as it is, as the panel's URL field did.
+// to agree to first; a .glb or .vrm link (a VRM is a binary glTF) is downloaded and imported (rigged, then Test Locally
+// or Wear & Keep); any other model link is worn as it is, as the panel's URL field did.
 void Application::wearAvatarLink(const QString& link) {
     const QUrl url = QUrl::fromUserInput(link.trimmed());
     if (!url.isValid() || url.isEmpty()) {
@@ -109,7 +109,7 @@ void Application::wearAvatarLink(const QString& link) {
     }
     const QString suffix = QFileInfo(url.path()).suffix().toLower();
     qCDebug(interfaceapp) << "Wear from Link:" << url;
-    if (suffix == "glb") {
+    if (suffix == "glb" || suffix == "vrm") {
         AvatarImporter::importLink(url);
     } else if (suffix == "fst" || url.isLocalFile()) {
         askToWearAvatar(url.toString(), false);
