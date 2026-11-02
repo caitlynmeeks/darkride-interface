@@ -586,6 +586,56 @@ void WorldEntitiesTests::testWorldIds() {
     QVERIFY(!ScriptCaller::belongsTo(0, 13));
 }
 
+void WorldEntitiesTests::testWorldLeft() {
+    // security #32: a script of a world that was left gets nothing done: no new entity (whichever way it asks), no
+    // change, no event, nothing read; another world's calls and the visitor's are untouched
+    const int LEFT = 7001;
+    QUuid made;
+    {
+        ScriptCaller::WorldScope world(LEFT);
+        made = _entities->addEntity(box("made before leaving"), QString("local"));
+        QVERIFY(!made.isNull());
+    }
+    QVERIFY(!ScriptCaller::isRetired(LEFT));
+    ScriptCaller::retireWorld(LEFT);
+    QVERIFY(ScriptCaller::isRetired(LEFT));
+    QVERIFY(!ScriptCaller::isRetired(LEFT + 1));
+    QVERIFY(!ScriptCaller::isRetired(6));  // older than the world left, never left itself
+    QVERIFY(!ScriptCaller::isRetired(ScriptCaller::ANY_WORLD));
+    QVERIFY(!ScriptCaller::isRetired(0));
+    EntityItemProperties rename;
+    rename.setName("changed after leaving");
+    {
+        ScriptCaller::WorldScope world(LEFT);
+        QVERIFY(ScriptCaller::isRetired());
+        QVERIFY(_entities->addEntity(box("after leaving"), QString("local")).isNull());
+        QVERIFY(_entities->addEntity(box("domain, after leaving")).isNull());
+        QVERIFY(_entities->cloneEntity(made).isNull());
+        QVERIFY(_entities->editEntity(made, rename).isNull());
+        QVERIFY(_entities->editEntity(_worldLocal, rename).isNull());
+        _entities->deleteEntity(made);
+        QVERIFY(_entities->forWorldRead(made).isNull());
+        QVERIFY(_entities->readableByWorld({ made, _worldLocal }).isEmpty());
+        QVERIFY(!_entities->worldMayUse(made));
+        // the tree itself makes nothing for it (any other way of adding)
+        EntityItemPointer straight;
+        _tree->withWriteLock([&] { straight = _tree->addEntity(EntityItemID(QUuid::createUuid()), box("into the tree")); });
+        QVERIFY(!straight);
+    }
+    QVERIFY(find(_tree, made));
+    QCOMPARE(nameOf(_tree, made), QString("made before leaving"));
+    QVERIFY(nameOf(_tree, _worldLocal) != QString("changed after leaving"));
+    {
+        ScriptCaller::WorldScope world(LEFT + 1);
+        QVERIFY(!ScriptCaller::isRetired());
+        QCOMPARE(_entities->forWorldRead(made), made);
+        QCOMPARE(_entities->editEntity(made, rename), made);
+    }
+    QCOMPARE(nameOf(_tree, made), QString("changed after leaving"));
+    _entities->deleteEntity(made);
+    QVERIFY(!find(_tree, made));
+}
+
 void WorldEntitiesTests::cleanupTestCase() {
     _entities->setEntityTree(nullptr);
     _entities->setPacketSender(nullptr);

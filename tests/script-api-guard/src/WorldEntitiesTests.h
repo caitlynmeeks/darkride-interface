@@ -41,6 +41,7 @@ private slots:
     void testReplacedEngineIsFreed();
     void testWorldMappingsGoWithEngine();
     void testWorldIds();
+    void testWorldLeft();
     void cleanupTestCase();
 
 private:

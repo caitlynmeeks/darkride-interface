@@ -69,6 +69,10 @@ namespace ScriptApiPolicy {
     // The line logged on a refusal.
     QString refusalLine(const QString& object, const QString& member);
 
+    /// What a script of a world that was left may still use (security #32): the guards refuse every other call, read,
+    /// write and signal of its. A short list, each entry with its reason.
+    bool allowsAfterWorldLeft(const QMetaObject* meta, const QByteArray& name);
+
 }
 
 #endif // hifi_ScriptApiPolicy_h

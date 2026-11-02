@@ -550,6 +550,7 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         gate.checksDelivery = &ScriptApiPolicy::checksDelivery;
         gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
+        gate.allowsAfterWorldLeft = &ScriptApiPolicy::allowsAfterWorldLeft;
         instance->host->setMemberGate(std::move(gate));
     }
     instance->host->setLogger([this](int level, const QString& text) {
@@ -1600,7 +1601,7 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
     }
     BatchLoader* loader = new BatchLoader(QList<QUrl>({ QUrl(url) }));
     connect(loader, &BatchLoader::finished, this, [this, url, result](const QMap<QUrl, QString>& data, const QMap<QUrl, QString>& status) {
-        if (isStopping()) {
+        if (isStopping() || worldWasLeft()) {
             (*result)["status"] = "Stopped";
             return;
         }
@@ -1617,7 +1618,7 @@ QVariantMap WasmScriptEngine::fetchScript(const QString& url, bool forceDownload
         QTimer monitor;
         connect(loader, &BatchLoader::finished, &loop, &QEventLoop::quit);
         connect(&monitor, &QTimer::timeout, this, [this, &loop] {
-            if (isStopping()) {
+            if (isStopping() || worldWasLeft()) {
                 loop.exit(-1);
             }
         });

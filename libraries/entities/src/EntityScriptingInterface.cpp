@@ -440,6 +440,10 @@ void synchronizeEditedGrabProperties(EntityItemProperties& properties, const QSt
 QUuid EntityScriptingInterface::addEntityInternal(const EntityItemProperties& properties, entity::HostType entityHostType) {
     PROFILE_RANGE(script_entities, __FUNCTION__);
 
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "addEntity");
+        return QUuid();
+    }
     if (properties.parentIDChanged() && !worldMayParentTo(properties.getParentID(), "addEntity")) {
         return QUuid();
     }
@@ -513,7 +517,14 @@ void logWorldRefusal(const char* method, const char* what) {
 } // namespace
 
 QUuid EntityScriptingInterface::forWorldRead(const QUuid& id) const {
-    if (!ScriptCaller::isWorld() || !_entityTree || id.isNull()) {
+    if (!ScriptCaller::isWorld() || id.isNull()) {
+        return id;
+    }
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "read");
+        return QUuid();
+    }
+    if (!_entityTree) {
         return id;
     }
     EntityItemPointer entity;
@@ -522,7 +533,14 @@ QUuid EntityScriptingInterface::forWorldRead(const QUuid& id) const {
 }
 
 QVector<QUuid> EntityScriptingInterface::readableByWorld(const QVector<QUuid>& ids) const {
-    if (!ScriptCaller::isWorld() || !_entityTree || ids.isEmpty()) {
+    if (!ScriptCaller::isWorld() || ids.isEmpty()) {
+        return ids;
+    }
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "find");
+        return QVector<QUuid>();
+    }
+    if (!_entityTree) {
         return ids;
     }
     QVector<QUuid> readable;
@@ -539,7 +557,13 @@ QVector<QUuid> EntityScriptingInterface::readableByWorld(const QVector<QUuid>& i
 }
 
 bool EntityScriptingInterface::worldMayUse(const QUuid& id) const {
-    if (!ScriptCaller::isWorld() || !_entityTree || id.isNull()) {
+    if (!ScriptCaller::isWorld()) {
+        return true;
+    }
+    if (ScriptCaller::isRetired()) {
+        return false;
+    }
+    if (!_entityTree || id.isNull()) {
         return true;
     }
     EntityItemPointer entity;
@@ -551,7 +575,11 @@ bool EntityScriptingInterface::worldMayChange(const QUuid& id, const char* metho
     if (worldMayUse(id)) {
         return true;
     }
-    logWorldRefusal(method, "change the visitor's own entities or the app's");
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", method);
+    } else {
+        logWorldRefusal(method, "change the visitor's own entities or the app's");
+    }
     return false;
 }
 
@@ -559,7 +587,11 @@ bool EntityScriptingInterface::worldMaySend(const QUuid& id, const char* method)
     if (worldMayUse(id)) {
         return true;
     }
-    logWorldRefusal(method, "send events or messages into an entity that isn't the world's");
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", method);
+    } else {
+        logWorldRefusal(method, "send events or messages into an entity that isn't the world's");
+    }
     return false;
 }
 
@@ -1172,6 +1204,10 @@ void EntityScriptingInterface::callEntityMethod(const QUuid& id, const QString& 
 
 void EntityScriptingInterface::callEntityServerMethod(const QUuid& id, const QString& method, const QStringList& params) {
     PROFILE_RANGE(script_entities, __FUNCTION__);
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "callEntityServerMethod");
+        return;
+    }
     DependencyManager::get<EntityScriptClient>()->callEntityServerMethod(id, method, params);
 }
 

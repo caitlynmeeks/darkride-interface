@@ -31,6 +31,21 @@ namespace ScriptCaller {
     /// What a world's script made (tagged with world() then) belongs to the world `world` whose scripts stopped.
     bool belongsTo(int tag, int world);
 
+    /// The world `world` was left (its entities engine retired, before that engine's scripts unload and stop): from now
+    /// on its code gets nothing done, whatever it is still running (a scriptEnding or unload handler, a callback, a
+    /// wrapper inside another script's unload). The script API guards refuse its calls, reads, writes and signals (but
+    /// for a short list, ScriptApiPolicy::allowsAfterWorldLeft), and the parts that act for a world's script refuse it
+    /// too, for calls the guards don't see: new entities, Entities writes and reads, controller mappings, pointers,
+    /// picks, 2D overlays, web requests (security finding #32). ANY_WORLD is never retired (it is no world in
+    /// particular). A live world's call costs one compare: the live world is newer than every world left.
+    void retireWorld(int world);
+    /// Whether the world `world` was left (retireWorld).
+    bool isRetired(int world);
+    /// Whether the current call is a script's of a world that was left: refuse it.
+    bool isRetired();
+    /// Logs, once per world, that a call of a world that was left was refused (e.g. "Entities", "addEntity").
+    void logRetiredRefusal(const char* object, const char* member);
+
     /// Marks every call made on this thread from now on as the world `world`'s script's (> 0, or ANY_WORLD), for the
     /// rest of the thread's life. Set once, when the thread of an engine that runs only a world's scripts starts (the
     /// entities script engine, on both engines; its id is the engine's), so that a call the guards don't mark still

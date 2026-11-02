@@ -746,6 +746,10 @@ Endpoint::Pointer UserInputMapper::compositeEndpointFor(Endpoint::Pointer first,
 
 
 Mapping::Pointer UserInputMapper::newMapping(const QString& mappingName) {
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Controller", "newMapping");
+        return Mapping::Pointer();
+    }
     Locker locker(_lock);
     const int byWorld = ScriptCaller::world();
     auto existing = _mappingsByName.find(mappingName);
@@ -798,6 +802,10 @@ void UserInputMapper::enableMapping(const QString& mappingName, bool enable) {
     }
 
     auto mapping = iterator->second;
+    if (enable && ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Controller", "enableMapping");
+        return;
+    }
     if (ScriptCaller::isWorld() && !ScriptCaller::belongsTo(mapping->madeByWorld, ScriptCaller::world())) {
         // a world's script switches its own mappings only, never the app's or the visitor's own
         qCWarning(controllers) << "A world's script may not" << (enable ? "enable" : "disable") << "the mapping" << mappingName;

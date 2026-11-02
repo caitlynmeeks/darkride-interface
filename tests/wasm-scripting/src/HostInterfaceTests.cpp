@@ -13,6 +13,7 @@
 #include <QtCore/QCborValue>
 
 #include <HostInterface.h>
+#include <ScriptCaller.h>
 #include <ObjectTable.h>
 #include <SignalRelay.h>
 #include <ValueCodec.h>
@@ -636,4 +637,39 @@ void HostInterfaceTests::testMemberGate() {
         }
     }
     QVERIFY(warnings >= 10);
+}
+
+void HostInterfaceTests::testWorldLeft() {
+    // security #32: a script of a world that was left gets nothing done through a gated host (calls, reads, writes,
+    // connects, on a handed-back object too), but for what the gate still allows it; undefined, no error
+    const int LEFT = 9201;
+    Fixture f;
+    QString error;
+    QVERIFY2(f.start(error), qPrintable(error));
+    HostInterface::MemberGate gate;
+    gate.allowsClass = [](const QMetaObject* meta) { return QByteArray(meta->className()) == "Probe"; };
+    gate.deniesMethod = [](const QMetaObject*, const QByteArray&) { return false; };
+    gate.deniesPropertyWrite = [](const QMetaObject*, const QByteArray&) { return false; };
+    gate.deniesPropertyRead = [](const QMetaObject*, const QByteArray&) { return false; };
+    gate.allowsAfterWorldLeft = [](const QMetaObject*, const QByteArray& name) { return name == "add"; };
+    f.host->setMemberGate(gate);
+    const int32_t probe = f.probeHandle();
+    f.probe.setCount(3);
+    const QVariant self = f.call(probe, "self", {});
+    {
+        ScriptCaller::WorldScope world(LEFT);
+        ScriptCaller::retireWorld(LEFT);
+        QVERIFY(!f.call(probe, "describeSelf", {}).isValid() || f.call(probe, "describeSelf", {}).isNull());
+        QVERIFY(!f.get(probe, "count").isValid() || f.get(probe, "count").isNull());
+        f.set(probe, "count", 9);
+        QCOMPARE(f.probe.count(), 3);
+        QCOMPARE(f.connect(probe, "countChanged"), 0);
+        QCOMPARE(f.call(probe, "add", { 2, 3 }), QVariant(5));
+    }
+    {
+        ScriptCaller::WorldScope world(LEFT + 1);
+        QCOMPARE(f.get(probe, "count"), QVariant(3));
+        QVERIFY(f.connect(probe, "countChanged") != 0);
+    }
+    Q_UNUSED(self);
 }

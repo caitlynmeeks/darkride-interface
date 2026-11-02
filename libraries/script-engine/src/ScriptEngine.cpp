@@ -578,6 +578,10 @@ void ScriptEngine::waitTillDoneRunning() {
     }
 }
 
+bool ScriptEngine::worldWasLeft() const {
+    return ScriptCaller::isRetired(_worldId);
+}
+
 QString ScriptEngine::getFilename() const {
     QStringList fileNameParts = _fileNameString.split("/");
     QString lastPart;
@@ -1160,6 +1164,7 @@ GuardedObjectClass* ScriptEngine::guardClass() {
         gate.checksDelivery = &ScriptApiPolicy::checksDelivery;
         gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
+        gate.allowsAfterWorldLeft = &ScriptApiPolicy::allowsAfterWorldLeft;
         _guardClass = std::make_unique<GuardedObjectClass>(this, std::move(gate));
     }
     return _guardClass.get();
@@ -2182,10 +2187,10 @@ QVariantMap ScriptEngine::fetchModuleSource(const QString& modulePath, const boo
             loop->quit();
         });
 
-        // this helps detect the case where stop() is invoked during the download
+        // this helps detect the case where stop() is invoked (or the world is left) during the download
         //  but not seen in time to abort processing in onload()...
         connect(monitor.get(), &QTimer::timeout, this, [this, loop] {
-            if (isStopping()) {
+            if (isStopping() || worldWasLeft()) {
                 loop->exit(-1);
             }
         });
@@ -2389,6 +2394,11 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
     QUrl capturedSandboxURL = currentSandboxURL;
 
     auto evaluateScripts = [=](const QMap<QUrl, QString>& data, const QMap<QUrl, QString>& status) {
+        if (isWorldEnding()) {
+            // came after the world's engine was stopped or its world left: nothing of it runs
+            loader->deleteLater();
+            return;
+        }
         auto parentURL = _parentURL;
         for (QUrl url : urls) {
             QString contents = data[url];
@@ -2431,9 +2441,18 @@ void ScriptEngine::include(const QStringList& includeFiles, QScriptValue callbac
 
     loader->start(processLevelMaxRetries);
 
-    if (!callback.isFunction() && !loader->isFinished()) {
+    if (!callback.isFunction() && !loader->isFinished() && !isWorldEnding()) {
+        // the script's queued callbacks run while it waits: a world's script's wait ends when its engine stops or its
+        // world is left (checked every 500 ms, as Script.require does), and what comes later is not evaluated
         QEventLoop loop;
+        QTimer monitor;
         QObject::connect(loader, &BatchLoader::finished, &loop, &QEventLoop::quit);
+        QObject::connect(&monitor, &QTimer::timeout, &loop, [this, &loop] {
+            if (isWorldEnding()) {
+                loop.exit(-1);
+            }
+        });
+        monitor.start(500);
         loop.exec();
     }
 }

@@ -50,6 +50,7 @@
 #include <PrioritySortUtil.h>
 #include <Rig.h>
 #include <SceneScriptingInterface.h>
+#include <ScriptCaller.h>
 #include <ScriptEngines.h>
 #include <EntitySimulation.h>
 #include <ZoneRenderer.h>
@@ -295,6 +296,11 @@ void EntityTreeRenderer::interruptIfStillRunning(QWeakPointer<ScriptEngine> weak
 // connected to worldScriptsStopped), and the visitor's own scripts start again once every engine of a world left has.
 void EntityTreeRenderer::retireEntitiesScriptEngine(const ScriptEnginePointer& old) {
     const int world = old->getWorldId();
+    // from here on its code gets nothing done (security #32): what its unload, its scriptEnding or a callback still
+    // calls is refused, so nothing of it reaches the next world (an entity whose script would load in the next engine);
+    // what it made outside the engine goes now
+    ScriptCaller::retireWorld(world);
+    emit worldLeft(world);
     _entitiesEnginesStopping.insert(world);
     connect(old.data(), &ScriptEngine::doneRunning, this, [this, world] { entitiesEngineStopped(world); },
             Qt::QueuedConnection);

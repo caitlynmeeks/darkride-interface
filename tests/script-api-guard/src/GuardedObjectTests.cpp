@@ -17,6 +17,7 @@
 #include <QtScript/QScriptEngine>
 
 #include <GuardedObject.h>
+#include <ScriptCaller.h>
 
 QTEST_MAIN(GuardedObjectTests)
 
@@ -70,6 +71,7 @@ struct Fixture {
             return name == "pointed" && arguments.value(0).toString() == "hidden";
         };
         gate.refusalLine = [](const QString& object, const QString& member) { return object + "." + member + " is for the visitor's own scripts"; };
+        gate.allowsAfterWorldLeft = [](const QMetaObject*, const QByteArray& name) { return name == "add"; };
         guard = new GuardedObjectClass(&engine, gate);   // owned by the engine's lifetime in the fixture
         QScriptValue raw = engine.newQObject(&probe, QScriptEngine::QtOwnership,
                                              QScriptEngine::ExcludeSuperClassMethods | QScriptEngine::ExcludeDeleteLater);
@@ -196,4 +198,36 @@ void GuardedObjectTests::testCheckedSignals() {
     QCOMPARE(f.run("listener.got.length"), QString("3"));
     // a signal that isn't checked is the signal itself, as before
     QCOMPARE(f.run("typeof probe.countChanged"), QString("function"));
+}
+
+void GuardedObjectTests::testWorldLeft() {
+    // security #32: a script of a world that was left gets nothing done through the guard (calls, reads, writes,
+    // signals, on the globals and on what they handed back), but for what the gate still allows it
+    const int LEFT = 9101;
+    Fixture f;
+    f.probe.setCount(3);
+    QCOMPARE(f.run("var me = probe.self(); var heard = 0; probe.countChanged.connect(function () { heard++; }); me.count"),
+             QString("3"));
+    {
+        ScriptCaller::WorldScope world(LEFT);
+        ScriptCaller::retireWorld(LEFT);
+        QCOMPARE(f.run("String(probe.self())"), QString("undefined"));
+        QCOMPARE(f.run("String(probe.count)"), QString("undefined"));
+        QCOMPARE(f.run("String(me.count)"), QString("undefined"));
+        QCOMPARE(f.run("probe.limit = 6; me.limit = 7; 'ok'"), QString("ok"));
+        QCOMPARE(f.probe.limit(), 0);
+        QVERIFY(f.run("probe.countChanged.connect(function () {})").startsWith("EXCEPTION"));
+        // what the gate allows after a world was left still works, on a handed-back object too
+        QCOMPARE(f.run("probe.add(2, 3) + me.add(1, 1)"), QString("7"));
+    }
+    // another world's script and the visitor's own are not refused
+    {
+        ScriptCaller::WorldScope world(LEFT + 1);
+        QCOMPARE(f.run("probe.count"), QString("3"));
+    }
+    {
+        ScriptCaller::WorldScope world(5);  // older than the world left, but never left itself
+        QCOMPARE(f.run("probe.limit = 4; probe.limit"), QString("4"));
+    }
+    QCOMPARE(f.run("me.count"), QString("3"));
 }

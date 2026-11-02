@@ -140,6 +140,18 @@ const QHash<QByteArray, QSet<QByteArray>> ALLOWED_PROPERTY_WRITES {
     { "AddressManager", { "href" } }    // a teleport
 };
 
+// What a script of a world that was left may still use (security #32); every other member of every class is refused.
+// An empty set: every member. Add an entry only with its reason. What the app takes down itself when a world is left
+// (its mappings, pointers, picks, 2D overlays, local entities) needs none.
+const QHash<QByteArray, QSet<QByteArray>> ALLOWED_AFTER_WORLD_LEFT {
+    // its own sound (a world holds only the injectors Audio.playSound handed it back): nothing else stops it yet
+    { "ScriptAudioInjector", { "stop" } },
+    // sums on the values given, reaching nothing: a world's ending code often works out what it takes down with them
+    { "Vec3", {} }, { "Quat", {} }, { "Mat4", {} }, { "ScriptUUID", {} },
+    // writes to the visitor's own log only, where a creator sees that the ending code ran
+    { "ConsoleScriptingInterface", {} }
+};
+
 // Properties a world's script may not write on a deny-listed class.
 const QHash<QByteArray, QSet<QByteArray>> DENIED_PROPERTY_WRITES {
     { "MyAvatar", { "skeletonModelURL", "attachmentData", "collisionSoundURL", "displayName" } }
@@ -305,6 +317,16 @@ bool ScriptApiPolicy::holdsBackDelivery(const QMetaObject* meta, const QByteArra
         }
         if (entities->forWorldRead(id).isNull() || (rule->worldsOwnOnly && !entities->worldMayUse(id))) {
             return true;
+        }
+    }
+    return false;
+}
+
+bool ScriptApiPolicy::allowsAfterWorldLeft(const QMetaObject* meta, const QByteArray& name) {
+    for (const QMetaObject* cls = meta; cls; cls = cls->superClass()) {
+        auto found = ALLOWED_AFTER_WORLD_LEFT.constFind(QByteArray(cls->className()));
+        if (found != ALLOWED_AFTER_WORLD_LEFT.constEnd()) {
+            return found->isEmpty() || found->contains(name);
         }
     }
     return false;

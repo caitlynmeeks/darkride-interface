@@ -21,6 +21,7 @@
 #include <QtCore/QTimer>
 
 #include <PathUtils.h>
+#include <ScriptCaller.h>
 #include <ScriptNetworkPolicy.h>
 
 QTEST_MAIN(ScriptNetworkPolicyTests)
@@ -313,4 +314,30 @@ void ScriptNetworkPolicyTests::testPinnedNameIsCheckedOnEveryRequest() {
     ScriptNetworkPolicy::pin(wrong, decision);
     wrong.setPeerVerifyName("not-example.invalid");
     QCOMPARE(fetch(wrong), QNetworkReply::SslHandshakeFailedError);
+}
+
+void ScriptNetworkPolicyTests::worldLeft() {
+    // security #32: a script of a world that was left reaches nothing more, wherever it came from (a local one too,
+    // which keeps every address while its world is there)
+    const int LEFT = 9301;
+    const QUrl target("https://example.com/data");
+    const QUrl local("file:///tmp/world/script.js");
+    QVERIFY(ScriptNetworkPolicy::check(target, local, true).allowed);
+    ScriptCaller::retireWorld(LEFT);
+    {
+        ScriptCaller::WorldScope world(LEFT);
+        for (const QUrl& origin : { local, QUrl("https://cdn.example.com/x.js") }) {
+            const auto decision = ScriptNetworkPolicy::check(target, origin, true);
+            QVERIFY(!decision.allowed);
+            QVERIFY(!decision.needsLookup);
+            QVERIFY(decision.reason.contains("was left"));
+        }
+        QString reason;
+        QVERIFY(!ScriptNetworkPolicy::decideBlocking(target, local, reason, true));
+        QVERIFY(reason.contains("was left"));
+    }
+    {
+        ScriptCaller::WorldScope world(LEFT + 1);
+        QVERIFY(ScriptNetworkPolicy::check(target, local, true).allowed);
+    }
 }

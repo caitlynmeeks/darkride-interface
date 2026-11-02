@@ -67,6 +67,19 @@ GuardedObjectClass::Kind GuardedObjectClass::kindOf(const QScriptValue& raw, con
     return Absent;
 }
 
+bool GuardedObjectClass::refusedAfterWorldLeft(const QScriptValue& raw, const QByteArray& member) const {
+    if (!ScriptCaller::isRetired()) {
+        return false;
+    }
+    const QObject* object = raw.toQObject();
+    const QMetaObject* meta = object ? object->metaObject() : nullptr;
+    if (meta && _gate.allowsAfterWorldLeft && _gate.allowsAfterWorldLeft(meta, member)) {
+        return false;
+    }
+    ScriptCaller::logRetiredRefusal(meta ? meta->className() : "?", member.constData());
+    return true;
+}
+
 QScriptClass::QueryFlags GuardedObjectClass::queryProperty(const QScriptValue& object, const QScriptString& name,
                                                            QueryFlags flags, uint* id) {
     Q_UNUSED(flags);
@@ -96,10 +109,16 @@ QScriptValue GuardedObjectClass::property(const QScriptValue& object, const QScr
             return function;
         }
         case Property: {
+            if (refusedAfterWorldLeft(raw, member.toUtf8())) {
+                return QScriptValue();
+            }
             QScriptValue value = raw.property(member);
             return value.isQObject() ? wrap(value) : value;
         }
         case Signal: {
+            if (refusedAfterWorldLeft(raw, member.toUtf8())) {
+                return QScriptValue();   // nothing to connect to
+            }
             const QObject* sender = raw.toQObject();
             if (sender && _gate.checksDelivery && _gate.holdsBackDelivery &&
                 _gate.checksDelivery(sender->metaObject(), member.toUtf8())) {
@@ -120,6 +139,9 @@ void GuardedObjectClass::setProperty(QScriptValue& object, const QScriptString& 
     const Kind kind = kindOf(raw, member, writable);
     if (kind != Property || !writable) {
         refuse(raw, member);
+        return;
+    }
+    if (refusedAfterWorldLeft(raw, member)) {
         return;
     }
     Q_UNUSED(id);
@@ -287,6 +309,9 @@ QScriptValue GuardedObjectClass::forward(QScriptContext* context, QScriptEngine*
     }
     // the guard is a world's script's: what the call runs knows it (ScriptCaller)
     ScriptCaller::WorldScope caller(true);
+    if (guardClass && guardClass->refusedAfterWorldLeft(raw, bundle.property("member").toString().toUtf8())) {
+        return QScriptValue();   // undefined: a world that was left gets nothing done
+    }
     QScriptValue result = method.call(raw, arguments);
     if (engine->hasUncaughtException()) {
         return result;   // the exception stays raised for the caller

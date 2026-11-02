@@ -252,9 +252,14 @@ public:
     uint64_t getLastMovingAssemblyInViewTime() const { return _lastMovingAssemblyInView; }
 
 signals:
-    /// The entities engine of the world `world` (its id, ScriptCaller::world() on its thread) has stopped, at a world
-    /// change or a content reload: nothing of that world's scripts runs any more, and what they made outside the
-    /// engine (tagged with that id) goes now, each owner removing its own.
+    /// The world `world` (its entities engine's id, ScriptCaller::world() on its thread) was left, at a world change or
+    /// a content reload, before its scripts unload and its engine stops: its code gets nothing more done
+    /// (ScriptCaller::retireWorld), and what its scripts made outside the engine (tagged with that id) goes now, each
+    /// owner removing its own.
+    void worldLeft(int world);
+    /// The entities engine of the world `world` has stopped (or was given up on): nothing of that world's scripts runs
+    /// any more. Its owners remove what they hold of the world again (nothing, as the world's calls are refused since
+    /// worldLeft).
     void worldScriptsStopped(int world);
     void enterEntity(const EntityItemID& entityItemID);
     void leaveEntity(const EntityItemID& entityItemID);

@@ -715,6 +715,12 @@ public:
     /// its maker before it runs. 0: none given (ScriptCaller::ANY_WORLD on its thread).
     void setWorldId(int worldId) { _worldId = worldId; }
     int getWorldId() const { return _worldId; }
+    /// Whether the world this engine runs the scripts of was left (ScriptCaller::retireWorld): its scripts' calls are
+    /// refused, and a wait of theirs (a synchronous request, Script.include, Script.require) ends, as when it stops.
+    bool worldWasLeft() const;
+    /// A world's entities engine (it has a world id) that is stopping or whose world was left: its scripts' requests
+    /// end and their answers are dropped (a synchronous one stops waiting). The visitor's own engines: never.
+    bool isWorldEnding() const { return _worldId != 0 && (isStopping() || worldWasLeft()); }
 
     bool isDebuggable() const { return _debuggable; }
 

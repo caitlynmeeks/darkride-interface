@@ -41,6 +41,11 @@ void PointerScriptingInterface::setIncludeItemsVector(unsigned int uid, const QV
 }
 
 unsigned int PointerScriptingInterface::createPointer(const PickQuery::PickType& type, const QVariant& properties) {
+    if (ScriptCaller::isRetired()) {
+        // nothing built for a world that was left (its visuals would be refused one by one)
+        ScriptCaller::logRetiredRefusal("Pointers", "createPointer");
+        return PointerEvent::INVALID_POINTER_ID;
+    }
     // Interaction with managers should always happen on the main thread
     if (QThread::currentThread() != qApp->thread()) {
         // the pointer and its visuals (local entities) are made on the main thread: they record the caller as their

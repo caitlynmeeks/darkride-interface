@@ -24,6 +24,10 @@ std::shared_ptr<Pointer> PointerManager::find(unsigned int uid) const {
 
 unsigned int PointerManager::addPointer(std::shared_ptr<Pointer> pointer) {
     unsigned int result = PointerEvent::INVALID_POINTER_ID;
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Pointers", "createPointer");
+        return result;
+    }
     if (pointer->getRayUID() != PickManager::INVALID_PICK_ID) {
         withWriteLock([&] {
             // Don't let the pointer IDs overflow

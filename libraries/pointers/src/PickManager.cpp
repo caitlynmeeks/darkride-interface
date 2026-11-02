@@ -18,6 +18,10 @@ PickManager::PickManager() {
 
 unsigned int PickManager::addPick(PickQuery::PickType type, const std::shared_ptr<PickQuery> pick) {
     unsigned int id = INVALID_PICK_ID;
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Picks", "createPick");
+        return id;
+    }
     withWriteLock([&] {
         // Don't let the pick IDs overflow
         if (_nextPickID < UINT32_MAX) {

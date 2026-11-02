@@ -29,6 +29,7 @@ private slots:
     void testLog();
     void testCheckedDeliveries();
     void testMemberGate();
+    void testWorldLeft();
 };
 
 #endif // hifi_HostInterfaceTests_h

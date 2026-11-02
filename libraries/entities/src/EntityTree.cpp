@@ -804,6 +804,12 @@ EntityItemPointer EntityTree::addEntity(const EntityItemID& entityID, const Enti
         return nullptr;
     }
 
+    if (ScriptCaller::isRetired()) {
+        // a world that was left makes nothing more, whichever way it asks (security #32)
+        ScriptCaller::logRetiredRefusal("Entities", "addEntity");
+        return nullptr;
+    }
+
     // construct the instance of the entity
     EntityTypes::EntityType type = props.getType();
     EntityItemPointer result = EntityTypes::constructEntityItem(type, entityID, props);

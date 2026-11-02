@@ -10,9 +10,20 @@
 
 #include "ScriptCaller.h"
 
+#include <atomic>
+
+#include <QtCore/QMutex>
+#include <QtCore/QSet>
+
+#include "SharedLogging.h"
+
 namespace {
 thread_local int callerWorld = 0;  // a WorldScope's
 thread_local int threadWorld = 0;  // markThreadAsWorld's
+QMutex retiredLock;
+QSet<int> retiredWorlds;                // under retiredLock
+std::atomic<int> highestRetired { 0 };  // no world above it was left: a newer world's call never takes the lock
+thread_local int refusalLoggedFor = 0;  // the world whose refusal this thread has logged (one world per engine thread)
 }
 
 int ScriptCaller::world() {
@@ -25,6 +36,38 @@ bool ScriptCaller::isWorld() {
 
 bool ScriptCaller::belongsTo(int tag, int world) {
     return tag != 0 && (tag == world || tag == ANY_WORLD);
+}
+
+void ScriptCaller::retireWorld(int world) {
+    if (world <= 0) {
+        return;
+    }
+    QMutexLocker locker(&retiredLock);
+    retiredWorlds.insert(world);
+    if (world > highestRetired.load()) {
+        highestRetired.store(world);
+    }
+}
+
+bool ScriptCaller::isRetired(int world) {
+    if (world <= 0 || world > highestRetired.load()) {
+        return false;
+    }
+    QMutexLocker locker(&retiredLock);
+    return retiredWorlds.contains(world);
+}
+
+bool ScriptCaller::isRetired() {
+    return isRetired(world());
+}
+
+void ScriptCaller::logRetiredRefusal(const char* object, const char* member) {
+    const int caller = world();
+    if (refusalLoggedFor != caller) {
+        refusalLoggedFor = caller;
+        qCWarning(shared).nospace() << object << "." << member << ": a script of a world that was left (" << caller
+                                    << ") may do nothing more; refused (shown once for the world)";
+    }
 }
 
 void ScriptCaller::markThreadAsWorld(int world) {

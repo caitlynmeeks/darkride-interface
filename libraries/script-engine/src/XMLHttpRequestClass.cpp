@@ -129,10 +129,16 @@ QScriptValue XMLHttpRequestClass::getResponseHeader(const QString& name) const {
  * Called when the request's ready state changes.
  * @callback XMLHttpRequest~onReadyStateChangeCallback
  */
+bool XMLHttpRequestClass::isWorldEnding() const {
+    auto scriptEngine = qobject_cast<ScriptEngine*>(_engine);
+    return scriptEngine && scriptEngine->isWorldEnding();
+}
+
 void XMLHttpRequestClass::setReadyState(ReadyState readyState) {
     if (readyState != _readyState) {
         _readyState = readyState;
-        if (_onReadyStateChange.isFunction()) {
+        // a world's script hears no answer once its engine stops or its world is left
+        if (_onReadyStateChange.isFunction() && !isWorldEnding()) {
             _onReadyStateChange.call(QScriptValue::NullValue);
         }
     }
@@ -201,9 +207,24 @@ void XMLHttpRequestClass::send(const QScriptValue& data) {
         }, _worldIsLocal);
     }
     if (!_async && _readyState != DONE) {
-        QEventLoop loop;
-        connect(this, SIGNAL(requestComplete()), &loop, SLOT(quit()));
-        loop.exec();
+        // the script's queued callbacks run while it waits: a world's script's wait ends when its engine stops or its
+        // world is left (checked every 500 ms), and the request is aborted, so nothing of it answers later
+        auto ending = [this] { return isWorldEnding(); };
+        if (!ending()) {
+            QEventLoop loop;
+            QTimer monitor;
+            connect(this, SIGNAL(requestComplete()), &loop, SLOT(quit()));
+            connect(&monitor, &QTimer::timeout, &loop, [&loop, ending] {
+                if (ending()) {
+                    loop.exit(-1);
+                }
+            });
+            monitor.start(500);
+            loop.exec();
+        }
+        if (_readyState != DONE && ending()) {
+            abort();
+        }
     }
 }
 
@@ -242,7 +263,7 @@ void XMLHttpRequestClass::doSend() {
  * @callback XMLHttpRequest~onTimeoutCallback 
  */
 void XMLHttpRequestClass::requestTimeout() {
-    if (_onTimeout.isFunction()) {
+    if (_onTimeout.isFunction() && !isWorldEnding()) {
         _onTimeout.call(QScriptValue::NullValue);
     }
     abortRequest();

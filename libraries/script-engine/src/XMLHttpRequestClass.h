@@ -297,6 +297,8 @@ signals:
     void requestComplete();
 
 private:
+    /// The requesting script is a world's whose engine is stopping or whose world was left (ScriptEngine::isWorldEnding).
+    bool isWorldEnding() const;
     void setReadyState(ReadyState readyState);
     /// Ends the request as refused by the network rule for a script's own requests (ScriptNetworkPolicy): a failed
     /// request, with the reason in the script's log.

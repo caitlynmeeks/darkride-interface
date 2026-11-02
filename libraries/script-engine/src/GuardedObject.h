@@ -47,6 +47,9 @@ public:
 
 private:
     enum Kind { Absent = 0, Method = 1, Property = 2, Signal = 3 };
+    /// True (logged once per world) when the caller is a script of a world that was left and the member isn't one it
+    /// may still use (MemberGate::allowsAfterWorldLeft): refused, answering undefined.
+    bool refusedAfterWorldLeft(const QScriptValue& raw, const QByteArray& member) const;
     /// A signal whose deliveries the gate checks (HostInterface::MemberGate::checksDelivery): the world's script gets
     /// connect and disconnect, never the signal itself, and each function it connects hears only the deliveries the
     /// gate lets through.
