@@ -1207,7 +1207,7 @@ Menu::Menu() {
     // Reference, Changelog and Report a Bug are gone, Caity 10-29)
     action = addActionToQMenuAndActionHash(helpMenu, "Discord Server");
     connect(action, &QAction::triggered, qApp, [] {
-        QDesktopServices::openUrl(QUrl("https://discord.gg/fQqG7dT9wY"));
+        QDesktopServices::openUrl(QUrl("https://darkride.ai/discord"));   // the server redirects to the current invite
     });
 }
 
