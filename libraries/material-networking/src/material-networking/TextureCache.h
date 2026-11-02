@@ -86,6 +86,12 @@ protected:
     Q_INVOKABLE void loadTextureContent(const QByteArray& content);
 
     Q_INVOKABLE void setImage(gpu::TexturePointer texture, int originalWidth, int originalHeight);
+    // A loaded texture back to its resource, on the resource's thread (queued when called from a loader's). A functor,
+    // not invokeMethod by name with the texture as an argument: that form takes Qt 5's global type registry's lock for
+    // the look-up and again to copy and destroy the custom-type argument, and some 30 loaders doing it at once held that
+    // lock for seconds while a world loaded (performance, 2026-11-01, ARRIVAL-FREEZE.md). The resource is the call's
+    // context, as it was the receiver: the call is dropped if it is deleted first, and the functor holds no strong pointer.
+    static void handBackImage(NetworkTexture* networkTexture, const gpu::TexturePointer& texture, int width, int height);
     Q_INVOKABLE void finishLoadFromIndex(gpu::TexturePointer texture, ktx::KTXDescriptor* descriptor);
 
     Q_INVOKABLE void startRequestForNextMipLevel();
