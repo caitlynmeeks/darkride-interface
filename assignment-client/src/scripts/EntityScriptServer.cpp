@@ -28,6 +28,7 @@
 #include <ResourceScriptingInterface.h>
 #include <ScriptCache.h>
 #include <ScriptEngines.h>
+#include <ScriptAddressCheck.h>
 #include <SoundCacheScriptingInterface.h>
 #include <UUID.h>
 #include <WebSocketServerClass.h>
@@ -567,6 +568,12 @@ void EntityScriptServer::checkAndCallPreload(const EntityItemID& entityID, bool 
 
             QString scriptUrl = entity->getServerScriptsToRun();
             if (!scriptUrl.isEmpty()) {
+                // the same rule the entity server applies to an entity's server scripts
+                const QString refusal = script_address::refusalReason(scriptUrl);
+                if (!refusal.isEmpty()) {
+                    qCWarning(entity_script_server) << "Not loading the server scripts of" << entityID << "-" << refusal;
+                    return;
+                }
                 scriptUrl = DependencyManager::get<ResourceManager>()->normalizeURL(scriptUrl);
                 if (QUrl(scriptUrl).scheme() == URL_SCHEME_ATP) {
                     // an atp: script needs the asset server's link live: a mapping request sent before then goes
@@ -635,6 +642,12 @@ void EntityScriptServer::sendStatsPacket() {
 }
 
 void EntityScriptServer::handleOctreePacket(QSharedPointer<ReceivedMessage> message, SharedNodePointer senderNode) {
+    // World data is taken only from the world's own entity server: the node list's check names the sending node, not
+    // its type. A piggybacked packet inherits its carrier's sender.
+    if (!senderNode || senderNode->getType() != NodeType::EntityServer) {
+        return;
+    }
+
     auto packetType = message->getType();
 
     if (packetType == PacketType::OctreeStats) {
