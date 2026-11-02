@@ -57,6 +57,7 @@ namespace {
     const double SCRUB_COARSE = 10.0;   // Shift
     const double HUGE_RANGE = 1.0e9;
     const QString MIXED = QStringLiteral("—");
+    const QString UNSET = QStringLiteral("auto");   // a value not set, which follows another (a particle's Middle)
     const int SLIDER_MAX_STEPS = 10000;
     const int SLIDER_FIELD_PIXELS = 52;     // a Range's field beside its slider: room for "0.00"
     const int STEP_RUN_PAUSE_MS = 500;      // a run of wheel or arrow-key steps is over when none comes for this long
@@ -377,8 +378,12 @@ void ScrubSpinBox::focusOutEvent(QFocusEvent* event) {
 }
 
 void ScrubSpinBox::showMixed() {
+    showMark(MIXED);
+}
+
+void ScrubSpinBox::showMark(const QString& text) {
     _mixed = true;
-    lineEdit()->setText(MIXED);
+    lineEdit()->setText(text);
 }
 
 QSize ScrubSpinBox::sizeHint() const {
@@ -589,10 +594,19 @@ void NumberEditor::attachScrubLabel(ScrubLabel* label) {
 
 void NumberEditor::setValue(const QVariant& value, bool mixed) {
     _updating = true;
-    _spin->setValue(value.toDouble());
+    // not set (a particle's Start or Finish, which then follows its Middle): the field says "auto", and typing or
+    // dragging starts from 0, not from the end of the range an unset value clamped to (360, or a 32768 m particle that
+    // filled the view: GitHub #49)
+    const double number = value.toDouble();
+    const bool unset = std::isnan(number);
+    _spin->setValue(unset ? qBound(_spin->minimum(), 0.0, _spin->maximum()) : number);
     showOnSlider();
-    if (mixed && !_spin->hasFocus()) {   // clicking in replaced the mark with a value to edit
-        _spin->showMixed();
+    if (!_spin->hasFocus()) {   // clicking in replaced the mark with a value to edit
+        if (mixed) {
+            _spin->showMixed();
+        } else if (unset) {
+            _spin->showMark(UNSET);
+        }
     }
     _updating = false;
 }
