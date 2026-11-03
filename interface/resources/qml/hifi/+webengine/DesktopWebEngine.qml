@@ -1,5 +1,5 @@
 import QtQuick 2.7
-import QtQuick.Dialogs 1.2 as OriginalDialogs
+import "../js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1); a file selector page resolves from hifi/, not +webengine/
 import QtWebEngine 1.5
 
 Item {
