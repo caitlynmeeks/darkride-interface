@@ -27,6 +27,7 @@
 #include "NetworkingConstants.h"
 #include "RedirectCache.h"
 #include "ResourceCache.h"
+#include "ResourceSizeLimit.h"
 #include "NetworkLogging.h"
 
 HTTPResourceRequest::~HTTPResourceRequest() {
@@ -253,6 +254,14 @@ void HTTPResourceRequest::onRequestFinished() {
                 _result = Error;
                 break;
             }
+            if (_reply->bytesAvailable() > ResourceSizeLimit::forPath(_url.path())) {
+                // a body past the limit for its kind (one the progress check didn't see, e.g. from the disk cache)
+                // isn't read at all
+                qWarning(networking) << "Refused a download over the size limit for its kind:" << _url.toString()
+                                     << _reply->bytesAvailable() << "bytes";
+                _result = Error;
+                break;
+            }
             _data = _reply->readAll();
             _loadedFromCache = _reply->attribute(QNetworkRequest::SourceIsFromCacheAttribute).toBool();
             _result = Success;
@@ -290,8 +299,10 @@ void HTTPResourceRequest::onRequestFinished() {
                 auto contentEncoding = _reply->rawHeader("Content-Encoding");
                 if (contentEncoding.size() > 0) {
                     QByteArray decompressedData;
+                    // what it unpacks to has the same limit as a download of its kind
+                    const int maxSize = ResourceSizeLimit::forPath(_url.path());
                     if (contentEncoding.compare("gzip", Qt::CaseInsensitive) == 0) {
-                        if (gunzip(_data, decompressedData)) {
+                        if (gunzip(_data, decompressedData, maxSize)) {
                             _data = decompressedData;
                         } else if (!_data.startsWith("\x1f\x8b")) {
                             // not gzip after all: a cached copy that a request with Qt's own decompression saved
@@ -301,7 +312,7 @@ void HTTPResourceRequest::onRequestFinished() {
                             _result = Error;
                         }
                     } else if (contentEncoding.compare("br", Qt::CaseInsensitive) == 0) {
-                        if (brotliDecompress(_data, decompressedData)) {
+                        if (brotliDecompress(_data, decompressedData, maxSize)) {
                             _data = decompressedData;
                         } else {
                             qWarning(networking) << "Failed to decompress brotli for: " << _url;
@@ -411,7 +422,28 @@ void HTTPResourceRequest::onRequestFinished() {
 
 void HTTPResourceRequest::onDownloadProgress(qint64 bytesReceived, qint64 bytesTotal) {
     Q_ASSERT(_state == InProgress);
-    
+
+    // past the size limit for its kind (or announced past it), the download stops here and the request fails, as a
+    // timeout does: nothing more is received or held
+    const qint64 maxSize = ResourceSizeLimit::forPath(_url.path());
+    if (bytesReceived > maxSize || bytesTotal > maxSize) {
+        qWarning(networking) << "Stopped a download over the size limit for its kind:" << _url.toString()
+                             << qMax(bytesReceived, bytesTotal) << "bytes, limit" << maxSize;
+        _reply->disconnect(this);
+        _reply->abort();
+        _reply->deleteLater();
+        _reply = nullptr;
+
+        cleanupTimer();
+
+        _result = Error;
+        _state = Finished;
+        emit finished();
+
+        DependencyManager::get<StatTracker>()->incrementStat(STAT_HTTP_REQUEST_FAILED);
+        return;
+    }
+
     // We've received data, so reset the timer
     _sendTimer->start();
 

@@ -22,6 +22,16 @@
 
 bool gzip(QByteArray source, QByteArray &destination, int compressionLevel = -1); // -1 is Z_DEFAULT_COMPRESSION
 
-bool gunzip(QByteArray source, QByteArray &destination);
+// The most one gunzip may produce unless the caller says otherwise (a world file of thousands of entities is a few MB).
+// A caller that knows how big its real content gets passes its own limit.
+static const int GZIP_DEFAULT_MAX_SIZE = 256 * 1024 * 1024;
+
+// No limit can go above this: a QByteArray must be able to hold the result.
+static const int GZIP_MAX_SIZE_CEILING = 1024 * 1024 * 1024;
+
+// Unpacks a whole gzip stream into destination. An empty source gives an empty destination and true. Returns false,
+// with destination empty, if the stream is broken or incomplete, or if its content would be larger than maxSize bytes
+// (capped at GZIP_MAX_SIZE_CEILING).
+bool gunzip(QByteArray source, QByteArray &destination, int maxSize = GZIP_DEFAULT_MAX_SIZE);
 
 #endif

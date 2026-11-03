@@ -983,6 +983,30 @@ void EntityTree::deleteEntitiesByID(const std::vector<EntityItemID>& ids, bool f
     }
 }
 
+void EntityTree::deleteAvatarEntitiesOf(const QUuid& avatarID, const std::vector<EntityItemID>& entityIDs) {
+    // a non-null id: collectChildrenForDelete takes null to mean every child, of any kind
+    static const QUuid COLLECT_LOCAL_CHILDREN = AVATAR_SELF_ID;
+    withWriteLock([&] {
+        std::vector<EntityItemPointer> entitiesToDelete;
+        entitiesToDelete.reserve(entityIDs.size());
+        for (const auto& id : entityIDs) {
+            EntityItemPointer entity;
+            {
+                QReadLocker locker(&_entityMapLock);
+                entity = _entityMap.value(id);
+            }
+            if (entity && entity->isAvatarEntityOf(avatarID) &&
+                std::find(entitiesToDelete.begin(), entitiesToDelete.end(), entity) == entitiesToDelete.end()) {
+                entitiesToDelete.push_back(entity);
+                entity->collectChildrenForDelete(entitiesToDelete, COLLECT_LOCAL_CHILDREN);
+            }
+        }
+        if (!entitiesToDelete.empty()) {
+            deleteEntitiesByPointer(entitiesToDelete);
+        }
+    });
+}
+
 void EntityTree::deleteEntitiesByPointer(const std::vector<EntityItemPointer>& entities) {
     // tree must be write-locked before calling this method
     //TODO: assert(treeIsLocked);
