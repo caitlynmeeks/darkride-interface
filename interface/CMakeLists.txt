@@ -53,7 +53,7 @@ foreach(EXTERNAL ${OPTIONAL_EXTERNALS})
   endif ()
 endforeach()
 
-find_package(Qt5LinguistTools REQUIRED)
+find_package(Qt${QT_VERSION_MAJOR}LinguistTools REQUIRED)
 find_package(Qt5LinguistToolsMacros)
 
 if (WIN32)
@@ -74,7 +74,7 @@ if (APPLE)
 endif ()
 
 find_package(
-  Qt5 COMPONENTS
+  Qt${QT_VERSION_MAJOR} COMPONENTS
   Gui Widgets Multimedia Network Qml Quick QuickWidgets Script Svg
   ${PLATFORM_QT_COMPONENTS}
   WebChannel WebSockets
@@ -83,8 +83,8 @@ find_package(
 # grab the ui files in resources/ui
 file (GLOB_RECURSE QT_UI_FILES ui/*.ui)
 source_group("UI Files" FILES ${QT_UI_FILES})
-# have qt5 wrap them and generate the appropriate header files
-qt5_wrap_ui(QT_UI_HEADERS "${QT_UI_FILES}")
+# have qt wrap them and generate the appropriate header files
+qt_wrap_ui(QT_UI_HEADERS "${QT_UI_FILES}")
 
 # add them to the interface source files
 set(INTERFACE_SRCS ${INTERFACE_SRCS} "${QT_UI_HEADERS}" "${QT_RESOURCES}")
@@ -298,9 +298,9 @@ endif ()
 
 target_link_libraries(
   ${TARGET_NAME}
-  Qt5::Gui Qt5::Network Qt5::Multimedia Qt5::Widgets
-  Qt5::Qml Qt5::Quick Qt5::QuickWidgets Qt5::Script Qt5::Svg
-  Qt5::WebChannel
+  Qt::Gui Qt::Network Qt::Multimedia Qt::Widgets
+  Qt::Qml Qt::Quick Qt::QuickWidgets Qt::Script Qt::Svg
+  Qt::WebChannel
   ${PLATFORM_QT_LIBRARIES}
 )
 

@@ -149,6 +149,12 @@ if (SERVER_ONLY)
   set(BUILD_TESTS_OPTION OFF)
 endif()
 
+# The Qt major version to build with. The build names the Qt${QT_VERSION_MAJOR} packages and the versionless Qt::
+# targets and qt_ commands, which Qt 5.15 and Qt 6 both provide; Qt 5 stays the default until the Qt 6 build works
+set(QT_VERSION_MAJOR 5 CACHE STRING "The Qt major version to build with: 5 or 6")
+# the versionless qt_ commands follow it
+set(QT_DEFAULT_MAJOR_VERSION ${QT_VERSION_MAJOR})
+
 set(PLATFORM_QT_COMPONENTS WebEngine Xml)
 
 option(HIFI_USE_OPTIMIZED_IK "Use optimized IK" ${HIFI_USE_OPTIMIZED_IK_OPTION})
@@ -183,7 +189,7 @@ else()
 endif()
 
 foreach(PLATFORM_QT_COMPONENT ${PLATFORM_QT_COMPONENTS})
-  list(APPEND PLATFORM_QT_LIBRARIES "Qt5::${PLATFORM_QT_COMPONENT}")
+  list(APPEND PLATFORM_QT_LIBRARIES "Qt::${PLATFORM_QT_COMPONENT}")
 endforeach()
 
 MESSAGE(STATUS "Use optimized IK:      " ${HIFI_USE_OPTIMIZED_IK})
