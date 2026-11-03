@@ -14,7 +14,7 @@
 
 #include <procedural/Procedural.h>
 
-#include "EntityTreeRenderer.h"
+#include "TaggedMaterials.h"
 
 using namespace render;
 using namespace render::entities;
@@ -382,7 +382,7 @@ std::shared_ptr<NetworkMaterial> MaterialEntityRenderer::getMaterial() const {
 
 void MaterialEntityRenderer::deleteMaterial(const QUuid& oldParentID, const QString& oldParentMaterialName) {
     if (_appliedByTag) {
-        EntityTreeRenderer::removeTaggedMaterial(_entityID);
+        TaggedMaterials::removeMaterial(_entityID);
         _appliedByTag = false;
         _appliedMaterial = nullptr;
         return;
@@ -441,8 +441,8 @@ void MaterialEntityRenderer::applyMaterial(const TypedEntityPointer& entity) {
             std::static_pointer_cast<graphics::ProceduralMaterial>(material)->setBoundOperator(nullptr);
         }
         _entityID = entity->getID();
-        EntityTreeRenderer::setTaggedMaterial(_entityID, { _applyToTag, graphics::MaterialLayer(material, _priority),
-                                                           _parentMaterialName.toStdString() });
+        TaggedMaterials::setMaterial(_entityID, { _applyToTag, graphics::MaterialLayer(material, _priority),
+                                                _parentMaterialName.toStdString() });
         _appliedMaterial = material;
         _appliedByTag = true;
         return;

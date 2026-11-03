@@ -26,7 +26,7 @@
 #include <MetaModelPayload.h>
 
 #include "RenderableEntityItem.h"
-#include "EntityTreeRenderer.h"
+#include "TaggedMaterials.h"
 
 class Model;
 class EntityTreeRenderer;
@@ -248,13 +248,15 @@ private:
     QString _lightmapSpec;
     std::shared_ptr<NetworkMaterial> _lightmapMaterial;
 
-    // the Material entities that apply to every model with a tag this one carries (EntityTreeRenderer's MATERIALS BY
-    // TAG), kept up to date as they, the model and its userData change
+    // the Material entities that apply to every model with a tag this one carries (TaggedMaterials.h's MATERIALS BY
+    // TAG), kept up to date as they, the model and its userData change. Its tags are worked out again only when its
+    // model or its userData has changed, and a model with no tags and none on looks up nothing
     void applyTaggedMaterials(const TypedEntityPointer& entity);
-    uint32_t _taggedMaterialsVersion { 0 };
-    QUrl _taggedMaterialsModelURL;
+    std::weak_ptr<NetworkModel> _taggedMaterialsModel;
     QString _taggedMaterialsUserData;
-    EntityTreeRenderer::TaggedMaterials _appliedTaggedMaterials;
+    QSet<QString> _tags;
+    uint32_t _taggedMaterialsVersion { 0 };
+    TaggedMaterials::Materials _appliedTaggedMaterials;
 
     static void metaBlendshapeOperator(render::ItemID renderItemID, int blendshapeNumber, const QVector<BlendshapeOffset>& blendshapeOffsets,
                                        const QVector<int>& blendedMeshSizes, const render::ItemIDs& subItemIDs);

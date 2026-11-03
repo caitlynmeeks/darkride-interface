@@ -57,7 +57,7 @@ private:
     bool _texturesLoaded { false };
     bool _retryApply { false };
 
-    // with no parent, the tag of the models it applies to instead (userData's applyTo.tag; EntityTreeRenderer's
+    // with no parent, the tag of the models it applies to instead (userData's applyTo.tag; TaggedMaterials.h's
     // MATERIALS BY TAG), and whether it is applied that way now
     QString _applyToTag;
     bool _appliedByTag { false };

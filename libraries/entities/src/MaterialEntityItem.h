@@ -77,7 +77,7 @@ public:
     bool queryAACubeNeedsUpdate() const override;
 
     // with no parent and { "applyTo": { "tag": ... } } in its userData it applies to every model with the tag, wherever
-    // they are (EntityTreeRenderer::setTaggedMaterial)
+    // they are (TaggedMaterials in entities-renderer)
     void setUserData(const QString& value) override;
     bool appliesByTag() const;
 

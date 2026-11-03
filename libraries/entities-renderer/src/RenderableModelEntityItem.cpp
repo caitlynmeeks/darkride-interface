@@ -1103,6 +1103,10 @@ void ModelEntityRenderer::onRemoveFromSceneTyped(const TypedEntityPointer& entit
     if (entityTreeRenderer) {
         entityTreeRenderer->undeferModelMesh(entity->getID());
     }
+    // it leaves the index of tags; back in the scene, it works its tags out again
+    TaggedMaterials::removeModel(entity->getID());
+    _taggedMaterialsModel.reset();
+    _tags.clear();
     // a group's card counts its models again
     updateImpostorAncestor(entity);
 }
@@ -1797,40 +1801,61 @@ void ModelEntityRenderer::applyTaggedMaterials(const TypedEntityPointer& entity)
     if (!model || !model->isLoaded()) {
         return;
     }
-    QUrl modelURL = model->getURL();
-    QString userData = entity->getUserData();
-    // an animated model comes here every frame: the version alone tells whether anything changed, without a copy
-    if (EntityTreeRenderer::getTaggedMaterialsVersion() == _taggedMaterialsVersion && modelURL == _taggedMaterialsModelURL &&
-        userData == _taggedMaterialsUserData) {
-        return;
-    }
-    uint32_t version;
-    auto taggedMaterials = EntityTreeRenderer::getTaggedMaterials(version);
-    _taggedMaterialsVersion = version;
-    _taggedMaterialsModelURL = modelURL;
-    _taggedMaterialsUserData = userData;
 
-    QVariantMap userDataTags = QJsonDocument::fromJson(userData.toUtf8()).object().toVariantMap();
-    const HFMModel& hfmModel = model->getHFMModel();
-    // the entity's userData decides where it names the tag, so one model can be opted in or out without a new export
-    auto carries = [&](const QString& tag) {
-        if (userDataTags.contains(tag)) {
-            return userDataTags.value(tag).toBool();
-        }
-        for (const auto& joint : hfmModel.joints) {
-            if (joint.extras.value(tag).toBool()) {
-                return true;
+    // its tags, worked out again when its model or its userData has changed. An animated model comes here every
+    // frame: the userData is the entity's own string, shared with the copy kept here until the entity is given a new
+    // one, so the same buffer tells it is unchanged without comparing the text
+    const NetworkModel::Pointer& networkModel = model->getNetworkModel();
+    QString userData = entity->getUserData();
+    bool modelChanged = _taggedMaterialsModel.lock() != networkModel;
+    bool tagsChanged = false;
+    if (modelChanged || userData.constData() != _taggedMaterialsUserData.constData()) {
+        bool userDataChanged = userData != _taggedMaterialsUserData;
+        _taggedMaterialsModel = networkModel;
+        _taggedMaterialsUserData = userData;
+        if (modelChanged || userDataChanged) {
+            // a tag true in the extras of any of its objects, unless the userData names it, which then decides, so one
+            // model can be opted in or out without a new export
+            QSet<QString> tags;
+            for (const auto& joint : model->getHFMModel().joints) {
+                for (auto it = joint.extras.cbegin(); it != joint.extras.cend(); ++it) {
+                    if (it.value().toBool()) {
+                        tags.insert(it.key());
+                    }
+                }
+            }
+            QVariantMap userDataTags = QJsonDocument::fromJson(userData.toUtf8()).object().toVariantMap();
+            for (auto it = userDataTags.cbegin(); it != userDataTags.cend(); ++it) {
+                if (it.value().toBool()) {
+                    tags.insert(it.key());
+                } else {
+                    tags.remove(it.key());
+                }
+            }
+            if (tags != _tags) {
+                _tags = tags;
+                TaggedMaterials::setModelTags(entity->getID(), _tags);
+                tagsChanged = true;
             }
         }
-        return false;
-    };
+    }
+
+    // the materials, looked up again when its tags or the tagged materials have changed; most models carry no tag
+    uint32_t version = TaggedMaterials::getVersion();
+    if (!tagsChanged && version == _taggedMaterialsVersion) {
+        return;
+    }
+    _taggedMaterialsVersion = version;
+    if (_tags.isEmpty() && _appliedTaggedMaterials.empty()) {
+        return;
+    }
+    auto taggedMaterials = TaggedMaterials::getMaterialsFor(_tags);
 
     // those that changed or no longer apply go, then the ones that apply and are not on yet
     for (auto it = _appliedTaggedMaterials.begin(); it != _appliedTaggedMaterials.end();) {
         auto now = taggedMaterials.find(it->first);
         bool keep = now != taggedMaterials.end() && now->second.layer.material == it->second.layer.material &&
-                    now->second.layer.priority == it->second.layer.priority && now->second.parts == it->second.parts &&
-                    carries(now->second.tag);
+                    now->second.layer.priority == it->second.layer.priority && now->second.parts == it->second.parts;
         if (keep) {
             ++it;
         } else {
@@ -1839,7 +1864,7 @@ void ModelEntityRenderer::applyTaggedMaterials(const TypedEntityPointer& entity)
         }
     }
     for (const auto& entry : taggedMaterials) {
-        if (_appliedTaggedMaterials.find(entry.first) == _appliedTaggedMaterials.end() && carries(entry.second.tag)) {
+        if (_appliedTaggedMaterials.find(entry.first) == _appliedTaggedMaterials.end()) {
             addMaterial(entry.second.layer, entry.second.parts);
             _appliedTaggedMaterials.emplace(entry.first, entry.second);
         }
