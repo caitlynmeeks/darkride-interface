@@ -24,11 +24,13 @@ namespace stream {
 /// The format: what a Qt 5.15 build writes by default today.
 const QDataStream::Version WIRE_VERSION = QDataStream::Qt_5_15;
 
-/// Pins a stream to the wire format, floats as 8 bytes (Qt's default since 4.6, stated here so it can't drift). Call it
-/// before anything is read or written; a stream that wants something else sets it after.
+/// Pins a stream to the wire format: floats as 8 bytes and big-endian (Qt's defaults in 5 and 6, stated here so they
+/// can't drift). Call it before anything is read or written; a stream that wants something else (a little-endian file
+/// format, say) sets it after.
 inline QDataStream& pin(QDataStream& stream) {
     stream.setVersion(WIRE_VERSION);
     stream.setFloatingPointPrecision(QDataStream::DoublePrecision);
+    stream.setByteOrder(QDataStream::BigEndian);
     return stream;
 }
 

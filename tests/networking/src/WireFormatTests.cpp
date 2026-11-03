@@ -54,6 +54,9 @@ QByteArray written(const T& value) {
 // compares with the recorded bytes, or prints them when recording
 void checkGolden(const char* name, const QByteArray& bytes, const char* golden) {
     if (qEnvironmentVariableIsSet("WIRE_FORMAT_PRINT")) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        QFAIL("record on a Qt 5 build only: the recorded bytes are what Qt 6 must match");
+#endif
         printf("const char* GOLDEN_%s = \"%s\";\n", name, bytes.toHex().constData());
         return;
     }
@@ -77,8 +80,10 @@ void WireFormatTests::thePinIsQt5_15WithDoubleFloats() {
     hifi::stream::pin(out);
     QCOMPARE(out.version(), int(QDataStream::Qt_5_15));
     QCOMPARE(out.floatingPointPrecision(), QDataStream::DoublePrecision);
-    out << 0.5f;
-    QCOMPARE(bytes.size(), 8);   // a float goes as 8 bytes, as Qt 5 writes it
+    QCOMPARE(out.byteOrder(), QDataStream::BigEndian);
+    out << 0.5f << quint16(0x0102);
+    QCOMPARE(bytes.size(), 10);   // a float goes as 8 bytes, as Qt 5 writes it
+    QCOMPARE(bytes.right(2).toHex(), QByteArray("0102"));   // big-endian
 }
 
 // On the Qt 5.15 build the pin writes exactly what an unpinned stream wrote, so pinning changes no bytes there.
