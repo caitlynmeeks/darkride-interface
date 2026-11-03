@@ -704,6 +704,23 @@ QString ScriptEngine::entityScriptRefusal(const QString& entityScript) const {
     return "a file of this machine, in a world that isn't served from it or its network";
 }
 
+QString ScriptEngine::ruleEntityScriptFetch(const QString& entityScript) {
+    if (!networkRuled() || ScriptCache::isInlineScript(entityScript) || QUrl(entityScript).scheme().toLower() == "javascript") {
+        return QString();
+    }
+    const QUrl url = DependencyManager::get<ResourceManager>()->normalizeURL(QUrl(entityScript));
+    if (ScriptNetworkPolicy::isAppScript(url)) {
+        return QString();   // one of the app's own scripts (qrc, or a file in its scripts folder) is no request
+    }
+    const QUrl origin(isClientSide() ? "about:Entities" : "about:entity-server");
+    const ScriptNetworkPolicy::Decision decision = ScriptNetworkPolicy::check(url, origin, worldIsLocal());
+    if (!decision.allowed && !decision.needsLookup) {
+        return decision.reason;
+    }
+    DependencyManager::get<ScriptCache>()->ruleFetch(url, origin, worldIsLocal());
+    return QString();
+}
+
 void ScriptEngine::scriptErrorMessage(const QString& message) {
     qCCritical(scriptengine, "[%s] %s", qUtf8Printable(getFilename()), qUtf8Printable(message));
     emit errorMessage(message, getFilename());
@@ -2693,7 +2710,10 @@ void ScriptEngine::loadEntityScript(const EntityItemID& entityID, const QString&
         scriptWarningMessage(QString("entity script %1 (%2): %3").arg(entityScript, entityID.toString(), newDetails.errorInfo));
         return;
     }
-    const QString refusal = entityScriptRefusal(entityScript);
+    QString refusal = entityScriptRefusal(entityScript);
+    if (refusal.isEmpty()) {
+        refusal = ruleEntityScriptFetch(entityScript);
+    }
     if (!refusal.isEmpty()) {
         newDetails.status = EntityScriptStatus::ERROR_LOADING_SCRIPT;
         newDetails.errorInfo = "not run: " + refusal;

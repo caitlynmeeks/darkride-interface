@@ -32,6 +32,7 @@ private slots:
     void appScripts();
     void testRequestsGoToTheCheckedAddress();
     void testPinnedNameIsCheckedOnEveryRequest();
+    void everyWebRequestRuled();
     void worldLeft();
 };
 

@@ -65,7 +65,9 @@ EntityScriptServer::EntityScriptServer(ReceivedMessage& message) : ThreadedAssig
     DependencyManager::set<EntityScriptingInterface>(false)->setPacketSender(&_entityEditSender);
     DependencyManager::set<ResourceScriptingInterface>();
 
-    DependencyManager::set<ResourceManager>();
+    // what this server fetches over the web is for a world's scripts (their scripts, includes and sounds): held to the
+    // network rule as the scripts' own requests are, as from the network
+    DependencyManager::set<ResourceManager>()->ruleEveryWebRequest(QUrl("about:entity-server"));
     DependencyManager::set<PluginManager>()->instantiate();
 
     DependencyManager::registerInheritance<SpatialParentFinder, AssignmentParentFinder>();

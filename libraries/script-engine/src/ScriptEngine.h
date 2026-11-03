@@ -194,6 +194,13 @@ public:
     /// Why this engine won't run an entity script from this address, or empty: on a client whose world isn't local, a
     /// file of this machine that isn't one of the app's own scripts.
     QString entityScriptRefusal(const QString& entityScript) const;
+    /// The network rule for an entity script's own download, on an engine the rule holds (a world's entities engine on
+    /// a client, the entity script server's), as for an include: judged as the world's (about:Entities on a client, by
+    /// its world; about:entity-server on the server, as from the network), and its download sent to the address
+    /// judged, each redirect judged again (ScriptCache::ruleFetch). Called just before the download is asked for.
+    /// Empty when it may be fetched, else why not (a scheme or address refused before any name lookup; a name that
+    /// leads to a private address fails the download itself).
+    QString ruleEntityScriptFetch(const QString& entityScript);
     /// The guard in front of every global of a world's entity engine on QtScript (the script API policy); made on
     /// first use, null on any other engine.
     class GuardedObjectClass* guardClass();
