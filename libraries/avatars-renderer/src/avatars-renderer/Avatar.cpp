@@ -347,9 +347,7 @@ void Avatar::removeAvatarEntitiesFromTree() {
             ids.push_back(itr.key());
             ++itr;
         }
-        bool force = true;
-        bool ignoreWarnings = true;
-        entityTree->deleteEntitiesByID(ids, force, ignoreWarnings); // locks tree
+        entityTree->deleteAvatarEntitiesOf(getID(), ids); // locks tree
     }
 }
 
