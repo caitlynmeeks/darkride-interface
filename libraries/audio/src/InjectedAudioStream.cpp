@@ -42,10 +42,8 @@ int InjectedAudioStream::parseStreamProperties(PacketType type,
     packetStream >> isStereo;
     
     // if isStereo value has changed, restart the ring buffer with new frame size
-    if (isStereo != _isStereo) {
-        _ringBuffer.resizeForFrameSize(isStereo
-                                       ? AudioConstants::NETWORK_FRAME_SAMPLES_STEREO
-                                       : AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL);
+    if (isStereo != _isStereo && changeFrameSize(isStereo ? AudioConstants::NETWORK_FRAME_SAMPLES_STEREO
+                                                          : AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL)) {
         _isStereo = isStereo;
     }
 

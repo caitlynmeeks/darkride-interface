@@ -1249,8 +1249,8 @@
           "name": "codec_preference_order",
           "label": "Audio codecs, best first",
           "help": "The sound formats the server prefers, in order, by name.",
-          "placeholder": "opus,zlib,pcm",
-          "default": "opus,zlib,pcm",
+          "placeholder": "opus,pcm",
+          "default": "opus,pcm",
           "advanced": true
         }
       ]
