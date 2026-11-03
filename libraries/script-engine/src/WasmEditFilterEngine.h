@@ -54,7 +54,7 @@ public:
     Result call(EntityItemProperties& in, EntityItemProperties& out, int filterType,
                 const EntityItemProperties* original, const EntityItemProperties* zone, const AABox* zoneBox) override;
 
-    /// The engine for a filter: this one; the QtScript one only in a build without the guest module.
+    /// The engine for a filter (EntityEditFilters::setEngineFactory): this one.
     static EntityEditFilterEnginePointer makeForSetting(const EntityItemID& entityID);
 
 private:

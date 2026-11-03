@@ -16,7 +16,6 @@
 #include <ObjectTable.h>
 #include <PlainScriptValue.h>
 #include <PlainScriptValueConversions.h>
-#include <QtScriptEditFilterEngine.h>
 #include <SignalRelay.h>
 #include <ValueCodec.h>
 #include <WasmRuntime.h>
@@ -238,8 +237,5 @@ EntityEditFilterEngine::Result WasmEditFilterEngine::call(EntityItemProperties& 
 }
 
 EntityEditFilterEnginePointer WasmEditFilterEngine::makeForSetting(const EntityItemID& entityID) {
-    if (WasmScriptEngine::hasJavaScriptGuest()) {
-        return std::make_unique<WasmEditFilterEngine>(entityID);
-    }
-    return std::make_unique<QtScriptEditFilterEngine>(entityID);
+    return std::make_unique<WasmEditFilterEngine>(entityID);
 }
