@@ -9,8 +9,7 @@
 //
 
 import QtQuick 2.7
-import QtQuick.Controls 1.4 as Original
-import QtQuick.Controls.Styles 1.4
+import QtQuick.Controls 2.12 as Original
 
 import stylesUit 1.0
 import controlsUit 1.0 as HifiControls
@@ -23,11 +22,16 @@ Rectangle {
     id: root
     property var rootConfig : Workload
 
-    Original.TextArea {
-        id: textArea
-        width: parent.width
-        height: parent.height
-        text: ""
+    // Controls 2's TextArea doesn't scroll by itself: it fills a Flickable
+    Flickable {
+        anchors.fill: parent
+        Original.TextArea.flickable: Original.TextArea {
+            id: textArea
+            text: ""
+            wrapMode: TextEdit.WordWrap
+            selectByMouse: true
+        }
+        Original.ScrollBar.vertical: Original.ScrollBar { }
     }
 
     Component.onCompleted: {
