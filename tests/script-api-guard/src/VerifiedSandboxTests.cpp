@@ -568,6 +568,18 @@ void VerifiedSandboxTests::testSignalsNotForWorlds() {
     }
     QVERIFY(!ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, "domainChanged"));
     QVERIFY(!ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, "geometryChanged"));
+    // what the tablet's pages send and which page the visitor opens; whether the tablet is shown stays (whiteboards)
+    QVERIFY(ScriptApiPolicy::allowsClass(&TabletProxy::staticMetaObject));
+    for (const char* member : { "webEventReceived", "fromQml", "screenChanged" }) {
+        QVERIFY2(ScriptApiPolicy::deniesSignal(&TabletProxy::staticMetaObject, member), member);
+    }
+    QVERIFY(!ScriptApiPolicy::deniesSignal(&TabletProxy::staticMetaObject, "tabletShownChanged"));
+    QVERIFY(!ScriptApiPolicy::deniesMethod(&TabletProxy::staticMetaObject, "gotoWebScreen"));
+    // the tablet's QML pages and buttons are the app's: off the tablet's allow-list
+    for (const char* member : { "loadQMLSource", "loadQMLOnTop", "pushOntoStack", "addButton", "emitScriptEvent",
+                                "sendToQml" }) {
+        QVERIFY2(ScriptApiPolicy::deniesMethod(&TabletProxy::staticMetaObject, member), member);
+    }
     // a class a world doesn't get: none of its signals
     QVERIFY(ScriptApiPolicy::deniesSignal(&QObject::staticMetaObject, "destroyed"));
 }

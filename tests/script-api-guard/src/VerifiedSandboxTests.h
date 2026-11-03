@@ -18,6 +18,10 @@ class WindowScriptingInterface : public QObject {
     Q_OBJECT
 };
 
+class TabletProxy : public QObject {
+    Q_OBJECT
+};
+
 class VerifiedSandboxTests : public QObject {
     Q_OBJECT
 private slots:
