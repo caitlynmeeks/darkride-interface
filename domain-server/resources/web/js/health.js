@@ -287,7 +287,56 @@ $(document).ready(function() {
         steps: ["Connect your Darkride account and set up your world's ID under Settings > Connection."]
       };
     }
+    // what the directory itself has for this world, when it could be asked
+    var listed = health.listing;
+    if (listed) {
+      var port = health.network.local_port;
+      var ourAddress = publicAddress(health);
+      if (listed.online === false) {
+        return {
+          state: "fail", title: title, summary: "The directory shows your world offline",
+          why: "The directory has this world as offline, although this server updated it " +
+            timeText(directory.last_ok) + ". Explore doesn't offer offline worlds.",
+          steps: ["Check again in a minute. If it stays offline, check the world ID under Settings > Connection."]
+        };
+      }
+      if (listed.network_address && ((ourAddress && listed.network_address !== ourAddress) ||
+          (listed.network_port && Number(listed.network_port) !== port))) {
+        return {
+          state: "warn", title: title,
+          summary: "The directory sends visitors to " + listed.network_address + ":" + listed.network_port,
+          why: "That isn't this server's address now (" + (ourAddress || "?") + ":" + port + "), so people who " +
+            "come through Explore or the world's name go somewhere else.",
+          steps: ["Check again in a minute: the server updates the directory every 15 seconds.",
+            "If it stays wrong, check how visitors reach this server under Settings > Connection."]
+        };
+      }
+      if (!placeName(listed)) {
+        return {
+          state: "warn", title: title, summary: "Listed as \"" + (listed.label || "your world") + "\", but no place name",
+          why: "The directory has your world, online, at the right address, but it has no place name, so people " +
+            "can't visit it by name (hifi://name) and it may not show in Explore.",
+          steps: ["Give it a place name on " + directory.metaverse_url.replace(/^https?:\/\//, "") +
+            " (your places), pointing at this world."]
+        };
+      }
+      return { state: "ok", title: title, summary: "Online as " + placeName(listed) + ", updated " +
+        timeText(directory.last_ok) };
+    }
     return { state: "ok", title: title, summary: "Updated " + timeText(directory.last_ok) };
+  }
+
+  // the name people can visit by: a place the owner made, or the directory's default name, unless that is only the
+  // world's ID (which is what a world with no place has)
+  function placeName(listed) {
+    if (listed.owner_places && listed.owner_places.length > 0 && listed.owner_places[0].name) {
+      return listed.owner_places[0].name;
+    }
+    var name = listed.default_place_name || listed.name;
+    if (name && name !== listed.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)) {
+      return name;
+    }
+    return null;
   }
 
   function checkAccess(health) {
@@ -422,9 +471,11 @@ $(document).ready(function() {
     $('#dr-health-when').text("Checked " + new Date(health.checked_at).toLocaleTimeString() +
       " · Last time everything passed: " + (lastPass ? new Date(lastPass).toLocaleString() : "not yet"));
 
+    // the world's place name when it has one, else its address
     var ip = publicAddress(health);
-    if (ip) {
-      var link = "hifi://" + ip + ":" + health.network.local_port;
+    var name = health.listing ? placeName(health.listing) : null;
+    if (name || ip) {
+      var link = "hifi://" + (name || ip + ":" + health.network.local_port);
       $('#dr-health-link').text(link).attr('href', link);
       $('#dr-health-link-row').show();
     } else {
@@ -459,6 +510,11 @@ $(document).ready(function() {
       (health.directory.heartbeats_running ? "on" : "off") + ", last ok " + timeText(health.directory.last_ok) +
       (health.directory.last_failed ? ", last failed " + timeText(health.directory.last_failed) + " (" +
       health.directory.last_error + ")" : ""));
+    if (health.listing) {
+      lines.push("directory listing: " + (health.listing.online ? "online" : "offline") + ", " +
+        hide(health.listing.network_address) + ":" + health.listing.network_port + ", place name " +
+        (placeName(health.listing) || "none") + ", restriction " + health.listing.restriction);
+    }
     if (outside && outside.result) {
       var result = outside.result;
       lines.push("outside check (" + outside.service + "): world " + (result.world.answered ? "answered" : "no answer") +
@@ -513,19 +569,33 @@ $(document).ready(function() {
         var health = healthReply[0];
         var settings = settingsReply[0];
         var outside = outsideAnswer[0];
-        lastHealth = health;
-        lastOutside = outside;
-        lastResults = [
-          checkServices(health),
-          checkPublicAddress(health),
-          checkOutside(health, outside),
-          checkServicePorts(health, outside),
-          checkDirectory(health),
-          checkAccess(health),
-          checkAdmin(settings, outside)
-        ];
-        render(lastResults, health);
-        $('#dr-health-copy').prop('disabled', false);
+        var finish = function() {
+          lastHealth = health;
+          lastOutside = outside;
+          lastResults = [
+            checkServices(health),
+            checkPublicAddress(health),
+            checkOutside(health, outside),
+            checkServicePorts(health, outside),
+            checkDirectory(health),
+            checkAccess(health),
+            checkAdmin(settings, outside)
+          ];
+          render(lastResults, health);
+          $('#dr-health-copy').prop('disabled', false);
+        };
+        // a registered world: what the directory itself has for it (the same lookup the settings page uses)
+        var worldID = settings.values && settings.values.metaverse && settings.values.metaverse.id;
+        if (health.world.registration === "registered" && worldID) {
+          $.getJSON("/api/domains/" + encodeURIComponent(worldID)).done(function(reply) {
+            var listing = reply && reply.status === "success" && (reply.domain || (reply.data && reply.data.domain));
+            if (listing) {
+              health.listing = listing;
+            }
+          }).always(finish);
+        } else {
+          finish();
+        }
       }).fail(function() {
         $('#dr-health-overall').text("The check couldn't run: the server didn't answer. Refresh the page and try again.")
           .attr('class', 'dr-health-overall dr-health-fail');
