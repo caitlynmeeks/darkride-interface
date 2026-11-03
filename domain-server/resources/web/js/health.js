@@ -313,9 +313,9 @@ $(document).ready(function() {
       }
       if (!placeName(listed)) {
         return {
-          state: "warn", title: title, summary: "Listed as \"" + (listed.label || "your world") + "\", but no place name",
-          why: "The directory has your world, online, at the right address, but it has no place name, so people " +
-            "can't visit it by name (hifi://name) and it may not show in Explore.",
+          state: "info", title: title, summary: "Online as \"" + (listed.label || "your world") + "\", with no place name",
+          why: "The directory has your world, online, at the right address, so it shows in Explore. It has no place " +
+            "name, though, so there's no hifi://name link to give people: they find it in Explore or come by address.",
           steps: ["Give it a place name on " + directory.metaverse_url.replace(/^https?:\/\//, "") +
             " (your places), pointing at this world."]
         };

@@ -29,7 +29,7 @@
   <div class="dr-status-card">
     <div class="dr-status-label">People here now</div>
     <div class="dr-status-value" id="dr-people-count">&ndash;</div>
-    <div class="dr-status-hint">Visitors and scripts connected to your world</div>
+    <div class="dr-status-hint" id="dr-people-hint">Visitors connected to your world</div>
   </div>
   <div class="dr-status-card">
     <div class="dr-status-label">Running for</div>
@@ -120,8 +120,15 @@
           <li class="dr-service">
             <span class="dr-dot dr-dot-on"></span>
             <div class="dr-service-text">
-              <div class="dr-service-name"><%- person.username || "Someone not signed in" %></div>
-              <div class="dr-service-about"><%- person.username ? "Signed in to Darkride" : "A visitor or a script" %></div>
+              <% if (person.script) { %>
+                <div class="dr-service-name"><%- person.script %></div>
+                <div class="dr-service-about">
+                  <%- person.persistent ? "An always-running script (Settings > Always-running scripts)" : "A script" %><%- person.pool ? ", pool " + person.pool : "" %>
+                </div>
+              <% } else { %>
+                <div class="dr-service-name"><%- person.username || "Someone not signed in" %></div>
+                <div class="dr-service-about"><%- person.username ? "Signed in to Darkride" : "A visitor or a script" %></div>
+              <% } %>
             </div>
             <div class="dr-service-state">Here for <%- person.uptimeText %></div>
             <div class="dr-service-actions">

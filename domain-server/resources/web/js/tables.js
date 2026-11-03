@@ -34,7 +34,11 @@ $(document).ready(function(){
     $('#dr-services-running').text(running + " of " + services.length);
     $('#dr-services-hint').text(services.length === 0 ? "Waiting for the services to start" :
       running === services.length ? "Everything is running" : "Some are still starting");
-    $('#dr-people-count').text(people.length);
+    // the always-running scripts from the settings aren't people: counted apart
+    var scripts = _.filter(people, function(person) { return person.persistent; }).length;
+    $('#dr-people-count').text(people.length - scripts);
+    $('#dr-people-hint').text("Visitors connected to your world" + (scripts > 0 ? ", plus " + scripts +
+      (scripts === 1 ? " always-running script" : " always-running scripts") : ""));
 
     var longest = _.max(_.map(_.filter(nodes, function(node) { return node.type !== "agent"; }), function(node) {
       return parseFloat(node.uptime);

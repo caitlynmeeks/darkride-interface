@@ -1908,6 +1908,13 @@ QJsonObject DomainServer::jsonObjectForNode(const SharedNodePointer& node) {
     SharedAssignmentPointer matchingAssignment = _allAssignments.value(nodeData->getAssignmentUUID());
     if (matchingAssignment) {
         nodeJson[JSON_KEY_POOL] = matchingAssignment->getPool();
+
+        // an always-running script from the settings (Scripts > Persistent scripts): which one, so the overview can
+        // tell it from a visitor. The file name only: the address itself may carry a key.
+        if (matchingAssignment->getType() == Assignment::AgentType && !matchingAssignment->getPayload().isEmpty()) {
+            nodeJson["script"] = QUrl(QString::fromUtf8(matchingAssignment->getPayload())).fileName();
+            nodeJson["persistent"] = matchingAssignment->isStatic();
+        }
     }
 
     return nodeJson;
