@@ -71,6 +71,7 @@ namespace scriptable {
         QString scatteringMap;
         std::array<glm::mat4, graphics::Material::NUM_TEXCOORD_TRANSFORMS> texCoordTransforms;
         QString cullFaceMode;
+        QString doubleSidedNormals; // "flip" or "keep": how back faces are lit; goes with cullFaceMode
         bool defaultFallthrough;
         std::unordered_map<uint, bool> propertyFallthroughs; // not actually exposed to script
 

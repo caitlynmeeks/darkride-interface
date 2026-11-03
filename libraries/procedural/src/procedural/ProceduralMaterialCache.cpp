@@ -222,7 +222,10 @@ NetworkMaterialResource::ParsedMaterials NetworkMaterialResource::parseJSONMater
  * @property {string} doubleSidedNormals="flip" - How the back faces of a double-sided surface are lit:
  *     <code>"flip"</code> (the default, as glTF asks) turns the normal round to face the viewer;
  *     <code>"keep"</code> lights them with the normal as it is, as Unity HDRP's double-sided normal mode None does, for
- *     foliage cards whose normals point out of the canopy. Goes with <code>cullFaceMode</code>, falling through with it.
+ *     foliage cards whose normals point out of the canopy. It shows only where back faces are drawn, with
+ *     <code>cullFaceMode</code> <code>"CULL_NONE"</code> (a glTF material with <code>doubleSided: true</code> has it): on
+ *     the default <code>"CULL_BACK"</code> there are no back faces to light. Goes with <code>cullFaceMode</code>, falling
+ *     through with it.
  *     A glTF material takes it from its extras (a Blender material's custom property). <code>"hifi_pbr"</code> model only.
  * @property {string} roughnessMap - The URL of the roughness texture image. You can use this or <code>glossMap</code>, but not 
  *     both. 
