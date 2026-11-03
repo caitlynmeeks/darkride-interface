@@ -38,7 +38,6 @@
 #include <ResourceCache.h>
 #include <ResourceManager.h>
 #include <ScriptCaller.h>
-#include <SettingHandle.h>
 #include <SharedUtil.h>
 #include <shared/LocalFileAccessGate.h>
 
@@ -88,7 +87,6 @@ const QString CONSOLE_EVAL_EXPORT = QStringLiteral("console_eval");
 // The way back to QtScript, off unless chosen (Developer > Scripting > Run JavaScript on QtScript). Its own key since
 // the flip (2026-10-25): the menu saved the old setting's state as "off" in every client that ever ran, so a new
 // default under the old key would never have reached them.
-Setting::Handle<bool> runJavaScriptOnQtScriptSetting { "scripting/runJavaScriptOnQtScript", false };
 
 // An instance as a callback target: a callback decoded by the instance's codec calls back through it. It
 // outlives the instance as a weak reference in the callbacks; a gone instance answers nothing.
@@ -210,51 +208,6 @@ std::shared_ptr<WasmRuntime> WasmScriptEngine::runtime() {
     return shared;
 }
 
-bool WasmScriptEngine::runJavaScriptOnWebAssembly() {
-    // for one process (a server, a test run): DARKRIDE_RUN_JS_ON_QTSCRIPT=1 is the way back to QtScript, and
-    // DARKRIDE_RUN_JS_ON_WASM=1 or 0 chooses either engine; otherwise the setting, the new engine unless it says no
-    if (qEnvironmentVariable("DARKRIDE_RUN_JS_ON_QTSCRIPT") == "1") {
-        return false;
-    }
-    if (qEnvironmentVariableIsSet("DARKRIDE_RUN_JS_ON_WASM")) {
-        return qEnvironmentVariable("DARKRIDE_RUN_JS_ON_WASM") == "1";
-    }
-    return !runJavaScriptOnQtScriptSetting.get();
-}
-
-void WasmScriptEngine::setRunJavaScriptOnWebAssembly(bool on) {
-    runJavaScriptOnQtScriptSetting.set(!on);
-}
-
-namespace {
-
-std::mutex& chosenEnginesMutex() {
-    static std::mutex mutex;
-    return mutex;
-}
-
-QHash<QUrl, bool>& chosenEngines() {
-    static QHash<QUrl, bool> chosen;
-    return chosen;
-}
-
-} // namespace
-
-void WasmScriptEngine::chooseEngineForScript(const QUrl& url, bool onWebAssembly) {
-    std::lock_guard<std::mutex> lock(chosenEnginesMutex());
-    chosenEngines()[url] = onWebAssembly;
-}
-
-bool WasmScriptEngine::engineChosenForScript(const QUrl& url, bool& onWebAssembly) {
-    std::lock_guard<std::mutex> lock(chosenEnginesMutex());
-    auto found = chosenEngines().constFind(url);
-    if (found == chosenEngines().constEnd()) {
-        return false;
-    }
-    onWebAssembly = found.value();
-    return true;
-}
-
 QString WasmScriptEngine::javascriptGuestPath() {
     QString fromEnvironment = qEnvironmentVariable("DARKRIDE_JS_WASM");
     if (!fromEnvironment.isEmpty()) {
@@ -280,7 +233,7 @@ bool WasmScriptEngine::hasJavaScriptGuest() {
     }
     static std::once_flag warned;
     std::call_once(warned, [&path] {
-        qCWarning(scriptengine) << "No JavaScript guest module at" << path << "- JavaScript runs on the QtScript engine";
+        qCWarning(scriptengine) << "No JavaScript guest module at" << path << "- JavaScript scripts can't run";
     });
     return false;
 }

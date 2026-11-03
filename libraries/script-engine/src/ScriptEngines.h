@@ -133,11 +133,6 @@ public:
      */
     Q_INVOKABLE bool stopScript(const QString& scriptHash, bool restart = false);
 
-    // Reloads a running JavaScript client script on the WebAssembly script engine or the QtScript one, and keeps
-    // that engine for the script until the client quits (the Running Scripts window's choice; getRunning reports
-    // each script's engine).
-    Q_INVOKABLE void setRunOnWebAssembly(const QString& scriptURL, bool onWebAssembly);
-
 
     /**jsdoc
      * Restarts all Interface, avatar, and client entity scripts after clearing the scripts cache.

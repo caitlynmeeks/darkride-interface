@@ -340,8 +340,6 @@ QVariantList ScriptEngines::getRunning() {
         resultNode.insert("path", displayURLString);
         resultNode.insert("url", normalizeScriptURL(runningScript).toString());
         resultNode.insert("local", runningScriptURL.isLocalFile());
-        auto engine = getScriptEngine(QUrl(runningScript));
-        resultNode.insert("engine", qobject_cast<WasmScriptEngine*>(engine.data()) ? "WebAssembly" : "QtScript");
         result.append(resultNode);
     }
     return result;
@@ -542,16 +540,6 @@ void ScriptEngines::stopAllScripts(bool restart) {
         });
         emit scriptsReloading();
     }
-}
-
-void ScriptEngines::setRunOnWebAssembly(const QString& rawScriptURL, bool onWebAssembly) {
-    // kept by the normalized URL, which loadScript gives the factory when the script loads again
-    QUrl scriptURL = normalizeScriptURL(QUrl(rawScriptURL));
-    if (!scriptURL.isValid()) {
-        scriptURL = normalizeScriptURL(QUrl::fromLocalFile(rawScriptURL));
-    }
-    WasmScriptEngine::chooseEngineForScript(scriptURL, onWebAssembly);
-    stopScript(rawScriptURL, true);
 }
 
 bool ScriptEngines::stopScript(const QString& rawScriptURL, bool restart) {

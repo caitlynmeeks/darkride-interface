@@ -35,7 +35,6 @@
 #include <SettingHandle.h>
 #include <VrMenu.h>
 #include <ScriptEngines.h>
-#include <WasmScriptEngine.h>
 #include <MenuItemProperties.h>
 #include <OffscreenUi.h>
 #include <ui/types/FileTypeProfile.h>
@@ -693,20 +692,6 @@ Menu::Menu() {
     // Developer > Scripting > Verbose Logging
     addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::VerboseLogging, 0, false,
                                            qApp, SLOT(updateVerboseLogging()));
-
-    // Developer > Scripting > Run JavaScript on QtScript (the old engine): the way back from the WebAssembly engine, which
-    // .js client scripts load on otherwise; it takes effect for scripts loaded after the change. Without the runtime
-    // file every JavaScript script runs on QtScript, so the item shows ticked and can't be changed; it has its own name,
-    // since a menu item's name is its saved key and a saved tick would turn a later client with the file to QtScript
-    if (WasmScriptEngine::hasJavaScriptGuest()) {
-        addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::RunJavaScriptOnQtScript,
-                                               [](bool checked) { WasmScriptEngine::setRunJavaScriptOnWebAssembly(!checked); },
-                                               0, !WasmScriptEngine::runJavaScriptOnWebAssembly());
-    } else {
-        action = addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::RunJavaScriptOnQtScriptNoRuntime,
-                                                        0, true);
-        action->setEnabled(false);
-    }
 
     // Developer > UI >>> (High Fidelity's Desktop/HMD Tablet Becomes Toolbar are gone, Caity 10-29: unticked, the bar
     // broke; Application keeps both at their defaults)

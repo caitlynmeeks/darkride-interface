@@ -8,9 +8,8 @@
 #  $DARKRIDE_JS_WASM points.
 #
 #  The module is taken from, in this order: $ENV{DARKRIDE_JS_WASM}; tools/wasm-js/build/darkride-js.wasm (a local
-#  build.sh); ../downloads/darkride-js-<version>.wasm beside the checkout (a published build). When
-#  none exists at configure time the client builds without it and JavaScript stays on the QtScript engine,
-#  with a warning here.
+#  build.sh); ../downloads/darkride-js-<version>.wasm beside the checkout (a published build). Every script engine
+#  is the WebAssembly one, so a build without the guest could run no JavaScript: configuring stops here instead.
 #
 #  The version is QuickJS-NG's, then a revision after the dash that goes up whenever the guest's imports or
 #  exports change, so that a published module only reaches the builds whose host matches it, and whenever a
@@ -40,13 +39,7 @@ macro(COPY_JAVASCRIPT_GUEST DESTINATION_DIR)
         endif()
     endforeach()
     if ("${JAVASCRIPT_GUEST}" STREQUAL "")
-        # a release build without the guest would run every script on QtScript, unlike every other build: it stops here
-        if ("${RELEASE_TYPE}" STREQUAL "PRODUCTION" OR "${RELEASE_TYPE}" STREQUAL "PR")
-            set(JAVASCRIPT_GUEST_MISSING FATAL_ERROR)
-        else()
-            set(JAVASCRIPT_GUEST_MISSING WARNING)
-        endif()
-        message(${JAVASCRIPT_GUEST_MISSING} "No JavaScript guest module: JavaScript runs on the QtScript engine only. Put darkride-js-${JAVASCRIPT_GUEST_VERSION}.wasm in ${CMAKE_SOURCE_DIR}/../downloads, set DARKRIDE_JS_WASM, or build one with tools/wasm-js/build.sh.")
+        message(FATAL_ERROR "No JavaScript guest module: no script could run. Put darkride-js-${JAVASCRIPT_GUEST_VERSION}.wasm in ${CMAKE_SOURCE_DIR}/../downloads, set DARKRIDE_JS_WASM, or build one with tools/wasm-js/build.sh.")
     else()
         message(STATUS "JavaScript guest from ${JAVASCRIPT_GUEST}")
         add_custom_command(TARGET ${TARGET_NAME} POST_BUILD

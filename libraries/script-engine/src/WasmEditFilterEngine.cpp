@@ -238,7 +238,7 @@ EntityEditFilterEngine::Result WasmEditFilterEngine::call(EntityItemProperties& 
 }
 
 EntityEditFilterEnginePointer WasmEditFilterEngine::makeForSetting(const EntityItemID& entityID) {
-    if (WasmScriptEngine::runJavaScriptOnWebAssembly() && WasmScriptEngine::hasJavaScriptGuest()) {
+    if (WasmScriptEngine::hasJavaScriptGuest()) {
         return std::make_unique<WasmEditFilterEngine>(entityID);
     }
     return std::make_unique<QtScriptEditFilterEngine>(entityID);

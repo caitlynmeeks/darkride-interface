@@ -211,26 +211,9 @@ ScriptEnginePointer scriptEngineFactory(ScriptEngine::Context context,
                                                  const QString& scriptContents,
                                                  const QString& fileNameString,
                                                  const QUrl& scriptURL) {
-    // a WebAssembly module runs on the engine beside this one; it is told from the file name's suffix, which
-    // ScriptEngines::loadScript puts in the name before the content is fetched. A JavaScript client script,
-    // an agent's script and the entities engines (the client's, the entity script server's) go there too when
-    // the setting says so (on a server, DARKRIDE_RUN_JS_ON_WASM=1), and a client script for which an engine was
-    // chosen goes to that one. An agent's script is JavaScript unless it is a module, whatever its URL ends with.
-    // JavaScript goes there only when the build has the guest module that runs it.
-    const bool isEntitiesEngine = context == ScriptEngine::ENTITY_CLIENT_SCRIPT || context == ScriptEngine::ENTITY_SERVER_SCRIPT;
-    // the scripting console's engine runs JavaScript too, typed in rather than loaded
-    const bool isClientJavaScript = context == ScriptEngine::CLIENT_SCRIPT &&
-        (WasmScriptEngine::isJavaScriptFile(fileNameString) || fileNameString == ScriptEngine::CONSOLE_SCRIPT_NAME);
-    const bool isAgentJavaScript = context == ScriptEngine::AGENT_SCRIPT && !WasmScriptEngine::isWasmScript(fileNameString);
-    bool javaScriptOnWebAssembly = WasmScriptEngine::runJavaScriptOnWebAssembly();
-    if (isClientJavaScript && !scriptURL.isEmpty()) {
-        WasmScriptEngine::engineChosenForScript(scriptURL, javaScriptOnWebAssembly);
-    }
-    const bool onWebAssembly = WasmScriptEngine::isWasmScript(fileNameString) ||
-        (javaScriptOnWebAssembly && (isClientJavaScript || isAgentJavaScript || isEntitiesEngine) &&
-         WasmScriptEngine::hasJavaScriptGuest());
-    ScriptEngine* engine = onWebAssembly ? new WasmScriptEngine(context, scriptContents, fileNameString)
-                                         : new ScriptEngine(context, scriptContents, fileNameString);
+    // every script runs on the WebAssembly engine: a module as it is, JavaScript inside the guest module
+    Q_UNUSED(scriptURL);
+    ScriptEngine* engine = new WasmScriptEngine(context, scriptContents, fileNameString);
     ScriptEnginePointer engineSP = ScriptEnginePointer(engine, &QObject::deleteLater);
     auto scriptEngines = DependencyManager::get<ScriptEngines>();
     scriptEngines->addScriptEngine(qSharedPointerCast<ScriptEngine>(engineSP));

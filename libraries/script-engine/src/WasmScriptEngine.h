@@ -13,10 +13,8 @@
 //  (tools/wasm-js, darkride-js.wasm: QuickJS-NG plus a shim that gives the script the objects it had on
 //  QtScript); and, in an entities engine (the client's and the entity script server's), the entity scripts:
 //  JavaScript ones inside the guest, .wasm ones each as an instance of its module, one per URL however many
-//  entities run it, every instance in this engine's thread and object table. Which engine a .js file or an
-//  entities engine loads on is runJavaScriptOnWebAssembly(): this one, unless the setting says QtScript (Developer >
-//  Scripting in the client);
-//  .wasm files always load here.
+//  entities run it, every instance in this engine's thread and object table. Every script loads here: the factory
+//  (scriptEngineFactory) makes no other engine.
 //
 //  Lifecycle, as the QtScript engine's: loadURL fetches the script; scriptLoaded makes ScriptEngines run the
 //  initializers (the registrations) and runInThread; run() on the engine's thread registers the standard
@@ -83,21 +81,11 @@ public:
     /// The runtime every module of this process is compiled by.
     static std::shared_ptr<WasmRuntime> runtime();
 
-    /// Whether JavaScript client scripts, agents' scripts and the entities engines load on this engine: yes, unless
-    /// the setting (Developer > Scripting > Run JavaScript on QtScript) or DARKRIDE_RUN_JS_ON_QTSCRIPT=1 says QtScript;
-    /// DARKRIDE_RUN_JS_ON_WASM=1 or 0 chooses for one process. Without the guest module, JavaScript runs on QtScript.
-    static bool runJavaScriptOnWebAssembly();
-    static void setRunJavaScriptOnWebAssembly(bool on);
-    /// The engine chosen for one JavaScript client script (in the Running Scripts window), over the setting until
-    /// the client quits: true for this engine, false for the QtScript one. Safe from any thread.
-    static void chooseEngineForScript(const QUrl& url, bool onWebAssembly);
-    /// Whether an engine was chosen for the script, and which.
-    static bool engineChosenForScript(const QUrl& url, bool& onWebAssembly);
     /// Where the JavaScript guest module is: $DARKRIDE_JS_WASM, else wasm/darkride-js.wasm under the
     /// resources beside the executable (Contents/Resources on macOS, resources/ elsewhere).
     static QString javascriptGuestPath();
-    /// Whether the JavaScript guest module is there (a build can be made without one). Without it JavaScript stays
-    /// on the QtScript engine whatever the setting says, with one warning in the log.
+    /// Whether the JavaScript guest module is there. Every build carries it (CopyJavaScriptGuest); without it no
+    /// JavaScript script can run, which is logged once.
     static bool hasJavaScriptGuest();
     /// The JavaScript guest module, compiled once per process (the edit-filter engine instantiates it too).
     static std::shared_ptr<WasmModule> javascriptGuestModule(QString& error);

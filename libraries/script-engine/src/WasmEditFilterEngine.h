@@ -54,8 +54,7 @@ public:
     Result call(EntityItemProperties& in, EntityItemProperties& out, int filterType,
                 const EntityItemProperties* original, const EntityItemProperties* zone, const AABox* zoneBox) override;
 
-    /// The engine the scripting setting chooses for a filter: this one when JavaScript runs on WebAssembly
-    /// (DARKRIDE_RUN_JS_ON_WASM=1 on a server) and the guest is there, else the QtScript one.
+    /// The engine for a filter: this one; the QtScript one only in a build without the guest module.
     static EntityEditFilterEnginePointer makeForSetting(const EntityItemID& entityID);
 
 private:
