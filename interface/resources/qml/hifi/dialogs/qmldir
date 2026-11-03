@@ -5,7 +5,6 @@ AudioBuffers 1.0 AudioBuffers.qml
 AvatarPreferencesDialog 1.0 AvatarPreferencesDialog.qml
 GeneralPreferencesDialog 1.0 GeneralPreferencesDialog.qml
 LodPreferencesDialog 1.0 LodPreferencesDialog.qml
-ModelBrowserDialog 1.0 ModelBrowserDialog.qml
 NetworkingPreferencesDialog 1.0 NetworkingPreferencesDialog.qml
 RunningScripts 1.0 RunningScripts.qml
 TabletAboutDialog 1.0 TabletAboutDialog.qml

@@ -9,8 +9,6 @@
 //
 
 import QtQuick 2.7
-import QtQuick.Controls 1.4 as Original
-import QtQuick.Controls.Styles 1.4
 
 import "qrc:///qml/stylesUit"
 import "qrc:///qml/controlsUit" as HifiControls
