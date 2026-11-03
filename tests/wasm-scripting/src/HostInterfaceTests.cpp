@@ -377,7 +377,7 @@ void HostInterfaceTests::testEnumResults() {
     QCOMPARE(f.call(probe, "currentMode", {}).toInt(), 10);
     f.call(probe, "useMode", { 1 });
     QCOMPARE(f.probe.mode(), Probe::Running);
-    // as QtScript, which throws for it too (QtScriptOverloadTests::testEnumResults)
+    // as QtScript did: it threw for it too
     QVERIFY(HostInterface::isErrorRecord(f.call(probe, "plainLevel", {})));
 }
 
