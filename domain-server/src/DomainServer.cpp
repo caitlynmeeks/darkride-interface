@@ -55,6 +55,7 @@
 #include "AssetsBackupHandler.h"
 #include "ContentSettingsBackupHandler.h"
 #include "DomainServerNodeData.h"
+#include "NodeAddresses.h"
 #include "EntitiesBackupHandler.h"
 #include "NodeConnectionData.h"
 
@@ -3184,6 +3185,14 @@ void DomainServer::addStaticAssignmentsToQueue() {
 
 void DomainServer::processPathQueryPacket(QSharedPointer<ReceivedMessage> message) {
     // this is a query for the viewpoint resulting from a path
+
+    // only a connected visitor's app or assignment client asks, so only the domain's nodes get an answer (security #60)
+    if (!node_addresses::isFromNode(message->getSenderSockAddr())) {
+        static node_addresses::UnansweredLog unanswered("path query");
+        unanswered.note(message->getSenderSockAddr());
+        return;
+    }
+
     // first pull the query path from the packet
 
     // figure out how many bytes the sender said this path is

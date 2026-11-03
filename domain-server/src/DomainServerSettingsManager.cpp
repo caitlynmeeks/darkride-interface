@@ -38,6 +38,7 @@
 #include <FingerprintUtils.h>
 
 #include "DomainServerNodeData.h"
+#include "NodeAddresses.h"
 
 const QString SETTINGS_DESCRIPTION_RELATIVE_PATH = "/resources/describe-settings.json";
 const QString SETTINGS_PATH = "/settings";
@@ -185,6 +186,13 @@ void DomainServerSettingsManager::splitSettingsDescription() {
 }
 
 void DomainServerSettingsManager::processSettingsRequestPacket(QSharedPointer<ReceivedMessage> message) {
+    // only a connected visitor's app or assignment client asks, so only the domain's nodes get an answer (security #60)
+    if (!node_addresses::isFromNode(message->getSenderSockAddr())) {
+        static node_addresses::UnansweredLog unanswered("settings request");
+        unanswered.note(message->getSenderSockAddr());
+        return;
+    }
+
     Assignment::Type type;
     message->readPrimitive(&type);
 
