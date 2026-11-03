@@ -72,7 +72,10 @@ bool QtScriptEditFilterEngine::load(const QString& source, const QString& url, Q
     _engine->globalObject().setProperty("Script", _engine->newQObject(_engine, QScriptEngine::QtOwnership,
         QScriptEngine::ExcludeDeleteLater | QScriptEngine::ExcludeSuperClassMethods | QScriptEngine::ExcludeChildObjects));
     if (DependencyManager::isSet<ScriptInitializers>()) {
-        DependencyManager::get<ScriptInitializers>()->runScriptInitializers(_engine);
+        DependencyManager::get<ScriptInitializers>()->runScriptInitializers([this](const QString& name, QObject* object) {
+            _engine->globalObject().setProperty(name, _engine->newQObject(object, QScriptEngine::QtOwnership,
+                                                                          QScriptEngine::ExcludeDeleteLater));
+        });
     }
     _engine->evaluate(source, url);
     if (hadUncaughtExceptions(error)) {

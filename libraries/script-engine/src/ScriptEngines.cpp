@@ -691,7 +691,8 @@ void ScriptEngines::quitWhenFinished() {
 }
 
 int ScriptEngines::runScriptInitializers(ScriptEnginePointer scriptEngine) {
-    auto nativeCount = DependencyManager::get<ScriptInitializers>()->runScriptInitializers(scriptEngine.data());
+    auto nativeCount = DependencyManager::get<ScriptInitializers>()->runScriptInitializers(
+        [scriptEngine](const QString& name, QObject* object) { scriptEngine->registerGlobalObject(name, object); });
     return nativeCount + ScriptInitializerMixin<ScriptEnginePointer>::runScriptInitializers(scriptEngine);
 }
 
