@@ -38,6 +38,38 @@
   </div>
 </div>
 
+<div class="panel panel-default" id="dr-health">
+  <div class="panel-heading">
+    <h3 class="panel-title">Check my world</h3>
+    <p class="panel-description">
+      Whether other people can reach your world, not just you on this network. Open a line to see what was checked, and
+      how to fix anything that stops visitors.
+    </p>
+  </div>
+  <div class="panel-body">
+    <div class="dr-health-top">
+      <p class="dr-health-overall" id="dr-health-overall" role="status">Checking&hellip;</p>
+      <button type="button" class="btn btn-primary" id="dr-health-run" disabled>Checking&hellip;</button>
+    </div>
+    <ul class="dr-health-list" id="dr-health-list"></ul>
+    <p class="dr-health-link-row" id="dr-health-link-row" style="display: none;">
+      Visitor link: <a id="dr-health-link" href="#"></a>
+      <button type="button" class="btn btn-link btn-sm" id="dr-health-copy-link">Copy</button>
+    </p>
+    <div class="dr-health-bottom">
+      <span class="dr-health-when" id="dr-health-when"></span>
+      <span class="dr-health-copy">
+        <label class="dr-health-hide-ip"><input type="checkbox" id="dr-health-hide-ip" checked> Hide my IP address</label>
+        <button type="button" class="btn btn-default btn-sm" id="dr-health-copy" disabled>Copy diagnostics</button>
+      </span>
+    </div>
+    <div class="dr-health-diagnostics" id="dr-health-diagnostics" style="display: none;">
+      <p class="help-block">Your browser didn't let the page copy this. It's selected: press Ctrl+C (or Cmd+C on a Mac).</p>
+      <textarea class="form-control" rows="12" readonly></textarea>
+    </div>
+  </div>
+</div>
+
 <div class="panel panel-default">
   <div class="panel-heading">
     <h3 class="panel-title">Services</h3>
@@ -187,4 +219,5 @@
 <!--#include file="footer.html"-->
 <script src='js/underscore-min.js'></script>
 <script src='js/tables.js'></script>
+<script src='js/health.js'></script>
 <!--#include file="page-end.html"-->

@@ -1454,11 +1454,21 @@ void DomainServer::sendHeartbeatToMetaverse(const QString& networkAddress) {
     DependencyManager::get<AccountManager>()->sendRequest(DOMAIN_UPDATE.arg(uuidStringWithoutCurlyBraces(getID())),
                                               AccountManagerAuth::Optional,
                                               QNetworkAccessManager::PutOperation,
-                                              JSONCallbackParameters(this, QString(), "handleMetaverseHeartbeatError"),
+                                              JSONCallbackParameters(this, "handleMetaverseHeartbeatSuccess",
+                                                                     "handleMetaverseHeartbeatError"),
                                               domainUpdateJSON.toUtf8());
 }
 
+void DomainServer::handleMetaverseHeartbeatSuccess(QNetworkReply* requestReply) {
+    _lastMetaverseHeartbeatOK = QDateTime::currentMSecsSinceEpoch();
+}
+
 void DomainServer::handleMetaverseHeartbeatError(QNetworkReply* requestReply) {
+    // kept for the overview's "Check my world": when the metaverse last said no, and why
+    _lastMetaverseHeartbeatFailed = QDateTime::currentMSecsSinceEpoch();
+    _lastMetaverseHeartbeatError = QString("%1 (HTTP %2)").arg(requestReply->errorString())
+        .arg(requestReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt());
+
     if (!_metaverseHeartbeatTimer) {
         // avoid rehandling errors from the same issue
         return;
@@ -1900,6 +1910,82 @@ QJsonObject DomainServer::jsonObjectForNode(const SharedNodePointer& node) {
     return nodeJson;
 }
 
+// Facts only: the overview page turns them into "Check my world", with the wording and the fixes. Nothing secret goes
+// in (no tokens, keys or sign-in), so the page can copy it into a request for help.
+QJsonObject DomainServer::healthJSON() {
+    auto limitedNodeList = DependencyManager::get<LimitedNodeList>();
+    QJsonObject health;
+
+    health["version"] = BuildInfo::VERSION;
+    health["checked_at"] = QDateTime::currentMSecsSinceEpoch();
+
+    // registered with the metaverse (a world ID), a temporary name, or neither
+    QJsonObject world;
+    world["registration"] = _type == MetaverseDomain ? "registered" :
+                            _type == MetaverseTemporaryDomain ? "temporary" : "none";
+    health["world"] = world;
+
+    // how visitors find this server's address
+    QJsonObject network;
+    // set up only for a registered world; otherwise the setting as it stands
+    network["automatic_networking"] = !_automaticNetworkingSetting.isEmpty() ? _automaticNetworkingSetting :
+        _settingsManager.valueOrDefaultValueForKeyPath(METAVERSE_AUTOMATIC_NETWORKING_KEY_PATH).toString();
+    network["local_port"] = limitedNodeList->getSocketLocalPort();
+    network["local"] = jsonForSocket(limitedNodeList->getLocalSockAddr());
+    // the public address comes from STUN, which runs only when the metaverse is told the address (IP only or full)
+    network["stun_completed"] = limitedNodeList->hasCompletedInitialSTUN();
+    const HifiSockAddr& publicSocket = limitedNodeList->getPublicSockAddr();
+    if (!publicSocket.isNull()) {
+        network["public"] = jsonForSocket(publicSocket);
+    }
+    network["ice_server_set"] = !_iceServerAddr.isEmpty();
+    network["connected_to_ice_server"] = _connectedToICEServer;
+    health["network"] = network;
+
+    // the heartbeats that keep the world's address and visitor count up to date in the directory
+    QJsonObject directory;
+    directory["metaverse_url"] = NetworkingConstants::METAVERSE_SERVER_URL().toString();
+    directory["heartbeats_running"] = _metaverseHeartbeatTimer != nullptr;
+    directory["last_ok"] = _lastMetaverseHeartbeatOK;
+    directory["last_failed"] = _lastMetaverseHeartbeatFailed;
+    directory["last_error"] = _lastMetaverseHeartbeatError;
+    health["directory"] = directory;
+
+    // who may come in at all
+    QJsonObject access;
+    access["anonymous"] = _settingsManager.getStandardPermissionsForName(NodePermissions::standardNameAnonymous)
+        .can(NodePermissions::Permission::canConnectToDomain);
+    access["logged_in"] = _settingsManager.getStandardPermissionsForName(NodePermissions::standardNameLoggedIn)
+        .can(NodePermissions::Permission::canConnectToDomain);
+    access["friends"] = _settingsManager.getStandardPermissionsForName(NodePermissions::standardNameFriends)
+        .can(NodePermissions::Permission::canConnectToDomain);
+    access["max_capacity"] = _settingsManager.valueForKeyPath("security.maximum_user_capacity").toInt();
+    health["access"] = access;
+
+    // each service: connected (with the addresses visitors reach it on) or still waiting
+    QJsonArray services;
+    limitedNodeList->eachNode([this, &services](const SharedNodePointer& node) {
+        if (node->getType() == NodeType::Agent) {
+            return;
+        }
+        QJsonObject service = jsonObjectForNode(node);
+        service["running"] = true;
+        services.append(service);
+    });
+    for (const auto& assignment : _unfulfilledAssignments) {
+        if (assignment->getType() == Assignment::AgentType) {
+            continue;
+        }
+        QJsonObject service;
+        service["type"] = QString(assignment->getTypeName());
+        service["running"] = false;
+        services.append(service);
+    }
+    health["services"] = services;
+
+    return health;
+}
+
 QDir pathForAssignmentScriptsDirectory() {
     static const QString SCRIPTS_DIRECTORY_NAME = "/scripts/";
 
@@ -1939,6 +2025,7 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
     const QString URI_CONTENT_UPLOAD = "/content/upload";
     const QString URI_RESTART = "/restart";
     const QString URI_API_METAVERSE_INFO = "/api/metaverse_info";
+    const QString URI_API_HEALTH = "/api/health";
     const QString URI_API_PLACES = "/api/places"; // TODO: deprecated because places dont exist anymore
     const QString URI_API_DOMAIN = "/api/domain";
     const QString URI_API_DOMAINS = "/api/domains"; // TODO: deprecated
@@ -2173,6 +2260,10 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
         } else if (url.path() == URI_RESTART) {
             connection->respond(HTTPConnection::StatusCode204);
             restart();
+            return true;
+        } else if (url.path() == URI_API_HEALTH) {
+            connectionPtr->respond(HTTPConnection::StatusCode200, QJsonDocument(healthJSON()).toJson(),
+                                   JSON_MIME_TYPE.toUtf8());
             return true;
         } else if (url.path() == URI_API_METAVERSE_INFO) {
             QJsonObject rootJSON {
