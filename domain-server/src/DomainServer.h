@@ -203,6 +203,8 @@ private:
     QJsonObject jsonObjectForNode(const SharedNodePointer& node);
     // what the world server knows about whether others can reach it, for the overview's "Check my world" (/api/health)
     QJsonObject healthJSON();
+    // asks the outside check service (darkride-world-check) to knock on this server's ports from the internet
+    bool checkFromOutside(HTTPConnection* connection);
 
     bool shouldReplicateNode(const Node& node);
 

@@ -1989,6 +1989,78 @@ QJsonObject DomainServer::healthJSON() {
     return health;
 }
 
+// The service knocks on the address the request comes from, which is this server's own, so all it's told is which
+// ports to try. The overview shows its answer, or why there isn't one.
+bool DomainServer::checkFromOutside(HTTPConnection* connection) {
+    auto respondWith = [](HTTPConnection* connection, const QJsonObject& answer) {
+        connection->respond(HTTPConnection::StatusCode200, QJsonDocument(answer).toJson(), "application/json");
+    };
+
+    const QString serviceAddress =
+        _settingsManager.valueOrDefaultValueForKeyPath("metaverse.world_check_url").toString().trimmed();
+    if (serviceAddress.isEmpty()) {
+        respondWith(connection, { { "configured", false } });
+        return true;
+    }
+    QUrl serviceURL(serviceAddress);
+    if (!serviceURL.isValid() || (serviceURL.scheme() != "https" && serviceURL.scheme() != "http") ||
+        serviceURL.host().isEmpty()) {
+        respondWith(connection, { { "configured", true },
+                                  { "error", "The outside check service's address isn't a web address." } });
+        return true;
+    }
+    if (!serviceURL.path().endsWith("/check")) {
+        QString path = serviceURL.path();
+        serviceURL.setPath((path.endsWith('/') ? path : path + '/') + "check");
+    }
+
+    // the ports visitors reach: the world's own, and each running service's public one (the service takes up to 8)
+    auto limitedNodeList = DependencyManager::get<LimitedNodeList>();
+    QJsonArray servicePorts;
+    limitedNodeList->eachNode([&servicePorts](const SharedNodePointer& node) {
+        const int MAX_SERVICE_PORTS = 8;
+        if (node->getType() != NodeType::Agent && servicePorts.size() < MAX_SERVICE_PORTS &&
+            node->getPublicSocket().getPort() != 0) {
+            servicePorts.append(node->getPublicSocket().getPort());
+        }
+    });
+    QJsonObject request {
+        { "world_port", limitedNodeList->getSocketLocalPort() },
+        { "service_ports", servicePorts },
+        { "admin_ports", QJsonArray { DOMAIN_SERVER_HTTP_PORT, DOMAIN_SERVER_HTTPS_PORT } }
+    };
+
+    QNetworkRequest networkRequest(serviceURL);
+    networkRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
+    networkRequest.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    const int CHECK_TIMEOUT_MSECS = 30 * 1000;
+    networkRequest.setTransferTimeout(CHECK_TIMEOUT_MSECS);
+    QNetworkReply* reply = NetworkAccessManager::getInstance().post(networkRequest,
+                                                                    QJsonDocument(request).toJson(QJsonDocument::Compact));
+
+    QPointer<HTTPConnection> waiting(connection);
+    const QString serviceHost = serviceURL.host();
+    connect(reply, &QNetworkReply::finished, this, [reply, waiting, serviceHost, respondWith]() {
+        reply->deleteLater();
+        if (!waiting) {
+            return;  // the page went away
+        }
+        QJsonObject answer = QJsonDocument::fromJson(reply->readAll()).object();
+        QJsonObject result { { "configured", true }, { "service", serviceHost } };
+        if (reply->error() == QNetworkReply::NoError && answer.contains("world")) {
+            result["result"] = answer;
+        } else {
+            result["status"] = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            result["error"] = answer.value("error").toString(reply->errorString());
+            if (answer.contains("retry_after")) {
+                result["retry_after"] = answer.value("retry_after");
+            }
+        }
+        respondWith(waiting.data(), result);
+    });
+    return true;
+}
+
 QDir pathForAssignmentScriptsDirectory() {
     static const QString SCRIPTS_DIRECTORY_NAME = "/scripts/";
 
@@ -2029,6 +2101,7 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
     const QString URI_RESTART = "/restart";
     const QString URI_API_METAVERSE_INFO = "/api/metaverse_info";
     const QString URI_API_HEALTH = "/api/health";
+    const QString URI_API_HEALTH_OUTSIDE = "/api/health/outside";
     const QString URI_API_PLACES = "/api/places"; // TODO: deprecated because places dont exist anymore
     const QString URI_API_DOMAIN = "/api/domain";
     const QString URI_API_DOMAINS = "/api/domains"; // TODO: deprecated
@@ -2264,6 +2337,8 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
             connection->respond(HTTPConnection::StatusCode204);
             restart();
             return true;
+        } else if (url.path() == URI_API_HEALTH_OUTSIDE) {
+            return checkFromOutside(connectionPtr);
         } else if (url.path() == URI_API_HEALTH) {
             connectionPtr->respond(HTTPConnection::StatusCode200, QJsonDocument(healthJSON()).toJson(),
                                    JSON_MIME_TYPE.toUtf8());

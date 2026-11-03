@@ -11,13 +11,14 @@ $(document).ready(function() {
   var LAST_PASS_KEY = "darkride.healthLastPass";
   var lastResults = null;
   var lastHealth = null;
+  var lastOutside = null;
 
   var STATES = {
     ok: { label: "OK", order: 0 },
     info: { label: "Note", order: 1 },
     unknown: { label: "Not checked", order: 1 },
     warn: { label: "Look at this", order: 2 },
-    fail: { label: "Stops visitors", order: 3 }
+    fail: { label: "Fix this", order: 3 }
   };
 
   function serviceName(type) {
@@ -104,7 +105,7 @@ $(document).ready(function() {
           steps: [
             "Ask your provider for a public IPv4 address (some call it a static or dedicated IP).",
             "Or run the world on a hosted server (a VPS) instead.",
-            "Or turn on full automatic networking under Settings > Networking, if your world uses an ICE server."
+            "Or, if you run an ICE server of your own, choose \"Through an ICE server\" under Settings > Connection."
           ]
         };
       }
@@ -117,7 +118,7 @@ $(document).ready(function() {
             "to it yet. Visitors are sent to port " + network.local_port + ".",
           steps: [
             "Forward UDP " + network.local_port + " on your router to this computer (" + network.local.ip + ").",
-            "Or turn on full automatic networking under Settings > Networking, if your world uses an ICE server."
+            "Or, if you run an ICE server of your own, choose \"Through an ICE server\" under Settings > Connection."
           ]
         };
       }
@@ -148,24 +149,57 @@ $(document).ready(function() {
     return { state: "warn", title: title, summary: "Still looking it up", why: "Check again in a moment." };
   }
 
-  function checkOutside(health) {
+  function openPortSteps(health, ports) {
+    return [
+      "Forward UDP " + ports + " on your router to this computer (" + health.network.local.ip + ").",
+      "Allow " + (ports.indexOf(",") === -1 && ports.indexOf(" to ") === -1 ? "it" : "them") +
+        " in this computer's firewall.",
+      "On a hosted server (a VPS), also open " + (ports.indexOf(",") === -1 && ports.indexOf(" to ") === -1 ? "it" :
+        "them") + " in the provider's own firewall, in their control panel."
+    ];
+  }
+
+  // outside: null until "Check again" asks the outside check service; then what /api/health/outside said
+  function checkOutside(health, outside) {
+    var title = "Reachable from outside";
+    var port = health.network.local_port;
     var ip = publicAddress(health);
+    if (!outside || !outside.configured || outside.error) {
+      var asked = !!outside;
+      var why = !asked ? "Press Check again to knock on your world from the internet." :
+        !outside.configured ? "There's no outside check service set, so this server can only see itself: testing " +
+          "your own public address from inside your network is unreliable." :
+        "The outside check service (" + (outside.service || "") + ") " +
+          (outside.status ? "said: " : "couldn't be reached: ") + outside.error.replace(/\.?$/, ".") +
+          (outside.retry_after ? " Try again in " + outside.retry_after + " seconds." : "");
+      var askAFriend = "ask a friend (not on your Wi-Fi) to go to hifi://" + (ip || "<your public IP>") + ":" + port + ".";
+      return {
+        state: "unknown", title: title,
+        summary: !asked ? "Not checked yet" : !outside.configured ? "No outside check service" : "Couldn't check",
+        why: why,
+        steps: asked && !outside.configured ?
+          ["Set one under Settings > Connection > Outside check service.", "Or " + askAFriend] :
+          ["Meanwhile, " + askAFriend]
+      };
+    }
+    var result = outside.result;
+    if (result.world.answered) {
+      return { state: "ok", title: title, summary: "Yes: " + result.address + ", port " + port + " answered" +
+        (result.world.ms !== undefined ? " in " + result.world.ms + " ms" : "") };
+    }
     return {
-      state: "unknown", title: "Reachable from outside", summary: "Not checked yet",
-      why: "A server can't tell by itself whether people outside your network reach it: testing your own public " +
-        "address from inside is unreliable. A check from outside is coming. Until then, ask someone elsewhere to " +
-        "visit your world.",
-      steps: [
-        "Ask a friend (not on your Wi-Fi) to go to " + (ip ? "hifi://" + ip + ":" + health.network.local_port :
-          "hifi://<your public IP>:" + health.network.local_port) + ".",
-        "If they can't get in, forward UDP " + health.network.local_port + " on your router to this computer (" +
-          health.network.local.ip + "), and allow it in the firewall.",
-        "On a hosted server (a VPS), also open it in the provider's own firewall, in their control panel."
-      ]
+      state: "fail", title: title, summary: "No answer on UDP " + port + " at " + result.address,
+      why: result.world.refused ? "Something at your address said nothing listens on UDP " + port + ": the router " +
+        "or firewall isn't passing it on to this server." :
+        "Nothing came back from UDP " + port + ". Visitors can't reach your world from the internet.",
+      steps: openPortSteps(health, String(port)).concat([
+        "If your internet provider shares one address between customers (carrier-grade NAT), forwarding can't work: " +
+          "ask them for a public IP address, or run the world on a hosted server."
+      ])
     };
   }
 
-  function checkServicePorts(health) {
+  function checkServicePorts(health, outside) {
     var ports = _.sortBy(_.compact(_.map(health.services, function(service) {
       return service.running && service.public ? service.public.port : null;
     })), _.identity);
@@ -173,6 +207,19 @@ $(document).ready(function() {
       return { state: "unknown", title: "Service ports", summary: "Not checked: no service is running" };
     }
     var list = "UDP " + ports.join(", ");
+    var result = outside && outside.result;
+    if (result && result.world.answered && result.services.length > 0) {
+      var silent = _.pluck(_.filter(result.services, function(service) { return !service.answered; }), "port");
+      if (silent.length > 0) {
+        return {
+          state: "fail", title: "Service ports", summary: "No answer from UDP " + silent.join(", "),
+          why: "Visitors connect to each service directly. These didn't answer from the internet, so visitors would " +
+            "get in but miss what those services do (voice, avatars, objects…).",
+          steps: openPortSteps(health, silent.join(", "))
+        };
+      }
+      return { state: "ok", title: "Service ports", summary: list + ": all answered" };
+    }
     // ports the system picked (ephemeral, 49152 and up) change on every restart, so they can't be forwarded
     var random = _.filter(ports, function(port) { return port >= 49152; });
     if (random.length > 0) {
@@ -201,7 +248,7 @@ $(document).ready(function() {
         state: "info", title: title, summary: "Not registered",
         why: "Your world isn't registered with the directory (" + directory.metaverse_url + "), so it isn't in " +
           "Explore and people need its address to come in. That's fine for a private world.",
-        steps: ["To list it, connect your Darkride account and set up your world's ID under Settings > Metaverse."]
+        steps: ["To list it, connect your Darkride account and set up your world's ID under Settings > Connection."]
       };
     }
     if (!directory.heartbeats_running) {
@@ -210,7 +257,7 @@ $(document).ready(function() {
         why: "The server stopped telling the directory about itself" +
           (directory.last_error ? " after an error: " + directory.last_error : "") + ".",
         steps: [
-          "Check the world ID and the account under Settings > Metaverse.",
+          "Check the world ID and the account under Settings > Connection.",
           "Restart the server to try again."
         ]
       };
@@ -221,7 +268,7 @@ $(document).ready(function() {
         state: "fail", title: title, summary: "The directory said no " + timeText(directory.last_failed),
         why: "The last update to the directory failed: " + directory.last_error + ".",
         steps: signIn ? [
-          "The directory didn't accept this world's sign-in. Connect your account again under Settings > Metaverse.",
+          "The directory didn't accept this world's sign-in. Connect your account again under Settings > Connection.",
           "Check the world ID there belongs to your account."
         ] : [
           "Check this computer can reach " + directory.metaverse_url + ".",
@@ -237,7 +284,7 @@ $(document).ready(function() {
       return {
         state: "warn", title: title, summary: "Temporary name, updated " + timeText(directory.last_ok),
         why: "Your world has a temporary name, which can change. Register it to keep a name people can come back to.",
-        steps: ["Connect your Darkride account and set up your world's ID under Settings > Metaverse."]
+        steps: ["Connect your Darkride account and set up your world's ID under Settings > Connection."]
       };
     }
     return { state: "ok", title: title, summary: "Updated " + timeText(directory.last_ok) };
@@ -256,20 +303,43 @@ $(document).ready(function() {
     if (access.friends) {
       return {
         state: "info", title: title, summary: "Only your friends" + capacity,
-        why: "Other people can't come in, by your choice. Change it under Settings > Permissions (\"Come in\")."
+        why: "Other people can't come in, by your choice. Change it under Settings > Access and permissions (\"Come in\")."
       };
     }
     return {
       state: "fail", title: title, summary: "Nobody else",
       why: "No group of visitors is allowed to come in, so only this computer and people you've listed by name can.",
-      steps: ["Under Settings > Permissions, give \"Come in\" to the people who should be able to visit."]
+      steps: ["Under Settings > Access and permissions, give \"Come in\" to the people who should be able to visit."]
     };
   }
 
-  function checkAdmin(settings) {
+  function checkAdmin(settings, outside) {
     var title = "Admin pages";
     var port = location.port || (location.protocol === "https:" ? "443" : "80");
-    if (settings.http_password_set === true || settings.oauth_in_use === true) {
+    var locked = settings.http_password_set === true || settings.oauth_in_use === true;
+    var open = outside && outside.result ? _.pluck(_.where(outside.result.admin, { open: true }), "port") : [];
+    if (open.length > 0) {
+      return {
+        state: locked ? "warn" : "fail", title: title,
+        summary: (locked ? "Locked, but" : "Not locked, and") + " reachable from the internet on TCP " + open.join(", "),
+        why: locked ? "Anyone on the internet can try your sign-in, and over plain http it isn't encrypted on the way." :
+          "Anyone on the internet can change your world's settings, replace its content or restart it.",
+        steps: _.compact([
+          locked ? null : "Set up a sign-in under Settings > Access and permissions > Admin sign-in, now.",
+          "Close TCP " + open.join(" and ") + " to the internet: remove the port forward on your router, or block it in " +
+            "the firewall (on a hosted server, also in the provider's panel). Only the world's UDP ports need to be open.",
+          "To manage the world when you're away, use a tunnel (ssh -L) or a reverse proxy with https."
+        ])
+      };
+    }
+    if (outside && outside.result) {
+      return { state: locked ? "ok" : "warn", title: title,
+        summary: (locked ? "Locked" : "Not locked") + ", and not reachable from the internet",
+        why: locked ? undefined : "Only people on your network can reach them, but a sign-in still protects them " +
+          "from anything else running there.",
+        steps: locked ? undefined : ["Set up a sign-in under Settings > Access and permissions > Admin sign-in."] };
+    }
+    if (locked) {
       return {
         state: "ok", title: title, summary: "Locked",
         why: "Keep their port (TCP " + port + ") closed to the internet anyway, and reach them through a tunnel or a " +
@@ -280,7 +350,7 @@ $(document).ready(function() {
       state: "warn", title: title, summary: "Not locked",
       why: "Anyone who can reach these pages can change your world's settings, replace its content or restart it.",
       steps: [
-        "Set up a sign-in under Settings > Admin sign-in.",
+        "Set up a sign-in under Settings > Access and permissions > Admin sign-in.",
         "Never open TCP " + port + " to the internet on your router or firewall."
       ]
     };
@@ -289,7 +359,7 @@ $(document).ready(function() {
   function overallText(results) {
     var worst = _.max(results, function(result) { return STATES[result.state].order; });
     if (worst.state === "fail") {
-      return { state: "fail", text: "Something stops visitors from coming in." };
+      return { state: "fail", text: "Something needs fixing: open the red lines below." };
     }
     if (worst.state === "warn") {
       return { state: "warn", text: "Visitors can probably come in, but a few things need a look." };
@@ -363,7 +433,7 @@ $(document).ready(function() {
   }
 
   // for asking for help: what was checked and found, never the sign-in or keys (the server leaves those out)
-  function diagnosticsText(results, health, hideAddress) {
+  function diagnosticsText(results, health, outside, hideAddress) {
     var ICONS = { ok: "🟢", info: "🔵", unknown: "⚪", warn: "🟡", fail: "🔴" };
     var hide = function(text) {
       return hideAddress ? String(text).replace(/\b\d{1,3}(\.\d{1,3}){3}\b/g, "x.x.x.x") : String(text);
@@ -389,6 +459,14 @@ $(document).ready(function() {
       (health.directory.heartbeats_running ? "on" : "off") + ", last ok " + timeText(health.directory.last_ok) +
       (health.directory.last_failed ? ", last failed " + timeText(health.directory.last_failed) + " (" +
       health.directory.last_error + ")" : ""));
+    if (outside && outside.result) {
+      var result = outside.result;
+      lines.push("outside check (" + outside.service + "): world " + (result.world.answered ? "answered" : "no answer") +
+        ", services " + (_.map(result.services, function(s) { return s.port + (s.answered ? "+" : "-"); }).join(" ") ||
+        "none") + ", admin open " + (_.pluck(_.where(result.admin, { open: true }), "port").join(" ") || "none"));
+    } else if (outside) {
+      lines.push("outside check: " + (outside.configured ? "failed (" + outside.error + ")" : "no service set"));
+    }
     lines.push("```");
     return lines.join("\n");
   }
@@ -424,29 +502,36 @@ $(document).ready(function() {
     return done.promise();
   }
 
-  function runCheck() {
-    var $button = $('#dr-health-run').prop('disabled', true).text("Checking…");
-    $.when($.getJSON("/api/health"), $.getJSON("/settings.json")).done(function(healthReply, settingsReply) {
-      var health = healthReply[0];
-      var settings = settingsReply[0];
-      lastHealth = health;
-      lastResults = [
-        checkServices(health),
-        checkPublicAddress(health),
-        checkOutside(health),
-        checkServicePorts(health),
-        checkDirectory(health),
-        checkAccess(health),
-        checkAdmin(settings)
-      ];
-      render(lastResults, health);
-      $('#dr-health-copy').prop('disabled', false);
-    }).fail(function() {
-      $('#dr-health-overall').text("The check couldn't run: the server didn't answer. Refresh the page and try again.")
-        .attr('class', 'dr-health-overall dr-health-fail');
-    }).always(function() {
-      $button.prop('disabled', false).text("Check again");
-    });
+  // the page loads with what the server can see by itself; the button also asks the outside check service, which
+  // allows one check a minute, so that waits for a press
+  function runCheck(fromOutside) {
+    var $button = $('#dr-health-run').prop('disabled', true)
+      .text(fromOutside ? "Checking from outside…" : "Checking…");
+    var outsideReply = fromOutside ? $.getJSON("/api/health/outside") : $.Deferred().resolve([null]).promise();
+    $.when($.getJSON("/api/health"), $.getJSON("/settings.json"), outsideReply)
+      .done(function(healthReply, settingsReply, outsideAnswer) {
+        var health = healthReply[0];
+        var settings = settingsReply[0];
+        var outside = outsideAnswer[0];
+        lastHealth = health;
+        lastOutside = outside;
+        lastResults = [
+          checkServices(health),
+          checkPublicAddress(health),
+          checkOutside(health, outside),
+          checkServicePorts(health, outside),
+          checkDirectory(health),
+          checkAccess(health),
+          checkAdmin(settings, outside)
+        ];
+        render(lastResults, health);
+        $('#dr-health-copy').prop('disabled', false);
+      }).fail(function() {
+        $('#dr-health-overall').text("The check couldn't run: the server didn't answer. Refresh the page and try again.")
+          .attr('class', 'dr-health-overall dr-health-fail');
+      }).always(function() {
+        $button.prop('disabled', false).text("Check again");
+      });
   }
 
   $card.on('click', '.dr-health-head', function() {
@@ -455,13 +540,15 @@ $(document).ready(function() {
     $(this).attr('aria-expanded', $(this).attr('aria-expanded') === 'true' ? 'false' : 'true');
   });
 
-  $('#dr-health-run').on('click', runCheck);
+  $('#dr-health-run').on('click', function() {
+    runCheck(true);
+  });
 
   $('#dr-health-copy').on('click', function() {
     if (!lastResults) {
       return;
     }
-    var text = diagnosticsText(lastResults, lastHealth, $('#dr-health-hide-ip').is(':checked'));
+    var text = diagnosticsText(lastResults, lastHealth, lastOutside, $('#dr-health-hide-ip').is(':checked'));
     var $button = $(this);
     $('#dr-health-diagnostics').hide();
     copyText(text).done(function() {
@@ -481,5 +568,5 @@ $(document).ready(function() {
     });
   });
 
-  runCheck();
+  runCheck(false);
 });
