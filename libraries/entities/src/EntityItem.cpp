@@ -3735,6 +3735,11 @@ bool EntityItem::isMyAvatarEntity() const {
     return _hostType == entity::HostType::AVATAR && AVATAR_SELF_ID == _owningAvatarID;
 };
 
+bool EntityItem::isAvatarEntityOf(const QUuid& avatarID) const {
+    return _hostType == entity::HostType::AVATAR && !avatarID.isNull() && avatarID != AVATAR_SELF_ID &&
+        _owningAvatarID == avatarID;
+}
+
 QUuid EntityItem::getOwningAvatarIDForProperties() const {
     if (isMyAvatarEntity()) {
         // NOTE: we always store AVATAR_SELF_ID for MyAvatar's avatar entities,

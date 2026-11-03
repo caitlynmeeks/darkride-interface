@@ -600,6 +600,13 @@ void OtherAvatar::handleChangedAvatarEntityData() {
 
             // try to build the entity
             EntityItemPointer entity = entityTree->findEntityByEntityItemID(EntityItemID(entityID));
+            if (entity && !entity->isAvatarEntityOf(getID())) {
+                // an entity under this id that isn't one this avatar wears (the world's, this computer's or another
+                // avatar's) is left as it is; this data isn't read again until it changes
+                stateItr.value().success = true;
+                stateItr.value().hash = newHash;
+                continue;
+            }
             bool success = true;
             if (entity) {
                 QUuid oldParentID = entity->getParentID();
@@ -671,9 +678,7 @@ void OtherAvatar::handleChangedAvatarEntityData() {
                     }
                 }
                 if (!idsToDelete.empty()) {
-                    bool force = true;
-                    bool ignoreWarnings = true;
-                    entityTree->deleteEntitiesByID(idsToDelete, force, ignoreWarnings);
+                    entityTree->deleteAvatarEntitiesOf(getID(), idsToDelete);
                 }
             }
 
