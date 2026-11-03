@@ -134,6 +134,9 @@ public:
     void deleteEntity(const EntityItemID& entityID, bool force = false, bool ignoreWarnings = true);
 
     void deleteEntitiesByID(const std::vector<EntityItemID>& entityIDs, bool force = false, bool ignoreWarnings = true);
+    // removes, on this computer only, those of the ids that are the given avatar's own avatar entities (with their local
+    // and my-avatar children, as any delete here); other ids are left as they are and nothing goes to the entity server
+    void deleteAvatarEntitiesOf(const QUuid& avatarID, const std::vector<EntityItemID>& entityIDs);
     void deleteEntitiesByPointer(const std::vector<EntityItemPointer>& entities);
 
     EntityItemPointer findEntityByID(const QUuid& id) const;
