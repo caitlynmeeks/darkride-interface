@@ -211,8 +211,6 @@ void bindActionToQmlAction(QObject* qmlAction, QAction* action, QObject* qmlPare
     QObject::connect(qmlAction, SIGNAL(triggered()), action, SLOT(trigger()));
 }
 
-class QQuickMenuItem1;
-
 void VrMenu::addAction(QMenu* menu, QAction* action) {
     Q_ASSERT(!MenuUserData::hasData(action));
 
@@ -223,15 +221,21 @@ void VrMenu::addAction(QMenu* menu, QAction* action) {
     }
     QObject* menuQml = findMenuObject(userData->uuid.toString());
     Q_ASSERT(menuQml);
-    QQuickMenuItem1* returnedValue { nullptr };
+    // the menu is a QML VrMenuEntry (qml/desktop): its addItem is a QML function, which returns a QVariant
+    QVariant returnedValue;
     bool invokeResult = QMetaObject::invokeMethod(menuQml, "addItem", Qt::DirectConnection,
-        Q_RETURN_ARG(QQuickMenuItem1*, returnedValue),
-        Q_ARG(QString, action->text()));
+        Q_RETURN_ARG(QVariant, returnedValue),
+        Q_ARG(QVariant, QVariant::fromValue(action->text())));
 
     Q_ASSERT(invokeResult);
     Q_UNUSED(invokeResult); // FIXME - apparently we haven't upgraded the Qt on our unix Jenkins environments to 5.5.x
-    QObject* result = reinterpret_cast<QObject*>(returnedValue); // returnedValue.value<QObject*>();
+    QObject* result = returnedValue.value<QObject*>();
     Q_ASSERT(result);
+    if (!result) {
+        // (a menu that isn't a VrMenuEntry, or the call failed: the VR menu goes without this item, the app goes on)
+        qWarning() << "Unable to create QML menu item for action: " << action->text();
+        return;
+    }
     // Bind the QML and Widget together
     bindActionToQmlAction(result, action, _rootMenu);
 }
@@ -261,13 +265,13 @@ void VrMenu::insertAction(QAction* before, QAction* action) {
         beforeQml = findMenuObject(beforeUserData->uuid.toString());
     }
     QObject* menu = beforeQml->parent();
-    QQuickMenuItem1* returnedValue { nullptr };
+    QVariant returnedValue;
     // FIXME this needs to find the index of the beforeQml item and call insertItem(int, object)
     bool invokeResult = QMetaObject::invokeMethod(menu, "addItem", Qt::DirectConnection,
-        Q_RETURN_ARG(QQuickMenuItem1*, returnedValue),
-        Q_ARG(QString, action->text()));
+        Q_RETURN_ARG(QVariant, returnedValue),
+        Q_ARG(QVariant, QVariant::fromValue(action->text())));
     Q_ASSERT(invokeResult);
-    QObject* result = reinterpret_cast<QObject*>(returnedValue); // returnedValue.value<QObject*>();
+    QObject* result = returnedValue.value<QObject*>();
     Q_ASSERT(result);
     if ( result ) {
         bindActionToQmlAction(result, action, _rootMenu);
@@ -275,9 +279,6 @@ void VrMenu::insertAction(QAction* before, QAction* action) {
         qWarning() << "Failed to find addItem() method in object " << menu << ". Not inserting action " << action;
     }
 }
-
-class QQuickMenuBase;
-class QQuickMenu1;
 
 void VrMenu::removeAction(QAction* action) {
     if (!action) {
