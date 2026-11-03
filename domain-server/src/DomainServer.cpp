@@ -1432,7 +1432,10 @@ void DomainServer::sendHeartbeatToMetaverse(const QString& networkAddress) {
     // add access level for anonymous connections
     // consider the domain to be "restricted" if anonymous connections are disallowed
     static const QString RESTRICTED_ACCESS_FLAG = "restricted";
-    NodePermissions anonymousPermissions = _settingsManager.getPermissionsForName(NodePermissions::standardNameAnonymous);
+    // the standard groups (anonymous, logged-in, friends, localhost) are kept apart from named people: asking for
+    // "anonymous" by name found nothing, so every world told the directory it was restricted
+    NodePermissions anonymousPermissions =
+        _settingsManager.getStandardPermissionsForName(NodePermissions::standardNameAnonymous);
     domainObject[RESTRICTED_ACCESS_FLAG] = !anonymousPermissions.can(NodePermissions::Permission::canConnectToDomain);
 
     const auto& temporaryDomainKey = DependencyManager::get<AccountManager>()->getTemporaryDomainKey(getID());
