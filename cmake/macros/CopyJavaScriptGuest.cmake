@@ -22,12 +22,14 @@
 #  file to include or require; imports and exports unchanged.
 #  Revision 5 names a global a world's entity scripts don't get (the script API policy's stand-in) in the error a
 #  call on it raises; imports and exports unchanged.
+#  Revision 6 exports console_eval, a line typed into the scripting console evaluated in the script's global scope;
+#  imports unchanged. A host before it never calls it; this host tells the console when a guest lacks it.
 #
 #  Distributed under the Apache License, Version 2.0.
 #  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 #
 macro(COPY_JAVASCRIPT_GUEST DESTINATION_DIR)
-    set(JAVASCRIPT_GUEST_VERSION "0.17.0-5")
+    set(JAVASCRIPT_GUEST_VERSION "0.17.0-6")
     set(JAVASCRIPT_GUEST "")
     foreach(JAVASCRIPT_GUEST_CANDIDATE
             "$ENV{DARKRIDE_JS_WASM}"

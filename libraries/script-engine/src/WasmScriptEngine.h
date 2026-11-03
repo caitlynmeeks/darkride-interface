@@ -128,6 +128,9 @@ public:
     // The entity-script contract, for an entities engine: a JavaScript entity script runs in the guest, a
     // .wasm one in an instance of its module (one per URL), reached through the module's entity_* exports.
     void loadEntityScript(const EntityItemID& entityID, const QString& entityScript, bool forceRedownload) override;
+    /// A console line, through the JavaScript guest's console_eval (revision 6 on): evaluated in the global scope of
+    /// the engine's script. A module, or an older guest, says it has no console.
+    QVariantMap consoleEvaluate(const QString& code) override;
     void unloadEntityScript(const EntityItemID& entityID, bool shouldRemoveFromMap = false) override;
     void unloadAllEntityScripts(bool blockingCall = false) override;
     void callEntityScriptMethod(const EntityItemID& entityID, const QString& methodName,

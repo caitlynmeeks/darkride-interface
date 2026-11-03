@@ -635,7 +635,9 @@ ScriptEnginePointer ScriptEngines::loadScript(const QUrl& scriptFilename, bool i
     scriptEngine->setUserLoaded(isUserLoaded);
     scriptEngine->setQuitWhenFinished(quitWhenFinished);
 
-    if (scriptFilename.isEmpty() || !scriptUrl.isValid()) {
+    if (scriptFilename.isEmpty() || !scriptUrl.isValid() || scriptFilename == QUrl(ScriptEngine::CONSOLE_SCRIPT_NAME)) {
+        // nothing to fetch (the console's engine runs only what is typed into it): it starts at once, outside the
+        // list of running scripts
         launchScriptEngine(scriptEngine);
     } else {
         // connect to the appropriate signals of this script engine

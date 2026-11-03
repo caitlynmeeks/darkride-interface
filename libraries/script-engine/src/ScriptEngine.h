@@ -316,6 +316,13 @@ public:
     /// evaluate some code in the context of the ScriptEngine and return the result
     Q_INVOKABLE QScriptValue evaluate(const QString& program, const QString& fileName, int lineNumber = 1); // this is also used by the script tool widget
 
+    /// The scripting console's engine (Developer > Console) by name: it runs no script of its own, only the lines typed
+    /// into it.
+    static const QString CONSOLE_SCRIPT_NAME;
+    /// A line typed into the scripting console, evaluated in this engine's global scope, on the engine's thread: what
+    /// the console shows, { "text": the result as text, "error": whether it threw }. Not part of the Script API.
+    virtual QVariantMap consoleEvaluate(const QString& code);
+
     /**jsdoc
      * @function Script.evaluateInClosure
      * @param {object} locals - Locals.

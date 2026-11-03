@@ -83,6 +83,7 @@ const QString ENTITY_LOAD_EXPORT = QStringLiteral("entity_load");
 const QString ENTITY_UNLOAD_EXPORT = QStringLiteral("entity_unload");
 const QString ENTITY_HAS_EXPORT = QStringLiteral("entity_has");
 const QString ENTITY_CALL_EXPORT = QStringLiteral("entity_call");
+const QString CONSOLE_EVAL_EXPORT = QStringLiteral("console_eval");
 
 // The way back to QtScript, off unless chosen (Developer > Scripting > Run JavaScript on QtScript). Its own key since
 // the flip (2026-10-25): the menu saved the old setting's state as "off" in every client that ever ran, so a new
@@ -617,7 +618,8 @@ bool WasmScriptEngine::startMain() {
     QString error;
     std::shared_ptr<WasmModule> module;
     if (_runsJavaScript) {
-        if (_scriptContents.isEmpty() && !_isEntitiesEngine) {
+        // the entities engine and the console's start with no script of their own
+        if (_scriptContents.isEmpty() && !_isEntitiesEngine && _fileNameString != CONSOLE_SCRIPT_NAME) {
             scriptErrorMessage("No script to run: " + _fileNameString);
             return false;
         }
@@ -1240,6 +1242,37 @@ void WasmScriptEngine::unloadAllEntityScripts(bool blockingCall) {
     }
     _entityHosts.clear();
     emit entityScriptDetailsUpdated();
+}
+
+QVariantMap WasmScriptEngine::consoleEvaluate(const QString& code) {
+    QVariantMap shown { { "error", true } };
+    ModuleInstancePointer main;
+    {
+        std::lock_guard<std::mutex> lock(_instancesMutex);
+        main = _main;
+    }
+    if (!_runsJavaScript) {
+        shown["text"] = QString("the console runs JavaScript; %1 is a WebAssembly module").arg(getFilename());
+        return shown;
+    }
+    if (!main || !main->running || !main->host) {
+        shown["text"] = QString("%1 isn't running").arg(getFilename());
+        return shown;
+    }
+    if (!main->instance->hasExport(CONSOLE_EVAL_EXPORT)) {
+        shown["text"] = "this build's JavaScript guest has no console (it needs revision 6 or later)";
+        return shown;
+    }
+    QVariant result;
+    QString error;
+    ++_callDepth;
+    const bool called = main->host->callWithPayload(CONSOLE_EVAL_EXPORT, QVariant(code), result, error);
+    --_callDepth;
+    if (!called || !result.canConvert<QVariantMap>()) {
+        shown["text"] = error.isEmpty() ? QString("the line didn't run") : error;
+        return shown;
+    }
+    return result.toMap();
 }
 
 // A method of an entity's script, through the contract's entity_call: the arguments are the entity's id and

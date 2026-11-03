@@ -218,7 +218,9 @@ ScriptEnginePointer scriptEngineFactory(ScriptEngine::Context context,
     // chosen goes to that one. An agent's script is JavaScript unless it is a module, whatever its URL ends with.
     // JavaScript goes there only when the build has the guest module that runs it.
     const bool isEntitiesEngine = context == ScriptEngine::ENTITY_CLIENT_SCRIPT || context == ScriptEngine::ENTITY_SERVER_SCRIPT;
-    const bool isClientJavaScript = context == ScriptEngine::CLIENT_SCRIPT && WasmScriptEngine::isJavaScriptFile(fileNameString);
+    // the scripting console's engine runs JavaScript too, typed in rather than loaded
+    const bool isClientJavaScript = context == ScriptEngine::CLIENT_SCRIPT &&
+        (WasmScriptEngine::isJavaScriptFile(fileNameString) || fileNameString == ScriptEngine::CONSOLE_SCRIPT_NAME);
     const bool isAgentJavaScript = context == ScriptEngine::AGENT_SCRIPT && !WasmScriptEngine::isWasmScript(fileNameString);
     bool javaScriptOnWebAssembly = WasmScriptEngine::runJavaScriptOnWebAssembly();
     if (isClientJavaScript && !scriptURL.isEmpty()) {
@@ -237,6 +239,15 @@ ScriptEnginePointer scriptEngineFactory(ScriptEngine::Context context,
 }
 
 int ScriptEngine::processLevelMaxRetries { ScriptRequest::MAX_RETRIES };
+const QString ScriptEngine::CONSOLE_SCRIPT_NAME { "about:console" };
+
+QVariantMap ScriptEngine::consoleEvaluate(const QString& code) {
+    const QScriptValue result = evaluate(code, CONSOLE_SCRIPT_NAME);
+    QVariantMap shown;
+    shown["text"] = result.toString();
+    shown["error"] = hasUncaughtException() || result.isError();
+    return shown;
+}
 ScriptEngine::ScriptEngine(Context context, const QString& scriptContents, const QString& fileNameString) :
     BaseScriptEngine(),
     _context(context),
