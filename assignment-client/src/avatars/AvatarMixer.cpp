@@ -36,6 +36,7 @@
 #include <TryLocker.h>
 #include "../AssignmentDynamicFactory.h"
 #include "../entities/AssignmentParentFinder.h"
+#include "AvatarMixerChecks.h"
 #include <model-networking/ModelCache.h>
 #include <hfm/ModelFormatRegistry.h>
 
@@ -678,6 +679,13 @@ void AvatarMixer::handleAvatarIdentityPacket(QSharedPointer<ReceivedMessage> mes
             bool identityChanged = false;
             bool displayNameChanged = false;
             bool skeletonModelURLChanged = false;
+            // an identity whose counts or lengths aren't an app's is dropped before it's read (security #52)
+            const QString refusal = avatar_mixer_checks::identityRefusal(message->getMessage());
+            if (!refusal.isEmpty()) {
+                nodeData->logRefusedData("an identity", refusal, senderNode->getUUID());
+                _handleAvatarIdentityPacketElapsedTime += (usecTimestampNow() - start);
+                return;
+            }
             QDataStream avatarIdentityStream(message->getMessage());
             avatar.processAvatarIdentity(avatarIdentityStream, identityChanged, displayNameChanged, skeletonModelURLChanged);
 
