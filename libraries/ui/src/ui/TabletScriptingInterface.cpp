@@ -9,6 +9,8 @@
 #include "TabletScriptingInterface.h"
 
 #include <QtCore/QThread>
+
+#include <mutex>
 #include <QtQml/QQmlProperty>
 
 #include <shared/QtHelpers.h>
@@ -17,6 +19,7 @@
 #include <DependencyManager.h>
 #include <AccountManager.h>
 #include <RegisteredMetaTypes.h>
+#include <ScriptCaller.h>
 
 #include "../QmlWindowClass.h"
 #include "../OffscreenUi.h"
@@ -834,6 +837,31 @@ void TabletProxy::loadHomeScreen(bool forceOntoHomeScreen) {
     }
 }
 
+// A page a world's script opens in the visitor's tablet (ScriptCaller, read on the calling thread before any hop): a web
+// page only (http or https), with nothing injected into it and in the usual web view, not the other web base. The
+// visitor's own scripts and the app keep every form. False: refused, and logged.
+static bool worldPageAllowed(const char* member, const QString& url, QString& injectedJavaScriptUrl, bool& loadOtherBase) {
+    if (!ScriptCaller::isWorld()) {
+        return true;
+    }
+    const QString scheme = QUrl(url).scheme().toLower();
+    if (scheme != "http" && scheme != "https") {
+        qCWarning(uiLogging).noquote() << QString("Tablet %1: a world's script opens only http and https pages, not %2")
+                                              .arg(member, url.left(200));
+        return false;
+    }
+    if (!injectedJavaScriptUrl.isEmpty() || loadOtherBase) {
+        static std::once_flag logged;
+        std::call_once(logged, [member] {
+            qCWarning(uiLogging).noquote() << QString("Tablet %1: a world's page opens without an injected script or the "
+                                                      "other web base (logged once)").arg(member);
+        });
+        injectedJavaScriptUrl.clear();
+        loadOtherBase = false;
+    }
+    return true;
+}
+
 void TabletProxy::gotoWebScreen(const QString& url) {
     gotoWebScreen(url, "");
 }
@@ -844,22 +872,31 @@ void TabletProxy::loadWebScreenOnTop(const QVariant& url) {
 
 void TabletProxy::loadWebScreenOnTop(const QVariant& url, const QString& injectJavaScriptUrl) {
     bool localSafeContext = hifi::scripting::isLocalAccessSafeThread();
+    QString injected = injectJavaScriptUrl;
+    bool loadOtherBase = false;
+    if (!worldPageAllowed("loadWebScreenOnTop", url.toString(), injected, loadOtherBase)) {
+        return;
+    }
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "loadHTMLSourceOnTopImpl", Q_ARG(QString, url.toString()), Q_ARG(QString, injectJavaScriptUrl), Q_ARG(bool, false), Q_ARG(bool, localSafeContext));
+        QMetaObject::invokeMethod(this, "loadHTMLSourceOnTopImpl", Q_ARG(QString, url.toString()), Q_ARG(QString, injected), Q_ARG(bool, false), Q_ARG(bool, localSafeContext));
         return;
     }
 
-    loadHTMLSourceOnTopImpl(url.toString(), injectJavaScriptUrl, false, localSafeContext);
+    loadHTMLSourceOnTopImpl(url.toString(), injected, false, localSafeContext);
 }
 
 void TabletProxy::gotoWebScreen(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase) {
     bool localSafeContext = hifi::scripting::isLocalAccessSafeThread();
+    QString injected = injectedJavaScriptUrl;
+    if (!worldPageAllowed("gotoWebScreen", url, injected, loadOtherBase)) {
+        return;
+    }
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "loadHTMLSourceOnTopImpl", Q_ARG(QString, url), Q_ARG(QString, injectedJavaScriptUrl), Q_ARG(bool, loadOtherBase), Q_ARG(bool, localSafeContext));
+        QMetaObject::invokeMethod(this, "loadHTMLSourceOnTopImpl", Q_ARG(QString, url), Q_ARG(QString, injected), Q_ARG(bool, loadOtherBase), Q_ARG(bool, localSafeContext));
         return;
     }
 
-    loadHTMLSourceOnTopImpl(url, injectedJavaScriptUrl, loadOtherBase, localSafeContext);
+    loadHTMLSourceOnTopImpl(url, injected, loadOtherBase, localSafeContext);
 }
 
 void TabletProxy::loadHTMLSourceOnTopImpl(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase, bool localSafeContext) {
