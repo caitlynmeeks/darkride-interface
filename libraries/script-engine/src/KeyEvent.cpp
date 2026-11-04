@@ -12,7 +12,6 @@
 #include "KeyEvent.h"
 
 #include <qdebug.h>
-#include <qscriptengine.h>
 
 #include "ScriptEngineLogging.h"
 

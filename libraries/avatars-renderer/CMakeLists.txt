@@ -1,5 +1,5 @@
 set(TARGET_NAME avatars-renderer)
-setup_hifi_library(Network Script)
+setup_hifi_library(Network)
 link_hifi_libraries(shared shaders gpu graphics animation material-networking model-networking script-engine render render-utils image entities-renderer physics)
 include_hifi_library_headers(avatars)
 include_hifi_library_headers(networking)

@@ -11,8 +11,6 @@
 
 #include "TouchEvent.h"
 
-#include <qscriptengine.h>
-#include <qscriptvalue.h>
 
 #include <NumericalConstants.h>
 

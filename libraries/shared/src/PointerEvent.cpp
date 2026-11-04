@@ -11,8 +11,6 @@
 
 #include "PointerEvent.h"
 
-#include <qscriptengine.h>
-#include <qscriptvalue.h>
 
 #include "RegisteredMetaTypes.h"
 

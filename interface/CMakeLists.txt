@@ -75,7 +75,7 @@ endif ()
 
 find_package(
   Qt${QT_VERSION_MAJOR} COMPONENTS
-  Gui Widgets Multimedia Network Qml Quick QuickWidgets Script Svg
+  Gui Widgets Multimedia Network Qml Quick QuickWidgets Svg
   ${PLATFORM_QT_COMPONENTS}
   WebChannel WebSockets
 )
@@ -299,7 +299,7 @@ endif ()
 target_link_libraries(
   ${TARGET_NAME}
   Qt::Gui Qt::Network Qt::Multimedia Qt::Widgets
-  Qt::Qml Qt::Quick Qt::QuickWidgets Qt::Script Qt::Svg
+  Qt::Qml Qt::Quick Qt::QuickWidgets Qt::Svg
   Qt::WebChannel
   ${PLATFORM_QT_LIBRARIES}
 )

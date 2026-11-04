@@ -11,4 +11,4 @@ macro (setup_testcase_dependencies)
 endmacro ()
 
 # EntityContentAddressesTests: which entity content addresses name a file on this computer, and emptying them
-setup_hifi_testcase(Script Network)
+setup_hifi_testcase(Network)

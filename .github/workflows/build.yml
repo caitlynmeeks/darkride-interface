@@ -98,7 +98,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install aqtinstall==3.3.0
-          python -m aqt install-qt windows desktop 5.15.2 win64_msvc2019_64 -m qtwebengine qtscript qtwebglplugin -O C:\Qt
+          python -m aqt install-qt windows desktop 5.15.2 win64_msvc2019_64 -m qtwebengine qtwebglplugin -O C:\Qt
 
       # saved straight away, so a build that fails later still keeps it
       - name: Save Qt

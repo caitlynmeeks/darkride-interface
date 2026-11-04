@@ -5,5 +5,4 @@ macro (setup_testcase_dependencies)
   package_libraries_for_deployment()
 endmacro ()
 
-# Script: HostInterfaceTests checks that a QScriptValue parameter is refused, until the host's QtScript forms go
-setup_hifi_testcase(Script)
+setup_hifi_testcase()
