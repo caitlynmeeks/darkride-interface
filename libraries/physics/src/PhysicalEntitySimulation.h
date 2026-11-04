@@ -148,7 +148,11 @@ private:
 
     QList<EntityDynamicPointer> _dynamicsToAdd;
     QSet<QUuid> _dynamicsToRemove;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QRecursiveMutex _dynamicsMutex;   // Qt 6 has no QMutex::Recursive; the same lock as below
+#else
     QMutex _dynamicsMutex { QMutex::Recursive };
+#endif
 
     workload::SpacePointer _space;
     std::unique_ptr<TrackSimulation> _trackSimulation; // the trains on the tracks (PHYSICS.md 4.8)
