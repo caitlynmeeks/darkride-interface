@@ -39,7 +39,11 @@ glm::mat4 Mat4::createFromColumns(const glm::vec4& col0, const glm::vec4& col1, 
 
 glm::mat4 Mat4::createFromArray(const QVector<float>& floats) const {
     if (floats.size() != 16 && floats.size() != 9) {
-        context()->throwError("createFromVector requires 16 floats for mat4 (or 9 if providing a mat3)");
+        const QString message = "Mat4.createFromArray requires 16 floats for mat4 (or 9 if providing a mat3)";
+        qCWarning(scriptengine) << message;
+        if (ScriptEngine* scriptEngine = qobject_cast<ScriptEngine*>(parent())) {
+            scriptEngine->scriptErrorMessage(message);
+        }
         return glm::mat4();
     }
     return floats.size() == 9 ? glm::mat4(glm::make_mat3(floats.constData())) : glm::make_mat4(floats.constData());
@@ -87,7 +91,7 @@ void Mat4::print(const QString& label, const glm::mat4& m, bool transpose) const
     QString message = QString("%1 %2").arg(qPrintable(label));
     message = message.arg(glm::to_string(out).c_str());
     qCDebug(scriptengine) << message;
-    if (ScriptEngine* scriptEngine = qobject_cast<ScriptEngine*>(engine())) {
+    if (ScriptEngine* scriptEngine = qobject_cast<ScriptEngine*>(parent())) {
         scriptEngine->print(message);
     }
 }

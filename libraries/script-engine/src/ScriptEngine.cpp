@@ -74,6 +74,11 @@ ScriptEngine::ScriptEngine(Context context, const QString& scriptContents, const
     _context(context),
     _scriptContents(scriptContents),
     _fileNameString(fileNameString),
+    _quatLibrary(new Quat(this)),
+    _vec3Library(new Vec3(this)),
+    _mat4Library(new Mat4(this)),
+    _uuidLibrary(new ScriptUUID(this)),
+    _consoleScriptingInterface(new ConsoleScriptingInterface(this)),
     _assetScriptingInterface(new AssetScriptingInterface(this))
 {
     // held for the engine's life: what the agent's scripts include later never changes it
@@ -335,15 +340,15 @@ void ScriptEngine::registerStandardGlobals() {
     registerGlobalObject("Audio", DependencyManager::get<AudioScriptingInterface>().data());
 
     registerGlobalObject("Entities", DependencyManager::get<EntityScriptingInterface>().data());
-    registerGlobalObject("Quat", &_quatLibrary);
-    registerGlobalObject("Vec3", &_vec3Library);
-    registerGlobalObject("Mat4", &_mat4Library);
-    registerGlobalObject("Uuid", &_uuidLibrary);
+    registerGlobalObject("Quat", _quatLibrary);
+    registerGlobalObject("Vec3", _vec3Library);
+    registerGlobalObject("Mat4", _mat4Library);
+    registerGlobalObject("Uuid", _uuidLibrary);
     // a world's entity scripts get their own Messages: the world's send path, the app's channels refused (WorldMessages)
     registerGlobalObject("Messages", isEntityClientScript() ? static_cast<QObject*>(new WorldMessages(this))
                                                             : DependencyManager::get<MessagesClient>().data());
     registerGlobalObject("File", new FileScriptingInterface(this));
-    registerGlobalObject("console", &_consoleScriptingInterface);
+    registerGlobalObject("console", _consoleScriptingInterface);
 
     registerGlobalObject("Assets", _assetScriptingInterface);
     registerGlobalObject("Resources", DependencyManager::get<ResourceScriptingInterface>().data());

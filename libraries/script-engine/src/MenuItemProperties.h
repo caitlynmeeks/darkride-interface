@@ -12,7 +12,7 @@
 #ifndef hifi_MenuItemProperties_h
 #define hifi_MenuItemProperties_h
 
-#include <QtScript/QScriptEngine>
+#include <QtCore/QMetaType>
 
 #include "KeyEvent.h"
 
@@ -49,8 +49,6 @@ private:
     static const int UNSPECIFIED_POSITION = -1;
 };
 Q_DECLARE_METATYPE(MenuItemProperties)
-QScriptValue menuItemPropertiesToScriptValue(QScriptEngine* engine, const MenuItemProperties& props);
-void menuItemPropertiesFromScriptValue(const QScriptValue& object, MenuItemProperties& props);
 
 
 

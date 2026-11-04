@@ -173,18 +173,6 @@ KeyEvent::operator QKeySequence() const {
  *     print(JSON.stringify(event));
  * });
  */
-QScriptValue KeyEvent::toScriptValue(QScriptEngine* engine, const KeyEvent& event) {
-    QScriptValue obj = engine->newObject();
-    obj.setProperty("key", event.key);
-    obj.setProperty("text", event.text);
-    obj.setProperty("isShifted", event.isShifted);
-    obj.setProperty("isMeta", event.isMeta);
-    obj.setProperty("isControl", event.isControl);
-    obj.setProperty("isAlt", event.isAlt);
-    obj.setProperty("isKeypad", event.isKeypad);
-    obj.setProperty("isAutoRepeat", event.isAutoRepeat);
-    return obj;
-}
 
 int KeyEvent::keyFromText(const QString& text, bool& isKeypad) {
     const QString upper = text.toUpper();
@@ -264,57 +252,3 @@ int KeyEvent::keyFromText(const QString& text, bool& isKeypad) {
     }
     return key;
 }
-
-void KeyEvent::fromScriptValue(const QScriptValue& object, KeyEvent& event) {
-    
-    event.isValid = false; // assume the worst
-    event.isMeta = object.property("isMeta").toVariant().toBool();
-    event.isControl = object.property("isControl").toVariant().toBool();
-    event.isAlt = object.property("isAlt").toVariant().toBool();
-    event.isKeypad = object.property("isKeypad").toVariant().toBool();
-    event.isAutoRepeat = object.property("isAutoRepeat").toVariant().toBool();
-    
-    QScriptValue key = object.property("key");
-    if (key.isValid()) {
-        event.key = key.toVariant().toInt();
-        event.text = QString(QChar(event.key));
-        event.isValid = true;
-    } else {
-        QScriptValue text = object.property("text");
-        if (text.isValid()) {
-            event.text = object.property("text").toVariant().toString();
-            
-            event.key = keyFromText(event.text, event.isKeypad);
-            event.isValid = true;
-        }
-    }
-    
-    QScriptValue isShifted = object.property("isShifted");
-    if (isShifted.isValid()) {
-        event.isShifted = isShifted.toVariant().toBool();
-    } else {
-        // if no isShifted was included, get it from the text
-        QChar character = event.text.at(0);
-        if (character.isLetter() && character.isUpper()) {
-            event.isShifted = true;
-        } else {
-            // if it's a symbol, then attempt to detect shifted-ness
-            if (QString("~!@#$%^&*()_+{}|:\"<>?").contains(character)) {
-                event.isShifted = true;
-            }
-        }
-    }
-    
-    const bool wantDebug = false;
-    if (wantDebug) {
-        qCDebug(scriptengine) << "event.key=" << event.key
-        << " event.text=" << event.text
-        << " event.isShifted=" << event.isShifted
-        << " event.isControl=" << event.isControl
-        << " event.isMeta=" << event.isMeta
-        << " event.isAlt=" << event.isAlt
-        << " event.isKeypad=" << event.isKeypad
-        << " event.isAutoRepeat=" << event.isAutoRepeat;
-    }
-}
-

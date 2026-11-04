@@ -774,11 +774,12 @@ protected:
     qint64 _lastUpdate;
 
     QString _fileNameString;
-    Quat _quatLibrary;
-    Vec3 _vec3Library;
-    Mat4 _mat4Library;
-    ScriptUUID _uuidLibrary;
-    ConsoleScriptingInterface _consoleScriptingInterface;
+    // the engine's own globals, its children (they print through their parent, and go with it to its thread)
+    Quat* _quatLibrary { nullptr };
+    Vec3* _vec3Library { nullptr };
+    Mat4* _mat4Library { nullptr };
+    ScriptUUID* _uuidLibrary { nullptr };
+    ConsoleScriptingInterface* _consoleScriptingInterface { nullptr };
     std::atomic<bool> _isUserLoaded { false };
     bool _isReloading { false };
 
