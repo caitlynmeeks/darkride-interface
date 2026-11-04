@@ -162,6 +162,11 @@ endif ()
 # create the executable, make it a bundle on OS X
 if (APPLE)
   add_executable(${TARGET_NAME} MACOSX_BUNDLE ${INTERFACE_SRCS} ${QM})
+  if (QT_VERSION_MAJOR EQUAL 6)
+    # Qt 6 starts the Mac camera only after its own permission check, which needs this static plugin in the app;
+    # qt_add_executable links it, plain add_executable doesn't (avatars, 11-04: face tracking stays off silently)
+    qt_import_plugins(${TARGET_NAME} INCLUDE Qt6::QDarwinCameraPermissionPlugin)
+  endif()
 
   # the bundle and the program are named for Darkride (Darkride.app, Contents/MacOS/Darkride); the CMake target
   # stays "interface"
