@@ -21,6 +21,16 @@
 extern const char* BLENDSHAPE_NAMES[];
 extern const QMap<QString, int> BLENDSHAPE_LOOKUP_MAP;
 
+// A model's own morph target, and the weight it's applied at, for one of the blendshapes below
+struct BlendshapeSource {
+    QString name;  // as the model names it; empty if the model has none for the blendshape
+    float weight { 1.0f };
+    // Or, as a VRM's expressions give it, the target's number among those of the model's mesh of this name, for when
+    // the loader gets the targets without their names (three-vrm-girl keeps them only in its primitives' extras)
+    QString meshName;
+    int index { -1 };
+};
+
 enum class Blendshapes : int {
     EyeBlink_L = 0,
     EyeBlink_R,

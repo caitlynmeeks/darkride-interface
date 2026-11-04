@@ -105,13 +105,17 @@ FlowCollider::FlowCollider(int jointIndex, const FlowCollisionSettings& settings
     _isTouch = isTouch;
 }
 
-bool FlowCollider::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius) const {
+bool FlowCollider::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius, bool tipOnly) const {
     glm::vec3 onBone, onShape;
     if (_type == FlowCollisionType::CollisionCapsule) {
         closestPointsBetweenSegments(segmentStart, point, _position, _endPosition, onBone, onShape);
+        if (tipOnly) {
+            onBone = point;
+            onShape = closestPointOnSegment(_position, _endPosition, point);
+        }
     } else {
         onShape = _position;
-        onBone = closestPointOnSegment(segmentStart, point, _position);
+        onBone = tipOnly ? point : closestPointOnSegment(segmentStart, point, _position);
     }
     glm::vec3 away = onBone - onShape;
     float distance = glm::length(away);
@@ -158,10 +162,10 @@ void FlowCollisionSystem::resetCollisions() {
     _selfCollisions.clear();
 }
 
-bool FlowCollisionSystem::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius) const {
+bool FlowCollisionSystem::pushOut(const glm::vec3& segmentStart, glm::vec3& point, float pointRadius, bool tipOnly) const {
     bool pushed = false;
     for (const auto& collider : _allCollisions) {
-        pushed = collider.pushOut(segmentStart, point, pointRadius) || pushed;
+        pushed = collider.pushOut(segmentStart, point, pointRadius, tipOnly) || pushed;
     }
     return pushed;
 }
@@ -357,7 +361,7 @@ void FlowThread::step(float dt, const glm::vec3& rootPosition, const glm::quat& 
             next = parent._currentPosition + direction * length;
 
             // and out of the body and the hands
-            node._colliding = collisionSystem.getActive() && collisionSystem.pushOut(parent._currentPosition, next, settings._radius * scale);
+            node._colliding = collisionSystem.getActive() && collisionSystem.pushOut(parent._currentPosition, next, settings._radius * scale, settings._tipCollision);
             if (node._colliding) {
                 direction = next - parent._currentPosition;
                 distance = glm::length(direction);

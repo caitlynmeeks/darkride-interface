@@ -117,6 +117,17 @@ void MyHead::simulate(float deltaTime) {
             userInputMapper->getActionStateValid(controller::Action::EYEBLINK_L) ||
             userInputMapper->getActionStateValid(controller::Action::EYEBLINK_R);
 
+        // if input system has control over where the eyes look, as eye-look shapes
+        bool eyeLookTracked =
+            userInputMapper->getActionStateValid(controller::Action::EYEUP_L) ||
+            userInputMapper->getActionStateValid(controller::Action::EYEUP_R) ||
+            userInputMapper->getActionStateValid(controller::Action::EYEDOWN_L) ||
+            userInputMapper->getActionStateValid(controller::Action::EYEDOWN_R) ||
+            userInputMapper->getActionStateValid(controller::Action::EYEIN_L) ||
+            userInputMapper->getActionStateValid(controller::Action::EYEIN_R) ||
+            userInputMapper->getActionStateValid(controller::Action::EYEOUT_L) ||
+            userInputMapper->getActionStateValid(controller::Action::EYEOUT_R);
+
         // if input system has control over the brows.
         bool browsTracked =
             userInputMapper->getActionStateValid(controller::Action::BROWSD_L) ||
@@ -153,7 +164,8 @@ void MyHead::simulate(float deltaTime) {
 
         // suppress any procedural blendshape animation if they overlap with driven input.
         setSuppressProceduralAnimationFlag(HeadData::BlinkProceduralBlendshapeAnimation, eyeLidsTracked);
-        setSuppressProceduralAnimationFlag(HeadData::LidAdjustmentProceduralBlendshapeAnimation, eyeLidsTracked || browsTracked);
+        setSuppressProceduralAnimationFlag(HeadData::LidAdjustmentProceduralBlendshapeAnimation,
+                                           eyeLidsTracked || browsTracked || eyeLookTracked);
         setSuppressProceduralAnimationFlag(HeadData::AudioProceduralBlendshapeAnimation, mouthTracked);
         setSuppressProceduralAnimationFlag(HeadData::SaccadeProceduralEyeJointAnimation, eyesTracked || eyeJointsOverridden);
 
