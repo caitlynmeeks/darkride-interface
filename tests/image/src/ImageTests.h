@@ -23,4 +23,5 @@ private slots:
     void testExrHugeWindow();
     void testPictureHeaderSize();
     void testFormatsReportSize();
+    void testTgaBlackWhite();
 };

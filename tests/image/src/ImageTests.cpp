@@ -24,6 +24,7 @@
 #include <image/Image.h>
 #include <image/OpenEXRReader.h>
 #include <image/TextureProcessing.h>
+#include <image/TGAReader.h>
 
 QTEST_GUILESS_MAIN(ImageTests)
 
@@ -159,4 +160,53 @@ void ImageTests::testFormatsReportSize() {
             QVERIFY2(with.contains(QString(common)), common);
         }
     }
+}
+
+// An 8-bit black-and-white TGA (type 3 uncompressed, type 11 run-length), as a modelling tool writes specular maps:
+// read by our own reader from its header, so the size check never needs Qt's plugin for it
+static QByteArray tgaHeader(uint8_t type, uint16_t width, uint16_t height) {
+    QByteArray header(18, '\0');
+    header[2] = (char)type;
+    header[12] = (char)(width & 0xFF); header[13] = (char)(width >> 8);
+    header[14] = (char)(height & 0xFF); header[15] = (char)(height >> 8);
+    header[16] = (char)8;        // bits per pixel
+    header[17] = (char)0x20;     // top-left origin, no alpha bits
+    return header;
+}
+
+void ImageTests::testTgaBlackWhite() {
+    const int side = 4;
+    QByteArray plain = tgaHeader(3, side, side);
+    for (int i = 0; i < side * side; i++) {
+        plain.append((char)(i * 16));
+    }
+    {
+        QBuffer buffer;
+        buffer.setData(plain);
+        buffer.open(QIODevice::ReadOnly);
+        image::Image image = image::readTGA(buffer);
+        QVERIFY(!image.isNull());
+        QCOMPARE(image.getWidth(), side);
+        QCOMPARE(image.getHeight(), side);
+        QCOMPARE((int)image.getFormat(), (int)image::Image::Format_Grayscale8);
+        QCOMPARE((int)image.getScanLine(1)[2], 6 * 16);
+    }
+    // the same picture through the picture path, by its extension
+    image::Image viaPath = readPicture(plain, "specular.tga");
+    QVERIFY(!viaPath.isNull());
+    QCOMPARE(viaPath.getWidth(), side);
+
+    // run-length: each row one run of four pixels of one value
+    QByteArray rle = tgaHeader(11, side, side);
+    for (int y = 0; y < side; y++) {
+        rle.append((char)(0x80 | (side - 1)));
+        rle.append((char)(y * 50));
+    }
+    QBuffer buffer;
+    buffer.setData(rle);
+    buffer.open(QIODevice::ReadOnly);
+    image::Image image = image::readTGA(buffer);
+    QVERIFY(!image.isNull());
+    QCOMPARE((int)image.getScanLine(3)[0], 150);
+    QCOMPARE((int)image.getScanLine(3)[3], 150);
 }
