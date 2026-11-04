@@ -658,8 +658,7 @@ ScriptEnginePointer ScriptEngines::getScriptEngine(const QUrl& rawScriptURL) {
 
 // FIXME - change to new version of ScriptCache loading notification
 void ScriptEngines::onScriptEngineLoaded(const QString& rawScriptURL) {
-    QSharedPointer<BaseScriptEngine> baseScriptEngine = qobject_cast<ScriptEngine*>(sender())->sharedFromThis();
-    ScriptEnginePointer scriptEngine = qSharedPointerCast<ScriptEngine>(baseScriptEngine);
+    ScriptEnginePointer scriptEngine = qobject_cast<ScriptEngine*>(sender())->sharedFromThis();
 
     launchScriptEngine(scriptEngine);
 

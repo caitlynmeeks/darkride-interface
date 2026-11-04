@@ -18,6 +18,7 @@
 
 #include <memory>
 #include <QtCore/QObject>
+#include <QtCore/QSharedPointer>
 #include <QtCore/QUrl>
 #include <QtCore/QSet>
 #include <QtCore/QWaitCondition>
@@ -34,7 +35,6 @@
 #include "PointerEvent.h"
 #include "AssetScriptingInterface.h"
 #include "AudioScriptingInterface.h"
-#include "BaseScriptEngine.h"
 #include "Quat.h"
 #include "Mat4.h"
 #include "ScriptCache.h"
@@ -51,6 +51,8 @@ static const int DEFAULT_MAX_ENTITY_PPS = 9000;
 static const int DEFAULT_ENTITY_PPS_PER_SCRIPT = 900;
 
 class ScriptEngines;
+class ScriptEngine;
+using ScriptEnginePointer = QSharedPointer<ScriptEngine>;
 
 Q_DECLARE_METATYPE(ScriptEnginePointer)
 
@@ -103,9 +105,8 @@ public:
 /// context and type, its file, its thread, the records of the entity scripts it runs, the rules its scripts'
 /// requests and files are judged by, and the messages it prints. The registrations the hosts make, the running of
 /// scripts and the entity-script contract are the engine's own: WasmScriptEngine, the one engine, which runs
-/// WebAssembly modules and JavaScript in the JavaScript guest module. QScriptEngine stays the base class until the
-/// last QtScript registrations the hosts make are gone (the Qt 6 move, stage 0); nothing here runs on it.
-class ScriptEngine : public BaseScriptEngine, public EntitiesScriptEngineProvider {
+/// WebAssembly modules and JavaScript in the JavaScript guest module.
+class ScriptEngine : public QObject, public QEnableSharedFromThis<ScriptEngine>, public EntitiesScriptEngineProvider {
     Q_OBJECT
     Q_PROPERTY(QString context READ getContext)
     Q_PROPERTY(QString type READ getTypeAsString)
@@ -228,49 +229,6 @@ public:
     /// the name is taken (the WebAssembly engine gives a module these through Script.scriptGlobalValues).
     virtual void registerGlobalValue(const QString& name, const QVariant& value) = 0;
 
-    /**jsdoc
-     * @function Script.registerGetterSetter
-     * @param {string} name - Name.
-     * @param {function} getter - Getter.
-     * @param {function} setter - Setter.
-     * @param {string} [parent=""] - Parent.
-     * @deprecated This function is deprecated and will be removed.
-     */
-    /// registers a global getter/setter
-    Q_INVOKABLE virtual void registerGetterSetter(const QString& name, QScriptEngine::FunctionSignature getter,
-                                          QScriptEngine::FunctionSignature setter, const QString& parent = QString("")) = 0;
-
-    /**jsdoc
-     * @function Script.registerFunction
-     * @param {string} name - Name.
-     * @param {function} function - Function.
-     * @param {number} [numArguments=-1] - Number of arguments.
-     * @deprecated This function is deprecated and will be removed.
-     */
-    /// register a global function
-    Q_INVOKABLE virtual void registerFunction(const QString& name, QScriptEngine::FunctionSignature fun, int numArguments = -1) = 0;
-
-    /**jsdoc
-     * @function Script.registerFunction
-     * @param {string} parent - Parent.
-     * @param {string} name - Name.
-     * @param {function} function - Function.
-     * @param {number} [numArguments=-1] - Number of arguments.
-     * @deprecated This function is deprecated and will be removed.
-     */
-    /// register a function as a method on a previously registered global object
-    Q_INVOKABLE virtual void registerFunction(const QString& parent, const QString& name, QScriptEngine::FunctionSignature fun,
-                                      int numArguments = -1) = 0;
-
-    /**jsdoc
-     * @function Script.registerValue
-     * @param {string} name - Name.
-     * @param {object} value - Value.
-     * @deprecated This function is deprecated and will be removed.
-     */
-    /// registers a global object by name
-    Q_INVOKABLE virtual void registerValue(const QString& valueName, QScriptValue value) = 0;
-
     /// The scripting console's engine (Developer > Console) by name: it runs no script of its own, only the lines typed
     /// into it.
     static const QString CONSOLE_SCRIPT_NAME;
@@ -359,16 +317,6 @@ public:
      * // This is script A
      */
     Q_INVOKABLE void load(const QString& loadfile);
-
-    /**jsdoc
-     * @function Script.resetModuleCache
-     * @param {boolean} [deleteScriptCache=false] - Delete script cache.
-     * @deprecated This function is deprecated and will be removed.
-     */
-    // The JavaScript guest keeps the module cache (Script.require.cache, reset by its own Script.resetModuleCache);
-    // the entities renderer still calls this on a reload of the entity scripts, where it has never reached the
-    // guest: nothing to do here until that call goes.
-    Q_INVOKABLE void resetModuleCache(bool deleteScriptCache = false) { Q_UNUSED(deleteScriptCache); }
 
     /**jsdoc
      * Prints a message to the program log and emits {@link Script.printedMessage}.

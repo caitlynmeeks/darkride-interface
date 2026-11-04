@@ -460,7 +460,7 @@ bool decodeAudioInjectorOptions(const ValueCodec& codec, const QCborValue& value
         return true;
     }
     if (options.positionSet == false) {
-        qWarning() << "Audio injector options: injectorOptionsFromScriptValue() called more than once?";
+        qWarning() << "Audio injector options: read more than once?";
     }
     options.positionSet = false;
     const QCborMap object = value.toMap();
@@ -533,7 +533,7 @@ bool requestLingers(QObject* object) {
 }
 
 QCborValue encodeSound(const ValueCodec& codec, const SharedSoundPointer& sound) {
-    // a new wrapper for each crossing, which the script owns (soundSharedPointerToScriptValue)
+    // a new wrapper for each crossing, which the script owns
     return codec.toCborOwned(new SoundScriptingInterface(sound));
 }
 
@@ -592,7 +592,6 @@ bool decodeEntityItemID(const ValueCodec& codec, const QCborValue& value, Entity
 
 // The entity properties, by the conversion bodies compiled for plain values (EntityItemProperties.h): a module gets
 // the map a script gets, member for member and in the same order, and what it sends is read as a script's object is
-// (QtScript's pair is EntityItemPropertiesToScriptValue and EntityItemPropertiesFromScriptValueHonorReadOnly)
 QCborValue encodeEntityItemProperties(const ValueCodec&, const EntityItemProperties& properties) {
     PlainScriptEngine engine;
     return properties.copyToScriptValue(&engine, false).toCbor();
@@ -735,7 +734,7 @@ bool decodeAvatarEntityMap(const ValueCodec& codec, const QCborValue& value, Ava
     return true;
 }
 
-// AttachmentData crosses with the members its QtScript prototype (AttachmentDataObject) shows a script.
+// AttachmentData crosses with the members a script sees (modelURL, jointName, translation, rotation, scale, isSoft).
 QCborValue encodeAttachmentData(const ValueCodec& codec, const AttachmentData& attachment) {
     QCborMap map;
     map.insert(QStringLiteral("modelURL"), attachment.modelURL.toString());

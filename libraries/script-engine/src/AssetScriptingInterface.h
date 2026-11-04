@@ -19,7 +19,6 @@
 #include <AssetClient.h>
 #include <NetworkAccessManager.h>
 #include <BaseAssetScriptingInterface.h>
-#include <BaseScriptEngine.h>
 #include <ScriptCallback.h>
 #include <QtNetwork/QNetworkDiskCache>
 

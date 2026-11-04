@@ -15,8 +15,9 @@
 #include <Qt>
 
 #include <stdint.h>
+
+#include <QtCore/QMetaType>
 #include <glm/glm.hpp>
-#include <QScriptValue>
 
 class PointerEvent {
 public:
@@ -44,10 +45,7 @@ public:
                  const glm::vec3& normal, const glm::vec3& direction,
                  Button button = NoButtons, uint32_t buttons = NoButtons, Qt::KeyboardModifiers keyboardModifiers = Qt::NoModifier);
 
-    static QScriptValue toScriptValue(QScriptEngine* engine, const PointerEvent& event);
-    static void fromScriptValue(const QScriptValue& object, PointerEvent& event);
 
-    QScriptValue toScriptValue(QScriptEngine* engine) const { return PointerEvent::toScriptValue(engine, *this); }
 
     EventType getType() const { return _type; }
     uint32_t getID() const { return _id; }

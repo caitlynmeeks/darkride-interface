@@ -99,12 +99,6 @@ public:
 
     // The ScriptEngine hooks the hosts call.
     void registerGlobalObject(const QString& name, QObject* object) override;
-    void registerGetterSetter(const QString& name, QScriptEngine::FunctionSignature getter,
-                              QScriptEngine::FunctionSignature setter, const QString& parent = QString("")) override;
-    void registerFunction(const QString& name, QScriptEngine::FunctionSignature fun, int numArguments = -1) override;
-    void registerFunction(const QString& parent, const QString& name, QScriptEngine::FunctionSignature fun,
-                          int numArguments = -1) override;
-    void registerValue(const QString& valueName, QScriptValue value) override;
     void registerGlobalValue(const QString& name, const QVariant& value) override;
     void loadURL(const QUrl& scriptURL, bool reload) override;
     bool hasValidScriptSuffix(const QString& scriptFileName) override;

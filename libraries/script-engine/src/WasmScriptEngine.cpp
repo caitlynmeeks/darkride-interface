@@ -23,14 +23,11 @@
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
 
 #include <AddressManager.h>
 #include <AudioEffectOptions.h>
 #include <EntityScriptingInterface.h>
 #include <EntityTree.h>
-#include <LocationScriptingInterface.h>
 #include <NumericalConstants.h>
 #include <OctreeConstants.h>
 #include <PathUtils.h>
@@ -41,7 +38,6 @@
 #include <SharedUtil.h>
 #include <shared/LocalFileAccessGate.h>
 
-#include <FunctionTwins.h>
 #include <HostInterface.h>
 #include <ObjectTable.h>
 #include <SignalRelay.h>
@@ -291,40 +287,6 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
     }
 }
 
-void WasmScriptEngine::registerGetterSetter(const QString& name, QScriptEngine::FunctionSignature getter,
-                                            QScriptEngine::FunctionSignature setter, const QString& parent) {
-    Q_UNUSED(setter);
-    const QString fullName = parent.isEmpty() ? name : parent + "." + name;
-    if (getter == &LocationScriptingInterface::locationGetter) {
-        // `location` is the address manager behind a getter; a module gets the object itself
-        registerGlobalObject(fullName, DependencyManager::get<AddressManager>().data());
-        return;
-    }
-    qCDebug(scriptengine) << "WasmScriptEngine: the property" << fullName << "is a QtScript getter and setter, not available to a module";
-}
-
-void WasmScriptEngine::registerFunction(const QString& name, QScriptEngine::FunctionSignature fun, int numArguments) {
-    Q_UNUSED(numArguments);
-    // a library may have registered an object that stands in for the function (FunctionTwins)
-    FunctionTwins::Factory factory = FunctionTwins::find(reinterpret_cast<const void*>(fun));
-    if (factory) {
-        QObject* twin = factory();
-        if (twin) {
-            twin->setParent(this);
-            registerGlobalObject(name, twin);
-            return;
-        }
-    }
-    qCDebug(scriptengine) << "WasmScriptEngine: the function" << name << "is a QtScript function, not available to a module";
-}
-
-void WasmScriptEngine::registerFunction(const QString& parent, const QString& name, QScriptEngine::FunctionSignature fun,
-                                        int numArguments) {
-    Q_UNUSED(fun);
-    Q_UNUSED(numArguments);
-    qCDebug(scriptengine) << "WasmScriptEngine: the function" << parent + "." + name << "is a QtScript function, not available to a module";
-}
-
 void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& value) {
     if (QThread::currentThread() != thread()) {
         QMetaObject::invokeMethod(this, [this, name, value] { registerGlobalValue(name, value); });
@@ -333,11 +295,6 @@ void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& 
     if (!_globalValues.contains(name)) {
         _globalValues.insert(name, value);
     }
-}
-
-void WasmScriptEngine::registerValue(const QString& valueName, QScriptValue value) {
-    Q_UNUSED(value);
-    qCDebug(scriptengine) << "WasmScriptEngine: the value" << valueName << "is a QtScript value, not available to a module";
 }
 
 // --- loading ----------------------------------------------------------------------------------------------------
@@ -1023,10 +980,10 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
     setEntityScriptDetails(entityID, newDetails);
 
     auto scriptCache = DependencyManager::get<ScriptCache>();
-    QWeakPointer<BaseScriptEngine> weakRef(sharedFromThis());
+    QWeakPointer<ScriptEngine> weakRef(sharedFromThis());
     if (isWasmScript(entityScript)) {
         scriptCache->getScriptBytes(entityScript, [this, weakRef, entityID](const QString& url, const QByteArray& bytes, bool success, const QString& status) {
-            QSharedPointer<BaseScriptEngine> strongRef(weakRef);
+            QSharedPointer<ScriptEngine> strongRef(weakRef);
             if (!strongRef || isStopping()) {
                 return;
             }
@@ -1034,7 +991,7 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
         }, forceRedownload);
     } else {
         scriptCache->getScriptContents(entityScript, [this, weakRef, entityID](const QString& url, const QString& contents, bool isURL, bool success, const QString& status) {
-            QSharedPointer<BaseScriptEngine> strongRef(weakRef);
+            QSharedPointer<ScriptEngine> strongRef(weakRef);
             if (!strongRef || isStopping()) {
                 return;
             }

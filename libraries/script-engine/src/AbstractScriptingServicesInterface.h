@@ -12,7 +12,7 @@
 #ifndef hifi_AbstractScriptingServicesInterface_h
 #define hifi_AbstractScriptingServicesInterface_h
 
-#include <BaseScriptEngine.h>
+#include "ScriptEngine.h"
 
 /// Interface provided by Application to other objects that need access to scripting services of the application
 class AbstractScriptingServicesInterface {

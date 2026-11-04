@@ -45,11 +45,6 @@
 
 #include <Profile.h>
 
-// The hosts' registrations still name QtScript's function type (the Qt 6 move, stage 0): the type stays known to
-// the meta-object system until those registrations are gone.
-Q_DECLARE_METATYPE(QScriptEngine::FunctionSignature)
-int functionSignatureMetaID = qRegisterMetaType<QScriptEngine::FunctionSignature>();
-
 int scriptEnginePointerMetaID = qRegisterMetaType<ScriptEnginePointer>();
 
 ScriptEnginePointer scriptEngineFactory(ScriptEngine::Context context,
@@ -70,7 +65,6 @@ int ScriptEngine::processLevelMaxRetries { ScriptRequest::MAX_RETRIES };
 const QString ScriptEngine::CONSOLE_SCRIPT_NAME { "about:console" };
 
 ScriptEngine::ScriptEngine(Context context, const QString& scriptContents, const QString& fileNameString) :
-    BaseScriptEngine(),
     _context(context),
     _scriptContents(scriptContents),
     _fileNameString(fileNameString),
@@ -417,7 +411,8 @@ void ScriptEngine::endProfileRange(const QString& label) const {
 // as a stand-alone script. To accomplish this, the ScriptEngine class just emits a signal which
 // the Application or other context will connect to in order to know to actually load the script
 void ScriptEngine::load(const QString& loadFile) {
-    if (!IS_THREADSAFE_INVOCATION(thread(), __FUNCTION__)) {
+    if (QThread::currentThread() != thread()) {
+        qCWarning(scriptengine) << "Script.load called from another thread than the engine's; ignored:" << loadFile;
         return;
     }
     QSharedPointer<ScriptEngines> scriptEngines(_scriptEngines);
