@@ -218,9 +218,13 @@ void WireFormatTests::nodeTypesOfInterest() {
 
 void WireFormatTests::theAccountFile() {
     qRegisterMetaType<OAuthAccessToken>("OAuthAccessToken");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)  // Qt 6 registers the stream operators with the type
     qRegisterMetaTypeStreamOperators<OAuthAccessToken>("OAuthAccessToken");
+#endif
     qRegisterMetaType<DataServerAccountInfo>("DataServerAccountInfo");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)  // Qt 6 registers the stream operators with the type
     qRegisterMetaTypeStreamOperators<DataServerAccountInfo>("DataServerAccountInfo");
+#endif
 
     OAuthAccessToken token;
     token.token = "made-up-token";

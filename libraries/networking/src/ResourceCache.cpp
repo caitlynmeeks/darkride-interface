@@ -101,7 +101,7 @@ void ResourceCacheSharedItems::removeRequest(QWeakPointer<Resource> resource) {
     for (int i = 0; i < _loadingRequests.size();) {
         auto request = _loadingRequests.at(i);
         // Clear our resource and any freed resources
-        if (!request || request.data() == resource.data()) {
+        if (!request || request.toStrongRef().data() == resource.data()) {
             _loadingRequests.removeAt(i);
             continue;
         }
@@ -333,7 +333,7 @@ QVariantList ResourceCache::getResourceList() {
         QList<QUrl> resources;
         {
             QReadLocker locker(&_resourcesLock);
-            resources = _resources.uniqueKeys();
+            resources = _resources.keys();  // a QHash: each key once, as uniqueKeys() gave
         }
         list.reserve(resources.size());
         for (auto& resource : resources) {
@@ -1036,6 +1036,10 @@ bool Resource::handleFailedRequest(ResourceRequest::Result result) {
     return willRetry;
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+size_t qHash(const QPointer<QObject>& value, size_t seed) {
+#else
 uint qHash(const QPointer<QObject>& value, uint seed) {
+#endif
     return qHash(value.data(), seed);
 }

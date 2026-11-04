@@ -232,7 +232,7 @@ void IceServer::requestDomainPublicKey(const QUuid& domainID) {
     publicKeyURL.setPath(publicKeyPath);
 
     QNetworkRequest publicKeyRequest { publicKeyURL };
-    publicKeyRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    publicKeyRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     publicKeyRequest.setAttribute(QNetworkRequest::User, domainID);
 
     qDebug() << "Requesting public key for domain with ID" << domainID;

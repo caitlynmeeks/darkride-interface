@@ -16,6 +16,7 @@
 
 #include <QtCore/QDataStream>
 #include <QtCore/QDebug>
+#include <QtCore/QIODevice>
 #include <QtCore/QMetaEnum>
 #include <shared/WireStream.h>
 

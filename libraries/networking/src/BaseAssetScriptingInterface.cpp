@@ -260,7 +260,8 @@ Promise BaseAssetScriptingInterface::downloadBytes(QString hash) {
                 { "data", data },
             };
         } else {
-            error = request->getError();
+            // the error as text (assigning the enum made a one-character string of its value on Qt 5; no build on Qt 6)
+            error = request->getErrorString();
             result = { { "error", request->getError() } };
         }
         // forward thread-safe copies back to our thread

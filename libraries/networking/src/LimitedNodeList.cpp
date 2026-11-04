@@ -275,7 +275,7 @@ bool LimitedNodeList::packetVersionMatch(const udt::Packet& packet) {
 
                 if (!hasBeenOutput) {
                     sourcedVersionDebugSuppressMap.insert(sourceID, headerType);
-                    senderString = uuidStringWithoutCurlyBraces(sourceID.toString());
+                    senderString = uuidStringWithoutCurlyBraces(sourceID);
                 }
             }
         }
@@ -1227,7 +1227,11 @@ void LimitedNodeList::updateLocalSocket() {
     QTcpSocket* localIPTestSocket = new QTcpSocket;
 
     connect(localIPTestSocket, &QTcpSocket::connected, this, &LimitedNodeList::connectedForLocalSocketTest);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+    connect(localIPTestSocket, &QTcpSocket::errorOccurred,
+#else
     connect(localIPTestSocket, static_cast<void(QTcpSocket::*)(QAbstractSocket::SocketError)>(&QTcpSocket::error),
+#endif
         this, &LimitedNodeList::errorTestingLocalSocket);
 
     // attempt to connect to our reliable host

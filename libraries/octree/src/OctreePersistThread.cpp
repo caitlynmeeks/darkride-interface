@@ -26,7 +26,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonDocument>
-#include <QRegExp>
+#include <QRegularExpression>
+#include <RegexCompat.h>
 
 #include <NumericalConstants.h>
 #include <PerfStat.h>
@@ -274,7 +275,7 @@ QByteArray OctreePersistThread::getPersistFileContents() const {
 }
 
 void OctreePersistThread::cleanupOldReplacementBackups() {
-    QRegExp filenameRegex { ".*\\.backup\\.\\d{8}-\\d{6}$" };
+    static const QRegularExpression filenameRegex = regex_compat::exact(".*\\.backup\\.\\d{8}-\\d{6}$");
     QFileInfo persistFile { _filename };
     QDir backupDir { persistFile.absolutePath() };
     backupDir.setSorting(QDir::SortFlag::Time);
@@ -286,7 +287,7 @@ void OctreePersistThread::cleanupOldReplacementBackups() {
     for (auto fileInfo : backupDir.entryInfoList()) {
         auto absPath = fileInfo.absoluteFilePath();
         qDebug() << "  Found:" << absPath;
-        if (filenameRegex.exactMatch(absPath)) {
+        if (filenameRegex.match(absPath).hasMatch()) {
             if (count >= MAX_OCTREE_REPLACEMENT_BACKUP_FILES_COUNT || totalSize > MAX_OCTREE_REPLACEMENT_BACKUP_FILES_SIZE_BYTES) {
                 qDebug() << "  Removing:" << absPath;
                 QFile backup(absPath);

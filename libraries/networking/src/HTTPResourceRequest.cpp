@@ -148,7 +148,8 @@ void HTTPResourceRequest::sendNow() {
     QNetworkRequest networkRequest(_requestUrl);
     // with the player's login, no redirect is followed: Qt would send the login on to wherever it led (a private file
     // is passed through by the files host, never redirected)
-    networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, !_withAccessToken && !_ruled);
+    networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, !_withAccessToken && !_ruled
+        ? QNetworkRequest::NoLessSafeRedirectPolicy : QNetworkRequest::ManualRedirectPolicy);
     if (_ruled && !_withAccessToken) {
         // to the address the rule checked and no other; a redirect comes back to onRequestFinished
         networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
