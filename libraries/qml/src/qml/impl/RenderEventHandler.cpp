@@ -13,6 +13,7 @@
 #include <gl/QOpenGLContextWrapper.h>
 #include <gl/GLHelpers.h>
 
+#include <QtCore/QString>
 #include <QtQuick/QQuickWindow>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QtQuick/QQuickOpenGLUtils>
@@ -109,6 +110,25 @@ void RenderEventHandler::resize() {
             glViewport(0, 0, _currentSize.width(), _currentSize.height());
             glScissor(0, 0, _currentSize.width(), _currentSize.height());
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            if (fixedTargetShape()) {
+                if (_fixedTarget) {
+                    glDeleteTextures(1, &_fixedTarget);
+                }
+                glGenTextures(1, &_fixedTarget);
+                glBindTexture(GL_TEXTURE_2D, _fixedTarget);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, _currentSize.width(), _currentSize.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                if (!_blitReadFbo) {
+                    glGenFramebuffers(1, &_blitReadFbo);
+                    glGenFramebuffers(1, &_blitDrawFbo);
+                }
+                // Qt's target, set once per size: it builds its depth-stencil round this texture
+                _shared->setRenderTarget(_fbo, _fixedTarget, _currentSize);
+            }
+#endif
         }
     }
 }
@@ -126,6 +146,11 @@ void RenderEventHandler::onRenderSync() {
 // cache texture, and the sync and the render happen inside beginFrame/endFrame on this thread
 // (team/rendering/QT6-STAGE1-RENDERING.md, R2). SharedObject::preRender keeps the paused check and the GUI thread's
 // sync hand-off, as on Qt 5.
+bool RenderEventHandler::fixedTargetShape() {
+    static const bool fixed = qEnvironmentVariable("TIVOLI_QML_TARGET") == QStringLiteral("fixed");
+    return fixed;
+}
+
 void RenderEventHandler::qmlRender(bool sceneGraphSync) {
     if (_shared->isQuit()) {
         return;
@@ -149,7 +174,9 @@ void RenderEventHandler::qmlRender(bool sceneGraphSync) {
     }
 
     GLuint texture = SharedObject::getTextureCache().acquireTexture(_currentSize);
-    _shared->setRenderTarget(_fbo, texture, _currentSize);
+    if (!fixedTargetShape()) {
+        _shared->setRenderTarget(_fbo, texture, _currentSize);   // (A): Qt's target round this frame's cache texture
+    }
     _shared->_renderControl->beginFrame();
     bool rendered = _shared->preRender(sceneGraphSync);
     if (rendered) {
@@ -165,6 +192,17 @@ void RenderEventHandler::qmlRender(bool sceneGraphSync) {
         return;
     }
     _shared->_lastRenderTime = usecTimestampNow();
+    if (fixedTargetShape()) {
+        // (B): one copy of the fixed target into this frame's cache texture (GL 4.1 has no glCopyImageSubData)
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, _blitReadFbo);
+        glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _fixedTarget, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _blitDrawFbo);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+        glBlitFramebuffer(0, 0, _currentSize.width(), _currentSize.height(), 0, 0, _currentSize.width(), _currentSize.height(),
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    }
     glBindTexture(GL_TEXTURE_2D, texture);
     glGenerateMipmap(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -246,6 +284,17 @@ void RenderEventHandler::onQuit() {
             glDeleteFramebuffers(1, &_fbo);
             _fbo = 0;
         }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        if (_fixedTarget) {
+            glDeleteTextures(1, &_fixedTarget);
+            _fixedTarget = 0;
+        }
+        if (_blitReadFbo) {
+            glDeleteFramebuffers(1, &_blitReadFbo);
+            glDeleteFramebuffers(1, &_blitDrawFbo);
+            _blitReadFbo = _blitDrawFbo = 0;
+        }
+#endif
 
         _shared->shutdownRendering(_currentSize);
         _canvas.doneCurrent();
