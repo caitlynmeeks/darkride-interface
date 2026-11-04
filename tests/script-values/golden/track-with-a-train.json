@@ -1,0 +1,65 @@
+{
+    "type": "Track",
+    "lastEdited": 1700000000000000,
+    "name": "a track with a train",
+    "dimensions": {
+        "x": 40,
+        "y": 4,
+        "z": 20
+    },
+    "created": 1700000000000000,
+    "trackPoints": [
+        {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        {
+            "x": 10,
+            "y": 1,
+            "z": 0
+        },
+        {
+            "x": 20,
+            "y": 0,
+            "z": 5
+        },
+        {
+            "x": 10,
+            "y": -1,
+            "z": 10
+        }
+    ],
+    "trackBank": [
+        0,
+        0.25,
+        -0.125,
+        0
+    ],
+    "trackDwell": [
+        5,
+        0,
+        3,
+        0
+    ],
+    "trackClosed": true,
+    "trackSpeed": 7.5,
+    "trackAcceleration": 1.25,
+    "trainDistance": 33.5,
+    "trainSpeed": 6.25,
+    "trainReversed": true,
+    "trainDwell": 2.5,
+    "trainStation": 2,
+    "trainTime": 987654321,
+    "trackProfile": "none",
+    "trackWidth": 0.75,
+    "trackHeight": 0.5,
+    "trackClearance": 1.25,
+    "trackPylonSpacing": 12,
+    "trackPylonFloor": -6,
+    "clientOnly": false,
+    "avatarEntity": false,
+    "localEntity": false,
+    "faceCamera": false,
+    "isFacingAvatar": false
+}
