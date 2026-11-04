@@ -33,7 +33,9 @@
 #include <QtGui/QDesktopServices>
 #include <QtQml/QQmlContext>
 #include <QtQuick/QQuickWindow>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QtWidgets/QDesktopWidget>
+#endif
 #include <QFontDatabase>
 #include <gl/GLHelpers.h>
 #include <shared/QtHelpers.h>
@@ -367,7 +369,11 @@ const bool DEFAULT_BYPASS_SCRIPT_THROTTLING = false;
 
 Application::Application(int& argc, char** argv, QElapsedTimer& startupTimer, bool runningMarkerExisted) :
     QApplication(argc, argv),
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    _window(new MainWindow(nullptr)),   // Qt 6 has no desktop widget; shutdown deletes the window itself
+#else
     _window(new MainWindow(desktop())),
+#endif
     _sessionRunTimer(startupTimer),
 #ifndef Q_OS_ANDROID
     _logger(new FileLogger(this)),
