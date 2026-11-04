@@ -159,7 +159,7 @@ private:
     // application specific position, when it's in desktop mode, the reticle position will simply move
     // the system mouse.
     glm::vec2 _reticlePositionInHMD { 0.0f, 0.0f };
-    mutable QMutex _reticleLock { QMutex::Recursive };
+    mutable QRecursiveMutex _reticleLock;
 
     QPointF _lastKnownRealMouse;
     bool _ignoreMouseMove { false };

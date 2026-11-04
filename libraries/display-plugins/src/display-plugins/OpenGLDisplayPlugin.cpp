@@ -35,7 +35,7 @@
 
 #include <QtGui/QImage>
 #include <QtGui/QImageWriter>
-#include <QtGui/QOpenGLFramebufferObject>
+#include <QOpenGLFramebufferObject>   // QtGui on Qt 5, the QtOpenGL module on Qt 6
 
 #include <NumericalConstants.h>
 #include <DependencyManager.h>

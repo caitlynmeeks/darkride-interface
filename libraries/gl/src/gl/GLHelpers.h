@@ -25,7 +25,6 @@
 class QObject;
 class QOpenGLDebugMessage;
 class QSurfaceFormat;
-class QGLFormat;
 
 size_t evalGLFormatSwapchainPixelSize(const QSurfaceFormat& format);
 

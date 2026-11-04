@@ -11,7 +11,6 @@
 #include <QtGui/QScreen>
 #include <QtWidgets/QAction>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QDesktopWidget>
 
 #include <ViewFrustum.h>
 #include <MatrixStack.h>

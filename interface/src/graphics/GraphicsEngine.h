@@ -91,7 +91,11 @@ private:
 
 protected:
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    mutable QRecursiveMutex _renderArgsMutex;   // Qt 6 has no QMutex::Recursive; the same lock as below
+#else
     mutable QMutex _renderArgsMutex{ QMutex::Recursive };
+#endif
     AppRenderArgs _appRenderArgs;
     std::atomic<render::ItemID> _traceItem { render::Item::INVALID_ITEM_ID };
     std::mutex _traceMutex;
