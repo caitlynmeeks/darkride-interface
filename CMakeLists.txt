@@ -155,7 +155,12 @@ set(QT_VERSION_MAJOR 5 CACHE STRING "The Qt major version to build with: 5 or 6"
 # the versionless qt_ commands follow it
 set(QT_DEFAULT_MAJOR_VERSION ${QT_VERSION_MAJOR})
 
-set(PLATFORM_QT_COMPONENTS WebEngine Xml)
+if (QT_VERSION_MAJOR EQUAL 6)
+  # Qt 6 has no WebEngine module: the QML web view is WebEngineQuick, which brings WebEngineCore with it
+  set(PLATFORM_QT_COMPONENTS WebEngineQuick Xml)
+else()
+  set(PLATFORM_QT_COMPONENTS WebEngine Xml)
+endif()
 
 option(HIFI_USE_OPTIMIZED_IK "Use optimized IK" ${HIFI_USE_OPTIMIZED_IK_OPTION})
 option(BUILD_CLIENT "Build client components" ${BUILD_CLIENT_OPTION})
