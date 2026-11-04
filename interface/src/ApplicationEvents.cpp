@@ -362,7 +362,11 @@ void Application::keyPressEvent(QKeyEvent* event) {
         synthesizeKeyReleasEvents();
     }
     if (!event->isAutoRepeat() && !signInShown) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        _keysPressed.insert(event->key(), { event->key(), event->text() });
+#else
         _keysPressed.insert(event->key(), *event);
+#endif
     }
 
     // Build mode's keys too (its shortcuts and fly camera) wait while a sign-in page is shown
@@ -596,12 +600,21 @@ void Application::synthesizeKeyReleasEvents() {
     // synthesize events for keys currently pressed, since we may not get their release events
     // Because our key event handlers may manipulate _keysPressed, lets swap the keys pressed into a local copy,
     // clearing the existing list.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QHash<int, PressedKey> keysPressed;
+    std::swap(keysPressed, _keysPressed);
+    for (auto& ev : keysPressed) {
+        QKeyEvent synthesizedEvent { QKeyEvent::KeyRelease, ev.key, Qt::NoModifier, ev.text };
+        keyReleaseEvent(&synthesizedEvent);
+    }
+#else
     QHash<int, QKeyEvent> keysPressed;
     std::swap(keysPressed, _keysPressed);
     for (auto& ev : keysPressed) {
         QKeyEvent synthesizedEvent { QKeyEvent::KeyRelease, ev.key(), Qt::NoModifier, ev.text() };
         keyReleaseEvent(&synthesizedEvent);
     }
+#endif
 }
 
 void Application::maybeToggleMenuVisible(QMouseEvent* event) const {

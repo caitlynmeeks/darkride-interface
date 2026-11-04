@@ -602,7 +602,13 @@ private:
     Setting::Handle<bool> _bypassPrioritySortingSetting;
     Setting::Handle<bool> _bypassScriptThrottling;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 events can't be copied: keep what the synthesized key release needs
+    struct PressedKey { int key; QString text; };
+    QHash<int, PressedKey> _keysPressed;
+#else
     QHash<int, QKeyEvent> _keysPressed;
+#endif
 
     bool _enableProcessOctreeThread;
     EntityEditPacketSender _entityEditSender;
