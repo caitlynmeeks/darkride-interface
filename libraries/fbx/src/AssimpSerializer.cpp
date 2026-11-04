@@ -329,7 +329,9 @@ HFMTexture AssimpSerializer::getHfmTexture(aiString aiPath) {
     } else {
         HFMTexture texture = HFMTexture();
 
-        static const QRegularExpression indexFinder("^\\*([0-9]+)$");
+        // a whole-string match, as QRegExp::exactMatch was; a local pattern, compiled per embedded texture (nothing), so the
+        // model-loading threads share no object
+        const QRegularExpression indexFinder(QRegularExpression::anchoredPattern("\\*([0-9]+)"));
         QRegularExpressionMatch indexMatch = indexFinder.match(path);
         if (indexMatch.hasMatch()) {
             auto index = indexMatch.captured(1).toUInt();
