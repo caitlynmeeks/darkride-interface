@@ -126,6 +126,10 @@ server_exclude_libs = [
     "libQt5Quick.so.5",
     "libQt5XmlPatterns.so.5",
     "libQt5QmlModels.so.5",
+    # OpenSSL comes from the host, as a pair. The networking library links libcrypto, so linuxdeployqt would
+    # bundle it, but Qt loads libssl at runtime, so libssl is never bundled. On a host with a newer OpenSSL
+    # its libssl then can't load against our older libcrypto and every HTTPS call fails.
+    "libcrypto.so.3",
 ]
 
 if program == "interface":
