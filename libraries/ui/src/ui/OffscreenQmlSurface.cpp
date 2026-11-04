@@ -30,9 +30,15 @@
 #include <QtCore/QThread>
 #include <QtCore/QMutex>
 #include <QtCore/QWaitCondition>
+#include <QtMultimedia/QMediaPlayer>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtMultimedia/QAudioDevice>
+#include <QtMultimedia/QAudioOutput>
+#include <QtMultimedia/QMediaDevices>
+#else
 #include <QtMultimedia/QMediaService>
 #include <QtMultimedia/QAudioOutputSelectorControl>
-#include <QtMultimedia/QMediaPlayer>
+#endif
 #include <QtGui/QInputMethodEvent>
 #include <shared/NsightHelpers.h>
 #include <shared/GlobalAppProperties.h>
@@ -197,6 +203,37 @@ AudioHandler::AudioHandler(OffscreenQmlSurface* surface, const QString& deviceNa
 }
 
 void AudioHandler::run() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 has no media service or output selector: each player's QAudioOutput takes the device, found by its
+    // description among the outputs, set on the player's own thread
+    QAudioDevice target;
+    for (const QAudioDevice& candidate : QMediaDevices::audioOutputs()) {
+        if (candidate.description() == _newTargetDevice) {
+            target = candidate;
+            break;
+        }
+    }
+    if (target.isNull()) {
+        qDebug() << "QML Audio: no output device named" << _newTargetDevice;
+        return;
+    }
+    for (auto player : _players) {
+        QMetaObject::invokeMethod(player, [player, target] {
+            auto mediaState = player->playbackState();
+            if (QAudioOutput* out = player->audioOutput()) {
+                out->setDevice(target);
+            }
+            // if multimedia was paused, it will start playing automatically after changing audio device
+            // this will reset it back to a paused state
+            if (mediaState == QMediaPlayer::PausedState) {
+                player->pause();
+            } else if (mediaState == QMediaPlayer::StoppedState) {
+                player->stop();
+            }
+        }, Qt::QueuedConnection);
+    }
+    qDebug() << "QML Audio changed to " << _newTargetDevice;
+#else
     for (auto player : _players) {
         auto mediaState = player->state();
         QMediaService* svc = player->service();
@@ -229,6 +266,7 @@ void AudioHandler::run() {
         }
     }
     qDebug() << "QML Audio changed to " << _newTargetDevice;
+#endif
 }
 
 bool OffscreenQmlSurface::viewportFocused = true;
