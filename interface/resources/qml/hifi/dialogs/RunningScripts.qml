@@ -9,7 +9,6 @@
 //
 
 import QtQuick 2.5
-import QtQuick.Controls 1.4
 import "../../js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1)
 import Qt.labs.settings 1.0
 
@@ -316,7 +315,7 @@ Windows.ScrollingWindow {
                     }
                 }
 
-                TableViewColumn {
+                HifiControls.TableViewColumn {
                     role: "name"
                 }
             }
@@ -374,7 +373,7 @@ Windows.ScrollingWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
 
-                TableViewColumn {
+                HifiControls.TableViewColumn {
                     role: "display";
                 }
 
