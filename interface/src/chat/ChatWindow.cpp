@@ -46,7 +46,7 @@
 #include <QtWidgets/QPlainTextEdit>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollBar>
-#include <QtWidgets/QShortcut>
+#include <QShortcut>  // QtWidgets on Qt 5, QtGui on Qt 6
 #include <QtWidgets/QStackedWidget>
 #include <QtWidgets/QStyledItemDelegate>
 #include <QtWidgets/QTextBrowser>

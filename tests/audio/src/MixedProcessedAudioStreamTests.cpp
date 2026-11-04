@@ -35,7 +35,7 @@ public:
                 break;
             case Codec::Opus:
                 decodedBuffer.fill(0, FRAME_BYTES);
-                memcpy(decodedBuffer.data(), encodedBuffer.constData(), std::min(FRAME_BYTES, encodedBuffer.size()));
+                memcpy(decodedBuffer.data(), encodedBuffer.constData(), std::min<int>(FRAME_BYTES, encodedBuffer.size()));
                 break;
             default:
                 decodedBuffer = encodedBuffer;
