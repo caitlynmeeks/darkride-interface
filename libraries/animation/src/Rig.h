@@ -516,7 +516,6 @@ protected:
         float weight { 1.0f };
         glm::quat sourceRestLocal;
         glm::quat jointRestLocal;
-        glm::quat sourceToJoint;  // the joint's rest axes in the source's
         // whether a constraint before it turns this one's source or the joint's parent, which then need their absolute
         // poses again before it's applied
         bool afterTurnedJoint { false };
