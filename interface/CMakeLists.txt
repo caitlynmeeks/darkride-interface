@@ -24,14 +24,14 @@ if (ANDROID)
   add_custom_command(
     OUTPUT ${RESOURCES_RCC}
     DEPENDS ${RESOURCES_QRC} ${GENERATE_QRC_DEPENDS}
-    COMMAND "${QT_DIR}/bin/rcc"
+    COMMAND Qt${QT_VERSION_MAJOR}::rcc
     ARGS ${RESOURCES_QRC} -no-compress -binary -o ${RESOURCES_RCC}
   )
 else ()
   add_custom_command(
     OUTPUT ${RESOURCES_RCC}
     DEPENDS ${RESOURCES_QRC} ${GENERATE_QRC_DEPENDS}
-    COMMAND "${QT_DIR}/bin/rcc"
+    COMMAND Qt${QT_VERSION_MAJOR}::rcc
     ARGS ${RESOURCES_QRC} -binary -o ${RESOURCES_RCC}
   )
 endif()

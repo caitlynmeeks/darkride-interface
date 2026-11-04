@@ -15,7 +15,7 @@
 
 #include <QObject>
 #include <QString>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QMutex>
 #include <vector>
 #include <memory>
