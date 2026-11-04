@@ -237,7 +237,18 @@ void DomainHandler::setURLAndID(QUrl domainURL, QUuid domainID) {
                 if (domainURL.scheme() == URL_SCHEME_HIFI) {
                     // re-set the sock addr to null and fire off a lookup of the IP address for this domain-server's hostname
                     qCDebug(networking, "Looking up DS hostname %s.", domainURL.host().toLocal8Bit().constData());
-                    QHostInfo::lookupHost(domainURL.host(), this, SLOT(completedHostnameLookup(const QHostInfo&)));
+                    // if we parsed an IPv4 address out of the hostname, don't look it up (as HifiSockAddr does): for an
+                    // address Qt looks up its name, and Windows takes about 4.5 s to give up on an address with none,
+                    // most of ConnectionMonitor's 5 s. Queued, so the result still arrives on a later turn of the loop
+                    QHostAddress literalAddress(domainURL.host());
+                    if (literalAddress.protocol() == QAbstractSocket::IPv4Protocol) {
+                        QHostInfo literalInfo;
+                        literalInfo.setAddresses({ literalAddress });
+                        QMetaObject::invokeMethod(this, [this, literalInfo] { completedHostnameLookup(literalInfo); },
+                                                  Qt::QueuedConnection);
+                    } else {
+                        QHostInfo::lookupHost(domainURL.host(), this, SLOT(completedHostnameLookup(const QHostInfo&)));
+                    }
                 }
 
                 DependencyManager::get<NodeList>()->flagTimeForConnectionStep(
