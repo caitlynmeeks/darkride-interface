@@ -63,20 +63,25 @@ Windows.ScrollingWindow {
         loader.load(url) 
     }
 
-    function loadWebContent(source, url, injectJavaScriptUrl) {
+    // worldPage: a page a world's script opened (security finding #54), as TabletRoot's
+    function loadWebContent(source, url, injectJavaScriptUrl, worldPage) {
+        worldPage = !!worldPage;
         loader.load(source, function() {
             loader.item.scriptURL = injectJavaScriptUrl;
+            if (loader.item.hasOwnProperty("worldPage")) {
+                loader.item.worldPage = worldPage;
+            }
             loader.item.url = url;
             if (loader.item.hasOwnProperty("closeButtonVisible")) {
                 loader.item.closeButtonVisible = false;
             }
             
-            screenChanged("Web", url);
+            screenChanged(worldPage ? "WorldWeb" : "Web", url);
         });
     }
 
-    function loadWebBase(url, injectJavaScriptUrl) {
-        loadWebContent("hifi/tablet/TabletWebView.qml", url, injectJavaScriptUrl);
+    function loadWebBase(url, injectJavaScriptUrl, worldPage) {
+        loadWebContent("hifi/tablet/TabletWebView.qml", url, injectJavaScriptUrl, worldPage);
     }
 
     function loadTabletWebBase(url, injectJavaScriptUrl) {

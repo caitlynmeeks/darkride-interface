@@ -304,7 +304,8 @@ public:
      * @deprecated This function is deprecated and will be removed.
      */
     // Internal function, do not call from scripts.
-    Q_INVOKABLE void loadHTMLSourceOnTopImpl(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase, bool localSafeContext);
+    Q_INVOKABLE void loadHTMLSourceOnTopImpl(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase, bool localSafeContext,
+                                             bool worldPage = false);   // worldPage: a world's script's (security finding #54)
 
     /**jsdoc
      * @function TabletProxy#returnToPreviousAppImpl
@@ -571,6 +572,7 @@ protected:
     State _state { State::Uninitialized };
     std::pair<QVariant, State> _initialPath { "", State::Uninitialized };
     std::pair<QVariant, bool> _initialWebPathParams;
+    bool _initialWorldPage { false };   // the first page's kind, with _initialWebPathParams
     bool _landscape { false };
     bool _showRunningScripts { false };
 

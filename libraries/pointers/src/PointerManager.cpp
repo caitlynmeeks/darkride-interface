@@ -55,6 +55,10 @@ void PointerManager::removePointer(unsigned int uid) {
     });
 }
 
+bool PointerManager::isWorldPointer(unsigned int uid) const {
+    return resultWithReadLock<bool>([&] { return _worldPointers.count(uid) > 0; });
+}
+
 int PointerManager::removeWorldPointers(int world) {
     std::vector<std::shared_ptr<Pointer>> removed;  // destroyed outside the lock, as in removePointer
     withWriteLock([&] {
