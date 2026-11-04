@@ -406,7 +406,6 @@ public slots:
 
     void showDialog(const QUrl& widgetUrl, const QUrl& tabletUrl, const QString& name) const;
 
-    void addAssetToWorldFromURL(QString url) { _assetImport.addAssetToWorldFromURL(url); }   // QML's ApplicationInterface.addAssetToWorldFromURL (the tablet and window roots, the web view)
     void wearAvatarLink(const QString& link);   // QML's ApplicationInterface.wearAvatarLink: the Avatar panel's Wear from Link…
 
     FileScriptingInterface* getFileDownloadInterface() { return _fileDownload; }

@@ -118,17 +118,6 @@ Windows.ScrollingWindow {
         username = newUsername;
     }
 
-    // Hook up the callback for a clara.io download.
-    Connections {
-        id: eventBridgeConnection
-        target: eventBridge
-        function onWebEventReceived() {
-            if (typeof message === "string" && message.slice(0, 17) === "CLARA.IO DOWNLOAD") {
-                ApplicationInterface.addAssetToWorldFromURL(message.slice(18));
-            }
-        }
-    }
-
     Item {
         id: loader
         objectName: "loader";
