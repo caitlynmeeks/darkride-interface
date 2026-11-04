@@ -24,6 +24,8 @@ private slots:
     void initTestCase();
     void onlyANodesAddressIsANode();
     void anUnansweredHandshakeIsGivenUp();
+    void aGiveUpWithPacketsStillComing();
+    void aLateAnswerAfterTheGiveUp();
 };
 
 #endif // hifi_UnansweredPeerTests_h

@@ -12,8 +12,11 @@
 #include "UnansweredPeerTests.h"
 
 #include <cstring>
+#include <algorithm>
+#include <QtCore/QSet>
 
 #include <QtCore/QElapsedTimer>
+#include <QtNetwork/QNetworkDatagram>
 #include <QtNetwork/QUdpSocket>
 
 #include <DependencyManager.h>
@@ -22,6 +25,7 @@
 #include <StatTracker.h>
 #include <udt/ControlPacket.h>
 #include <udt/Packet.h>
+#include <udt/SendQueue.h>
 #include <udt/Socket.h>
 
 QTEST_MAIN(UnansweredPeerTests)
@@ -82,4 +86,153 @@ void UnansweredPeerTests::anUnansweredHandshakeIsGivenUp() {
     }
     QVERIFY2(whileTrying >= 50, qPrintable(QString("%1 handshakes in the first 9.5 s").arg(whileTrying)));
     QVERIFY2(afterGivingUp == 0, qPrintable(QString("%1 handshakes after 11 s").arg(afterGivingUp)));
+}
+
+namespace {
+QStringList givenUpLines;
+QtMessageHandler previousHandler = nullptr;
+void recordGiveUps(QtMsgType type, const QMessageLogContext& context, const QString& message) {
+    if (message.contains("No handshake answer from")) {
+        givenUpLines << message;
+    }
+    if (previousHandler) {
+        previousHandler(type, context, message);
+    }
+}
+}
+
+// physics' question about the 11-03 abort (servers, 11-04): a send queue given up after 10 s without a handshake
+// answer, while its producer keeps queuing reliable packets into it, during the give-up and after (as the physics
+// server's train states would). Run it alone (`networking-UnansweredPeerTests aGiveUpWithPacketsStillComing`, so the
+// once-a-minute warning isn't held back by another test's) and under a malloc that traps a freed block's reuse
+// (macOS: DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib): it must give up with packets waiting, more than once, and
+// nothing may crash.
+void UnansweredPeerTests::aGiveUpWithPacketsStillComing() {
+    QUdpSocket silent;
+    QVERIFY(silent.bind(QHostAddress(QHostAddress::LocalHost), 0));
+    udt::Socket socket(nullptr, false);
+    socket.bind(QHostAddress(QHostAddress::LocalHost), 0);
+    const HifiSockAddr peer(QHostAddress::LocalHost, silent.localPort());
+
+    givenUpLines.clear();
+    previousHandler = qInstallMessageHandler(recordGiveUps);
+    const quint64 givenUpBefore = udt::SendQueue::handshakesGivenUp();
+
+    int sent = 0;
+    QList<qint64> giveUpTimes;       // when each give-up was seen (ms)
+    QList<qint64> handshakeTimes;    // when the silent peer got a handshake (ms)
+    QElapsedTimer clock;
+    clock.start();
+    QElapsedTimer sinceSend;
+    sinceSend.start();
+    while (clock.elapsed() < 25000) {
+        if (sinceSend.elapsed() >= 10) {
+            // a reliable packet every 10 ms, the physics server's train states at their fastest
+            socket.writePacket(udt::Packet::create(-1, true), peer);
+            sent++;
+            sinceSend.restart();
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        while (giveUpTimes.size() < int(udt::SendQueue::handshakesGivenUp() - givenUpBefore)) {
+            giveUpTimes << clock.elapsed();
+        }
+        while (silent.hasPendingDatagrams()) {
+            const QNetworkDatagram datagram = silent.receiveDatagram();
+            const QByteArray bytes = datagram.data();
+            std::unique_ptr<char[]> data(new char[bytes.size()]);
+            memcpy(data.get(), bytes.constData(), bytes.size());
+            auto control = udt::ControlPacket::fromReceivedPacket(std::move(data), bytes.size(), peer);
+            if (control && control->getType() == udt::ControlPacket::Handshake) {
+                handshakeTimes << clock.elapsed();
+            }
+        }
+    }
+    qInstallMessageHandler(previousHandler);
+
+    QVERIFY2(sent > 1000, qPrintable(QString("%1 packets sent").arg(sent)));
+    QVERIFY2(!givenUpLines.isEmpty(), "the give-up warning wasn't logged");
+    QVERIFY2(givenUpLines.first().contains("with packets waiting"), qPrintable(givenUpLines.first()));
+    // physics: the swap itself, not only no crash: given up twice, about 10 s apart, and after each give-up the
+    // producer's next packet opened a new queue, which sent a new handshake within a second
+    QVERIFY2(giveUpTimes.size() >= 2, qPrintable(QString("%1 give-ups in 25 s").arg(giveUpTimes.size())));
+    QVERIFY2(giveUpTimes[0] > 9500 && giveUpTimes[0] < 12000, qPrintable(QString("first at %1 ms").arg(giveUpTimes[0])));
+    const qint64 apart = giveUpTimes[1] - giveUpTimes[0];
+    QVERIFY2(apart > 9500 && apart < 12000, qPrintable(QString("%1 ms apart").arg(apart)));
+    for (qint64 at : giveUpTimes) {
+        const bool newHandshake = std::any_of(handshakeTimes.begin(), handshakeTimes.end(),
+                                              [at](qint64 t) { return t > at && t < at + 1000; });
+        QVERIFY2(newHandshake, qPrintable(QString("no new handshake within 1 s of the give-up at %1 ms").arg(at)));
+    }
+}
+
+// security's addition: the peer answers late. A relay between them holds everything sent to the peer for the first
+// 12 s, then lets it through (and the peer's answers back, always): the first queue's handshake reaches the peer and
+// its answer comes back after that queue was given up, while the producer keeps sending. The stale answer must hurt
+// nothing (under a malloc that traps a freed block's reuse), and what is sent from 14 s on must arrive.
+void UnansweredPeerTests::aLateAnswerAfterTheGiveUp() {
+    udt::Socket receiver(nullptr, false);
+    receiver.bind(QHostAddress(QHostAddress::LocalHost), 0);
+    QSet<quint32> received;
+    receiver.setPacketHandler([&received](std::unique_ptr<udt::Packet> packet) {
+        quint32 index = 0;
+        if (packet->readPrimitive(&index) == sizeof(index)) {
+            received.insert(index);
+        }
+    });
+    QUdpSocket relay;
+    QVERIFY(relay.bind(QHostAddress(QHostAddress::LocalHost), 0));
+    const HifiSockAddr relayAddress(QHostAddress::LocalHost, relay.localPort());
+    udt::Socket sender(nullptr, false);
+    sender.bind(QHostAddress(QHostAddress::LocalHost), 0);
+    const quint16 senderPort = sender.localPort();
+
+    const quint64 givenUpBefore = udt::SendQueue::handshakesGivenUp();
+    QList<QByteArray> held;
+    quint32 next = 0;
+    quint32 firstAfter14 = 0;
+    QElapsedTimer clock;
+    clock.start();
+    QElapsedTimer sinceSend;
+    sinceSend.start();
+    while (clock.elapsed() < 25000) {
+        if (sinceSend.elapsed() >= 10) {
+            auto packet = udt::Packet::create(-1, true);
+            packet->writePrimitive(next++);
+            sender.writePacket(std::move(packet), relayAddress);
+            sinceSend.restart();
+            if (firstAfter14 == 0 && clock.elapsed() >= 14000) {
+                firstAfter14 = next - 1;
+            }
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+        const bool holding = clock.elapsed() < 12000;
+        if (!holding && !held.isEmpty()) {
+            for (const auto& bytes : held) {
+                relay.writeDatagram(bytes, QHostAddress::LocalHost, receiver.localPort());
+            }
+            held.clear();
+        }
+        while (relay.hasPendingDatagrams()) {
+            const QNetworkDatagram datagram = relay.receiveDatagram();
+            if (datagram.senderPort() == senderPort) {
+                if (holding) {
+                    held << datagram.data();
+                } else {
+                    relay.writeDatagram(datagram.data(), QHostAddress::LocalHost, receiver.localPort());
+                }
+            } else {
+                relay.writeDatagram(datagram.data(), QHostAddress::LocalHost, senderPort);
+            }
+        }
+    }
+
+    QVERIFY2(udt::SendQueue::handshakesGivenUp() > givenUpBefore, "the first queue wasn't given up");
+    QVERIFY(firstAfter14 > 0);
+    int arrived = 0;
+    for (quint32 index = firstAfter14; index < next; index++) {
+        arrived += received.contains(index) ? 1 : 0;
+    }
+    const int expected = int(next - firstAfter14);
+    QVERIFY2(arrived >= expected * 9 / 10,
+             qPrintable(QString("%1 of the %2 packets sent from 14 s on arrived").arg(arrived).arg(expected)));
 }

@@ -254,6 +254,14 @@ bool SendQueue::sendNewPacketAndAddToSentList(std::unique_ptr<Packet> newPacket,
     }
 }
 
+namespace {
+std::atomic<quint64> handshakesGivenUpTotal { 0 };
+}
+
+quint64 SendQueue::handshakesGivenUp() {
+    return handshakesGivenUpTotal.load();
+}
+
 void SendQueue::run() {
     if (_state == State::Stopped) {
         // we've already been asked to stop before we even got a chance to start
@@ -295,6 +303,7 @@ void SendQueue::run() {
                                       << QString("(%1 peers given up since the last line, %2 with packets waiting)")
                                              .arg(givenUp).arg(withPackets);
             }
+            handshakesGivenUpTotal++;
             deactivate();
             return;
         }
