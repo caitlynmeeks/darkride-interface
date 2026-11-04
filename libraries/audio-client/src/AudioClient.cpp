@@ -2297,7 +2297,13 @@ bool AudioClient::switchOutputToAudioDevice(const HifiAudioDeviceInfo outputDevi
 
             // local period should be at least twice the output period,
             // in case two device reads happen before more data can be read (worst case)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            // on Qt 6 the output period is already the whole buffer: not doubled, so local sounds react as fast as on
+            // Qt 5 (the stream's size is how far ahead they're queued)
+            int localPeriod = _outputPeriod;
+#else
             int localPeriod = _outputPeriod * 2;
+#endif
             // round up to an exact multiple of networkPeriod
             localPeriod = ((localPeriod + networkPeriod - 1) / networkPeriod) * networkPeriod;
             // this ensures lowest latency without stutter from underrun
