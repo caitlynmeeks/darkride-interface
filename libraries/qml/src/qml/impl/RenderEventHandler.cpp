@@ -14,6 +14,11 @@
 #include <gl/GLHelpers.h>
 
 #include <QtQuick/QQuickWindow>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtQuick/QQuickOpenGLUtils>
+#include <QtQuick/QQuickRenderControl>
+#include <mutex>
+#endif
 
 #include <shared/NsightHelpers.h>
 #include "Profiling.h"
@@ -116,6 +121,61 @@ void RenderEventHandler::onRenderSync() {
     qmlRender(true);
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt 6: the scene graph draws through QRhi (forced to OpenGL); the render target is Qt's own, built round this frame's
+// cache texture, and the sync and the render happen inside beginFrame/endFrame on this thread
+// (team/rendering/QT6-STAGE1-RENDERING.md, R2). SharedObject::preRender keeps the paused check and the GUI thread's
+// sync hand-off, as on Qt 5.
+void RenderEventHandler::qmlRender(bool sceneGraphSync) {
+    if (_shared->isQuit()) {
+        return;
+    }
+
+    if (_canvas.getContext() != QOpenGLContextWrapper::currentContext()) {
+        qFatal("QML rendering context not current on render thread");
+    }
+
+    PROFILE_RANGE(render_qml_gl, __FUNCTION__);
+
+    gl::globalLock();
+    resize();
+    if (_currentSize == QSize()) {
+        // nothing to draw into yet; the GUI thread waiting on a sync is let go (the next frame syncs)
+        if (sceneGraphSync) {
+            _shared->wake();
+        }
+        gl::globalRelease();
+        return;
+    }
+
+    GLuint texture = SharedObject::getTextureCache().acquireTexture(_currentSize);
+    _shared->setRenderTarget(_fbo, texture, _currentSize);
+    _shared->_renderControl->beginFrame();
+    bool rendered = _shared->preRender(sceneGraphSync);
+    if (rendered) {
+        // Serialize QML rendering because of a crash caused by Qt bug https://bugreports.qt.io/browse/QTBUG-77469
+        static std::mutex qmlRenderMutex;
+        std::unique_lock<std::mutex> qmlRenderLock{ qmlRenderMutex };
+        _shared->_renderControl->render();
+    }
+    _shared->_renderControl->endFrame();
+    if (!rendered) {
+        SharedObject::getTextureCache().releaseTexture({ texture, nullptr });
+        gl::globalRelease();
+        return;
+    }
+    _shared->_lastRenderTime = usecTimestampNow();
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    auto fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    // Fence will be used in another thread / context, so a flush is required
+    glFlush();
+    _shared->updateTextureAndFence({ texture, fence });
+    QQuickOpenGLUtils::resetOpenGLState();
+    gl::globalRelease();
+}
+#else
 void RenderEventHandler::qmlRender(bool sceneGraphSync) {
     if (_shared->isQuit()) {
         return;
@@ -145,7 +205,7 @@ void RenderEventHandler::qmlRender(bool sceneGraphSync) {
             glClear(GL_COLOR_BUFFER_BIT);
         } else {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            _shared->setRenderTarget(_fbo, _currentSize);
+            _shared->setRenderTarget(_fbo, texture, _currentSize);
 
             // workaround for https://highfidelity.atlassian.net/browse/BUGZ-1119
             {
@@ -169,6 +229,7 @@ void RenderEventHandler::qmlRender(bool sceneGraphSync) {
     }
     gl::globalRelease();
 }
+#endif
 
 void RenderEventHandler::onQuit() {
     if (_initialized) {

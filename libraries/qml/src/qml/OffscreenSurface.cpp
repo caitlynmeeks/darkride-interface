@@ -5,6 +5,7 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+#include <gl/Config.h>   // the GL types (GLsync), before any Qt header
 #include "OffscreenSurface.h"
 
 #include <unordered_set>
@@ -175,9 +176,9 @@ bool OffscreenSurface::eventFilter(QObject* originalDestination, QEvent* event) 
 
         case QEvent::Wheel: {
             QWheelEvent* wheelEvent = static_cast<QWheelEvent*>(event);
-            QPointF transformedPos = mapToVirtualScreen(wheelEvent->pos());
-            QWheelEvent mappedEvent(transformedPos, wheelEvent->delta(), wheelEvent->buttons(), wheelEvent->modifiers(),
-                                    wheelEvent->orientation());
+            QPointF transformedPos = mapToVirtualScreen(wheelEvent->position());
+            QWheelEvent mappedEvent(transformedPos, wheelEvent->globalPosition(), wheelEvent->pixelDelta(), wheelEvent->angleDelta(),
+                                    wheelEvent->buttons(), wheelEvent->modifiers(), wheelEvent->phase(), wheelEvent->inverted());
             mappedEvent.ignore();
             if (QCoreApplication::sendEvent(_sharedObject->getWindow(), &mappedEvent)) {
                 return mappedEvent.isAccepted();
