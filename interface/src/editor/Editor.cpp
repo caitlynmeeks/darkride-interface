@@ -37,7 +37,7 @@
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QAbstractSpinBox>
-#include <QtWidgets/QAction>
+#include <QAction>   // QtWidgets in Qt 5, QtGui in Qt 6
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QLabel>

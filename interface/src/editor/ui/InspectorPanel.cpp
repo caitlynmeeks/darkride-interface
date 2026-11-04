@@ -118,7 +118,7 @@ namespace {
 
     // the value of a property as text, for the show-when rules
     QString valueText(const QVariant& value) {
-        if (value.type() == QVariant::Bool) {
+        if (value.userType() == QMetaType::Bool) {
             return value.toBool() ? "true" : "false";
         }
         return value.toString();

@@ -757,7 +757,7 @@ void OffscreenQmlSurface::emitWebEvent(const QVariant& message) {
         const QString LOWER_KEYBOARD = "_LOWER_KEYBOARD";
         const QString RAISE_KEYBOARD_NUMERIC_PASSWORD = "_RAISE_KEYBOARD_NUMERIC_PASSWORD";
         const QString RAISE_KEYBOARD_PASSWORD = "_RAISE_KEYBOARD_PASSWORD";
-        QString messageString = message.type() == QVariant::String ? message.toString() : "";
+        QString messageString = message.userType() == QMetaType::QString ? message.toString() : "";
         if (messageString.left(RAISE_KEYBOARD.length()) == RAISE_KEYBOARD) {
             bool numeric = (messageString == RAISE_KEYBOARD_NUMERIC || messageString == RAISE_KEYBOARD_NUMERIC_PASSWORD);
             bool passwordField = (messageString == RAISE_KEYBOARD_PASSWORD || messageString == RAISE_KEYBOARD_NUMERIC_PASSWORD);

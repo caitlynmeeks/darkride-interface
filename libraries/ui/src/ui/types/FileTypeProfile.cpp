@@ -60,7 +60,7 @@ void FileTypeProfile::registerWithContext(QQmlContext* context) {
 
 void FileTypeProfile::clearCache() {
     std::lock_guard<std::mutex> lock(FileTypeProfile_mutex);
-    foreach (auto instance, FileTypeProfile_instances) {
+    for (auto instance : qAsConst(FileTypeProfile_instances)) {
         instance->clearHttpCache();
     }
 }

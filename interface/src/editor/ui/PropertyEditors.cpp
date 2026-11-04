@@ -1271,7 +1271,7 @@ QString CollisionMaskEditor::currentMask() const {
 void CollisionMaskEditor::setValue(const QVariant& value, bool mixed) {
     _updating = true;
     _mixed = mixed;
-    QStringList groups = value.toString().split(',', QString::SkipEmptyParts);
+    QStringList groups = value.toString().split(',', Qt::SkipEmptyParts);
     for (int i = 0; i < _checks.size(); ++i) {
         _checks[i]->setTristate(mixed);
         if (mixed) {

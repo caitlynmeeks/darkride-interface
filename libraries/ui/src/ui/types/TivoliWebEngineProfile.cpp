@@ -52,7 +52,7 @@ void TivoliWebEngineProfile::registerWithContext(QQmlContext* context) {
 
 void TivoliWebEngineProfile::clearCache() {
     std::lock_guard<std::mutex> lock(TivoliWebEngineProfile_mutex);
-    foreach (auto instance, TivoliWebEngineProfile_instances) {
+    for (auto instance : qAsConst(TivoliWebEngineProfile_instances)) {
         instance->clearHttpCache();
     }
 }

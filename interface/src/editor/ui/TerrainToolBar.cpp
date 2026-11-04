@@ -19,8 +19,8 @@
 #include <QtCore/QJsonObject>
 #include <QtGui/QIcon>
 #include <QtGui/QPixmap>
-#include <QtWidgets/QAction>
-#include <QtWidgets/QActionGroup>
+#include <QAction>   // QtWidgets in Qt 5, QtGui in Qt 6
+#include <QActionGroup>   // QtWidgets in Qt 5, QtGui in Qt 6
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDoubleSpinBox>

@@ -10,7 +10,7 @@
 
 #include <QtCore/QThread>
 #include <QtCore/QDebug>
-#include <QtWidgets/QShortcut>
+#include <QShortcut>   // QtWidgets in Qt 5, QtGui in Qt 6
 
 #include <SettingHandle.h>
 #include <shared/QtHelpers.h>
@@ -63,7 +63,8 @@ void Menu::saveAction(Settings& settings, QAction& action) {
 
 void Menu::scanMenuBar(settingsAction modifySetting) {
     Settings settings;
-    foreach (QMenu* menu, findChildren<QMenu*>()) {
+    const QList<QMenu*> menus = findChildren<QMenu*>();
+    for (QMenu* menu : menus) {
         scanMenu(*menu, modifySetting, settings);
     }
 }
@@ -72,7 +73,8 @@ void Menu::scanMenu(QMenu& menu, settingsAction modifySetting, Settings& setting
     groups.push_back(menu.title());
 
 //    settings.beginGroup(menu.title());
-    foreach (QAction* action, menu.actions()) {
+    const QList<QAction*> actions = menu.actions();
+    for (QAction* action : actions) {
         if (action->menu()) {
             scanMenu(*action->menu(), modifySetting, settings);
         } else if (action->isCheckable() && !action->property(TICK_NOT_SAVED).toBool()) {
@@ -292,7 +294,7 @@ QAction* Menu::getActionFromName(const QString& menuName, MenuWrapper* menu) {
         menuActions = actions();
     }
 
-    foreach (QAction* menuAction, menuActions) {
+    for (QAction* menuAction : qAsConst(menuActions)) {
         if (menuName == menuAction->text()) {
             return menuAction;
         }
@@ -312,7 +314,7 @@ MenuWrapper* Menu::getMenuParent(const QString& menuName, QString& finalMenuPart
     QStringList menuTree = menuName.split(">");
     MenuWrapper* parent = NULL;
     MenuWrapper* menu = NULL;
-    foreach (QString menuTreePart, menuTree) {
+    for (const QString& menuTreePart : qAsConst(menuTree)) {
         parent = menu;
         finalMenuPart = menuTreePart.trimmed();
         menu = getSubMenuFromName(finalMenuPart, parent);
@@ -328,7 +330,7 @@ MenuWrapper* Menu::getMenu(const QString& menuName) {
     MenuWrapper* parent = NULL;
     MenuWrapper* menu = NULL;
     int item = 0;
-    foreach (QString menuTreePart, menuTree) {
+    for (const QString& menuTreePart : qAsConst(menuTree)) {
         menu = getSubMenuFromName(menuTreePart.trimmed(), parent);
         if (!menu) {
             break;
@@ -343,7 +345,7 @@ QAction* Menu::getMenuAction(const QString& menuName) {
     QStringList menuTree = menuName.split(">");
     MenuWrapper* parent = NULL;
     QAction* action = NULL;
-    foreach (QString menuTreePart, menuTree) {
+    for (const QString& menuTreePart : qAsConst(menuTree)) {
         action = getActionFromName(menuTreePart.trimmed(), parent);
         if (!action) {
             break;
@@ -381,7 +383,7 @@ MenuWrapper* Menu::addMenu(const QString& menuName, const QString& grouping) {
     QStringList menuTree = menuName.split(">");
     MenuWrapper* addTo = NULL;
     MenuWrapper* menu = NULL;
-    foreach (QString menuTreePart, menuTree) {
+    for (const QString& menuTreePart : qAsConst(menuTree)) {
         menu = getSubMenuFromName(menuTreePart.trimmed(), addTo);
         if (!menu) {
             if (!addTo) {

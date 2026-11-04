@@ -17,7 +17,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-#include <QtCore/QRegExp>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QUrl>
 #include <QtGui/QFontDatabase>
 #include <QtGui/QImageReader>
@@ -914,8 +914,8 @@ QString Skins::install(const QString& pathOrUrl) {
     }
     const QJsonObject json = QJsonDocument::fromJson(files.value(prefix + SKIN_FILE)).object();
     QString id = json["name"].toString().trimmed().toLower();
-    id.replace(QRegExp("[^a-z0-9]+"), "-");
-    id = id.left(40).remove(QRegExp("^-+|-+$"));
+    id.replace(QRegularExpression("[^a-z0-9]+"), "-");
+    id = id.left(40).remove(QRegularExpression("^-+|-+$"));
     if (id.isEmpty()) {
         return "skin.json has no name";
     }
