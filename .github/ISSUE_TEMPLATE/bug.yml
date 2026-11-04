@@ -9,7 +9,7 @@ body:
       value: |
         Thanks for telling us. One bug per report helps us fix it faster.
 
-        **Found a security hole?** Please don't post it here: use **Report a vulnerability** under this repository's Security tab, so it stays private while we fix it.
+        **Found a security hole?** Please don't post it here: go back and choose **Report a security hole privately**, so it stays private while we fix it.
   - type: input
     id: version
     attributes:
@@ -71,5 +71,5 @@ body:
     attributes:
       label: Not a security hole
       options:
-        - label: This report isn't about a way to break into accounts, worlds, servers or someone else's computer (those go to Report a vulnerability).
+        - label: This report isn't about a way to break into accounts, worlds, servers or someone else's computer (those go to Report a security hole privately).
           required: true
