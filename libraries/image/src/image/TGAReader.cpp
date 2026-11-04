@@ -94,7 +94,18 @@ image::Image image::readTGA(QIODevice& content) {
         return QImage();
     }
 
-    if (!(header.pixelDepth == 24 && header.imageDescriptor.attributeBitsPerPixel == 0) && header.pixelDepth != 32) {
+    // 8-bit black-and-white (types 3 and 11, the specular and roughness maps a modelling tool writes) beside 24-bit
+    // and 32-bit true colour (types 2 and 10)
+    const bool blackWhite = header.imageType == TGAImageType::UncompressedBlackWhite ||
+                            header.imageType == TGAImageType::RunLengthEncodedBlackWhite;
+    if (blackWhite) {
+        // the descriptor may call the one channel an alpha channel too (an exporter writes 8 attribute bits on a
+        // grey picture); it is read as grey either way
+        if (header.pixelDepth != 8 || header.imageDescriptor.attributeBitsPerPixel > 8) {
+            qWarning(imagelogging) << "TGA - Only 8-bit black-and-white pictures are supported";
+            return QImage();
+        }
+    } else if (!(header.pixelDepth == 24 && header.imageDescriptor.attributeBitsPerPixel == 0) && header.pixelDepth != 32) {
         qWarning(imagelogging) << "TGA - Only pixel depths of 24 (with no alpha) and 32 bits are supported";
         return QImage();
     }
@@ -116,15 +127,23 @@ image::Image image::readTGA(QIODevice& content) {
         return QImage();
     }
 
-    content.skip(header.idLength);
-    if (header.imageType == TGAImageType::UncompressedTrueColor) {
+    // the ID field and a colour map (useless for these types, but a tool may write one) are skipped inside the file:
+    // a file that ends inside them is refused, as one that ends inside its pixels is
+    const qint64 colorMapBytes = header.colorMapType ? qint64(header.colorMap.length) * ((header.colorMap.entrySize + 7) / 8) : 0;
+    if (content.skip(header.idLength) != header.idLength || content.skip(colorMapBytes) != colorMapBytes) {
+        qWarning(imagelogging) << "TGA - Unexpectedly reached end of file";
+        return QImage();
+    }
+    const QImage::Format format = blackWhite ? QImage::Format_Grayscale8 : QImage::Format_ARGB32;
+    const int outBytesPerPixel = blackWhite ? 1 : 4;
+    if (header.imageType == TGAImageType::UncompressedTrueColor || header.imageType == TGAImageType::UncompressedBlackWhite) {
         qint64 minimumSize = pixelCount * bytesPerPixel;
         if (content.bytesAvailable() < minimumSize) {
             qWarning(imagelogging) << "TGA - Unexpectedly reached end of file";
             return QImage();
         }
 
-        QImage image{ header.width, header.height, QImage::Format_ARGB32 };
+        QImage image{ header.width, header.height, format };
         if (image.isNull()) {
             qWarning(imagelogging) << "TGA - Could not allocate the image";
             return QImage();
@@ -136,16 +155,19 @@ image::Image image::readTGA(QIODevice& content) {
             } else {
                 line = (char*)image.scanLine(y);
             }
+            if (blackWhite) {
+                content.read(line, header.width);
+                continue;
+            }
             for (int x = 0; x < header.width; ++x) {
                 content.read(line, bytesPerPixel);
                 *(line + 3) |= alphaMask;
-
                 line += 4;
             }
         }
         return image;
-    } else if (header.imageType == TGAImageType::RunLengthEncodedTrueColor) {
-        QImage image{ header.width, header.height, QImage::Format_ARGB32 };
+    } else if (header.imageType == TGAImageType::RunLengthEncodedTrueColor || header.imageType == TGAImageType::RunLengthEncodedBlackWhite) {
+        QImage image{ header.width, header.height, format };
         if (image.isNull()) {
             qWarning(imagelogging) << "TGA - Could not allocate the image";
             return QImage();
@@ -190,12 +212,15 @@ image::Image image::readTGA(QIODevice& content) {
                     // Copy `length` number of times
                     col += length;
                     while (length-- > 0) {
-                        *line = color[0];
-                        *(line + 1) = color[1];
-                        *(line + 2) = color[2];
-                        *(line + 3) = color[3];
-
-                        line += 4;
+                        if (blackWhite) {
+                            *line = color[0];
+                        } else {
+                            *line = color[0];
+                            *(line + 1) = color[1];
+                            *(line + 2) = color[2];
+                            *(line + 3) = color[3];
+                        }
+                        line += outBytesPerPixel;
                     }
                 } else {
                     qint64 minimumSize = length * bytesPerPixel;
@@ -208,9 +233,10 @@ image::Image image::readTGA(QIODevice& content) {
                     col += length;
                     while (length-- > 0) {
                         content.read(line, bytesPerPixel);
-                        *(line + 3) |= alphaMask;
-
-                        line += 4;
+                        if (!blackWhite) {
+                            *(line + 3) |= alphaMask;
+                        }
+                        line += outBytesPerPixel;
                     }
                 }
             }

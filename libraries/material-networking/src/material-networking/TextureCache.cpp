@@ -1008,15 +1008,21 @@ void NetworkTexture::handleFinishedInitialLoad() {
             return;
         }
 
+        // the header's bytes must all be there before any field is read; then its identifier, formats, dimensions,
+        // faces and mip count must be ones a texture can have (isValid logs what is wrong and never throws)
+        if (static_cast<size_t>(ktxHeaderData.size()) < ktx::KTX_HEADER_SIZE) {
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
+            return;
+        }
         auto header = reinterpret_cast<const ktx::Header*>(ktxHeaderData.data());
 
-        if (!ktx::checkIdentifier(header->identifier)) {
+        if (!header->isValid()) {
             NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         }
 
-        auto kvSize = header->bytesOfKeyValueData;
-        if (kvSize > (ktxHeaderData.size() - ktx::KTX_HEADER_SIZE)) {
+        size_t kvSize = header->bytesOfKeyValueData;
+        if (kvSize > (static_cast<size_t>(ktxHeaderData.size()) - ktx::KTX_HEADER_SIZE)) {
             NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         }
@@ -1102,7 +1108,8 @@ void NetworkTexture::handleFinishedInitialLoad() {
             // TODO Move image offset calculation to ktx ImageDescriptor
             for (int level = static_cast<int>(images.size()) - 1; level >= 0; --level) {
                 auto& image = images[level];
-                if (image._imageSize > imageSizeRemaining) {
+                // each stored level is its size field plus its bytes: both must be inside what remains
+                if (image._imageSize + ktx::IMAGE_SIZE_WIDTH > imageSizeRemaining) {
                     break;
                 }
                 ktxData -= image._imageSize;

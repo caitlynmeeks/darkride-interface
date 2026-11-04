@@ -10,7 +10,9 @@ Image::Image(int width, int height, Format format) :
     _dims(width, height), 
     _format(format) {
     if (_format == Format_RGBAF) {
-        _floatData.resize(width*height);
+        if (width > 0 && height > 0) {
+            _floatData.resize(size_t(width) * size_t(height));
+        }
     } else {
         _packedData = QImage(width, height, (QImage::Format)format);
     }
