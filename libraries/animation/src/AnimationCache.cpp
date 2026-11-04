@@ -117,6 +117,10 @@ void AnimationReader::run() {
 
     } catch (const QString& error) {
         emit onError(299, error);
+    } catch (const std::exception& error) {
+        emit onError(299, QString(error.what()) + " " + _url.toString());
+    } catch (...) {
+        emit onError(299, "unreadable animation " + _url.toString());
     }
     QThread::currentThread()->setPriority(originalPriority);
 }
