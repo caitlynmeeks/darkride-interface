@@ -188,13 +188,8 @@ namespace scriptable {
     using ScriptableMeshPartPointer = QPointer<ScriptableMeshPart>;
 }
 
-// Qt 6 wants a type's metatype declared before its first use (a Q_PROPERTY in a class body instantiates it), and takes
-// a QPointer to a class only declared; Qt 5 wants the class defined, so there the pointer types are declared after
-// their classes (ScriptableMesh.h, ScriptableMeshPart.h)
+// The enum's metatype, declared with the type (Qt 6 wants it before a Q_PROPERTY in a class body instantiates it).
+// The QPointer types and their lists need no declaration on Qt 6 (it declares a QPointer's metatype itself for a
+// QObject-derived class, and a declaration here would instantiate the pointer with the class only declared); Qt 5
+// declares them after their classes (ScriptableMesh.h, ScriptableMeshPart.h).
 Q_DECLARE_METATYPE(NestableType)
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-Q_DECLARE_METATYPE(scriptable::ScriptableMeshPointer)
-Q_DECLARE_METATYPE(QVector<scriptable::ScriptableMeshPointer>)
-Q_DECLARE_METATYPE(scriptable::ScriptableMeshPartPointer)
-Q_DECLARE_METATYPE(QVector<scriptable::ScriptableMeshPartPointer>)
-#endif
