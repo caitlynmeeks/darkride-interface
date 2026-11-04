@@ -549,10 +549,10 @@ aiAnimMesh* AssimpSerializer::getBlendshapeByName(QString name, aiMesh* mMesh) {
     return nullptr;
 }
 
-void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
+void AssimpSerializer::processMeshes(const hifi::VariantMultiHash& mapping) {
     // The model's own blend shapes (hfm::Model::ownBlendshapeNames), when the .fst asks for them, as FBXSerializer keeps
     // them: each of a mesh's shapes that no standard name takes, by its name, in a slot after the standard ones
-    const hifi::VariantHash ownBlendshapeDefaults = mapping.value("blendshapeDefault").toHash();
+    const hifi::VariantMultiHash ownBlendshapeDefaults = hifi::multiHashFromVariant(mapping.value("blendshapeDefault"));
     const bool keepOwnBlendshapes = !ownBlendshapeDefaults.isEmpty() ||
         mapping.value("ownBlendshapes").toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
     QHash<QString, int> ownBlendshapeSlots;
@@ -643,7 +643,7 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
                                    << "triangles with a vertex past the mesh's" << mMesh->mNumVertices << "left out";
         }
 
-        hifi::VariantHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
+        hifi::VariantMultiHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
 
         if (mMesh->mNumAnimMeshes > 0) {
             bool isBlendshapeChannelNamesEmpty = hfmModel->blendshapeChannelNames.size() == 0;
@@ -663,7 +663,7 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
                 float weight = 1.0f;
 
                 if (blendshapeMappings.contains(fromName)) {
-                    auto mapping = blendshapeMappings[fromName].toList();
+                    auto mapping = blendshapeMappings.value(fromName).toList();
                     if (mapping.count() >= 2) {
                         toName = mapping.at(0).toString();
                         weight = mapping.at(1).toFloat();
@@ -1016,7 +1016,7 @@ void AssimpSerializer::processNode(const aiNode* aiNode, int parentIndex) {
     }
 }
 
-void AssimpSerializer::processScene(const hifi::VariantHash& mapping) {
+void AssimpSerializer::processScene(const hifi::VariantMultiHash& mapping) {
     hfmModel = std::make_shared<HFMModel>();
     hfmModel->originalURL = url.toString();
 
@@ -1240,7 +1240,7 @@ static hifi::ByteArray padGlbJsonChunk(const hifi::ByteArray& data) {
     return padded;
 }
 
-HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi::VariantHash& mapping, const hifi::URL& inputUrl) {
+HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi::VariantMultiHash& mapping, const hifi::URL& inputUrl) {
 	url = inputUrl;
 
     // normalize url for local files

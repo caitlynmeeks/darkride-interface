@@ -62,10 +62,12 @@ private:
 
 namespace std {
     template <>
-    struct hash<QVariantHash> {
-        size_t operator()(const QVariantHash& a) const {
+    struct hash<hifi::VariantMultiHash> {
+        size_t operator()(const hifi::VariantMultiHash& a) const {
             QVariantHasher hasher;
-            return hasher.hash(a);
+            // the mapping streamed as a QVariant, its headings with it (on Qt 5 the same bytes as a QVariantHash's);
+            // the parser inserts repeated keys in file order, so the same .fst always streams the same
+            return hasher.hash(hifi::variantFromMultiHash(a));
         }
     };
 
@@ -142,9 +144,9 @@ void GeometryReader::run() {
         }
 
         HFMModel::Pointer hfmModel;
-        QVariantHash serializerMapping = _mapping.second;
-        serializerMapping["combineParts"] = _combineParts;
-        serializerMapping["deduplicateIndices"] = true;
+        hifi::VariantMultiHash serializerMapping = _mapping.second;
+        serializerMapping.replace("combineParts", _combineParts);
+        serializerMapping.replace("deduplicateIndices", true);
 
         if (_url.path().toLower().endsWith(".gz")) {
             QByteArray uncompressedData;
@@ -251,7 +253,7 @@ void ModelResource::downloadFinished(const QByteArray& data) {
             if (scripts.size() > 0) {
                 _mapping.remove(SCRIPT_FIELD);
                 for (auto &scriptPath : scripts) {
-                    _mapping.insertMulti(SCRIPT_FIELD, scriptPath);
+                    _mapping.insert(SCRIPT_FIELD, scriptPath);
                 }
             }
 
@@ -320,7 +322,7 @@ void ModelResource::onGeometryMappingLoaded(bool success) {
 
 void ModelResource::setExtra(void* extra) {
     const GeometryExtra* geometryExtra = static_cast<const GeometryExtra*>(extra);
-    _mappingPair = geometryExtra ? geometryExtra->mapping : GeometryMappingPair(QUrl(), QVariantHash());
+    _mappingPair = geometryExtra ? geometryExtra->mapping : GeometryMappingPair(QUrl(), hifi::VariantMultiHash());
     _textureBaseURL = geometryExtra ? resolveTextureBaseUrl(_url, geometryExtra->textureBaseUrl) : QUrl();
     _combineParts = geometryExtra ? geometryExtra->combineParts : true;
 }

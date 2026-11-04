@@ -2246,8 +2246,7 @@ void AvatarData::unpackSkeletonData(const QByteArray& data) {
     }
     QString table = QString::fromUtf8(reinterpret_cast<const char*>(sourceBuffer), (int)header->stringTableLength);
     for (size_t i = 0; i < joints.size(); i++) {
-        QStringRef subString(&table, joints[i].stringStart, joints[i].stringLength);
-        joints[i].jointName = subString.toString();
+        joints[i].jointName = table.mid(joints[i].stringStart, joints[i].stringLength);
     }
     if (_clientTraitsHandler) {
         _clientTraitsHandler->markTraitUpdated(AvatarTraits::SkeletonData);
