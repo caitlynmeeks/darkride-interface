@@ -288,7 +288,8 @@ void VerifiedSandboxTests::testHttpRequest() {
         warnings.lines.clear();
         HttpRequestObject* request = factory.createRequest(c.claim);
         bool completed = false;
-        QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(request, &HttpRequestObject::requestComplete, &guard, [&completed] { completed = true; });
         request->open("GET", c.target);
         request->send();
         QTRY_VERIFY(completed);
@@ -320,7 +321,8 @@ void VerifiedSandboxTests::testWebSocket() {
         warnings.lines.clear();
         WebSocketObject* socket = factory.createWebSocket(c.target, c.claim);
         bool errored = false;
-        QObject::connect(socket, &WebSocketObject::errored, [&errored] { errored = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(socket, &WebSocketObject::errored, &guard, [&errored] { errored = true; });
         QTRY_VERIFY(errored);
         QCOMPARE(warnings.lines.size(), 1);
         QVERIFY2(warnings.lines[0].startsWith(refusedFrom(c.origin, QUrl(c.target).toDisplayString())), qPrintable(warnings.lines[0]));
@@ -413,7 +415,8 @@ void VerifiedSandboxTests::testWorldRuleOnRequests() {
             warnings.lines.clear();
             HttpRequestObject* request = requests.createRequest(script.toString());
             bool completed = false;
-            QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+            QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+            QObject::connect(request, &HttpRequestObject::requestComplete, &guard, [&completed] { completed = true; });
             request->open("GET", target);
             request->send();
             QTRY_VERIFY(completed);
@@ -425,7 +428,8 @@ void VerifiedSandboxTests::testWorldRuleOnRequests() {
         warnings.lines.clear();
         WebSocketObject* socket = sockets.createWebSocket("ws://127.0.0.1:9/", script.toString());
         bool errored = false;
-        QObject::connect(socket, &WebSocketObject::errored, [&errored] { errored = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(socket, &WebSocketObject::errored, &guard, [&errored] { errored = true; });
         QTRY_VERIFY(errored);
         QVERIFY2(warnings.lines.value(0).startsWith(refusedFrom(ENTITIES, "ws://127.0.0.1:9/")), qPrintable(warnings.lines.value(0)));
         sockets.dispose(socket);
@@ -439,7 +443,8 @@ void VerifiedSandboxTests::testWorldRuleOnRequests() {
         warnings.lines.clear();
         HttpRequestObject* request = requests.createRequest(script.toString());
         bool completed = false;
-        QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(request, &HttpRequestObject::requestComplete, &guard, [&completed] { completed = true; });
         request->open("GET", "http://127.0.0.1:9/");
         request->send();
         QTRY_VERIFY(completed);
