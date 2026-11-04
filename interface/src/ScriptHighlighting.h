@@ -20,7 +20,8 @@
 class HighlightPattern {
 public:
     HighlightPattern() {}
-    explicit HighlightPattern(const QString& pattern) : _regex(pattern) {}
+    // Unicode letters count for \b and the classes, as QRegExp counted them
+    explicit HighlightPattern(const QString& pattern) : _regex(pattern, QRegularExpression::UseUnicodePropertiesOption) {}
     int indexIn(const QString& text, int from = 0) {
         const QRegularExpressionMatch match = _regex.match(text, from);
         _matchedLength = match.hasMatch() ? match.capturedLength() : -1;
