@@ -556,7 +556,7 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
             return result;
         }
     }
-    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, QVariantHash(), QUrl::fromLocalFile(result.modelPath));
+    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, hifi::VariantMultiHash(), QUrl::fromLocalFile(result.modelPath));
     if (!hfmModel) {
         result.error = "the engine cannot read " + model->path;
         return result;

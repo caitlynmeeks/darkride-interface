@@ -130,12 +130,12 @@ void Application::askToWearAvatar(const QString& url, bool askFirst) {
     }
 
     // Download the FST file, to attempt to determine its model type
-    QVariantHash fstMapping = FSTReader::downloadMapping(url);
+    const hifi::VariantMultiHash fstMapping = FSTReader::downloadMapping(url);
 
     FSTReader::ModelType modelType = FSTReader::predictModelType(fstMapping);
 
-    QString modelName = fstMapping["name"].toString();
-    QString modelLicense = fstMapping["license"].toString();
+    QString modelName = fstMapping.value("name").toString();
+    QString modelLicense = fstMapping.value("license").toString();
     // the avatar's own name in the popups, else its file's
     const QString shownName = modelName.trimmed().isEmpty() ? QFileInfo(realUrl.path()).completeBaseName() : modelName.trimmed();
 

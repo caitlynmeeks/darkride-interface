@@ -12,7 +12,7 @@ public:
 	MediaType getMediaType() const override;
     std::unique_ptr<hfm::Serializer::Factory> getFactory() const override;
 
-    HFMModel::Pointer read(const hifi::ByteArray& data, const hifi::VariantHash& mapping, const hifi::URL& url = hifi::URL()) override;
+    HFMModel::Pointer read(const hifi::ByteArray& data, const hifi::VariantMultiHash& mapping, const hifi::URL& url = hifi::URL()) override;
 
 private:
     QUrl url;
@@ -27,7 +27,7 @@ private:
     void processMaterials();
 
     aiAnimMesh* getBlendshapeByName(QString name, aiMesh* mesh);
-    void processMeshes(const hifi::VariantHash& mapping);
+    void processMeshes(const hifi::VariantMultiHash& mapping);
 
     QList<hfm::Shape*> getHfmShapesByMeshIndex(uint32_t meshIndex);
     void processBones();
@@ -36,7 +36,7 @@ private:
 
     void processNode(const aiNode* aiNode, int parentIndex = -1);
 
-    void processScene(const hifi::VariantHash& mapping);
+    void processScene(const hifi::VariantMultiHash& mapping);
 
     void processGltfExtras(const hifi::ByteArray& data);
 

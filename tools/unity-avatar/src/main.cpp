@@ -119,7 +119,7 @@ int checkMuscles(const unity::Package& package, const avatarimport::AvatarSource
     }
     const QJsonObject unityExport = QJsonDocument::fromJson(exportFile.readAll()).object();
     const auto* model = package.byGuid(avatar.modelGuid);
-    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, QVariantHash(), QUrl());
+    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, hifi::VariantMultiHash(), QUrl());
     const QVariantMap importer = package.meta(avatar.modelGuid).value("ModelImporter").toMap();
     const QVariantMap human = importer.value("humanDescription").toMap();
     // the joints renamed as the .fst's jointMap renames them
@@ -201,7 +201,7 @@ int checkFrames(const unity::Package& package, const avatarimport::AvatarSource&
     }
     const QJsonObject unityExport = QJsonDocument::fromJson(exportFile.readAll()).object();
     const auto* model = package.byGuid(avatar.modelGuid);
-    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, QVariantHash(), QUrl());
+    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, hifi::VariantMultiHash(), QUrl());
     const float metersPerUnit = unity::metersPerUnit(package.meta(avatar.modelGuid).value("ModelImporter").toMap(), *hfmModel);
     const QStringList paths = unity::jointPaths(*hfmModel);
     int compared = 0, missing = 0;

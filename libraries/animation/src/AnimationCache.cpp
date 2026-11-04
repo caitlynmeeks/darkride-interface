@@ -104,7 +104,7 @@ void AnimationReader::run() {
             auto registry = DependencyManager::get<ModelFormatRegistry>();
             auto serializer = registry ? registry->getSerializerForMediaType(_data, _url, "") : nullptr;
             if (serializer) {
-                hfmModel = serializer->read(_data, QVariantHash(), _url.path());
+                hfmModel = serializer->read(_data, hifi::VariantMultiHash(), _url.path());
             } else {
                 QString errorStr("unsupported format " + _url.toString());
                 emit onError(299, errorStr);

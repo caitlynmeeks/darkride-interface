@@ -52,7 +52,7 @@ static HFMModel::Pointer readModel(const QString& path) {
     const QFileInfo info(path);
     const QString suffix = info.suffix().toLower();
     const QUrl url = QUrl::fromLocalFile(info.absoluteFilePath());
-    const QVariantHash mapping;
+    const hifi::VariantMultiHash mapping;
     if (suffix == "fbx") {
         return FBXSerializer().read(data, mapping, url);
     }
