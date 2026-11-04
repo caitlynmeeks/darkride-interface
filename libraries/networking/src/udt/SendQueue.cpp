@@ -256,10 +256,15 @@ bool SendQueue::sendNewPacketAndAddToSentList(std::unique_ptr<Packet> newPacket,
 
 namespace {
 std::atomic<quint64> handshakesGivenUpTotal { 0 };
+std::atomic<quint64> handshakesGivenUpWithPacketsTotal { 0 };
 }
 
 quint64 SendQueue::handshakesGivenUp() {
     return handshakesGivenUpTotal.load();
+}
+
+quint64 SendQueue::handshakesGivenUpWithPacketsWaiting() {
+    return handshakesGivenUpWithPacketsTotal.load();
 }
 
 void SendQueue::run() {
@@ -304,6 +309,9 @@ void SendQueue::run() {
                                              .arg(givenUp).arg(withPackets);
             }
             handshakesGivenUpTotal++;
+            if (hadPackets) {
+                handshakesGivenUpWithPacketsTotal++;
+            }
             deactivate();
             return;
         }

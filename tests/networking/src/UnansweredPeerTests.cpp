@@ -104,7 +104,7 @@ void recordGiveUps(QtMsgType type, const QMessageLogContext& context, const QStr
 // physics' question about the 11-03 abort (servers, 11-04): a send queue given up after 10 s without a handshake
 // answer, while its producer keeps queuing reliable packets into it, during the give-up and after (as the physics
 // server's train states would). Run it alone (`networking-UnansweredPeerTests aGiveUpWithPacketsStillComing`, so the
-// once-a-minute warning isn't held back by another test's) and under a malloc that traps a freed block's reuse
+// once-a-minute warning comes; the test counts on the queue's own counters either way) and under a malloc that traps a freed block's reuse
 // (macOS: DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib): it must give up with packets waiting, more than once, and
 // nothing may crash.
 void UnansweredPeerTests::aGiveUpWithPacketsStillComing() {
@@ -117,6 +117,7 @@ void UnansweredPeerTests::aGiveUpWithPacketsStillComing() {
     givenUpLines.clear();
     previousHandler = qInstallMessageHandler(recordGiveUps);
     const quint64 givenUpBefore = udt::SendQueue::handshakesGivenUp();
+    const quint64 withPacketsBefore = udt::SendQueue::handshakesGivenUpWithPacketsWaiting();
 
     int sent = 0;
     QList<qint64> giveUpTimes;       // when each give-up was seen (ms)
@@ -150,8 +151,14 @@ void UnansweredPeerTests::aGiveUpWithPacketsStillComing() {
     qInstallMessageHandler(previousHandler);
 
     QVERIFY2(sent > 1000, qPrintable(QString("%1 packets sent").arg(sent)));
-    QVERIFY2(!givenUpLines.isEmpty(), "the give-up warning wasn't logged");
-    QVERIFY2(givenUpLines.first().contains("with packets waiting"), qPrintable(givenUpLines.first()));
+    // every give-up had packets waiting (counted by the queue, since the warning is logged once a minute and another
+    // test's line may hold it back; when a line does come, it says so too)
+    const quint64 withPackets = udt::SendQueue::handshakesGivenUpWithPacketsWaiting() - withPacketsBefore;
+    QVERIFY2(withPackets == quint64(giveUpTimes.size()),
+             qPrintable(QString("%1 of %2 give-ups had packets waiting").arg(withPackets).arg(giveUpTimes.size())));
+    for (const auto& line : givenUpLines) {
+        QVERIFY2(line.contains("with packets waiting"), qPrintable(line));
+    }
     // physics: the swap itself, not only no crash: given up twice, about 10 s apart, and after each give-up the
     // producer's next packet opened a new queue, which sent a new handshake within a second
     QVERIFY2(giveUpTimes.size() >= 2, qPrintable(QString("%1 give-ups in 25 s").arg(giveUpTimes.size())));
