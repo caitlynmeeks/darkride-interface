@@ -125,7 +125,13 @@ image::Image image::readTGA(QIODevice& content) {
         return QImage();
     }
 
-    content.skip(header.idLength);
+    // the ID field and a colour map (useless for these types, but a tool may write one) are skipped inside the file:
+    // a file that ends inside them is refused, as one that ends inside its pixels is
+    const qint64 colorMapBytes = header.colorMapType ? qint64(header.colorMap.length) * ((header.colorMap.entrySize + 7) / 8) : 0;
+    if (content.skip(header.idLength) != header.idLength || content.skip(colorMapBytes) != colorMapBytes) {
+        qWarning(imagelogging) << "TGA - Unexpectedly reached end of file";
+        return QImage();
+    }
     const QImage::Format format = blackWhite ? QImage::Format_Grayscale8 : QImage::Format_ARGB32;
     const int outBytesPerPixel = blackWhite ? 1 : 4;
     if (header.imageType == TGAImageType::UncompressedTrueColor || header.imageType == TGAImageType::UncompressedBlackWhite) {

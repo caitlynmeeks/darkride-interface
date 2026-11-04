@@ -209,4 +209,30 @@ void ImageTests::testTgaBlackWhite() {
     QVERIFY(!image.isNull());
     QCOMPARE((int)image.getScanLine(3)[0], 150);
     QCOMPARE((int)image.getScanLine(3)[3], 150);
+
+    // refused, never read past the end or written past the row: a run longer than the row; a file shorter than its
+    // claimed pixels; a run-length file that ends inside a run; an ID field past the end
+    QByteArray overrun = tgaHeader(11, side, side);
+    overrun.append((char)(0x80 | 7));   // a run of 8 in a row of 4
+    overrun.append((char)200);
+    {
+        QBuffer b; b.setData(overrun); b.open(QIODevice::ReadOnly);
+        QVERIFY(image::readTGA(b).isNull());
+    }
+    QByteArray shortFile = plain.left(18 + 10);
+    {
+        QBuffer b; b.setData(shortFile); b.open(QIODevice::ReadOnly);
+        QVERIFY(image::readTGA(b).isNull());
+    }
+    QByteArray cutRun = rle.left(18 + 5);
+    {
+        QBuffer b; b.setData(cutRun); b.open(QIODevice::ReadOnly);
+        QVERIFY(image::readTGA(b).isNull());
+    }
+    QByteArray longId = plain;
+    longId[0] = (char)200;   // an ID field longer than the file
+    {
+        QBuffer b; b.setData(longId); b.open(QIODevice::ReadOnly);
+        QVERIFY(image::readTGA(b).isNull());
+    }
 }
