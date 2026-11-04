@@ -528,6 +528,10 @@ void AssimpSerializer::processMaterials() {
                     graphics::MaterialKey::OPACITY_MAP_MASK :
                 graphics::MaterialKey::OPACITY_MAP_OPAQUE
             );
+            float alphaCutoff;
+            if (alphaModeStr == "MASK" && mMaterial->Get(AI_MATKEY_GLTF_ALPHACUTOFF, alphaCutoff) == AI_SUCCESS) {
+                modelMaterial->setOpacityCutoff(alphaCutoff);
+            }
         } else {
             modelMaterial->setOpacityMapMode(graphics::MaterialKey::OPACITY_MAP_OPAQUE);
         }
