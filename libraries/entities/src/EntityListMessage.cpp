@@ -9,6 +9,7 @@
 #include "EntityListMessage.h"
 
 #include <QtCore/QDataStream>
+#include <QtCore/QIODevice>
 #include <QtCore/QtEndian>
 
 #include <zlib.h>

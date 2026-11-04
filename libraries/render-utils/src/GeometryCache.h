@@ -45,13 +45,20 @@ typedef QPair<Vec3Pair, Vec4Pair> Vec3PairVec4Pair;
 typedef QPair<Vec4Pair, glm::vec4> Vec4PairVec4;
 typedef QPair<Vec4Pair, Vec4Pair> Vec4PairVec4Pair;
 
-inline uint qHash(const Vec2FloatPairPair& v, uint seed) {
+// Qt 6 hashes with size_t seeds and results; Qt 5 with uint
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+using QHashSeed = size_t;
+#else
+using QHashSeed = uint;
+#endif
+
+inline QHashSeed qHash(const Vec2FloatPairPair& v, QHashSeed seed) {
     // multiply by prime numbers greater than the possible size
     return qHash(v.first.first.x + 5009 * v.first.first.y + 5011 * v.first.second +
         5021 * v.second.first.x + 5023 * v.second.first.y + 5039 * v.second.second);
 }
 
-inline uint qHash(const Vec2Pair& v, uint seed) {
+inline QHashSeed qHash(const Vec2Pair& v, QHashSeed seed) {
     // multiply by prime numbers greater than the possible size
     return qHash(v.first.x + 5009 * v.first.y + 5011 * v.second.x + 5021 * v.second.y, seed);
 }

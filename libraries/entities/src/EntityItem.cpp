@@ -2308,7 +2308,7 @@ QString EntityItem::actionsToDebugString() {
         const QUuid id = i.key();
         EntityDynamicPointer action = _objectActions[id];
         EntityDynamicType actionType = action->getType();
-        result += QString("") + actionType + ":" + action->getID().toString() + " ";
+        result += EntityDynamicInterface::dynamicTypeToString(actionType) + ":" + action->getID().toString() + " ";
         i++;
     }
     return result;

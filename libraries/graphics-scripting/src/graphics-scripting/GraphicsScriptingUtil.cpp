@@ -47,9 +47,7 @@ QVariant toVariant(const glm::mat4& mat4) {
     QVector<float> floats;
     floats.resize(16);
     memcpy(floats.data(), &mat4, sizeof(glm::mat4));
-    QVariant v;
-    v.setValue<QVector<float>>(floats);
-    return v;
+    return QVariant::fromValue(floats);
 };
 
 QVariant toVariant(const Extents& box) {

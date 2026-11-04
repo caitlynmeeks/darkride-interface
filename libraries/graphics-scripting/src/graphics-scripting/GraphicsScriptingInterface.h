@@ -152,6 +152,4 @@ namespace scriptable {
     QScriptValue scriptableMaterialToScriptValue(QScriptEngine* engine, const scriptable::ScriptableMaterial &material);
 };
 
-Q_DECLARE_METATYPE(NestableType)
-
 #endif // hifi_GraphicsScriptingInterface_h

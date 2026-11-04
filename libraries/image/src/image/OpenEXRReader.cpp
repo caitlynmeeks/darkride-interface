@@ -19,10 +19,18 @@
 
 #if !defined(Q_OS_ANDROID)
 
+#include <OpenEXR/OpenEXRConfig.h>
 #include <OpenEXR/ImfIO.h>
 #include <OpenEXR/ImfRgbaFile.h>
 #include <OpenEXR/ImfArray.h>
 #include <OpenEXR/ImfTestFile.h>
+
+// OpenEXR 3 sizes its streams in uint64_t; 2.x in its own Int64 (unsigned long here, not the same type)
+#if OPENEXR_VERSION_MAJOR >= 3
+using ImfStreamSize = uint64_t;
+#else
+using ImfStreamSize = Imf::Int64;
+#endif
 
 class QIODeviceImfStream : public Imf::IStream {
 public:
@@ -39,11 +47,11 @@ public:
         return true;
     }
 
-    Imf::Int64 tellg() override {
+    ImfStreamSize tellg() override {
         return _device.pos();
     }
 
-    void seekg(Imf::Int64 pos) override {
+    void seekg(ImfStreamSize pos) override {
         _device.seek(pos);
     }
 
