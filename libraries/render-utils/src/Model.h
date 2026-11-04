@@ -43,7 +43,6 @@
 
 class ImpostorSwitch;
 class AbstractViewStateInterface;
-class QScriptEngine;
 
 class ViewFrustum;
 

@@ -26,6 +26,7 @@
 #include <atomic>
 
 #include <QtCore/QSet>
+#include <QtCore/QSharedPointer>
 #include <QtCore/QStack>
 #include <QtGui/QMouseEvent>
 
@@ -44,6 +45,7 @@ class AbstractScriptingServicesInterface;
 class AbstractViewStateInterface;
 class Model;
 class ScriptEngine;
+using ScriptEnginePointer = QSharedPointer<ScriptEngine>;
 class ZoneEntityItem;
 class EntityItem;
 
@@ -318,7 +320,6 @@ private:
     EntityItemID _currentHoverOverEntityID;
     EntityItemID _currentClickingOnEntityID;
 
-    QScriptValueList createEntityArgs(const EntityItemID& entityID);
     void checkEnterLeaveEntities();
     void leaveDomainAndNonOwnedEntities();
     void leaveAllEntities();

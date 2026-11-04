@@ -2,9 +2,9 @@
 //  agent-check.js
 //  tests-manual/wasm-scripting
 //
-//  The stand-in agent of server-check.sh, a persistent script of the sandbox domain. On the engine its assignment
-//  client runs (QtScript, or the WebAssembly engine with DARKRIDE_RUN_JS_ON_WASM=1) it calls the APIs an AI
-//  resident's body uses, makes entities with server entity scripts (a ticker and, on the new engine, a runaway that
+//  The stand-in agent of server-check.sh, a persistent script of the sandbox domain. In its assignment client it
+//  calls the APIs an AI
+//  resident's body uses, makes entities with server entity scripts (a ticker and a runaway that
 //  the time limit must stop alone), and edits through the entity server's edit filter (server-edit-filter.js).
 //  Each result is an AGENT-CHECK line in its assignment client's log; the server entity scripts print SERVER-CHECK
 //  lines in the entity script server's. Its one HTTP request goes to the sandbox domain-server's own page.

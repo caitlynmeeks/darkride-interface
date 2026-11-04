@@ -20,7 +20,6 @@
 
 #include <QMouseEvent>
 #include <QReadWriteLock>
-#include <QScriptValue>
 
 #include <PointerEvent.h>
 
@@ -52,8 +51,6 @@ public:
     QVariantMap extraInfo;
 };
 Q_DECLARE_METATYPE(RayToOverlayIntersectionResult);
-QScriptValue RayToOverlayIntersectionResultToScriptValue(QScriptEngine* engine, const RayToOverlayIntersectionResult& value);
-void RayToOverlayIntersectionResultFromScriptValue(const QScriptValue& object, RayToOverlayIntersectionResult& value);
 
 class ParabolaToOverlayIntersectionResult {
 public:
@@ -414,12 +411,7 @@ public slots:
      *     print("Intersection: " + JSON.stringify(intersection));
      * });
      */
-    RayToOverlayIntersectionResult findRayIntersection(const PickRay& ray,
-                                                       bool precisionPicking = false,
-                                                       const QScriptValue& include = QScriptValue(),
-                                                       const QScriptValue& discard = QScriptValue(),
-                                                       bool visibleOnly = false,
-                                                       bool collidableOnly = false);
+    // (what a script's findRayIntersection reaches is findRayIntersectionVector: the JavaScript guest maps the name)
 
     /**jsdoc
      * Gets a list of visible 3D overlays (local entities) with bounding boxes that touch a search sphere.

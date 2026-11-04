@@ -2,21 +2,19 @@
 //  WasmScriptEngine.h
 //  libraries/script-engine/src
 //
-//  The script engine that runs WebAssembly modules. It derives from ScriptEngine for the transition: the
-//  application, the agent and the entity script server register their objects on a ScriptEnginePointer with
-//  registerGlobalObject, and this engine records them in its object table instead of a QScriptValue. A
-//  module reaches them through the host interface (libraries/wasm-scripting) by reflection. The QScriptEngine
-//  this class carries through its base is never run as a script engine; it serves as the serializer for the
-//  types that only have QtScript conversions, until those get QVariant ones.
+//  The script engine that runs WebAssembly modules: the one engine. It derives from ScriptEngine, the part every
+//  engine's hosts see (the Script API by reflection, the engine's context, file, thread, entity script records,
+//  messages and rules): the application, the agent and the entity script server register their objects on a
+//  ScriptEnginePointer with registerGlobalObject, and this engine records them in its object table. A module
+//  reaches them through the host interface (libraries/wasm-scripting) by reflection. The QScriptEngine the base
+//  still carries is never run; it goes with the hosts' last QtScript registrations (the Qt 6 move, stage 0).
 //
 //  What runs here: a module (a .wasm file, run as it is); a JavaScript file, inside the JavaScript guest
 //  (tools/wasm-js, darkride-js.wasm: QuickJS-NG plus a shim that gives the script the objects it had on
 //  QtScript); and, in an entities engine (the client's and the entity script server's), the entity scripts:
 //  JavaScript ones inside the guest, .wasm ones each as an instance of its module, one per URL however many
-//  entities run it, every instance in this engine's thread and object table. Which engine a .js file or an
-//  entities engine loads on is runJavaScriptOnWebAssembly(): this one, unless the setting says QtScript (Developer >
-//  Scripting in the client);
-//  .wasm files always load here.
+//  entities run it, every instance in this engine's thread and object table. Every script loads here: the factory
+//  (scriptEngineFactory) makes no other engine.
 //
 //  Lifecycle, as the QtScript engine's: loadURL fetches the script; scriptLoaded makes ScriptEngines run the
 //  initializers (the registrations) and runInThread; run() on the engine's thread registers the standard
@@ -83,21 +81,11 @@ public:
     /// The runtime every module of this process is compiled by.
     static std::shared_ptr<WasmRuntime> runtime();
 
-    /// Whether JavaScript client scripts, agents' scripts and the entities engines load on this engine: yes, unless
-    /// the setting (Developer > Scripting > Run JavaScript on QtScript) or DARKRIDE_RUN_JS_ON_QTSCRIPT=1 says QtScript;
-    /// DARKRIDE_RUN_JS_ON_WASM=1 or 0 chooses for one process. Without the guest module, JavaScript runs on QtScript.
-    static bool runJavaScriptOnWebAssembly();
-    static void setRunJavaScriptOnWebAssembly(bool on);
-    /// The engine chosen for one JavaScript client script (in the Running Scripts window), over the setting until
-    /// the client quits: true for this engine, false for the QtScript one. Safe from any thread.
-    static void chooseEngineForScript(const QUrl& url, bool onWebAssembly);
-    /// Whether an engine was chosen for the script, and which.
-    static bool engineChosenForScript(const QUrl& url, bool& onWebAssembly);
     /// Where the JavaScript guest module is: $DARKRIDE_JS_WASM, else wasm/darkride-js.wasm under the
     /// resources beside the executable (Contents/Resources on macOS, resources/ elsewhere).
     static QString javascriptGuestPath();
-    /// Whether the JavaScript guest module is there (a build can be made without one). Without it JavaScript stays
-    /// on the QtScript engine whatever the setting says, with one warning in the log.
+    /// Whether the JavaScript guest module is there. Every build carries it (CopyJavaScriptGuest); without it no
+    /// JavaScript script can run, which is logged once.
     static bool hasJavaScriptGuest();
     /// The JavaScript guest module, compiled once per process (the edit-filter engine instantiates it too).
     static std::shared_ptr<WasmModule> javascriptGuestModule(QString& error);
@@ -111,12 +99,6 @@ public:
 
     // The ScriptEngine hooks the hosts call.
     void registerGlobalObject(const QString& name, QObject* object) override;
-    void registerGetterSetter(const QString& name, QScriptEngine::FunctionSignature getter,
-                              QScriptEngine::FunctionSignature setter, const QString& parent = QString("")) override;
-    void registerFunction(const QString& name, QScriptEngine::FunctionSignature fun, int numArguments = -1) override;
-    void registerFunction(const QString& parent, const QString& name, QScriptEngine::FunctionSignature fun,
-                          int numArguments = -1) override;
-    void registerValue(const QString& valueName, QScriptValue value) override;
     void registerGlobalValue(const QString& name, const QVariant& value) override;
     void loadURL(const QUrl& scriptURL, bool reload) override;
     bool hasValidScriptSuffix(const QString& scriptFileName) override;
@@ -128,6 +110,9 @@ public:
     // The entity-script contract, for an entities engine: a JavaScript entity script runs in the guest, a
     // .wasm one in an instance of its module (one per URL), reached through the module's entity_* exports.
     void loadEntityScript(const EntityItemID& entityID, const QString& entityScript, bool forceRedownload) override;
+    /// A console line, through the JavaScript guest's console_eval (revision 6 on): evaluated in the global scope of
+    /// the engine's script. A module, or an older guest, says it has no console.
+    QVariantMap consoleEvaluate(const QString& code) override;
     void unloadEntityScript(const EntityItemID& entityID, bool shouldRemoveFromMap = false) override;
     void unloadAllEntityScripts(bool blockingCall = false) override;
     void callEntityScriptMethod(const EntityItemID& entityID, const QString& methodName,
@@ -139,18 +124,12 @@ public:
     // Script.addEventHandler and removeEventHandler for a module: a guest function as the handler.
     Q_INVOKABLE void addEventHandler(const EntityItemID& entityID, const QString& eventName, const ScriptCallback& handler);
     Q_INVOKABLE void removeEventHandler(const EntityItemID& entityID, const QString& eventName, const ScriptCallback& handler);
-    using ScriptEngine::addEventHandler;
-    using ScriptEngine::removeEventHandler;
 
     // The Script API a module uses for timers: a guest function as the callback, a timer id back.
     Q_INVOKABLE int setTimeout(const ScriptCallback& callback, int timeoutMS);
     Q_INVOKABLE int setInterval(const ScriptCallback& callback, int intervalMS);
     Q_INVOKABLE void clearTimeout(int timer);
     Q_INVOKABLE void clearInterval(int timer);
-    using ScriptEngine::setTimeout;
-    using ScriptEngine::setInterval;
-    using ScriptEngine::clearTimeout;
-    using ScriptEngine::clearInterval;
 
     // The Script API the JavaScript shim builds its include, require and resolvePath on (a native module may
     // use them too). Paths are resolved against the parent URL the caller tracks (the file whose code runs),
@@ -178,16 +157,24 @@ public:
     QUrl verifiedSandbox(const QString& claimed) const;
     /// Script.dumpApi for this engine: the globals record the guest composed, written under the usual root.
     Q_INVOKABLE bool dumpApi(const QString& path, const QVariantMap& globals);
-    using ScriptEngine::dumpApi;
 
     /// What the engine has done: host calls, bytes crossed, frames, the modules' memory.
     Q_INVOKABLE QVariantMap statistics() const;
+
+    /// The names of the globals registered so far (the hosts' and the engine's own), in no order. For tests.
+    QStringList registeredGlobalNames() const;
 
     /// A guest function called with arguments, on this thread, for its result (what a ScriptCallback's call
     /// comes to); postCallback queues one without a result, from any thread.
     bool invokeCallback(const ModuleInstancePointer& instance, int32_t callback, const QVariantList& arguments,
                         QVariant& result, QString& error);
     void postCallback(const ModuleInstancePointer& instance, int32_t callback, const QVariantList& arguments);
+
+protected:
+    /// The globals the engine itself gives every script of its context, beside the standard ones and the hosts':
+    /// Http and Sockets (what the guest's XMLHttpRequest and WebSocket are built on), WebSocketServers for an agent
+    /// alone, AudioEffectOptions, Resource and TREE_SCALE. run() calls it on the engine's thread.
+    void registerEngineGlobals();
 
 private:
     bool fetchModuleBytes();

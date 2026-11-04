@@ -31,7 +31,6 @@
 
 #include <QEventLoop>
 #include <QProcessEnvironment>
-#include <QScriptSyntaxCheckResult>
 #include <QThreadPool>
 #include <QTimer>
 #include <QSet>
@@ -483,7 +482,6 @@ void EntityTreeRenderer::clear() {
 
 void EntityTreeRenderer::reloadEntityScripts() {
     _entitiesScriptEngine->unloadAllEntityScripts();
-    _entitiesScriptEngine->resetModuleCache();
     for (const auto& entry : _entitiesInScene) {
         const auto& renderer = entry.second;
         const auto& entity = renderer->getEntity();

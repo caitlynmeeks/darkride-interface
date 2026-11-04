@@ -5,26 +5,18 @@
 # 127.0.0.1:43110, since an agent and the entity server load no script from the local file system; and localhost
 # without the right to change locks, which would let the agent's edits pass the filter unseen), starts it from
 # this checkout's build with one assignment client more than the six servers, waits, copies the new logs to
-# results/server-check-<engine>/,
+# results/server-check/,
 # prints the AGENT-CHECK and SERVER-CHECK lines and the CRITICAL ones, stops the sandbox and takes the settings out
 # again; a sandbox that was running before is started again as it was.
-#   tests-manual/wasm-scripting/server-check.sh qtscript|wasm|default [seconds, 70]
-# default sets no DARKRIDE_RUN_JS_ON_WASM: the servers run on the build's own default engine. SERVER_CHECK_BUILD names
-# another checkout's build to run (the servers and the client), such as a hands-on build.
+#   tests-manual/wasm-scripting/server-check.sh [seconds, 70]
+# SERVER_CHECK_BUILD names another checkout's build to run (the servers and the client), such as a hands-on build.
 set -e
-ENGINE=${1:?usage: server-check.sh qtscript|wasm|default [seconds]}
-SECONDS_RUN=${2:-70}
+SECONDS_RUN=${1:-70}
 D=$(cd "$(dirname "$0")" && pwd)
 BUILD=$(cd "${SERVER_CHECK_BUILD:-$D/../../build}" && pwd)
 ROOT=$HOME/tivoli-sandboxes/wasm
 SERVE=http://127.0.0.1:43110/tests-manual/wasm-scripting
-OUT=$D/results/server-check-$ENGINE
-case "$ENGINE" in
-    qtscript) ON_WASM=0 ;;
-    wasm) ON_WASM=1 ;;
-    default) ON_WASM="" ;;
-    *) echo "usage: server-check.sh qtscript|wasm|default [seconds]" >&2; exit 2 ;;
-esac
+OUT=$D/results/server-check
 
 settings() {
     python3 - "$ROOT/domain-config.json" "$1" "$SERVE/agent-check.js" "$SERVE/server-edit-filter.js" <<'PY'
@@ -93,10 +85,10 @@ if os.path.exists(path):
         print("removed %d entities of an earlier run from the sandbox's world" % (len(entities) - len(kept)))
 PY
 MARK=$(mktemp)
-env ${ON_WASM:+DARKRIDE_RUN_JS_ON_WASM=$ON_WASM} SANDBOX_ASSIGNMENTS=7 "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102
-# a client without the right to change locks edits through the filter; its own scripts stay on QtScript in both runs
+SANDBOX_ASSIGNMENTS=7 "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102
+# a client without the right to change locks edits through the filter
 sleep 5
-DARKRIDE_RUN_JS_ON_WASM=0 CLIENT_APP="$BUILD/interface/Darkride.app" "$D/run-client.sh" server-check-filter 65 --url hifi://localhost:43102 \
+CLIENT_APP="$BUILD/interface/Darkride.app" "$D/run-client.sh" server-check-filter 65 --url hifi://localhost:43102 \
     --testScript "$D/filter-client.js" > /dev/null 2>&1 &
 CLIENT_RUN=$!
 sleep $((SECONDS_RUN - 5))
@@ -118,7 +110,7 @@ grep -h "AGENT-CHECK" *.txt *.log 2>/dev/null | grep -v '\\n' | sed 's/.*AGENT-C
 grep -h "SERVER-CHECK" *.txt *.log 2>/dev/null | grep -v '\\n' | sed 's/.*SERVER-CHECK/SERVER-CHECK/' > server-check.txt || true
 grep -h "FILTER-CHECK" filter-client.log 2>/dev/null | grep -v '\\n' | sed 's/.*FILTER-CHECK/FILTER-CHECK/' >> server-check.txt || true
 grep -h "\[CRITICAL\]\|longer than its limit\|is stopped" *.txt *.log 2>/dev/null | sed 's/^\[[^]]*\] //' | sort | uniq -c > critical.txt || true
-echo "== $ENGINE: $(wc -l < agent-check.txt | tr -d ' ') AGENT-CHECK lines, $(wc -l < server-check.txt | tr -d ' ') SERVER-CHECK lines; logs in $OUT"
+echo "== $(wc -l < agent-check.txt | tr -d ' ') AGENT-CHECK lines, $(wc -l < server-check.txt | tr -d ' ') SERVER-CHECK lines; logs in $OUT"
 cat agent-check.txt server-check.txt
 echo "-- CRITICAL and limit lines (count, text):"
 cut -c1-220 critical.txt

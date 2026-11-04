@@ -182,6 +182,7 @@ private slots:
     void testRunawayLoopIsInterrupted();
     void testRunawayEntityScriptIsNamed();
     void testErrorsAndPrintedNamesAsOnQtScript();
+    void testConsoleLines();
 };
 
 #endif // hifi_JavaScriptGuestTests_h

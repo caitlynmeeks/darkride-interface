@@ -209,11 +209,6 @@ void TestScriptingInterface::savePhysicsSimulationStats(QString originalPath) {
     qApp->saveNextPhysicsStats(path);
 }
 
-void TestScriptingInterface::profileRange(const QString& name, QScriptValue fn) {
-    PROFILE_RANGE(script, name);
-    fn.call();
-}
-
 void TestScriptingInterface::clearCaches() {
 	qApp->reloadResourceCaches();
 }

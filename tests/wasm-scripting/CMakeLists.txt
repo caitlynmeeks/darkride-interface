@@ -5,5 +5,4 @@ macro (setup_testcase_dependencies)
   package_libraries_for_deployment()
 endmacro ()
 
-# Script: QtScriptOverloadTests checks how the QtScript engine picks between the overloads this engine adds
-setup_hifi_testcase(Script)
+setup_hifi_testcase()

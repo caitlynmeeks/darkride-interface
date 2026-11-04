@@ -14,15 +14,11 @@
 
 #include <QtCore/QObject>
 
-#include <BaseScriptEngine.h>
 #include <DependencyManager.h>
 #include <ScriptCallback.h>
 #include <recording/ClipCache.h>
 #include <recording/Forward.h>
 #include <recording/Frame.h>
-
-class QScriptEngine;
-class QScriptValue;
 
 /**jsdoc
  * The <code>Recording</code> API makes and plays back recordings of voice and avatar movements. Playback may be done on a 
@@ -69,7 +65,7 @@ public slots:
      *     });
      * }
      */
-    void loadRecording(const QString& url, QScriptValue callback = QScriptValue());
+    void loadRecording(const QString& url, const ScriptCallback& callback);
 
 
     /**jsdoc
@@ -333,7 +329,7 @@ public slots:
      *     }
      * }, 5000);
      */
-    bool saveRecordingToAsset(QScriptValue getClipAtpUrl);
+    bool saveRecordingToAsset(const ScriptCallback& getClipAtpUrl);
 
     /**jsdoc
      * Loads the most recently made recording and plays it back on your avatar.
@@ -347,12 +343,6 @@ public slots:
      * }, 5000);
      */
     void loadLastRecording();
-
-    // The same two for the WebAssembly script engine: the module's function (a ScriptCallback) called back with the
-    // arguments a script's function gets above. The QtScript engine never chooses these (no script value converts
-    // to a ScriptCallback) and a module never chooses the QScriptValue ones.
-    void loadRecording(const QString& url, const ScriptCallback& callback);
-    bool saveRecordingToAsset(const ScriptCallback& getClipAtpUrl);
 
 protected:
     using Mutex = std::recursive_mutex;
@@ -370,9 +360,6 @@ protected:
     recording::ClipPointer _lastClip;
 
     QSet<recording::NetworkClipLoaderPointer> _clipLoaders;
-
-private:
-    void playClip(recording::NetworkClipLoaderPointer clipLoader, const QString& url, QScriptValue callback);
 };
 
 #endif // hifi_RecordingScriptingInterface_h

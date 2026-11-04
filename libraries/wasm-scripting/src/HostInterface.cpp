@@ -718,10 +718,6 @@ bool isFloatingType(int type) {
     return type == QMetaType::Double || type == QMetaType::Float;
 }
 
-bool isScriptValueType(int type) {
-    return qstrcmp(QMetaType::typeName(type), "QScriptValue") == 0;
-}
-
 const int SURPLUS_ARGUMENT_COST = 3;  // an argument an overload ignores costs as much as the worst coercion
 
 // How far a value is from a parameter's type: 0 for the type itself or its family, more for a coercion.
@@ -802,13 +798,6 @@ bool HostInterface::convertArguments(const QMetaMethod& method, const QVector<in
         if (type == QMetaType::UnknownType) {
             error = QString("%1: parameter %2 has a type the host interface cannot carry (%3)")
                 .arg(QString::fromUtf8(method.methodSignature())).arg(i + 1).arg(QString::fromUtf8(method.parameterTypes().at(i)));
-            return false;
-        }
-        if (isScriptValueType(type)) {
-            // only the QtScript engine has such values: the method is the QtScript engine's (its overload or twin
-            // for this engine, when it has one, is a candidate of its own)
-            error = QString("%1 takes a QtScript value as parameter %2, which a module cannot give")
-                .arg(QString::fromUtf8(method.methodSignature())).arg(i + 1);
             return false;
         }
         // scored by the type the argument has as a plain value, as QtScript scores its candidates; converted from

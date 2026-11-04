@@ -23,14 +23,11 @@
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
 
 #include <AddressManager.h>
 #include <AudioEffectOptions.h>
 #include <EntityScriptingInterface.h>
 #include <EntityTree.h>
-#include <LocationScriptingInterface.h>
 #include <NumericalConstants.h>
 #include <OctreeConstants.h>
 #include <PathUtils.h>
@@ -38,11 +35,9 @@
 #include <ResourceCache.h>
 #include <ResourceManager.h>
 #include <ScriptCaller.h>
-#include <SettingHandle.h>
 #include <SharedUtil.h>
 #include <shared/LocalFileAccessGate.h>
 
-#include <FunctionTwins.h>
 #include <HostInterface.h>
 #include <ObjectTable.h>
 #include <SignalRelay.h>
@@ -83,11 +78,7 @@ const QString ENTITY_LOAD_EXPORT = QStringLiteral("entity_load");
 const QString ENTITY_UNLOAD_EXPORT = QStringLiteral("entity_unload");
 const QString ENTITY_HAS_EXPORT = QStringLiteral("entity_has");
 const QString ENTITY_CALL_EXPORT = QStringLiteral("entity_call");
-
-// The way back to QtScript, off unless chosen (Developer > Scripting > Run JavaScript on QtScript). Its own key since
-// the flip (2026-10-25): the menu saved the old setting's state as "off" in every client that ever ran, so a new
-// default under the old key would never have reached them.
-Setting::Handle<bool> runJavaScriptOnQtScriptSetting { "scripting/runJavaScriptOnQtScript", false };
+const QString CONSOLE_EVAL_EXPORT = QStringLiteral("console_eval");
 
 // An instance as a callback target: a callback decoded by the instance's codec calls back through it. It
 // outlives the instance as a weak reference in the callbacks; a gone instance answers nothing.
@@ -209,51 +200,6 @@ std::shared_ptr<WasmRuntime> WasmScriptEngine::runtime() {
     return shared;
 }
 
-bool WasmScriptEngine::runJavaScriptOnWebAssembly() {
-    // for one process (a server, a test run): DARKRIDE_RUN_JS_ON_QTSCRIPT=1 is the way back to QtScript, and
-    // DARKRIDE_RUN_JS_ON_WASM=1 or 0 chooses either engine; otherwise the setting, the new engine unless it says no
-    if (qEnvironmentVariable("DARKRIDE_RUN_JS_ON_QTSCRIPT") == "1") {
-        return false;
-    }
-    if (qEnvironmentVariableIsSet("DARKRIDE_RUN_JS_ON_WASM")) {
-        return qEnvironmentVariable("DARKRIDE_RUN_JS_ON_WASM") == "1";
-    }
-    return !runJavaScriptOnQtScriptSetting.get();
-}
-
-void WasmScriptEngine::setRunJavaScriptOnWebAssembly(bool on) {
-    runJavaScriptOnQtScriptSetting.set(!on);
-}
-
-namespace {
-
-std::mutex& chosenEnginesMutex() {
-    static std::mutex mutex;
-    return mutex;
-}
-
-QHash<QUrl, bool>& chosenEngines() {
-    static QHash<QUrl, bool> chosen;
-    return chosen;
-}
-
-} // namespace
-
-void WasmScriptEngine::chooseEngineForScript(const QUrl& url, bool onWebAssembly) {
-    std::lock_guard<std::mutex> lock(chosenEnginesMutex());
-    chosenEngines()[url] = onWebAssembly;
-}
-
-bool WasmScriptEngine::engineChosenForScript(const QUrl& url, bool& onWebAssembly) {
-    std::lock_guard<std::mutex> lock(chosenEnginesMutex());
-    auto found = chosenEngines().constFind(url);
-    if (found == chosenEngines().constEnd()) {
-        return false;
-    }
-    onWebAssembly = found.value();
-    return true;
-}
-
 QString WasmScriptEngine::javascriptGuestPath() {
     QString fromEnvironment = qEnvironmentVariable("DARKRIDE_JS_WASM");
     if (!fromEnvironment.isEmpty()) {
@@ -279,7 +225,7 @@ bool WasmScriptEngine::hasJavaScriptGuest() {
     }
     static std::once_flag warned;
     std::call_once(warned, [&path] {
-        qCWarning(scriptengine) << "No JavaScript guest module at" << path << "- JavaScript runs on the QtScript engine";
+        qCWarning(scriptengine) << "No JavaScript guest module at" << path << "- JavaScript scripts can't run";
     });
     return false;
 }
@@ -341,40 +287,6 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
     }
 }
 
-void WasmScriptEngine::registerGetterSetter(const QString& name, QScriptEngine::FunctionSignature getter,
-                                            QScriptEngine::FunctionSignature setter, const QString& parent) {
-    Q_UNUSED(setter);
-    const QString fullName = parent.isEmpty() ? name : parent + "." + name;
-    if (getter == &LocationScriptingInterface::locationGetter) {
-        // `location` is the address manager behind a getter; a module gets the object itself
-        registerGlobalObject(fullName, DependencyManager::get<AddressManager>().data());
-        return;
-    }
-    qCDebug(scriptengine) << "WasmScriptEngine: the property" << fullName << "is a QtScript getter and setter, not available to a module";
-}
-
-void WasmScriptEngine::registerFunction(const QString& name, QScriptEngine::FunctionSignature fun, int numArguments) {
-    Q_UNUSED(numArguments);
-    // a library may have registered an object that stands in for the function (FunctionTwins)
-    FunctionTwins::Factory factory = FunctionTwins::find(reinterpret_cast<const void*>(fun));
-    if (factory) {
-        QObject* twin = factory();
-        if (twin) {
-            twin->setParent(this);
-            registerGlobalObject(name, twin);
-            return;
-        }
-    }
-    qCDebug(scriptengine) << "WasmScriptEngine: the function" << name << "is a QtScript function, not available to a module";
-}
-
-void WasmScriptEngine::registerFunction(const QString& parent, const QString& name, QScriptEngine::FunctionSignature fun,
-                                        int numArguments) {
-    Q_UNUSED(fun);
-    Q_UNUSED(numArguments);
-    qCDebug(scriptengine) << "WasmScriptEngine: the function" << parent + "." + name << "is a QtScript function, not available to a module";
-}
-
 void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& value) {
     if (QThread::currentThread() != thread()) {
         QMetaObject::invokeMethod(this, [this, name, value] { registerGlobalValue(name, value); });
@@ -383,11 +295,6 @@ void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& 
     if (!_globalValues.contains(name)) {
         _globalValues.insert(name, value);
     }
-}
-
-void WasmScriptEngine::registerValue(const QString& valueName, QScriptValue value) {
-    Q_UNUSED(value);
-    qCDebug(scriptengine) << "WasmScriptEngine: the value" << valueName << "is a QtScript value, not available to a module";
 }
 
 // --- loading ----------------------------------------------------------------------------------------------------
@@ -482,17 +389,7 @@ void WasmScriptEngine::run() {
         DependencyManager::get<EntityScriptingInterface>()->init();
         registerStandardGlobals();
     }
-    // the network objects XMLHttpRequest and WebSocket are built on in the guest, and an agent's WebSocketServer
-    registerGlobalObject("Http", _http);
-    registerGlobalObject("Sockets", _sockets);
-    if (_context == Context::AGENT_SCRIPT) {
-        registerGlobalObject("WebSocketServers", new WebSocketServerFactory(this));
-    }
-    // two globals the QtScript engine gives as a native constructor and a plain object
-    registerGlobalObject("AudioEffectOptions", _audioEffectOptions);
-    registerGlobalObject("Resource", _resourceStates);
-    // a constant the QtScript engine gives as a number in a variant object; a module gets the number
-    registerGlobalValue("TREE_SCALE", QVariant(TREE_SCALE));
+    registerEngineGlobals();
 
     _isRunning = true;
     emit runningStateChanged();
@@ -509,6 +406,26 @@ void WasmScriptEngine::run() {
     _isRunning = false;
     emit runningStateChanged();
     emit doneRunning();
+}
+
+void WasmScriptEngine::registerEngineGlobals() {
+    // the network objects XMLHttpRequest and WebSocket are built on in the guest; and WebSocketServers, which makes
+    // listening sockets, for an agent alone (the operator's own script): a world's entity scripts, on a client or on
+    // the entity script server, get none (security's ruling, 2026-11-04)
+    registerGlobalObject("Http", _http);
+    registerGlobalObject("Sockets", _sockets);
+    if (_context == Context::AGENT_SCRIPT) {
+        registerGlobalObject("WebSocketServers", new WebSocketServerFactory(this));
+    }
+    // two globals a script had as a native constructor and a plain object
+    registerGlobalObject("AudioEffectOptions", _audioEffectOptions);
+    registerGlobalObject("Resource", _resourceStates);
+    // a constant a script gets as a number
+    registerGlobalValue("TREE_SCALE", QVariant(TREE_SCALE));
+}
+
+QStringList WasmScriptEngine::registeredGlobalNames() const {
+    return _objects->globalNames();
 }
 
 // An instance of a module in this engine: its codec (with this engine's table, the serializer and the
@@ -617,7 +534,8 @@ bool WasmScriptEngine::startMain() {
     QString error;
     std::shared_ptr<WasmModule> module;
     if (_runsJavaScript) {
-        if (_scriptContents.isEmpty() && !_isEntitiesEngine) {
+        // the entities engine and the console's start with no script of their own
+        if (_scriptContents.isEmpty() && !_isEntitiesEngine && _fileNameString != CONSOLE_SCRIPT_NAME) {
             scriptErrorMessage("No script to run: " + _fileNameString);
             return false;
         }
@@ -1036,7 +954,10 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
     }
     EntityScriptDetails newDetails;
     newDetails.scriptText = entityScript;
-    const QString refusal = entityScriptRefusal(entityScript);
+    QString refusal = entityScriptRefusal(entityScript);
+    if (refusal.isEmpty()) {
+        refusal = ruleEntityScriptFetch(entityScript);
+    }
     if (!refusal.isEmpty()) {
         newDetails.status = EntityScriptStatus::ERROR_LOADING_SCRIPT;
         newDetails.errorInfo = "not run: " + refusal;
@@ -1045,7 +966,7 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
         return;
     }
     newDetails.status = EntityScriptStatus::LOADING;
-    newDetails.definingSandboxURL = currentSandboxURL;
+    newDetails.definingSandboxURL = QUrl();   // the script's own address, once it runs (entityScriptReady)
     if (isWasmScript(entityScript) && !wasmEntityScriptsEnabled()) {
         // a module comes from wherever the entity's owner put it and speaks to the host directly, not through the
         // shim; until a module has an object table of its own, only JavaScript entity scripts run
@@ -1059,10 +980,10 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
     setEntityScriptDetails(entityID, newDetails);
 
     auto scriptCache = DependencyManager::get<ScriptCache>();
-    QWeakPointer<BaseScriptEngine> weakRef(sharedFromThis());
+    QWeakPointer<ScriptEngine> weakRef(sharedFromThis());
     if (isWasmScript(entityScript)) {
         scriptCache->getScriptBytes(entityScript, [this, weakRef, entityID](const QString& url, const QByteArray& bytes, bool success, const QString& status) {
-            QSharedPointer<BaseScriptEngine> strongRef(weakRef);
+            QSharedPointer<ScriptEngine> strongRef(weakRef);
             if (!strongRef || isStopping()) {
                 return;
             }
@@ -1070,7 +991,7 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
         }, forceRedownload);
     } else {
         scriptCache->getScriptContents(entityScript, [this, weakRef, entityID](const QString& url, const QString& contents, bool isURL, bool success, const QString& status) {
-            QSharedPointer<BaseScriptEngine> strongRef(weakRef);
+            QSharedPointer<ScriptEngine> strongRef(weakRef);
             if (!strongRef || isStopping()) {
                 return;
             }
@@ -1138,7 +1059,7 @@ void WasmScriptEngine::entityScriptReady(const EntityItemID& entityID, const QSt
         return;
     }
     newDetails.status = EntityScriptStatus::RUNNING;
-    newDetails.definingSandboxURL = currentSandboxURL.isEmpty() ? QUrl(url) : currentSandboxURL;
+    newDetails.definingSandboxURL = QUrl(url);
     setEntityScriptDetails(entityID, newDetails);
     _entityHosts[entityID] = host;
     callEntityScriptMethod(entityID, "preload");
@@ -1237,6 +1158,37 @@ void WasmScriptEngine::unloadAllEntityScripts(bool blockingCall) {
     }
     _entityHosts.clear();
     emit entityScriptDetailsUpdated();
+}
+
+QVariantMap WasmScriptEngine::consoleEvaluate(const QString& code) {
+    QVariantMap shown { { "error", true } };
+    ModuleInstancePointer main;
+    {
+        std::lock_guard<std::mutex> lock(_instancesMutex);
+        main = _main;
+    }
+    if (!_runsJavaScript) {
+        shown["text"] = QString("the console runs JavaScript; %1 is a WebAssembly module").arg(getFilename());
+        return shown;
+    }
+    if (!main || !main->running || !main->host) {
+        shown["text"] = QString("%1 isn't running").arg(getFilename());
+        return shown;
+    }
+    if (!main->instance->hasExport(CONSOLE_EVAL_EXPORT)) {
+        shown["text"] = "this build's JavaScript guest has no console (it needs revision 6 or later)";
+        return shown;
+    }
+    QVariant result;
+    QString error;
+    ++_callDepth;
+    const bool called = main->host->callWithPayload(CONSOLE_EVAL_EXPORT, QVariant(code), result, error);
+    --_callDepth;
+    if (!called || !result.canConvert<QVariantMap>()) {
+        shown["text"] = error.isEmpty() ? QString("the line didn't run") : error;
+        return shown;
+    }
+    return result.toMap();
 }
 
 // A method of an entity's script, through the contract's entity_call: the arguments are the entity's id and

@@ -89,20 +89,6 @@ static void dockWidgetDeleter(DockWidget* dockWidget) {
     dockWidget->deleteLater();
 }
 
-void registerInteractiveWindowMetaType(QScriptEngine* engine) {
-    qScriptRegisterMetaType(engine, interactiveWindowPointerToScriptValue, interactiveWindowPointerFromScriptValue);
-}
-
-QScriptValue interactiveWindowPointerToScriptValue(QScriptEngine* engine, const InteractiveWindowPointer& in) {
-    return engine->newQObject(in, QScriptEngine::ScriptOwnership);
-}
-
-void interactiveWindowPointerFromScriptValue(const QScriptValue& object, InteractiveWindowPointer& out) {
-    if (const auto interactiveWindow = qobject_cast<InteractiveWindowPointer>(object.toQObject())) {
-        out = interactiveWindow;
-    }
-}
-
 void InteractiveWindow::forwardKeyPressEvent(int key, int modifiers) {
     QKeyEvent* event = new QKeyEvent(QEvent::KeyPress, key, static_cast<Qt::KeyboardModifiers>(modifiers));
     QCoreApplication::postEvent(QCoreApplication::instance(), event);

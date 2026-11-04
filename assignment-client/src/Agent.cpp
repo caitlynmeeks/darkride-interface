@@ -26,7 +26,7 @@
 #include <AssetClient.h>
 #include <DebugDraw.h>
 #include <EntityScriptingInterface.h>
-#include <LocationScriptingInterface.h>
+#include <AddressManager.h>
 #include <MessagesClient.h>
 #include <NetworkAccessManager.h>
 #include <NodeList.h>
@@ -48,7 +48,6 @@
 #include <plugins/CodecPlugin.h>
 #include <plugins/PluginManager.h>
 
-#include <WebSocketServerClass.h>
 #include <EntityScriptingInterface.h> // TODO: consider moving to scriptengine.h
 
 #include <hfm/ModelFormatRegistry.h>
@@ -614,15 +613,11 @@ void Agent::executeScript() {
         _scriptEngine->registerGlobalObject("AnimationCache", DependencyManager::get<AnimationCacheScriptingInterface>().data());
         _scriptEngine->registerGlobalObject("SoundCache", DependencyManager::get<SoundCacheScriptingInterface>().data());
 
-        QScriptValue webSocketServerConstructorValue = _scriptEngine->newFunction(WebSocketServerClass::constructor);
-        _scriptEngine->globalObject().setProperty("WebSocketServer", webSocketServerConstructorValue);
-
         auto entityScriptingInterface = DependencyManager::get<EntityScriptingInterface>();
 
         _scriptEngine->registerGlobalObject("EntityViewer", &_entityViewer);
 
-        _scriptEngine->registerGetterSetter("location", LocationScriptingInterface::locationGetter,
-                                            LocationScriptingInterface::locationSetter);
+        _scriptEngine->registerGlobalObject("location", DependencyManager::get<AddressManager>().data());
 
         auto recordingInterface = DependencyManager::get<RecordingScriptingInterface>();
         _scriptEngine->registerGlobalObject("Recording", recordingInterface.data());

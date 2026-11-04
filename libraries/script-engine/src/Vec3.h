@@ -17,7 +17,6 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QString>
-#include <QtScript/QScriptable>
 
 #include "GLMHelpers.h"
 
@@ -72,7 +71,7 @@
  */
 
 /// Scriptable interface a Vec3ernion helper class object. Used exclusively in the JavaScript API
-class Vec3 : public QObject, protected QScriptable {
+class Vec3 : public QObject {
     Q_OBJECT
     Q_PROPERTY(glm::vec3 UNIT_X READ UNIT_X CONSTANT)
     Q_PROPERTY(glm::vec3 UNIT_Y READ UNIT_Y CONSTANT)
@@ -93,6 +92,10 @@ class Vec3 : public QObject, protected QScriptable {
     Q_PROPERTY(glm::vec3 RIGHT READ RIGHT CONSTANT)
     Q_PROPERTY(glm::vec3 UP READ UP CONSTANT)
     Q_PROPERTY(glm::vec3 FRONT READ FRONT CONSTANT)
+
+public:
+    /// Made by its script engine as a child (what print writes through), or for a QML context with no parent.
+    explicit Vec3(QObject* parent = nullptr) : QObject(parent) {}
 
 public slots:
     

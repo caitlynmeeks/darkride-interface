@@ -3,7 +3,7 @@ set(TARGET_NAME render-utils)
 # pull in the resources.qrc file
 qt_add_resources(QT_RESOURCES_FILE "${CMAKE_CURRENT_SOURCE_DIR}/res/fonts/fonts.qrc")
 # Qt 6 moved QOpenGLFramebufferObject (FboCache) from QtGui to the QtOpenGL module
-set(RENDER_UTILS_QT_MODULES Gui Network Qml Quick Script)
+set(RENDER_UTILS_QT_MODULES Gui Network Qml Quick)
 if (QT_VERSION_MAJOR EQUAL 6)
   list(APPEND RENDER_UTILS_QT_MODULES OpenGL)
 endif()
