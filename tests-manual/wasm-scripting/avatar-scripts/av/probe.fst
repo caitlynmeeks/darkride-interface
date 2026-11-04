@@ -147,3 +147,4 @@ avatarMenu = {"version":1,"parameters":[{"name":"Hair","type":"int","default":0,
 script = probe.js
 script = http://localtest.me:43110/other/elsewhere.js
 script = ../other/elsewhere2.js
+script = %2E%2E/other/elsewhere3.js

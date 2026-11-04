@@ -38,9 +38,15 @@ int avatarScriptsWorld = 0;
 void Application::loadAvatarScripts(const QVector<QString>& urls) {
     auto scriptEngines = DependencyManager::get<ScriptEngines>();
     auto runningScripts = scriptEngines->getRunningScripts();
-    const QUrl avatarUrl = getMyAvatar()->getSkeletonModelURL();
+    // a path's dots are decoded before its segments are normalized, so an encoded ".." counts as one
+    auto plainPath = [](const QUrl& given) {
+        QUrl url = given;
+        url.setPath(url.path(QUrl::FullyDecoded), QUrl::DecodedMode);
+        return url.adjusted(QUrl::NormalizePathSegments);
+    };
+    const QUrl avatarUrl = plainPath(getMyAvatar()->getSkeletonModelURL());
     for (auto url : urls) {
-        const QUrl scriptUrl = QUrl(url).adjusted(QUrl::NormalizePathSegments);
+        const QUrl scriptUrl = plainPath(QUrl(url));
         if (!PathUtils::isDescendantOf(scriptUrl, avatarUrl)) {
             qCWarning(interfaceapp) << "Avatar script" << url << "is outside the avatar's own folder"
                                     << PathUtils::stripFilename(avatarUrl) << "and is not loaded";
