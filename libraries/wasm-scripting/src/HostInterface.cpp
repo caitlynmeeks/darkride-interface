@@ -60,13 +60,21 @@ bool isOwnEnum(const QMetaMethod& method, QByteArray name) {
     return meta->indexOfEnumerator(name.constData()) != -1;
 }
 
+// An enumeration Qt knows only as a metatype, with no meta-object behind it (no Q_ENUM, as PlainLevels::Level in the
+// tests): a script can't be given its keys and the API has never carried it. Qt 5 leaves such a type unresolved;
+// Qt 6 registers every type a method mentions, so it is set aside here, the same on both.
+bool isNamelessEnum(int type) {
+    return type != QMetaType::UnknownType && (QMetaType::typeFlags(type) & QMetaType::IsEnumeration) &&
+           !QMetaType::metaObjectForType(type);
+}
+
 // A parameter's type id. moc leaves an enum declared with its unqualified name ("Mode") unresolved; the
 // registered name is the qualified one ("Probe::Mode"), so that is tried with the method's class scope. A
 // pointer to a const object ("const AudioEffectOptions*") is registered, if at all, without the const.
 int parameterTypeOf(const QMetaMethod& method, int index) {
     int type = method.parameterType(index);
     if (type != QMetaType::UnknownType) {
-        return type;
+        return isNamelessEnum(type) ? QMetaType::UnknownType : type;
     }
     QByteArray name = method.parameterTypes().at(index);
     if (name.startsWith("const ") && name.endsWith('*')) {
@@ -87,7 +95,7 @@ int parameterTypeOf(const QMetaMethod& method, int index) {
 int returnTypeOf(const QMetaMethod& method) {
     int type = method.returnType();
     if (type != QMetaType::UnknownType) {
-        return type;
+        return isNamelessEnum(type) ? QMetaType::UnknownType : type;
     }
     QByteArray name = method.typeName();
     if (!name.contains("::") && method.enclosingMetaObject()) {
