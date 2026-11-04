@@ -99,8 +99,10 @@ image::Image image::readTGA(QIODevice& content) {
     const bool blackWhite = header.imageType == TGAImageType::UncompressedBlackWhite ||
                             header.imageType == TGAImageType::RunLengthEncodedBlackWhite;
     if (blackWhite) {
-        if (header.pixelDepth != 8 || header.imageDescriptor.attributeBitsPerPixel != 0) {
-            qWarning(imagelogging) << "TGA - Only 8-bit black-and-white pictures without alpha are supported";
+        // the descriptor may call the one channel an alpha channel too (an exporter writes 8 attribute bits on a
+        // grey picture); it is read as grey either way
+        if (header.pixelDepth != 8 || header.imageDescriptor.attributeBitsPerPixel > 8) {
+            qWarning(imagelogging) << "TGA - Only 8-bit black-and-white pictures are supported";
             return QImage();
         }
     } else if (!(header.pixelDepth == 24 && header.imageDescriptor.attributeBitsPerPixel == 0) && header.pixelDepth != 32) {

@@ -196,6 +196,16 @@ void ImageTests::testTgaBlackWhite() {
     QVERIFY(!viaPath.isNull());
     QCOMPARE(viaPath.getWidth(), side);
 
+    // the same picture whose descriptor calls its channel an alpha channel too (8 attribute bits): read as grey
+    QByteArray alphaBits = plain;
+    alphaBits[17] = (char)0x28;
+    {
+        QBuffer b; b.setData(alphaBits); b.open(QIODevice::ReadOnly);
+        image::Image image = image::readTGA(b);
+        QVERIFY(!image.isNull());
+        QCOMPARE((int)image.getScanLine(1)[2], 6 * 16);
+    }
+
     // run-length: each row one run of four pixels of one value
     QByteArray rle = tgaHeader(11, side, side);
     for (int y = 0; y < side; y++) {
