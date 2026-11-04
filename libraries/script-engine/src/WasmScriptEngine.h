@@ -167,11 +167,20 @@ public:
     /// What the engine has done: host calls, bytes crossed, frames, the modules' memory.
     Q_INVOKABLE QVariantMap statistics() const;
 
+    /// The names of the globals registered so far (the hosts' and the engine's own), in no order. For tests.
+    QStringList registeredGlobalNames() const;
+
     /// A guest function called with arguments, on this thread, for its result (what a ScriptCallback's call
     /// comes to); postCallback queues one without a result, from any thread.
     bool invokeCallback(const ModuleInstancePointer& instance, int32_t callback, const QVariantList& arguments,
                         QVariant& result, QString& error);
     void postCallback(const ModuleInstancePointer& instance, int32_t callback, const QVariantList& arguments);
+
+protected:
+    /// The globals the engine itself gives every script of its context, beside the standard ones and the hosts':
+    /// Http and Sockets (what the guest's XMLHttpRequest and WebSocket are built on), WebSocketServers for an agent
+    /// alone, AudioEffectOptions, Resource and TREE_SCALE. run() calls it on the engine's thread.
+    void registerEngineGlobals();
 
 private:
     bool fetchModuleBytes();

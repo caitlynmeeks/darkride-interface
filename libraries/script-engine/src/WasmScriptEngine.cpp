@@ -432,17 +432,7 @@ void WasmScriptEngine::run() {
         DependencyManager::get<EntityScriptingInterface>()->init();
         registerStandardGlobals();
     }
-    // the network objects XMLHttpRequest and WebSocket are built on in the guest, and an agent's WebSocketServer
-    registerGlobalObject("Http", _http);
-    registerGlobalObject("Sockets", _sockets);
-    if (_context == Context::AGENT_SCRIPT) {
-        registerGlobalObject("WebSocketServers", new WebSocketServerFactory(this));
-    }
-    // two globals the QtScript engine gives as a native constructor and a plain object
-    registerGlobalObject("AudioEffectOptions", _audioEffectOptions);
-    registerGlobalObject("Resource", _resourceStates);
-    // a constant the QtScript engine gives as a number in a variant object; a module gets the number
-    registerGlobalValue("TREE_SCALE", QVariant(TREE_SCALE));
+    registerEngineGlobals();
 
     _isRunning = true;
     emit runningStateChanged();
@@ -459,6 +449,26 @@ void WasmScriptEngine::run() {
     _isRunning = false;
     emit runningStateChanged();
     emit doneRunning();
+}
+
+void WasmScriptEngine::registerEngineGlobals() {
+    // the network objects XMLHttpRequest and WebSocket are built on in the guest; and WebSocketServers, which makes
+    // listening sockets, for an agent alone (the operator's own script): a world's entity scripts, on a client or on
+    // the entity script server, get none (security's ruling, 2026-11-04)
+    registerGlobalObject("Http", _http);
+    registerGlobalObject("Sockets", _sockets);
+    if (_context == Context::AGENT_SCRIPT) {
+        registerGlobalObject("WebSocketServers", new WebSocketServerFactory(this));
+    }
+    // two globals a script had as a native constructor and a plain object
+    registerGlobalObject("AudioEffectOptions", _audioEffectOptions);
+    registerGlobalObject("Resource", _resourceStates);
+    // a constant a script gets as a number
+    registerGlobalValue("TREE_SCALE", QVariant(TREE_SCALE));
+}
+
+QStringList WasmScriptEngine::registeredGlobalNames() const {
+    return _objects->globalNames();
 }
 
 // An instance of a module in this engine: its codec (with this engine's table, the serializer and the
