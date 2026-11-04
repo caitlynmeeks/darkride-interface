@@ -693,8 +693,8 @@ QString extractUsernameFromPublicKeyRequest(QNetworkReply* requestReply) {
     // extract the username from the request url
     QString username;
     const QString PUBLIC_KEY_URL_REGEX_STRING = "api\\/v1\\/users\\/([A-Za-z0-9_\\.]+)\\/public_key";
-    const QRegularExpressionMatch usernameMatch =
-        regex_compat::search(PUBLIC_KEY_URL_REGEX_STRING).match(requestReply->url().toString());
+    static const QRegularExpression PUBLIC_KEY_URL_REGEX = regex_compat::search(PUBLIC_KEY_URL_REGEX_STRING);
+    const QRegularExpressionMatch usernameMatch = PUBLIC_KEY_URL_REGEX.match(requestReply->url().toString());
     if (usernameMatch.hasMatch()) {
         username = usernameMatch.captured(1);
     }
@@ -952,8 +952,8 @@ QString extractUsernameFromGroupMembershipsReply(QNetworkReply* requestReply) {
     // extract the username from the request url
     QString username;
     const QString GROUP_MEMBERSHIPS_URL_REGEX_STRING = "api\\/v1\\/groups\\/members\\/([A-Za-z0-9_\\.]+)";
-    const QRegularExpressionMatch usernameMatch =
-        regex_compat::search(GROUP_MEMBERSHIPS_URL_REGEX_STRING).match(requestReply->url().toString());
+    static const QRegularExpression GROUP_MEMBERSHIPS_URL_REGEX = regex_compat::search(GROUP_MEMBERSHIPS_URL_REGEX_STRING);
+    const QRegularExpressionMatch usernameMatch = GROUP_MEMBERSHIPS_URL_REGEX.match(requestReply->url().toString());
     if (usernameMatch.hasMatch()) {
         username = usernameMatch.captured(1);
     }

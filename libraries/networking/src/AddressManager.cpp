@@ -396,7 +396,7 @@ bool isPossiblePlaceName(QString possiblePlaceName) {
     static const int MAXIMUM_PLACENAME_LENGTH = 64;
     if (possiblePlaceName.toLower() != LOCALHOST &&
         length >= MINIMUM_PLACENAME_LENGTH && length <= MAXIMUM_PLACENAME_LENGTH) {
-        const QRegularExpression PLACE_NAME_REGEX = regex_compat::search("^[0-9A-Za-z](([0-9A-Za-z]|-(?!-))*[^\\W_]$|$)");
+        static const QRegularExpression PLACE_NAME_REGEX = regex_compat::search("^[0-9A-Za-z](([0-9A-Za-z]|-(?!-))*[^\\W_]$|$)");
         result = PLACE_NAME_REGEX.match(possiblePlaceName).capturedStart(0) == 0;
     }
     return result;
@@ -656,7 +656,8 @@ bool AddressManager::handleNetworkAddress(const QString& lookupString, LookupTri
     const QString HOSTNAME_REGEX_STRING = "^((?:[A-Z0-9]|[A-Z0-9][A-Z0-9\\-]{0,61}[A-Z0-9])"
         "(?:\\.(?:[A-Z0-9]|[A-Z0-9][A-Z0-9\\-]{0,61}[A-Z0-9]))+|localhost)(?::(\\d{1,5}))?$";
 
-    const QRegularExpressionMatch ipAddressMatch = regex_compat::search(IP_ADDRESS_REGEX_STRING).match(lookupString);
+    static const QRegularExpression IP_ADDRESS_REGEX = regex_compat::search(IP_ADDRESS_REGEX_STRING);
+    const QRegularExpressionMatch ipAddressMatch = IP_ADDRESS_REGEX.match(lookupString);
 
     if (ipAddressMatch.hasMatch()) {
         QString domainIPString = ipAddressMatch.captured(1);
@@ -678,8 +679,8 @@ bool AddressManager::handleNetworkAddress(const QString& lookupString, LookupTri
         return true;
     }
 
-    const QRegularExpressionMatch hostnameMatch =
-        regex_compat::search(HOSTNAME_REGEX_STRING, Qt::CaseInsensitive).match(lookupString);
+    static const QRegularExpression HOSTNAME_REGEX = regex_compat::search(HOSTNAME_REGEX_STRING, Qt::CaseInsensitive);
+    const QRegularExpressionMatch hostnameMatch = HOSTNAME_REGEX.match(lookupString);
 
     if (hostnameMatch.hasMatch()) {
         QString domainHostname = hostnameMatch.captured(1);
@@ -710,7 +711,8 @@ bool AddressManager::handleNetworkAddress(const QString& lookupString, LookupTri
 bool AddressManager::handleDomainID(const QString& host) {
     const QString UUID_REGEX_STRING = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
-    return regex_compat::search(UUID_REGEX_STRING, Qt::CaseInsensitive).match(host).hasMatch();
+    static const QRegularExpression DOMAIN_ID_REGEX = regex_compat::search(UUID_REGEX_STRING, Qt::CaseInsensitive);
+    return DOMAIN_ID_REGEX.match(host).hasMatch();
 }
 
 void AddressManager::handlePath(const QString& path, LookupTrigger trigger, bool wasPathOnly) {
@@ -740,7 +742,9 @@ AddressManager::Viewpoint AddressManager::parseViewpoint(const QString& viewpoin
         FLOAT_REGEX_STRING + SPACED_COMMA_REGEX_STRING + FLOAT_REGEX_STRING + SPACED_COMMA_REGEX_STRING +
         FLOAT_REGEX_STRING + "\\s*$";
 
-    const QRegularExpressionMatch positionMatch = regex_compat::search(POSITION_REGEX_STRING).match(viewpointString);
+    static const QRegularExpression POSITION_REGEX = regex_compat::search(POSITION_REGEX_STRING);
+    static const QRegularExpression QUAT_REGEX = regex_compat::search(QUAT_REGEX_STRING);
+    const QRegularExpressionMatch positionMatch = POSITION_REGEX.match(viewpointString);
 
     Viewpoint viewpoint;
 
@@ -763,7 +767,7 @@ AddressManager::Viewpoint AddressManager::parseViewpoint(const QString& viewpoin
             // we may also have an orientation
             if (
                 viewpointString[positionLength - 1] == QChar('/') &&
-                (orientationMatch = regex_compat::search(QUAT_REGEX_STRING).match(viewpointString, positionLength - 1)).hasMatch()
+                (orientationMatch = QUAT_REGEX.match(viewpointString, positionLength - 1)).hasMatch()
             ) {
                 newOrientation = glm::normalize(
                     glm::quat(
@@ -840,7 +844,8 @@ const QString GET_USER_LOCATION = "/api/v1/users/%1/location";
 bool AddressManager::handleUsername(const QString& lookupString) {
     const QString USERNAME_REGEX_STRING = "^@(\\S+)";
 
-    const QRegularExpressionMatch usernameMatch = regex_compat::search(USERNAME_REGEX_STRING).match(lookupString);
+    static const QRegularExpression USERNAME_REGEX = regex_compat::search(USERNAME_REGEX_STRING);
+    const QRegularExpressionMatch usernameMatch = USERNAME_REGEX.match(lookupString);
 
     if (usernameMatch.hasMatch()) {
         goToUser(usernameMatch.captured(1));

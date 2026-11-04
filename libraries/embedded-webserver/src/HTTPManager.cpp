@@ -131,7 +131,7 @@ bool HTTPManager::handleHTTPRequest(HTTPConnection* connection, const QUrl& url,
                 // catches <!--#include virtual ... --> and <!--#include file .. --> directives; \s and \S as Unicode
                 // classes, as QRegExp read them (libraries/networking RegexCompat.h; the Qt 6 move)
                 const QString includeRegExpString = "<!--\\s*#include\\s+(virtual|file)\\s?=\\s?\"(\\S+)\"\\s*-->";
-                const QRegularExpression includeRegExp(includeRegExpString,
+                static const QRegularExpression includeRegExp(includeRegExpString,
                     QRegularExpression::DotMatchesEverythingOption | QRegularExpression::UseUnicodePropertiesOption);
                 QRegularExpressionMatch includeMatch;
                 

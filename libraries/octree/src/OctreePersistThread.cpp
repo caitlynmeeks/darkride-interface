@@ -275,7 +275,7 @@ QByteArray OctreePersistThread::getPersistFileContents() const {
 }
 
 void OctreePersistThread::cleanupOldReplacementBackups() {
-    const QRegularExpression filenameRegex = regex_compat::exact(".*\\.backup\\.\\d{8}-\\d{6}$");
+    static const QRegularExpression filenameRegex = regex_compat::exact(".*\\.backup\\.\\d{8}-\\d{6}$");
     QFileInfo persistFile { _filename };
     QDir backupDir { persistFile.absolutePath() };
     backupDir.setSorting(QDir::SortFlag::Time);

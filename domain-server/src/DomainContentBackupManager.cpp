@@ -83,7 +83,8 @@ void DomainContentBackupManager::parseBackupRules(const QVariantList& backupRule
         int count = map["maxBackupVersions"].toInt();
         auto name = map["Name"].toString();
         auto format = name.toLower();
-        format.replace(regex_compat::search("[^a-zA-Z0-9\\-_]+"), "_");
+        static const QRegularExpression DISALLOWED_CHARACTERS = regex_compat::search("[^a-zA-Z0-9\\-_]+");
+        format.replace(DISALLOWED_CHARACTERS, "_");
 
         qCDebug(domain_server) << "    Name:" << name;
         qCDebug(domain_server) << "        format:" << format;
@@ -711,7 +712,8 @@ void DomainContentBackupManager::createManualBackup(MiniPromise::Promise promise
 
     bool success;
 
-    if (!regex_compat::exactMatch(MANUAL_BACKUP_NAME_RE, name)) {
+    static const QRegularExpression MANUAL_BACKUP_NAME_REGEX = regex_compat::exact(MANUAL_BACKUP_NAME_RE);
+    if (!MANUAL_BACKUP_NAME_REGEX.match(name).hasMatch()) {
         qDebug() << "Cannot create manual backup with invalid name: " << name;
         success = false;
     } else {

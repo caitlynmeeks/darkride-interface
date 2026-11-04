@@ -61,7 +61,7 @@ AssetResourceRequest::~AssetResourceRequest() {
 bool AssetResourceRequest::urlIsAssetHash(const QUrl& url) {
     static const QString ATP_HASH_REGEX_STRING { "^atp:([A-Fa-f0-9]{64})(\\.[\\w]+)?$" };
 
-    const QRegularExpression hashRegex = regex_compat::exact(ATP_HASH_REGEX_STRING);
+    static const QRegularExpression hashRegex = regex_compat::exact(ATP_HASH_REGEX_STRING);
     return hashRegex.match(url.toString()).hasMatch();
 }
 

@@ -1978,7 +1978,8 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
 
     // check if this is a request for a scripted assignment (with a temp unique UUID)
     const QString ASSIGNMENT_REGEX_STRING = QString("\\%1\\/(%2)\\/?$").arg(URI_ASSIGNMENT).arg(UUID_REGEX_STRING);
-    const QRegularExpressionMatch assignmentMatch = regex_compat::search(ASSIGNMENT_REGEX_STRING).match(url.path());
+    static const QRegularExpression ASSIGNMENT_REGEX = regex_compat::search(ASSIGNMENT_REGEX_STRING);
+    const QRegularExpressionMatch assignmentMatch = ASSIGNMENT_REGEX.match(url.path());
 
     if (connection->requestOperation() == QNetworkAccessManager::GetOperation
         && assignmentMatch.hasMatch()) {
@@ -2208,7 +2209,8 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
         } else {
             // check if this is for json stats for a node
             const QString NODE_JSON_REGEX_STRING = QString("\\%1\\/(%2).json\\/?$").arg(URI_NODES).arg(UUID_REGEX_STRING);
-            const QRegularExpressionMatch nodeShowMatch = regex_compat::search(NODE_JSON_REGEX_STRING).match(url.path());
+            static const QRegularExpression NODE_JSON_REGEX = regex_compat::search(NODE_JSON_REGEX_STRING);
+            const QRegularExpressionMatch nodeShowMatch = NODE_JSON_REGEX.match(url.path());
 
             if (nodeShowMatch.hasMatch()) {
                 QUuid matchingUUID = QUuid(nodeShowMatch.captured(1));
@@ -2293,8 +2295,8 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
                 // check the file extension to see what kind of file this is
                 // to make sure we handle this filetype for a content restore
                 auto dispositionValue = QString(firstFormData.first.value("Content-Disposition"));
-                const QRegularExpressionMatch formDataFields =
-                    regex_compat::search(R":(name="(restore-file.*)".*filename="(.+)"):").match(dispositionValue);
+                static const QRegularExpression FORM_DATA_FIELDS_REGEX = regex_compat::search(R":(name="(restore-file.*)".*filename="(.+)"):");
+                const QRegularExpressionMatch formDataFields = FORM_DATA_FIELDS_REGEX.match(dispositionValue);
 
                 QString formItemName = "";
                 QString uploadedFilename = "";
@@ -2447,8 +2449,10 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
         const QString ALL_NODE_DELETE_REGEX_STRING = QString("%1/?$").arg(URI_NODES);
         const QString NODE_DELETE_REGEX_STRING = QString("%1/(%2)$").arg(URI_NODES).arg(UUID_REGEX_STRING);
 
-        const QRegularExpressionMatch allNodesDeleteMatch = regex_compat::search(ALL_NODE_DELETE_REGEX_STRING).match(url.path());
-        const QRegularExpressionMatch nodeDeleteMatch = regex_compat::search(NODE_DELETE_REGEX_STRING).match(url.path());
+        static const QRegularExpression ALL_NODE_DELETE_REGEX = regex_compat::search(ALL_NODE_DELETE_REGEX_STRING);
+        static const QRegularExpression NODE_DELETE_REGEX = regex_compat::search(NODE_DELETE_REGEX_STRING);
+        const QRegularExpressionMatch allNodesDeleteMatch = ALL_NODE_DELETE_REGEX.match(url.path());
+        const QRegularExpressionMatch nodeDeleteMatch = NODE_DELETE_REGEX.match(url.path());
 
         if (url.path().startsWith(URI_API_BACKUPS_ID)) {
             auto id = url.path().mid(QString(URI_API_BACKUPS_ID).length());
@@ -2699,7 +2703,8 @@ std::pair<bool, QString>  DomainServer::isAuthenticatedRequest(HTTPConnection* c
     if (_oauthEnable) {
         QString cookieString = connection->requestHeader(HTTP_COOKIE_HEADER_KEY);
 
-        const QRegularExpressionMatch cookieUUIDMatch = regex_compat::search(COOKIE_UUID_REGEX_STRING).match(cookieString);
+        static const QRegularExpression COOKIE_UUID_REGEX = regex_compat::search(COOKIE_UUID_REGEX_STRING);
+        const QRegularExpressionMatch cookieUUIDMatch = COOKIE_UUID_REGEX.match(cookieString);
 
         QUuid cookieUUID;
         if (cookieUUIDMatch.hasMatch()) {

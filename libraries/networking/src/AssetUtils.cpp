@@ -98,17 +98,17 @@ bool saveToCache(const QUrl& url, const QByteArray& file) {
 }
 
 bool isValidFilePath(const AssetPath& filePath) {
-    const QRegularExpression filePathRegex = regex_compat::exact(ASSET_FILE_PATH_REGEX_STRING);
+    static const QRegularExpression filePathRegex = regex_compat::exact(ASSET_FILE_PATH_REGEX_STRING);
     return filePathRegex.match(filePath).hasMatch();
 }
 
 bool isValidPath(const AssetPath& path) {
-    const QRegularExpression pathRegex = regex_compat::exact(ASSET_PATH_REGEX_STRING);
+    static const QRegularExpression pathRegex = regex_compat::exact(ASSET_PATH_REGEX_STRING);
     return pathRegex.match(path).hasMatch();
 }
 
 bool isValidHash(const AssetHash& hash) {
-    const QRegularExpression hashRegex = regex_compat::exact(ASSET_HASH_REGEX_STRING);
+    static const QRegularExpression hashRegex = regex_compat::exact(ASSET_HASH_REGEX_STRING);
     return hashRegex.match(hash).hasMatch();
 }
 

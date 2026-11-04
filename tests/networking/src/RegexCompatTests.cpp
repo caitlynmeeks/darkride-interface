@@ -109,6 +109,14 @@ QStringList corpus() {
         "$", "a", "]", "$a]", "]$",
     };
     texts << QString(QChar(0));
+    // traversal-shaped paths, which the asset path checks exist to refuse (security, 11-04), and other separators
+    texts << ".." << "/.." << "/a/../b" << "/a/./b" << "/a/.." << "\\a" << "/a\\..\\b" << "/a%2F..%2Fb"
+          << "/a\r" << "/a\t" << "/a b" << "/a" + QString(QChar(0x0085)) + "b" << "/a" + QString(QChar(0x2028)) + "b"
+          << "/a" + QString(QChar(0x2029)) + "b" << "/a" + QString(QChar(0x2028)) << hash + QString(QChar(0x2028));
+    // about 64 KB: one long name, many short ones, and the same with a NUL at the end
+    const QString longName = "/" + QString("a").repeated(65535);
+    const QString manyNames = QString("/a").repeated(32768);
+    texts << longName << manyNames << longName + QString(QChar(0)) << manyNames + "/";
     return texts;
 }
 

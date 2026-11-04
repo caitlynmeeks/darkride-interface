@@ -235,7 +235,7 @@ void AssetServer::replayRequests() {
 }
 
 void AssetServer::cleanupUnmappedFiles() {
-    const QRegularExpression hashFileRegex = regex_compat::exact(AssetUtils::ASSET_HASH_REGEX_STRING);
+    static const QRegularExpression hashFileRegex = regex_compat::exact(AssetUtils::ASSET_HASH_REGEX_STRING);
 
     auto files = _filesDirectory.entryInfoList(QDir::Files);
 
