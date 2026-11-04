@@ -18,7 +18,6 @@
 #include <mutex>
 
 #include <QtQml/QJSValue>
-#include <QtScript/QScriptValue>
 
 #include <DependencyManager.h>
 #include <RegisteredMetaTypes.h>
@@ -63,8 +62,6 @@ namespace controller {
         UserInputMapper();
         virtual ~UserInputMapper();
 
-
-        static void registerControllerTypes(QScriptEngine* engine);
 
         void registerDevice(InputDevice::Pointer device);
         InputDevice::Pointer getDevice(const Input& input);
@@ -167,12 +164,10 @@ namespace controller {
         void enableMapping(const MappingPointer& mapping);
         void disableMapping(const MappingPointer& mapping);
         EndpointPointer endpointFor(const QJSValue& endpoint);
-        EndpointPointer endpointFor(const QScriptValue& endpoint);
         /// From a plain value, as the WebAssembly engine hands one over: an input id, a script callback, or a list of those.
         EndpointPointer endpointFor(const QVariant& endpoint);
         EndpointPointer compositeEndpointFor(EndpointPointer first, EndpointPointer second);
         ConditionalPointer conditionalFor(const QJSValue& endpoint);
-        ConditionalPointer conditionalFor(const QScriptValue& endpoint);
         ConditionalPointer conditionalFor(const QVariant& condition);
         ConditionalPointer conditionalFor(const Input& endpoint) const;
 
