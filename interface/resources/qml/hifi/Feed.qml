@@ -13,7 +13,6 @@
 
 import Hifi 1.0
 import QtQuick 2.5
-import QtGraphicalEffects 1.0
 import "toolbars"
 import stylesUit 1.0
 import "qrc:////qml//hifi//models" as HifiModels  // Absolute path so the same code works everywhere.
