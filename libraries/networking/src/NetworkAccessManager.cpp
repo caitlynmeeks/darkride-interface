@@ -22,6 +22,9 @@ QThreadStorage<QNetworkAccessManager*> networkAccessManagers;
 QNetworkAccessManager& NetworkAccessManager::getInstance() {
     if (!networkAccessManagers.hasLocalData()) {
         QNetworkAccessManager* networkAccessManager = new QNetworkAccessManager();
+        // a request follows a redirect only when it says so (RedirectPolicyAttribute), as Qt 5 does by default: Qt 6's
+        // default is to follow them (NoLessSafeRedirectPolicy), which would change what signed-in requests do
+        networkAccessManager->setRedirectPolicy(QNetworkRequest::ManualRedirectPolicy);
         auto resourceManager = DependencyManager::get<ResourceManager>();
         if (resourceManager) {
             networkAccessManager->setCache(resourceManager->networkDiskCache);

@@ -21,6 +21,7 @@
 #include "NetworkAccessManager.h"
 #include "NetworkLogging.h"
 #include "NetworkingConstants.h"
+#include "RegexCompat.h"
 
 #include "ResourceManager.h"
 
@@ -97,18 +98,18 @@ bool saveToCache(const QUrl& url, const QByteArray& file) {
 }
 
 bool isValidFilePath(const AssetPath& filePath) {
-    QRegExp filePathRegex { ASSET_FILE_PATH_REGEX_STRING };
-    return filePathRegex.exactMatch(filePath);
+    const QRegularExpression filePathRegex = regex_compat::exact(ASSET_FILE_PATH_REGEX_STRING);
+    return filePathRegex.match(filePath).hasMatch();
 }
 
 bool isValidPath(const AssetPath& path) {
-    QRegExp pathRegex { ASSET_PATH_REGEX_STRING };
-    return pathRegex.exactMatch(path);
+    const QRegularExpression pathRegex = regex_compat::exact(ASSET_PATH_REGEX_STRING);
+    return pathRegex.match(path).hasMatch();
 }
 
 bool isValidHash(const AssetHash& hash) {
-    QRegExp hashRegex { ASSET_HASH_REGEX_STRING };
-    return hashRegex.exactMatch(hash);
+    const QRegularExpression hashRegex = regex_compat::exact(ASSET_HASH_REGEX_STRING);
+    return hashRegex.match(hash).hasMatch();
 }
 
 } // namespace AssetUtils

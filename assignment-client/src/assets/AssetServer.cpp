@@ -23,12 +23,14 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QSaveFile>
 #include <QtCore/QString>
 #include <QtGui/QImageReader>
 #include <QtCore/QVector>
 #include <QtCore/QUrlQuery>
 
+#include <RegexCompat.h>
 #include <ClientServerUtils.h>
 #include <NodeType.h>
 #include <SharedUtil.h>
@@ -147,8 +149,8 @@ void AssetServer::completeSetup() {
         // Check the asset directory to output some information about what we have
         auto files = _filesDirectory.entryList(QDir::Files);
 
-        QRegExp hashFileRegex { AssetUtils::ASSET_HASH_REGEX_STRING };
-        auto hashedFiles = files.filter(hashFileRegex);
+        // QStringList::filter keeps the names the pattern is found in, as it did with QRegExp
+        auto hashedFiles = files.filter(regex_compat::search(AssetUtils::ASSET_HASH_REGEX_STRING));
 
         qCInfo(asset_server) << "There are" << hashedFiles.size() << "asset files in the asset directory.";
 
@@ -233,7 +235,7 @@ void AssetServer::replayRequests() {
 }
 
 void AssetServer::cleanupUnmappedFiles() {
-    QRegExp hashFileRegex { AssetUtils::ASSET_HASH_REGEX_STRING };
+    const QRegularExpression hashFileRegex = regex_compat::exact(AssetUtils::ASSET_HASH_REGEX_STRING);
 
     auto files = _filesDirectory.entryInfoList(QDir::Files);
 
@@ -241,7 +243,7 @@ void AssetServer::cleanupUnmappedFiles() {
 
     for (const auto& fileInfo : files) {
         auto filename = fileInfo.fileName();
-        if (hashFileRegex.exactMatch(filename)) {
+        if (hashFileRegex.match(filename).hasMatch()) {
             bool matched { false };
             for (auto& pair : _fileMappings) {
                 if (pair.second == filename) {

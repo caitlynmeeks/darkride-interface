@@ -10,6 +10,9 @@
 //
 
 #include "ContentSettingsBackupHandler.h"
+
+#include <QtCore/QRegularExpression>
+#include <RegexCompat.h>
 #include "DomainContentBackupManager.h"
 
 #if !defined(__clang__) && defined(__GNUC__)
@@ -43,17 +46,18 @@ void ContentSettingsBackupHandler::createBackup(const QString& backupName, QuaZi
         DomainServerSettingsManager::IncludeContentSettings, DomainServerSettingsManager::NoDefaultSettings,
         DomainServerSettingsManager::ForBackup
     );
-    QString prefixFormat = "(" + QRegExp::escape(AUTOMATIC_BACKUP_PREFIX) + "|" + QRegExp::escape(MANUAL_BACKUP_PREFIX) + ")";
+    QString prefixFormat = "(" + QRegularExpression::escape(AUTOMATIC_BACKUP_PREFIX) + "|" + QRegularExpression::escape(MANUAL_BACKUP_PREFIX) + ")";
     QString nameFormat = "(.+)";
     QString dateTimeFormat = "(" + DATETIME_FORMAT_RE + ")";
-    QRegExp backupNameFormat { prefixFormat + nameFormat + "-" + dateTimeFormat + "\\.zip" };
+    const QRegularExpressionMatch backupNameMatch =
+        regex_compat::exact(prefixFormat + nameFormat + "-" + dateTimeFormat + "\\.zip").match(backupName);
 
     QString name{ "" };
     QDateTime createdAt;
 
-    if (backupNameFormat.exactMatch(backupName)) {
-        name = backupNameFormat.cap(2);
-        auto dateTime = backupNameFormat.cap(3);
+    if (backupNameMatch.hasMatch()) {
+        name = backupNameMatch.captured(2);
+        auto dateTime = backupNameMatch.captured(3);
         createdAt = QDateTime::fromString(dateTime, DATETIME_FORMAT);
     }
 

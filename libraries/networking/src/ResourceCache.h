@@ -624,6 +624,10 @@ private:
     bool _isInScript{ false };
 };
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+size_t qHash(const QPointer<QObject>& value, size_t seed = 0);
+#else
 uint qHash(const QPointer<QObject>& value, uint seed = 0);
+#endif
 
 #endif // hifi_ResourceCache_h

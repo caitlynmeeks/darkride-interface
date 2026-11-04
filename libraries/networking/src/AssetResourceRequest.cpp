@@ -20,6 +20,7 @@
 #include "AssetClient.h"
 #include "AssetUtils.h"
 #include "MappingRequest.h"
+#include "RegexCompat.h"
 #include "NetworkLogging.h"
 
 static const int DOWNLOAD_PROGRESS_LOG_INTERVAL_SECONDS = 5;
@@ -60,8 +61,8 @@ AssetResourceRequest::~AssetResourceRequest() {
 bool AssetResourceRequest::urlIsAssetHash(const QUrl& url) {
     static const QString ATP_HASH_REGEX_STRING { "^atp:([A-Fa-f0-9]{64})(\\.[\\w]+)?$" };
 
-    QRegExp hashRegex { ATP_HASH_REGEX_STRING };
-    return hashRegex.exactMatch(url.toString());
+    const QRegularExpression hashRegex = regex_compat::exact(ATP_HASH_REGEX_STRING);
+    return hashRegex.match(url.toString()).hasMatch();
 }
 
 void AssetResourceRequest::doSend() {

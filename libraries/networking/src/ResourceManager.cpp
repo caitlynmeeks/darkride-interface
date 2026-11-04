@@ -242,7 +242,7 @@ bool ResourceManager::resourceExists(const QUrl& url) {
         auto& networkAccessManager = NetworkAccessManager::getInstance();
         QNetworkRequest request{ url };
 
-        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
         request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
 
         auto reply = networkAccessManager.head(request);
