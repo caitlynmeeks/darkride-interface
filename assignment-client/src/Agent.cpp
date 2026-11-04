@@ -26,7 +26,7 @@
 #include <AssetClient.h>
 #include <DebugDraw.h>
 #include <EntityScriptingInterface.h>
-#include <LocationScriptingInterface.h>
+#include <AddressManager.h>
 #include <MessagesClient.h>
 #include <NetworkAccessManager.h>
 #include <NodeList.h>
@@ -617,8 +617,7 @@ void Agent::executeScript() {
 
         _scriptEngine->registerGlobalObject("EntityViewer", &_entityViewer);
 
-        _scriptEngine->registerGetterSetter("location", LocationScriptingInterface::locationGetter,
-                                            LocationScriptingInterface::locationSetter);
+        _scriptEngine->registerGlobalObject("location", DependencyManager::get<AddressManager>().data());
 
         auto recordingInterface = DependencyManager::get<RecordingScriptingInterface>();
         _scriptEngine->registerGlobalObject("Recording", recordingInterface.data());
