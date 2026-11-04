@@ -31,9 +31,18 @@ Item {
                 return;
             }
             // a page can start a download by itself: the user says yes to each one. The file's name goes in the title,
-            // which shows as plain text; the site's name only in the line under it
+            // which shows as plain text; the site's name only in the line under it.
+            // One name, shown and written: the page's filename= (adaptedPath, the way the marketplace flow named its
+            // zips), else the name the page offers; its last piece only, inside the temp folder, without control or
+            // direction-override characters; an empty name, "." or ".." is refused.
             // downloadFileName and downloadDirectory since Qt 5.14; Qt 6 has no path
-            var fileName = String(download.downloadFileName || download.path).split(/[\\/]/).pop() || "this file";
+            adaptedPath = File.convertUrlToPath(downloadUrl);
+            var fileName = String(adaptedPath || download.downloadFileName || download.path || "").split(/[\\/]/).pop()
+                .replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+            if (!fileName || fileName === "." || fileName === "..") {
+                download.cancel();
+                return;
+            }
             // the host after any user-info part, read as browsers read it (to the last '@')
             var site = String(download.url).match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^\/?#]*@)?([^\/?#@]+)/i);
             var question = desktop.messageBox({
@@ -51,10 +60,9 @@ Item {
                 download.cancel();
                 return;
             }
-            adaptedPath = File.convertUrlToPath(downloadUrl);
             tempDir = File.getTempDir();
             download.downloadDirectory = tempDir;
-            download.downloadFileName = adaptedPath;
+            download.downloadFileName = fileName;
             download.accept();
             if (download.state === WebEngineDownloadItem.DownloadInterrupted) {
                 console.log("download failed to complete");
