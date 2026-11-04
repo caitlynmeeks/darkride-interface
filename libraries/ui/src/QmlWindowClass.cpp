@@ -11,8 +11,6 @@
 #include <mutex>
 
 #include <QtCore/QThread>
-#include <QtScript/QScriptContext>
-#include <QtScript/QScriptEngine>
 
 #include <QtQuick/QQuickItem>
 #include <QtQml/QQmlContext>
@@ -41,29 +39,6 @@ static const char* const ENABLED_PROPERTY = "enabled";
 static const uvec2 MAX_QML_WINDOW_SIZE { 1280, 720 };
 static const uvec2 MIN_QML_WINDOW_SIZE { 120, 80 };
 
-QVariantMap QmlWindowClass::parseArguments(QScriptContext* context) {
-    const auto argumentCount = context->argumentCount();
-    QVariantMap properties;
-    if (argumentCount > 1) {
-        if (!context->argument(0).isUndefined()) {
-            properties[TITLE_PROPERTY] = context->argument(0).toString();
-        }
-        if (!context->argument(1).isUndefined()) {
-            properties[SOURCE_PROPERTY] = context->argument(1).toString();
-        }
-        if (context->argument(2).isNumber()) {
-            properties[WIDTH_PROPERTY] = context->argument(2).toInt32();
-        }
-        if (context->argument(3).isNumber()) {
-            properties[HEIGHT_PROPERTY] = context->argument(3).toInt32();
-        }
-    } else {
-        properties = context->argument(0).toVariant().toMap();
-    }
-
-    return normalizeProperties(properties);
-}
-
 QVariantMap QmlWindowClass::normalizeProperties(QVariantMap properties) {
     QUrl url { properties[SOURCE_PROPERTY].toString() };
     // If the passed URL doesn't correspond to a known scheme, assume it's a local file path
@@ -84,12 +59,6 @@ QmlWindowClass* QmlWindowClass::createWindow(QVariantMap properties, bool restri
         retVal->initQml(properties);
     }
     return retVal;
-}
-
-QScriptValue QmlWindowClass::internal_constructor(QScriptContext* context, QScriptEngine* engine, bool restricted) {
-    QmlWindowClass* retVal = createWindow(parseArguments(context), restricted);
-    connect(engine, &QScriptEngine::destroyed, retVal, &QmlWindowClass::deleteLater);
-    return engine->newQObject(retVal);
 }
 
 QmlWindowClass::QmlWindowClass(bool restricted) : _restricted(restricted) {

@@ -45,14 +45,6 @@ void RayPickScriptingInterface::setPrecisionPicking(unsigned int uid, bool preci
     DependencyManager::get<PickManager>()->setPrecisionPicking(uid, precisionPicking);
 }
 
-void RayPickScriptingInterface::setIgnoreItems(unsigned int uid, const QScriptValue& ignoreItems) {
-    DependencyManager::get<PickManager>()->setIgnoreItems(uid, qVectorQUuidFromScriptValue(ignoreItems));
-}
-
-void RayPickScriptingInterface::setIncludeItems(unsigned int uid, const QScriptValue& includeItems) {
-    DependencyManager::get<PickManager>()->setIncludeItems(uid, qVectorQUuidFromScriptValue(includeItems));
-}
-
 void RayPickScriptingInterface::setIgnoreItemsVector(unsigned int uid, const QVector<QUuid>& ignoreItems) {
     DependencyManager::get<PickManager>()->setIgnoreItems(uid, ignoreItems);
 }

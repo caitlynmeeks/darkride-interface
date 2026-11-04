@@ -28,7 +28,7 @@
 #include <controllers/UserInputMapper.h>
 #include <controllers/ScriptingInterface.h>
 #include "LocationBookmarks.h"
-#include <LocationScriptingInterface.h>
+#include <AddressManager.h>
 #include <MainWindow.h>
 #include <MessagesClient.h>
 #include <model-networking/ModelCacheScriptingInterface.h>
@@ -46,7 +46,7 @@
 #include <FileDialogHelper.h>
 #include <UsersScriptingInterface.h>
 #include <QmlWebWindowClass.h>
-#include <QmlFragmentClass.h>
+#include <QmlWindowFactory.h>
 #include <Preferences.h>
 #include <display-plugins/CompositorHelper.h>
 #include "AudioClient.h"
@@ -326,8 +326,6 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
     connect(scriptEngine.data(), &ScriptEngine::finished, clipboardScriptable, &ClipboardScriptingInterface::deleteLater);
 
     scriptEngine->registerGlobalObject("Overlays", &_overlays);
-    qScriptRegisterMetaType(scriptEngine.data(), RayToOverlayIntersectionResultToScriptValue,
-                            RayToOverlayIntersectionResultFromScriptValue);
 
     bool clientScript = scriptEngine->isClientScript();
 
@@ -342,14 +340,8 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
         }
     }
 
-    qScriptRegisterMetaType(scriptEngine.data(), wrapperToScriptValue<ToolbarProxy>, wrapperFromScriptValue<ToolbarProxy>);
-    qScriptRegisterMetaType(scriptEngine.data(),
-                            wrapperToScriptValue<ToolbarButtonProxy>, wrapperFromScriptValue<ToolbarButtonProxy>);
     scriptEngine->registerGlobalObject("Toolbars", DependencyManager::get<ToolbarScriptingInterface>().data());
 
-    qScriptRegisterMetaType(scriptEngine.data(), wrapperToScriptValue<TabletProxy>, wrapperFromScriptValue<TabletProxy>);
-    qScriptRegisterMetaType(scriptEngine.data(),
-                            wrapperToScriptValue<TabletButtonProxy>, wrapperFromScriptValue<TabletButtonProxy>);
     scriptEngine->registerGlobalObject("Tablet", DependencyManager::get<TabletScriptingInterface>().data());
     // FIXME remove these deprecated names for the tablet scripting interface
     scriptEngine->registerGlobalObject("tabletInterface", DependencyManager::get<TabletScriptingInterface>().data());
@@ -358,17 +350,17 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
     DependencyManager::get<TabletScriptingInterface>().data()->setToolbarScriptingInterface(toolbarScriptingInterface);
 
     scriptEngine->registerGlobalObject("Window", DependencyManager::get<WindowScriptingInterface>().data());
-    scriptEngine->registerGetterSetter("location", LocationScriptingInterface::locationGetter,
-                        LocationScriptingInterface::locationSetter, "Window");
-    // register `location` on the global object.
-    scriptEngine->registerGetterSetter("location", LocationScriptingInterface::locationGetter,
-                                       LocationScriptingInterface::locationSetter);
+    // `location` is the address manager, under Window and on the global object (the JavaScript guest hangs the dotted
+    // name under Window)
+    scriptEngine->registerGlobalObject("Window.location", DependencyManager::get<AddressManager>().data());
+    scriptEngine->registerGlobalObject("location", DependencyManager::get<AddressManager>().data());
 
-    scriptEngine->registerFunction("OverlayWindow", clientScript ? QmlWindowClass::constructor : QmlWindowClass::restricted_constructor);
+    // the window constructors: a factory each, the engine's child (the JavaScript guest wraps it back into a
+    // constructor); a script that is not the client's own gets the restricted kind
+    scriptEngine->registerGlobalObject("OverlayWindow", new QmlWindowFactory(QmlWindowFactory::Window, !clientScript, scriptEngine.data()));
 #if !defined(Q_OS_ANDROID)
-    scriptEngine->registerFunction("OverlayWebWindow", clientScript ? QmlWebWindowClass::constructor : QmlWebWindowClass::restricted_constructor);
+    scriptEngine->registerGlobalObject("OverlayWebWindow", new QmlWindowFactory(QmlWindowFactory::WebWindow, !clientScript, scriptEngine.data()));
 #endif
-    scriptEngine->registerFunction("QmlFragment", clientScript ? QmlFragmentClass::constructor : QmlFragmentClass::restricted_constructor);
 
     scriptEngine->registerGlobalObject("Menu", MenuScriptingInterface::getInstance());
     scriptEngine->registerGlobalObject("DesktopPreviewProvider", DependencyManager::get<DesktopPreviewProvider>().data());
@@ -404,12 +396,10 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
     scriptEngine->registerGlobalObject("Account", AccountServicesScriptingInterface::getInstance()); // DEPRECATED - TO BE REMOVED
     scriptEngine->registerGlobalObject("GlobalServices", AccountServicesScriptingInterface::getInstance()); // DEPRECATED - TO BE REMOVED
     scriptEngine->registerGlobalObject("AccountServices", AccountServicesScriptingInterface::getInstance());
-    qScriptRegisterMetaType(scriptEngine.data(), DownloadInfoResultToScriptValue, DownloadInfoResultFromScriptValue);
 
     scriptEngine->registerGlobalObject("AvatarManager", DependencyManager::get<AvatarManager>().data());
 
     scriptEngine->registerGlobalObject("LODManager", DependencyManager::get<LODManager>().data());
-    qScriptRegisterMetaType(scriptEngine.data(), worldDetailQualityToScriptValue, worldDetailQualityFromScriptValue);
 
     scriptEngine->registerGlobalObject("Keyboard", DependencyManager::get<KeyboardScriptingInterface>().data());
     // one per engine (its signals are emitted on the engine's thread); gone with the engine
@@ -420,15 +410,12 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
     scriptEngine->registerGlobalObject("Paths", DependencyManager::get<PathUtils>().data());
 
     scriptEngine->registerGlobalObject("HMD", DependencyManager::get<HMDScriptingInterface>().data());
-    scriptEngine->registerFunction("HMD", "getHUDLookAtPosition2D", HMDScriptingInterface::getHUDLookAtPosition2D, 0);
-    scriptEngine->registerFunction("HMD", "getHUDLookAtPosition3D", HMDScriptingInterface::getHUDLookAtPosition3D, 0);
 
     scriptEngine->registerGlobalObject("Scene", DependencyManager::get<SceneScriptingInterface>().data());
     scriptEngine->registerGlobalObject("Render", RenderScriptingInterface::getInstance());
     scriptEngine->registerGlobalObject("Impostors", DependencyManager::get<ImpostorBaker>().data());
     scriptEngine->registerGlobalObject("Workload", _gameWorkload._engine->getConfiguration().get());
 
-    GraphicsScriptingInterface::registerMetaTypes(scriptEngine.data());
     scriptEngine->registerGlobalObject("Graphics", DependencyManager::get<GraphicsScriptingInterface>().data());
 
     scriptEngine->registerGlobalObject("ScriptDiscoveryService", DependencyManager::get<ScriptEngines>().data());
@@ -438,7 +425,6 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
 
     auto scriptingInterface = DependencyManager::get<controller::ScriptingInterface>();
     scriptEngine->registerGlobalObject("Controller", scriptingInterface.data());
-    UserInputMapper::registerControllerTypes(scriptEngine.data());
 
     auto recordingInterface = DependencyManager::get<RecordingScriptingInterface>();
     scriptEngine->registerGlobalObject("Recording", recordingInterface.data());
@@ -451,10 +437,8 @@ void Application::registerScriptEngineWithApplicationServices(const ScriptEngine
     scriptEngine->registerGlobalObject("About", AboutUtil::getInstance());
     scriptEngine->registerGlobalObject("ResourceRequestObserver", DependencyManager::get<ResourceRequestObserver>().data());
 
-    registerInteractiveWindowMetaType(scriptEngine.data());
-
     auto pickScriptingInterface = DependencyManager::get<PickScriptingInterface>();
-    pickScriptingInterface->registerMetaTypes(scriptEngine.data());
+    pickScriptingInterface->registerPickType(scriptEngine.data());
 
     // connect this script engines printedMessage signal to the global ScriptEngines these various messages
     auto scriptEngines = DependencyManager::get<ScriptEngines>().data();

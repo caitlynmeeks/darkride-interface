@@ -69,6 +69,8 @@
  * @property {number} perFrameTimeBudget - The maximum time, in microseconds, to spend per frame updating pick results.
  */
 
+class ScriptEngine;
+
 class PickScriptingInterface : public QObject, public Dependency {
     Q_OBJECT
     Q_PROPERTY(unsigned int PICK_ENTITIES READ PICK_ENTITIES CONSTANT)
@@ -103,7 +105,8 @@ class PickScriptingInterface : public QObject, public Dependency {
     SINGLETON_DEPENDENCY
 
 public:
-    void registerMetaTypes(QScriptEngine* engine);
+    /// PickType, a plain object of the types' values, through the engine's registration.
+    void registerPickType(ScriptEngine* engine);
 
     /**jsdoc
      * Creates a new pick. Different {@link PickType}s use different properties, and within one PickType the properties you 
@@ -245,7 +248,6 @@ public:
      * @param {number} id - The ID of the pick.
      * @param {Uuid[]} ignoreItems - The list of IDs to ignore.
      */
-    Q_INVOKABLE void setIgnoreItems(unsigned int uid, const QScriptValue& ignoreItems);
 
     /**jsdoc
      * Sets a list of entity and avatar IDs that a pick should include during intersection, instead of intersecting with 
@@ -255,10 +257,8 @@ public:
      * @param {number} id - The ID of the pick.
      * @param {Uuid[]} includeItems - The list of IDs to include.
      */
-    Q_INVOKABLE void setIncludeItems(unsigned int uid, const QScriptValue& includeItems);
 
-    // setIgnoreItems and setIncludeItems with the IDs as a list, for the WebAssembly script engine (names of their own,
-    // as findRayIntersectionVector has: QtScript would find a same-named overload ambiguous with the QScriptValue one)
+    // what a script's setIgnoreItems and setIncludeItems reach (the JavaScript guest maps the names), the IDs as a list
     Q_INVOKABLE void setIgnoreItemsVector(unsigned int uid, const QVector<QUuid>& ignoreItems);
     Q_INVOKABLE void setIncludeItemsVector(unsigned int uid, const QVector<QUuid>& includeItems);
 

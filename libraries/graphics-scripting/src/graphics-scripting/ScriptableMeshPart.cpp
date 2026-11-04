@@ -11,8 +11,6 @@
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/transform.hpp>
 
-#include <BaseScriptEngine.h>
-#include <QtScript/QScriptValue>
 #include <RegisteredMetaTypes.h>
 #include <graphics/BufferViewHelpers.h>
 #include <graphics/GpuHelpers.h>
@@ -25,11 +23,7 @@
 
 QString scriptable::ScriptableMeshPart::toOBJ() {
     if (!getMeshPointer()) {
-        if (context()) {
-            context()->throwError(QString("null mesh"));
-        } else {
-            qCWarning(graphics_scripting) << "null mesh";
-        }
+        scriptable::reportError("null mesh");
         return QString();
     }
     return writeOBJToString({ getMeshPointer() });
@@ -78,25 +72,11 @@ QVariantList scriptable::ScriptableMeshPart::queryVertexAttributes(QVariant sele
     return parentMesh->queryVertexAttributes(selector);
 }
 
-glm::uint32 scriptable::ScriptableMeshPart::forEachVertex(QScriptValue _callback) {
-    // TODO: limit to vertices within the part's indexed range?
-    return isValid() ? parentMesh->forEachVertex(_callback) : 0;
-}
-
-glm::uint32 scriptable::ScriptableMeshPart::updateVertexAttributes(QScriptValue _callback) {
-    // TODO: limit to vertices within the part's indexed range?
-    return isValid() ? parentMesh->updateVertexAttributes(_callback) : 0;
-}
-
 bool scriptable::ScriptableMeshPart::replaceMeshPartData(scriptable::ScriptableMeshPartPointer src, const QVector<QString>& attributeNames) {
     auto target = getMeshPointer();
     auto source = src ? src->getMeshPointer() : nullptr;
     if (!target || !source) {
-        if (context()) {
-            context()->throwError("ScriptableMeshPart::replaceMeshData -- expected dest and src to be valid mesh proxy pointers");
-        } else {
-            qCWarning(graphics_scripting) << "ScriptableMeshPart::replaceMeshData -- expected dest and src to be valid mesh proxy pointers";
-        }
+        scriptable::reportError("ScriptableMeshPart::replaceMeshData -- expected dest and src to be valid mesh proxy pointers");
         return false;
     }
 
@@ -371,7 +351,7 @@ bool scriptable::ScriptableMeshPart::setIndices(const QVector<glm::uint32>& indi
     }
     glm::uint32 len = indices.size();
     if (len != getNumIndices()) {
-        context()->throwError(QString("setIndices: currently new indicies must be assign 1:1 across old indicies (indicies.size()=%1, numIndices=%2)")
+        scriptable::reportError(QString("setIndices: currently new indicies must be assign 1:1 across old indicies (indicies.size()=%1, numIndices=%2)")
                               .arg(len).arg(getNumIndices()));
         return false;
     }
@@ -415,7 +395,7 @@ bool scriptable::ScriptableMeshPart::setTopology(graphics::Mesh::Topology topolo
         part._topology = topology;
         return true;
     default:
-        context()->throwError("changing topology to " + graphics::toString(topology) + " is not yet supported");
+        scriptable::reportError("changing topology to " + graphics::toString(topology) + " is not yet supported");
         return false;
     }
 }

@@ -10,9 +10,6 @@
 
 #include <QtCore/QThread>
 
-#include <QtScript/QScriptContext>
-#include <QtScript/QScriptEngine>
-
 #include <shared/QtHelpers.h>
 #include "OffscreenUi.h"
 
@@ -31,12 +28,6 @@ QmlWebWindowClass* QmlWebWindowClass::createWebWindow(QVariantMap properties, bo
         retVal->initQml(properties);
     }
     return retVal;
-}
-
-QScriptValue QmlWebWindowClass::internal_constructor(QScriptContext* context, QScriptEngine* engine, bool restricted) {
-    QmlWebWindowClass* retVal = createWebWindow(parseArguments(context), restricted);
-    connect(engine, &QScriptEngine::destroyed, retVal, &QmlWindowClass::deleteLater);
-    return engine->newQObject(retVal);
 }
 
 QString QmlWebWindowClass::getURL() {

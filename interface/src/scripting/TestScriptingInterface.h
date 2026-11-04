@@ -31,8 +31,6 @@
  * @hifi-interface
  */
 
-class QScriptValue;
-
 class TestScriptingInterface : public QObject {
     Q_OBJECT
 
@@ -137,14 +135,6 @@ public slots:
      * @param {string} filename - Name of file to save to
      */
     void savePhysicsSimulationStats(QString filename);
-
-    /**jsdoc
-    * Profiles a specific function
-    * @function Test.savePhysicsSimulationStats
-    * @param {string} name - Name used to reference the function
-    * @param {function} function - Function to profile
-    */
-    Q_INVOKABLE void profileRange(const QString& name, QScriptValue function);
 
     /**jsdoc
     * Clear all caches (menu command Reload Content)
