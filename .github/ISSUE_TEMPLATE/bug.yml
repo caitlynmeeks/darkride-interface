@@ -1,0 +1,75 @@
+# Copyright 2026 Tivoli Cloud VR, Inc.
+# Distributed under the MIT License. See the accompanying file LICENSE or https://opensource.org/licenses/MIT
+name: Bug
+description: Something in Darkride doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for telling us. One bug per report helps us fix it faster.
+
+        **Found a security hole?** Please don't post it here: use **Report a vulnerability** under this repository's Security tab, so it stays private while we fix it.
+  - type: input
+    id: version
+    attributes:
+      label: Darkride version
+      description: The About window shows it, for example 1.1.3.1.
+    validations:
+      required: true
+  - type: dropdown
+    id: computer
+    attributes:
+      label: Computer
+      options:
+        - Mac
+        - Windows
+        - Linux
+        - In a headset
+    validations:
+      required: true
+  - type: input
+    id: graphics
+    attributes:
+      label: Graphics card or chip, and headset if any
+      description: For example "M2 Pro", "RTX 3060", "Quest 3 over Link".
+  - type: input
+    id: world
+    attributes:
+      label: World
+      description: Its name or address, if the bug happens in a particular world.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      description: What you did, one step per line.
+      placeholder: |
+        1. Open Explore
+        2. Hop into ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Pictures, video or log
+      description: Drag files here. Before attaching a log, look through it for your name, email or anything private, and remove it.
+  - type: checkboxes
+    id: not-security
+    attributes:
+      label: Not a security hole
+      options:
+        - label: This report isn't about a way to break into accounts, worlds, servers or someone else's computer (those go to Report a vulnerability).
+          required: true
