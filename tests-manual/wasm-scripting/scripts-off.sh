@@ -4,24 +4,18 @@
 # which stands in the box the driver adds; the box's server entity script runs in the sandbox's entity script server,
 # its client entity script in the test client. Prints the driver's SCRIPTS-OFF lines; exits 0 when its RESULT says
 # PASS. A sandbox that was running before is started again, plain, at the end.
-#   tests-manual/wasm-scripting/scripts-off.sh [wasm|qtscript]
+#   tests-manual/wasm-scripting/scripts-off.sh
 # The driver is served from this checkout on 127.0.0.1:43110 (http-echo.py): an agent loads no script from the local
 # file system.
 #
 # Copyright 2026 Darkride.
 # Distributed under the MIT License.
 set -e
-ENGINE=${1:-wasm}
 D=$(cd "$(dirname "$0")" && pwd)
 BUILD=$(cd "$D/../../build" && pwd)
 ROOT=$HOME/tivoli-sandboxes/wasm
 SERVE=http://127.0.0.1:43110/tests-manual/wasm-scripting
-OUT=$D/results/scripts-off-$ENGINE
-case "$ENGINE" in
-    wasm) ON_WASM=1 ;;
-    qtscript) ON_WASM=0 ;;
-    *) echo "usage: scripts-off.sh [wasm|qtscript]" >&2; exit 2 ;;
-esac
+OUT=$D/results/scripts-off
 
 settings() {
     python3 - "$ROOT/domain-config.json" "$1" "$SERVE/scripts-off-driver.js" <<'PY'
@@ -74,10 +68,10 @@ if os.path.exists(path):
         with gzip.open(path, "wt") as f:
             json.dump(world, f)
 PY
-DARKRIDE_RUN_JS_ON_WASM=$ON_WASM SANDBOX_ASSIGNMENTS=7 "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102 > /dev/null
+SANDBOX_ASSIGNMENTS=7 "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102 > /dev/null
 LOG="$ROOT/logs/assignment-client.log"
 sleep 5
-DARKRIDE_RUN_JS_ON_WASM=$ON_WASM "$D/run-client.sh" scripts-off-client 110 --url hifi://localhost:43102 \
+"$D/run-client.sh" scripts-off-client 110 --url hifi://localhost:43102 \
     --testScript "$D/scripts-off-client.js" > /dev/null 2>&1 &
 CLIENT_RUN=$!
 for i in $(seq 1 120); do
@@ -97,6 +91,6 @@ settings off
 if [ $WAS_RUNNING = 1 ]; then
     "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102 > /dev/null
 fi
-echo "== $ENGINE:"
+echo "== the lines:"
 cat "$OUT/driver.txt"
 grep -qE "RESULT PASS" "$OUT/driver.txt"

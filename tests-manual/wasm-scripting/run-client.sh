@@ -6,8 +6,7 @@
 # The client starts through release's client_start (tests-manual/physics-baseline/harness.sh): `open -g` in the
 # background with AppKit's AutoFill off, and the macOS helper services it leaves are stopped when it quits (bug #29: 422
 # leftover helpers brought the Mac down on 2026-10-25). Never start a client straight from a shell.
-# Environment: DARKRIDE_RUN_JS_ON_WASM=1 or 0 (or DARKRIDE_RUN_JS_ON_QTSCRIPT=1) picks the engine for this client;
-# HIFI_METAVERSE_URL names the metaverse server; DARKRIDE_CLIENT_LABEL is the label the window title starts with;
+# Environment: HIFI_METAVERSE_URL names the metaverse server; DARKRIDE_CLIENT_LABEL is the label the window title starts with;
 # CLIENT_APP is another Darkride.app to start instead of this checkout's (run.sh, run-wasm.sh); CLIENT_RESULTS is a
 # results folder of the caller's instead of results/<name> (kept, not emptied).
 # A scripted test client (given --testScript) has the shape of the team rules' standing permission: a small window in
@@ -73,8 +72,8 @@ fi
 # a dev build keeps its settings under "Tivoli Cloud VR - dev", a production package under "Tivoli Cloud VR"
 mkdir -p "$R/config/Tivoli Cloud VR - dev" "$R/config/Tivoli Cloud VR" "$R/data"
 if [ $SCRIPTED = 1 ]; then
-    # small, in the bottom-right corner. No snapshotsLocation here: with one set, a client on QtScript that quits
-    # within seconds of starting crashes in tivoli.js's start-up evaluation (KNOWN-ISSUES, 2026-10-25)
+    # small, in the bottom-right corner. No snapshotsLocation here: with one set, a client that quit within seconds of
+    # starting crashed in tivoli.js's start-up evaluation on the QtScript engine (KNOWN-ISSUES, 2026-10-25)
     for _org in "Tivoli Cloud VR - dev" "Tivoli Cloud VR"; do
         echo "{\"WindowGeometry\": \"@Rect(1110 470 800 600)\"}" > "$R/config/$_org/Interface.json"
     done
