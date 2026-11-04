@@ -210,6 +210,9 @@ if (BUILD_TOOLS AND NPM_EXECUTABLE)
 endif()
 
 add_dependencies(${TARGET_NAME} resources)
+# the resource bundle reaches the app only through the POST_BUILD copy below, which runs when the target relinks: relink
+# when the bundle changes, so a QML-only change reaches the app in an incremental build too (editor-ui, 11-04)
+set_property(TARGET ${TARGET_NAME} APPEND PROPERTY LINK_DEPENDS ${RESOURCES_RCC})
 
 if (WIN32)
   # These are external plugins, but we need to do the 'add dependency' here so that their
