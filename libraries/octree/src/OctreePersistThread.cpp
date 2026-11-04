@@ -36,6 +36,7 @@
 #include "OctreeLogging.h"
 #include "OctreeUtils.h"
 #include "OctreeDataUtils.h"
+#include <shared/WireStream.h>
 
 constexpr std::chrono::seconds OctreePersistThread::DEFAULT_PERSIST_INTERVAL { 30 };
 constexpr std::chrono::milliseconds TIME_BETWEEN_PROCESSING { 10 };
@@ -157,6 +158,7 @@ void OctreePersistThread::handleOctreeDataFileReply(QSharedPointer<ReceivedMessa
             persistentFileRead = _tree->readFromFile(_filename.toLocal8Bit().constData());
         } else {
             QDataStream jsonStream(_cachedJSONData);
+            hifi::stream::pin(jsonStream);
             persistentFileRead = _tree->readFromStream(-1, jsonStream);
         }
         _tree->pruneTree();

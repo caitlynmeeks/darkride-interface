@@ -31,6 +31,7 @@
 #include "NLPacket.h"
 #include "SharedUtil.h"
 #include "NetworkLogging.h"
+#include <shared/WireStream.h>
 
 DomainHandler::DomainHandler(QObject* parent) :
     QObject(parent),
@@ -496,6 +497,7 @@ void DomainHandler::processICEResponsePacket(QSharedPointer<ReceivedMessage> mes
     _apiRefreshTimer.start();
 
     QDataStream iceResponseStream(message->getMessage());
+    hifi::stream::pin(iceResponseStream);
 
     iceResponseStream >> _icePeer;
 

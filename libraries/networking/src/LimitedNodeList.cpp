@@ -25,6 +25,7 @@
 
 #include <LogHandler.h>
 #include <shared/NetworkUtils.h>
+#include <shared/WireStream.h>
 #include <NumericalConstants.h>
 #include <SettingHandle.h>
 #include <SharedUtil.h>
@@ -1316,6 +1317,7 @@ void LimitedNodeList::sendPacketToIceServer(PacketType packetType, const HifiSoc
     auto icePacket = NLPacket::create(packetType);
 
     QDataStream iceDataStream(icePacket.get());
+    hifi::stream::pin(iceDataStream);
     iceDataStream << clientID << _publicSockAddr << _localSockAddr;
 
     if (packetType == PacketType::ICEServerQuery) {

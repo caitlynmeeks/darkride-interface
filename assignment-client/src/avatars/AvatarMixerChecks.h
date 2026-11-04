@@ -24,6 +24,7 @@
 #include <QtCore/QDataStream>
 #include <QtCore/QString>
 #include <QtCore/QUuid>
+#include <shared/WireStream.h>
 
 namespace avatar_mixer_checks {
 
@@ -102,6 +103,7 @@ inline bool skipCounted(QDataStream& in, quint32 maxBytes) {
 /// before Qt would reserve room for it, and every length, without copying a string.
 inline QString identityRefusal(const QByteArray& identity) {
     QDataStream in(identity);
+    hifi::stream::pin(in);
     QUuid sessionID;
     qint32 sequenceNumber;
     in >> sessionID >> sequenceNumber;

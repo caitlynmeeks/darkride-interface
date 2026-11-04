@@ -20,6 +20,7 @@
 #include "udt/PacketHeaders.h"
 #include "SharedUtil.h"
 #include "UUID.h"
+#include <shared/WireStream.h>
 
 Assignment::Type Assignment::typeForNodeType(NodeType_t nodeType) {
     switch (nodeType) {
@@ -90,6 +91,7 @@ Assignment::Assignment(ReceivedMessage& message) :
     }
     
     QDataStream packetStream(message.getMessage());
+    hifi::stream::pin(packetStream);
     
     packetStream >> *this;
 }

@@ -39,6 +39,7 @@
 #include "AvatarMixerChecks.h"
 #include <model-networking/ModelCache.h>
 #include <hfm/ModelFormatRegistry.h>
+#include <shared/WireStream.h>
 
 const QString AVATAR_MIXER_LOGGING_NAME = "avatar-mixer";
 
@@ -687,6 +688,7 @@ void AvatarMixer::handleAvatarIdentityPacket(QSharedPointer<ReceivedMessage> mes
                 return;
             }
             QDataStream avatarIdentityStream(message->getMessage());
+            hifi::stream::pin(avatarIdentityStream);
             avatar.processAvatarIdentity(avatarIdentityStream, identityChanged, displayNameChanged, skeletonModelURLChanged);
 
             if (identityChanged) {

@@ -62,6 +62,7 @@
 #include <Gzip.h>
 
 #include <OctreeDataUtils.h>
+#include <shared/WireStream.h>
 
 using namespace std::chrono;
 
@@ -1092,6 +1093,7 @@ void DomainServer::populateDefaultStaticAssignmentsExcludingTypes(const QSet<Ass
 
 void DomainServer::processListRequestPacket(QSharedPointer<ReceivedMessage> message, SharedNodePointer sendingNode) {
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
     NodeConnectionData nodeRequestData = NodeConnectionData::fromDataStream(packetStream, message->getSenderSockAddr(), false);
 
     // update this node's sockets in case they have changed
@@ -1215,6 +1217,7 @@ void DomainServer::sendDomainListToNode(const SharedNodePointer& node, quint64 r
     // this data is at the beginning of each of the domain list packets
     QByteArray extendedHeader(NUM_DOMAIN_LIST_EXTENDED_HEADER_BYTES, 0);
     QDataStream extendedHeaderStream(&extendedHeader, QIODevice::WriteOnly);
+    hifi::stream::pin(extendedHeaderStream);
     DomainServerNodeData* nodeData = static_cast<DomainServerNodeData*>(node->getLinkedData());
     auto limitedNodeList = DependencyManager::get<LimitedNodeList>();
 
@@ -1232,6 +1235,7 @@ void DomainServer::sendDomainListToNode(const SharedNodePointer& node, quint64 r
 
     // always send the node their own UUID back
     QDataStream domainListStream(domainListPackets.get());
+    hifi::stream::pin(domainListStream);
 
     // store the nodeInterestSet on this DomainServerNodeData, in case it has changed
     auto& nodeInterestSet = nodeData->getNodeInterestSet();
@@ -1296,6 +1300,7 @@ void DomainServer::broadcastNewNode(const SharedNodePointer& addedNode) {
 
     // setup the add packet for this new node
     QDataStream addNodeStream(addNodePacket.get());
+    hifi::stream::pin(addNodeStream);
 
     addNodeStream << *addedNode.data();
 
@@ -1370,6 +1375,7 @@ void DomainServer::processRequestAssignmentPacket(QSharedPointer<ReceivedMessage
         assignmentPacket->reset();
 
         QDataStream assignmentStream(assignmentPacket.get());
+        hifi::stream::pin(assignmentStream);
 
         assignmentStream << uniqueAssignment;
 
@@ -1641,6 +1647,7 @@ void DomainServer::sendHeartbeatToIceServer() {
             // first read the sockets out from the current packet
             _iceServerHeartbeatPacket->seek(0);
             QDataStream heartbeatStream(_iceServerHeartbeatPacket.get());
+            hifi::stream::pin(heartbeatStream);
 
             QUuid senderUUID;
             HifiSockAddr publicSocket, localSocket;
@@ -1664,6 +1671,7 @@ void DomainServer::sendHeartbeatToIceServer() {
 
             // write our plaintext data to the packet
             QDataStream heartbeatDataStream(_iceServerHeartbeatPacket.get());
+            hifi::stream::pin(heartbeatDataStream);
             heartbeatDataStream << limitedNodeList->getSessionUUID()
                 << limitedNodeList->getPublicSockAddr() << limitedNodeList->getLocalSockAddr();
 

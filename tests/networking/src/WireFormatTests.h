@@ -29,6 +29,9 @@ private slots:
     void node();
     void assignment();
     void anAssignmentRequestReads();
+    void networkPeer();
+    void nodeTypesOfInterest();
+    void theAccountFile();
 };
 
 #endif // hifi_WireFormatTests_h

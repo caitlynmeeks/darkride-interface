@@ -10,6 +10,7 @@
 //
 
 #include "AssignmentDynamicFactory.h"
+#include <shared/WireStream.h>
 
 
 EntityDynamicPointer assignmentDynamicFactory(EntityDynamicType type, const QUuid& id, EntityItemPointer ownerEntity) {
@@ -33,6 +34,7 @@ EntityDynamicPointer AssignmentDynamicFactory::factory(EntityDynamicType type,
 
 EntityDynamicPointer AssignmentDynamicFactory::factoryBA(EntityItemPointer ownerEntity, QByteArray data) {
     QDataStream serializedDynamicDataStream(data);
+    hifi::stream::pin(serializedDynamicDataStream);
     EntityDynamicType type;
     QUuid id;
 
