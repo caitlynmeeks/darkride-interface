@@ -84,10 +84,6 @@ const QString ENTITY_HAS_EXPORT = QStringLiteral("entity_has");
 const QString ENTITY_CALL_EXPORT = QStringLiteral("entity_call");
 const QString CONSOLE_EVAL_EXPORT = QStringLiteral("console_eval");
 
-// The way back to QtScript, off unless chosen (Developer > Scripting > Run JavaScript on QtScript). Its own key since
-// the flip (2026-10-25): the menu saved the old setting's state as "off" in every client that ever ran, so a new
-// default under the old key would never have reached them.
-
 // An instance as a callback target: a callback decoded by the instance's codec calls back through it. It
 // outlives the instance as a weak reference in the callbacks; a gone instance answers nothing.
 class InstanceCallbackTarget : public CallbackTarget {
@@ -1003,7 +999,7 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
         return;
     }
     newDetails.status = EntityScriptStatus::LOADING;
-    newDetails.definingSandboxURL = currentSandboxURL;
+    newDetails.definingSandboxURL = QUrl();   // the script's own address, once it runs (entityScriptReady)
     if (isWasmScript(entityScript) && !wasmEntityScriptsEnabled()) {
         // a module comes from wherever the entity's owner put it and speaks to the host directly, not through the
         // shim; until a module has an object table of its own, only JavaScript entity scripts run
@@ -1096,7 +1092,7 @@ void WasmScriptEngine::entityScriptReady(const EntityItemID& entityID, const QSt
         return;
     }
     newDetails.status = EntityScriptStatus::RUNNING;
-    newDetails.definingSandboxURL = currentSandboxURL.isEmpty() ? QUrl(url) : currentSandboxURL;
+    newDetails.definingSandboxURL = QUrl(url);
     setEntityScriptDetails(entityID, newDetails);
     _entityHosts[entityID] = host;
     callEntityScriptMethod(entityID, "preload");

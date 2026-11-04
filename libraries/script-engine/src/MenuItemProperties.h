@@ -51,7 +51,6 @@ private:
 Q_DECLARE_METATYPE(MenuItemProperties)
 QScriptValue menuItemPropertiesToScriptValue(QScriptEngine* engine, const MenuItemProperties& props);
 void menuItemPropertiesFromScriptValue(const QScriptValue& object, MenuItemProperties& props);
-void registerMenuItemProperties(QScriptEngine* engine);
 
 
 

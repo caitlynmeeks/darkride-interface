@@ -2,12 +2,12 @@
 //  WasmScriptEngine.h
 //  libraries/script-engine/src
 //
-//  The script engine that runs WebAssembly modules. It derives from ScriptEngine for the transition: the
-//  application, the agent and the entity script server register their objects on a ScriptEnginePointer with
-//  registerGlobalObject, and this engine records them in its object table instead of a QScriptValue. A
-//  module reaches them through the host interface (libraries/wasm-scripting) by reflection. The QScriptEngine
-//  this class carries through its base is never run as a script engine; it serves as the serializer for the
-//  types that only have QtScript conversions, until those get QVariant ones.
+//  The script engine that runs WebAssembly modules: the one engine. It derives from ScriptEngine, the part every
+//  engine's hosts see (the Script API by reflection, the engine's context, file, thread, entity script records,
+//  messages and rules): the application, the agent and the entity script server register their objects on a
+//  ScriptEnginePointer with registerGlobalObject, and this engine records them in its object table. A module
+//  reaches them through the host interface (libraries/wasm-scripting) by reflection. The QScriptEngine the base
+//  still carries is never run; it goes with the hosts' last QtScript registrations (the Qt 6 move, stage 0).
 //
 //  What runs here: a module (a .wasm file, run as it is); a JavaScript file, inside the JavaScript guest
 //  (tools/wasm-js, darkride-js.wasm: QuickJS-NG plus a shim that gives the script the objects it had on
@@ -130,18 +130,12 @@ public:
     // Script.addEventHandler and removeEventHandler for a module: a guest function as the handler.
     Q_INVOKABLE void addEventHandler(const EntityItemID& entityID, const QString& eventName, const ScriptCallback& handler);
     Q_INVOKABLE void removeEventHandler(const EntityItemID& entityID, const QString& eventName, const ScriptCallback& handler);
-    using ScriptEngine::addEventHandler;
-    using ScriptEngine::removeEventHandler;
 
     // The Script API a module uses for timers: a guest function as the callback, a timer id back.
     Q_INVOKABLE int setTimeout(const ScriptCallback& callback, int timeoutMS);
     Q_INVOKABLE int setInterval(const ScriptCallback& callback, int intervalMS);
     Q_INVOKABLE void clearTimeout(int timer);
     Q_INVOKABLE void clearInterval(int timer);
-    using ScriptEngine::setTimeout;
-    using ScriptEngine::setInterval;
-    using ScriptEngine::clearTimeout;
-    using ScriptEngine::clearInterval;
 
     // The Script API the JavaScript shim builds its include, require and resolvePath on (a native module may
     // use them too). Paths are resolved against the parent URL the caller tracks (the file whose code runs),
@@ -169,7 +163,6 @@ public:
     QUrl verifiedSandbox(const QString& claimed) const;
     /// Script.dumpApi for this engine: the globals record the guest composed, written under the usual root.
     Q_INVOKABLE bool dumpApi(const QString& path, const QVariantMap& globals);
-    using ScriptEngine::dumpApi;
 
     /// What the engine has done: host calls, bytes crossed, frames, the modules' memory.
     Q_INVOKABLE QVariantMap statistics() const;

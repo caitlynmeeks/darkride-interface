@@ -31,7 +31,6 @@
 #include <ScriptAddressCheck.h>
 #include <SoundCacheScriptingInterface.h>
 #include <UUID.h>
-#include <WebSocketServerClass.h>
 
 #include <EntityScriptClient.h> // for EntityScriptServerServices
 
@@ -462,9 +461,6 @@ void EntityScriptServer::selectAudioFormat(const QString& selectedCodecName) {
 void EntityScriptServer::resetEntitiesScriptEngine() {
     auto engineName = QString("about:Entities %1").arg(++_entitiesScriptEngineCount);
     auto newEngine = scriptEngineFactory(ScriptEngine::ENTITY_SERVER_SCRIPT, NO_SCRIPT, engineName);
-
-    auto webSocketServerConstructorValue = newEngine->newFunction(WebSocketServerClass::constructor);
-    newEngine->globalObject().setProperty("WebSocketServer", webSocketServerConstructorValue);
 
     newEngine->registerGlobalObject("SoundCache", DependencyManager::get<SoundCacheScriptingInterface>().data());
     newEngine->registerGlobalObject("AvatarList", DependencyManager::get<AvatarHashMap>().data());

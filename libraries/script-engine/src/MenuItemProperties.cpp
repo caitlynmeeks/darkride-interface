@@ -40,10 +40,6 @@ MenuItemProperties::MenuItemProperties(const QString& menuName, const QString& m
 {
 }
 
-void registerMenuItemProperties(QScriptEngine* engine) {
-    qScriptRegisterMetaType(engine, menuItemPropertiesToScriptValue, menuItemPropertiesFromScriptValue);
-}
-
 QScriptValue menuItemPropertiesToScriptValue(QScriptEngine* engine, const MenuItemProperties& properties) {
     QScriptValue obj = engine->newObject();
     // not supported

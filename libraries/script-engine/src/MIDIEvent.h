@@ -24,8 +24,6 @@ public:
 
 Q_DECLARE_METATYPE(MIDIEvent)
 
-void registerMIDIMetaTypes(QScriptEngine* engine);
-
 QScriptValue midiEventToScriptValue(QScriptEngine* engine, const MIDIEvent& event);
 void midiEventFromScriptValue(const QScriptValue &object, MIDIEvent& event);
 

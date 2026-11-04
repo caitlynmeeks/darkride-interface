@@ -39,7 +39,6 @@
 #include "ScriptAudioInjector.h"
 #include "SpatialEvent.h"
 #include "TouchEvent.h"
-#include "WebSocketClass.h"
 #include "WebSocketObject.h"
 #include "WheelEvent.h"
 
@@ -933,9 +932,8 @@ void WasmTypeConversions::registerAll() {
         add<Collision>(&encodeCollision, &decodeNothing);
         add<AnimationDetails>(&encodeAnimationDetails, &decodeNothing);
         addOwnedObject<ScriptableResource>();
-        addOwnedObject<WebSocketClass>();
-        // what the new engine's network objects are made of (the guest's XMLHttpRequest, WebSocket, WebSocketServer):
-        // the script owns them, so one it has let go of is deleted, as QtScript collected its own
+        // what the engine's network objects are made of (the guest's XMLHttpRequest, WebSocket, WebSocketServer):
+        // the script owns them, so one it has let go of is deleted
         addOwnedObject<HttpRequestObject>(&requestLingers);
         addOwnedObject<WebSocketObject>();
         addOwnedObject<WebSocketServerObject>();

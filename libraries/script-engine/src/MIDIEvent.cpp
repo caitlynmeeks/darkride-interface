@@ -11,10 +11,6 @@
 
 #include "MIDIEvent.h"
 
-void registerMIDIMetaTypes(QScriptEngine* engine) {
-    qScriptRegisterMetaType(engine, midiEventToScriptValue, midiEventFromScriptValue);
-}
-
 const QString MIDI_DELTA_TIME_PROP_NAME = "deltaTime";
 const QString MIDI_EVENT_TYPE_PROP_NAME = "type";
 const QString MIDI_DATA_1_PROP_NAME = "data1";
