@@ -22,4 +22,5 @@ private slots:
     void testExrTruncated();
     void testExrHugeWindow();
     void testPictureHeaderSize();
+    void testFormatsReportSize();
 };

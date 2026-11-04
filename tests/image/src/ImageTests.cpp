@@ -15,6 +15,8 @@
 #include <QtCore/QBuffer>
 #include <QtCore/QTemporaryDir>
 #include <QtGui/QImage>
+#include <QtGui/QImageReader>
+#include <QtGui/QImageIOHandler>
 
 #include <OpenEXR/ImfRgbaFile.h>
 #include <OpenEXR/ImfArray.h>
@@ -137,4 +139,24 @@ void ImageTests::testPictureHeaderSize() {
     }
     image::Image refused = readPicture(lying, "lying.png");
     QVERIFY(refused.isNull());
+}
+
+// Every picture format this Qt reads must report its size from the header before decoding, or the size check above
+// would refuse it whole; the list is printed for the record
+void ImageTests::testFormatsReportSize() {
+    QStringList without;
+    QStringList with;
+    for (const QByteArray& format : QImageReader::supportedImageFormats()) {
+        QBuffer empty;
+        empty.open(QIODevice::ReadOnly);
+        QImageReader reader(&empty, format);
+        (reader.supportsOption(QImageIOHandler::Size) ? with : without) << QString::fromLatin1(format);
+    }
+    qInfo() << "formats reporting a size:" << with.join(" ");
+    qInfo() << "formats NOT reporting a size:" << (without.isEmpty() ? "none" : without.join(" "));
+    for (const char* common : { "png", "jpg", "jpeg", "bmp", "gif", "tga", "ico", "webp", "tif", "tiff", "svg" }) {
+        if (QImageReader::supportedImageFormats().contains(QByteArray(common))) {
+            QVERIFY2(with.contains(QString(common)), common);
+        }
+    }
 }
