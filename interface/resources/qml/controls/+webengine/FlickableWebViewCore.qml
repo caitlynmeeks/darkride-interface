@@ -185,7 +185,7 @@ Item {
         property bool safeLoading: false
         property bool loadingLatched: false
         property var loadingRequest: null
-        onLoadingChanged: {
+        onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
             webViewCore.loadingRequest = loadRequest;
             webViewCore.safeLoading = webViewCore.loading && !loadingLatched;
             webViewCore.loadingLatched |= webViewCore.loading;

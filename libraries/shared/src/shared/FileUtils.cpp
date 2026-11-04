@@ -39,6 +39,12 @@ const QStringList& FileUtils::getFileSelectors() {
         extraSelectors << "gles";
 #endif
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // the Qt 6 twins (+qt6/ folders) of the QML files that can't be written for both Qt 5 and Qt 6: the web
+        // views (team/editor-ui/WEB-QT6-PLAN.md section 3). Qt 5 never looks in those folders
+        extraSelectors << "qt6";
+#endif
+
 #ifndef Q_OS_ANDROID
         extraSelectors << "webengine";
 #endif

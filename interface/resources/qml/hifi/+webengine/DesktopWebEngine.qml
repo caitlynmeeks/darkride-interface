@@ -32,7 +32,8 @@ Item {
             }
             // a page can start a download by itself: the user says yes to each one. The file's name goes in the title,
             // which shows as plain text; the site's name only in the line under it
-            var fileName = String(download.path).split(/[\\/]/).pop() || "this file";
+            // downloadFileName and downloadDirectory since Qt 5.14; Qt 6 has no path
+            var fileName = String(download.downloadFileName || download.path).split(/[\\/]/).pop() || "this file";
             // the host after any user-info part, read as browsers read it (to the last '@')
             var site = String(download.url).match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^\/?#]*@)?([^\/?#@]+)/i);
             var question = desktop.messageBox({
@@ -52,7 +53,8 @@ Item {
             }
             adaptedPath = File.convertUrlToPath(downloadUrl);
             tempDir = File.getTempDir();
-            download.path = tempDir + "/" + adaptedPath;
+            download.downloadDirectory = tempDir;
+            download.downloadFileName = adaptedPath;
             download.accept();
             if (download.state === WebEngineDownloadItem.DownloadInterrupted) {
                 console.log("download failed to complete");
@@ -61,7 +63,7 @@ Item {
 
         profile.downloadFinished.connect(function(download){
             if (download.state === WebEngineDownloadItem.DownloadCompleted) {
-                File.runUnzip(download.path, downloadUrl, autoAdd);
+                File.runUnzip(download.downloadDirectory + "/" + download.downloadFileName, downloadUrl, autoAdd);
             } else {
                 console.log("The download was corrupted, state: " + download.state);
             }

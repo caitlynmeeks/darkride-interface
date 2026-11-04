@@ -98,7 +98,7 @@ Item {
             permissionPopupBackground.visible = true;
         }
 
-        onLoadingChanged: {
+        onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
             keyboardRaised = false;
             punctuationMode = false;
             keyboard.resetShiftMode(false);

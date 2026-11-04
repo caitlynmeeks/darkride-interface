@@ -29,7 +29,7 @@ WebView {
 
     userScripts: [ createGlobalEventBridge, raiseAndLowerKeyboard ]
 
-    onLoadingChanged: {
+    onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
         if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
             addressBar.text = loadRequest.url
         }
