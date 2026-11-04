@@ -37,6 +37,7 @@
 #include <Extents.h>
 #include <QVariantGLM.h>
 #include <Grab.h>
+#include <shared/WireStream.h>
 
 #include "EntityScriptingInterface.h"
 #include "EntitiesLogging.h"
@@ -2534,6 +2535,7 @@ void EntityItem::deserializeActionsInternal() {
     QVector<QByteArray> serializedActions;
     if (_allActionsDataCache.size() > 0) {
         QDataStream serializedActionsStream(_allActionsDataCache);
+        hifi::stream::pin(serializedActionsStream);
         serializedActionsStream >> serializedActions;
     }
 
@@ -2542,6 +2544,7 @@ void EntityItem::deserializeActionsInternal() {
 
     foreach (QByteArray serializedAction, serializedActions) {
         QDataStream serializedActionStream(serializedAction);
+        hifi::stream::pin(serializedActionStream);
         EntityDynamicType actionType;
         QUuid actionID;
         serializedActionStream >> actionType;
@@ -2641,6 +2644,7 @@ void EntityItem::serializeActions(bool& success, QByteArray& result) const {
     }
 
     QDataStream serializedActionsStream(&result, QIODevice::WriteOnly);
+    hifi::stream::pin(serializedActionsStream);
     serializedActionsStream << serializedActions;
 
     if (result.size() >= _maxActionsDataSize) {
