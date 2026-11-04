@@ -135,7 +135,7 @@ QString FileUtils::standardPath(QString subfolder) {
 #ifdef Q_OS_ANDROID
         path = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
 #else
-        path = QStandardPaths::writableLocation(QStandardPaths::DataLocation);
+        path = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
 #endif
     }
     if (!subfolder.startsWith("/")) {

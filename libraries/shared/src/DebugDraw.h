@@ -21,6 +21,9 @@
 #include <QObject>
 #include <QString>
 
+// the glm types' Q_DECLARE_METATYPE lines come before this class's moc code uses them (Qt 6's moc instantiates them)
+#include "RegisteredMetaTypes.h"
+
 /**jsdoc
  * The <code>DebugDraw</code> API renders debug markers and lines. These markers are only visible locally; they are not visible 
  * to other users.
