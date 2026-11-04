@@ -7,6 +7,7 @@
 //
 
 #include "SignalRelay.h"
+#include "ValueCodec.h"
 
 #include <limits>
 
@@ -163,7 +164,7 @@ void SignalRelay::deliver(const Connection& connection, void** arguments) {
         } else if (type == QMetaType::QVariant) {
             values.append(*static_cast<const QVariant*>(argument));
         } else {
-            values.append(QVariant(type, argument));
+            values.append(variantOfType(type, argument));
         }
     }
     if (connection.handler) {
