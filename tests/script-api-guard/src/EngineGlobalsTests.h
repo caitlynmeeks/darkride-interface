@@ -21,6 +21,7 @@ private slots:
     void initTestCase();
     void testListeningSocketsAreAnAgentsAlone();
     void testNetworkObjectsInEveryContext();
+    void testAnAvatarsScriptsGetAWorldsGlobals();
 };
 
 #endif // hifi_EngineGlobalsTests_h

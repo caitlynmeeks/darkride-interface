@@ -120,6 +120,10 @@ public:
      */
     Q_INVOKABLE ScriptEnginePointer loadScript(const QUrl& scriptFilename = QString(),
         bool isUserLoaded = true, bool loadScriptFromEditor = false, bool activateMainWindow = false, bool reload = false, bool quitWhenFinished = false);
+    /// Starts one of the avatar's scripts (a .fst's script line) as loadScript does, but under a world's rules: its
+    /// engine is of type AVATAR and runs as the world `world` (ScriptEngine::holdsWorldRules, ScriptCaller::newWorld),
+    /// set before anything is fetched or run. Not for scripts to call.
+    ScriptEnginePointer loadAvatarScript(const QUrl& scriptFilename, int world);
 
     /**jsdoc
      * Stops or restarts an Interface script.
@@ -345,6 +349,10 @@ protected slots:
     void onScriptFinished(const QString& fileNameString, ScriptEnginePointer engine);
 
 protected:
+    /// loadScript's and loadAvatarScript's work, on this object's thread: the engine made, prepared (a step on it
+    /// before anything is fetched or run; null for none), then its script fetched and launched.
+    ScriptEnginePointer loadScriptEngine(const QUrl& scriptFilename, bool isUserLoaded, bool reload, bool quitWhenFinished,
+                                         const std::function<void(const ScriptEnginePointer&)>& prepare);
     friend class ScriptEngine;
 
     ScriptEnginePointer reloadScript(const QString& scriptName, bool isUserLoaded = true) { return loadScript(scriptName, isUserLoaded, false, false, true); }

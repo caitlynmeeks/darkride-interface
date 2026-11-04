@@ -278,8 +278,8 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
         qCDebug(scriptengine) << "WasmScriptEngine: global" << name << "is null, not registered";
         return;
     }
-    if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(name)) {
-        // a world's entity scripts don't get this one: a stand-in of the same name, with no members
+    if (holdsWorldRules() && !ScriptApiPolicy::allowsGlobal(name)) {
+        // a world's scripts don't get this one: a stand-in of the same name, with no members
         object = new RefusedGlobal(name, this);
     }
     if (_objects->global(name) == ObjectTable::NULL_HANDLE) {
@@ -369,13 +369,14 @@ bool WasmScriptEngine::fetchModuleBytes() {
 // --- running ----------------------------------------------------------------------------------------------------
 
 void WasmScriptEngine::run() {
-    if (QThread::currentThread() != qApp->thread() && _context == Context::CLIENT_SCRIPT) {
+    if (QThread::currentThread() != qApp->thread() && _context == Context::CLIENT_SCRIPT && !holdsWorldRules()) {
         hifi::scripting::setLocalAccessSafeThread(true);
     }
-    if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
-        // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
-        // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
-        // makes a new one for each engine, never from a pool) and ends with it.
+    if (QThread::currentThread() != qApp->thread() && holdsWorldRules()) {
+        // this thread runs only a world's scripts (the world's entity scripts, or an avatar's as a world of their
+        // own): whatever is called on it is a world's script's, also a call no guard marks (ScriptCaller). Nothing
+        // clears the mark: the thread is this engine's own (runInThread makes a new one for each engine, never from a
+        // pool) and ends with it.
         ScriptCaller::markThreadAsWorld(_worldId);
     }
     QSharedPointer<ScriptEngines> scriptEngines(_scriptEngines);
@@ -428,6 +429,11 @@ QStringList WasmScriptEngine::registeredGlobalNames() const {
     return _objects->globalNames();
 }
 
+QString WasmScriptEngine::registeredGlobalClass(const QString& name) const {
+    const QObject* object = _objects->object(_objects->global(name));
+    return object ? QString(object->metaObject()->className()) : QString();
+}
+
 // An instance of a module in this engine: its codec (with this engine's table, the serializer and the
 // instance as the callback target), its host interface (logging into this script's log, failures stopping
 // what they must), instantiated with WASI, its C runtime initialised, its script_start called.
@@ -456,8 +462,8 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         });
     }
     instance->host = std::make_unique<HostInterface>(*instance->instance, *_objects, *instance->codec, *_relay);
-    if (isEntityClientScript()) {
-        // a world's entity scripts: the script API policy, held by the host at describe, call, read and write
+    if (holdsWorldRules()) {
+        // a world's scripts: the script API policy, held by the host at describe, call, read and write
         HostInterface::MemberGate gate;
         gate.allowsClass = &ScriptApiPolicy::allowsClass;
         gate.deniesMethod = &ScriptApiPolicy::deniesMethod;

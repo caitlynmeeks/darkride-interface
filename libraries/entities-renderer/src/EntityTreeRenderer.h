@@ -78,6 +78,11 @@ public:
 
     void setCurrentlySelectedItems(QList<EntityItemID>& value) { _currentlySelectedEntities = value;}
     bool checkIfEntityIsSelected(const EntityItemID& value) { return _currentlySelectedEntities.contains(value); }
+
+    /// The world `world` was left (ScriptCaller::retireWorld, then worldLeft), once per world: at a world change or a
+    /// content reload for the world's entities engine, and from the app for an avatar's scripts' world when the
+    /// avatar changes (Application::unloadAvatarScripts).
+    void markWorldLeft(int world);
     bool isAnythingSelected() { return !_currentlySelectedEntities.isEmpty(); }
     void clearEntitySelections() { _currentlySelectedEntities.clear(); }
 
@@ -305,7 +310,6 @@ private:
     void resetEntitiesScriptEngine();
     void replaceEntitiesScriptEngine();
     void retireEntitiesScriptEngine(const ScriptEnginePointer& old);
-    void markWorldLeft(int world);
     void entitiesEngineStopped(int world);
     void interruptIfStillRunning(QWeakPointer<ScriptEngine> old, int attempt);
     void restartKeptEntityScripts();

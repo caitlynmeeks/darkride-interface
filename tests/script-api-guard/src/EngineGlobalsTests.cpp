@@ -14,6 +14,7 @@
 #include <DependencyManager.h>
 #include <NodeList.h>
 #include <ResourceManager.h>
+#include <ScriptCaller.h>
 #include <WasmScriptEngine.h>
 
 QTEST_GUILESS_MAIN(EngineGlobalsTests)
@@ -21,10 +22,11 @@ QTEST_GUILESS_MAIN(EngineGlobalsTests)
 namespace {
 
 // an engine with the globals it gives its context, registered as run() registers them before a script starts (no
-// script runs here)
+// script runs here); given a world id first when its maker would (an entities engine, an avatar's scripts)
 class GlobalsEngine : public WasmScriptEngine {
 public:
-    explicit GlobalsEngine(Context context) : WasmScriptEngine(context, NO_SCRIPT, "about:globals") {
+    explicit GlobalsEngine(Context context, int world = 0) : WasmScriptEngine(context, NO_SCRIPT, "about:globals") {
+        setWorldId(world);
         registerEngineGlobals();
     }
 };
@@ -63,4 +65,38 @@ void EngineGlobalsTests::testNetworkObjectsInEveryContext() {
                                                            .arg(expected).arg(int(context)).arg(names.join(", "))));
         }
     }
+}
+
+// An avatar's scripts (a client script engine given a world id before it runs) run under a world's rules, as a
+// world's entity scripts do: a global the script API policy removes becomes a stand-in, Messages is the world's.
+// The visitor's own scripts keep everything, and a world id on a server's or an agent's engine changes nothing
+// (security finding #66).
+void EngineGlobalsTests::testAnAvatarsScriptsGetAWorldsGlobals() {
+    QObject menu;   // stands for a host's registration the policy refuses a world's scripts
+    GlobalsEngine visitor(ScriptEngine::CLIENT_SCRIPT);
+    GlobalsEngine avatar(ScriptEngine::CLIENT_SCRIPT, ScriptCaller::newWorld());
+    GlobalsEngine entities(ScriptEngine::ENTITY_CLIENT_SCRIPT, ScriptCaller::newWorld());
+    GlobalsEngine agent(ScriptEngine::AGENT_SCRIPT, ScriptCaller::newWorld());
+    QVERIFY(!visitor.holdsWorldRules());
+    QVERIFY(avatar.holdsWorldRules());
+    QVERIFY(entities.holdsWorldRules());
+    QVERIFY(!agent.holdsWorldRules());
+    // (the world's Messages object, registered with the standard globals, is checked in the walled kit,
+    // tests-manual/wasm-scripting/avatar-scripts.sh: an app channel's message never arrives, a plain one's does)
+
+    for (GlobalsEngine* engine : { &visitor, &avatar, &entities, &agent }) {
+        engine->registerGlobalObject("Menu", &menu);
+    }
+    QCOMPARE(visitor.registeredGlobalClass("Menu"), QString("QObject"));
+    QCOMPARE(avatar.registeredGlobalClass("Menu"), QString("RefusedGlobal"));
+    QCOMPARE(entities.registeredGlobalClass("Menu"), QString("RefusedGlobal"));
+    QCOMPARE(agent.registeredGlobalClass("Menu"), QString("QObject"));
+    // what the policy allows every script stays itself
+    QCOMPARE(avatar.registeredGlobalClass("Vec3"), visitor.registeredGlobalClass("Vec3"));
+    QVERIFY(avatar.registeredGlobalClass("Vec3") != QString("RefusedGlobal"));
+
+    // world ids come in one series, each new
+    const int first = ScriptCaller::newWorld();
+    QVERIFY(first > 0);
+    QVERIFY(ScriptCaller::newWorld() > first);
 }

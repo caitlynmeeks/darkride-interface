@@ -461,10 +461,17 @@ public:
 
     // this is used by code in ScriptEngines.cpp during the "reload all" operation
     bool isStopping() const { return _isStopping; }
-    /// The id of the world whose scripts a client's entities engine runs (ScriptCaller::world() on its thread); set by
-    /// its maker before it runs. 0: none given (ScriptCaller::ANY_WORLD on its thread).
+    /// The id of the world whose scripts this engine runs (ScriptCaller::world() on its thread): a client's entities
+    /// engine, or a client script engine that runs an avatar's scripts under a world's rules (holdsWorldRules); set by
+    /// its maker before it runs. 0: none given (ScriptCaller::ANY_WORLD on an entities engine's thread).
     void setWorldId(int worldId) { _worldId = worldId; }
     int getWorldId() const { return _worldId; }
+    /// Whether this engine's scripts run under a world's rules (the script API policy, the world's Messages, no
+    /// protected settings; ScriptApiPolicy): a world's entities engine, or a client script engine given a world id
+    /// before it runs. The visitor's own scripts (the app's, the ones they install) run under none. An avatar's
+    /// scripts come with content the visitor wears, not from the visitor, so they run under a world's rules, as a
+    /// world of their own (security finding #66).
+    bool holdsWorldRules() const { return _context == ENTITY_CLIENT_SCRIPT || (_context == CLIENT_SCRIPT && _worldId != 0); }
     /// Whether the world this engine runs the scripts of was left (ScriptCaller::retireWorld): its scripts' calls are
     /// refused, and a wait of theirs (a synchronous request, Script.include, Script.require) ends, as when it stops.
     bool worldWasLeft() const;

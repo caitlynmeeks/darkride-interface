@@ -182,8 +182,10 @@ render::ItemID EntityTreeRenderer::renderableIdForEntityId(const EntityItemID& i
 int EntityTreeRenderer::_entitiesScriptEngineCount = 0;
 
 void EntityTreeRenderer::resetEntitiesScriptEngine() {
+    // one series of ids with every other engine that runs a world's scripts (an avatar's: ScriptCaller::newWorld)
+    _entitiesScriptEngineCount = ScriptCaller::newWorld();
     _entitiesScriptEngine = scriptEngineFactory(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT,
-                                                QString("about:Entities %1").arg(++_entitiesScriptEngineCount));
+                                                QString("about:Entities %1").arg(_entitiesScriptEngineCount));
     ScriptEngine* engine = _entitiesScriptEngine.data();
     // what this engine's scripts make outside it is tagged with this id (ScriptCaller::world()), and goes when it stops
     engine->setWorldId(_entitiesScriptEngineCount);
