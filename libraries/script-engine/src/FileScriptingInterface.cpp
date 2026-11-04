@@ -22,10 +22,12 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <QtCore/QFileInfo>
+#include <QtCore/QDirIterator>
 
 // FIXME quazip hasn't been built on the android toolchain
 #if !defined(Q_OS_ANDROID)
 #include <quazip/quazip.h>
+#include <quazip/quazipfileinfo.h>
 #include <quazip/JlCompress.h>
 #endif
 
@@ -79,32 +81,70 @@ QStringList FileScriptingInterface::unzipFile(QString path, QString tempDir) {
     QDir dir(path);
     QString dirName = dir.path();
     qCDebug(scriptengine) << "Directory to unzip: " << dirName;
-    QString target = tempDir + "/model_repo";
+    const QStringList list = unzipArchive(dirName, tempDir + "/model_repo");
+    qCDebug(scriptengine) << list;
+    if (list.isEmpty()) {
+        qCDebug(scriptengine) << "Extraction failed";
+    }
+    return list;
+#endif
+}
 
+QStringList FileScriptingInterface::unzipArchive(const QString& zipPath, const QString& target) {
+#if defined(Q_OS_ANDROID)
+    Q_UNUSED(zipPath); Q_UNUSED(target);
+    return QStringList();
+#else
     // every entry has to land inside the target folder: an archive whose entry names climb out of it (../, an absolute
     // path, a drive letter) would write wherever they point, so such an archive is refused whole
     const QString targetPath = QDir::cleanPath(QDir(target).absolutePath());
     const QString targetRoot = targetPath + "/";
-    const QStringList entries = JlCompress::getFileList(dirName);
+    const QStringList entries = JlCompress::getFileList(zipPath);
     for (const QString& entry : entries) {
         const QString landing = QDir::cleanPath(QDir(target).absoluteFilePath(entry));
         if (entry.contains('\\') || entry.contains(':') || (landing != targetPath && !landing.startsWith(targetRoot))) {
-            qCWarning(scriptengine) << "Refused to unzip" << dirName << ": the entry" << entry.left(200)
+            qCWarning(scriptengine) << "Refused to unzip" << zipPath << ": the entry" << entry.left(200)
                                     << "would land outside the target folder";
             return QStringList();
         }
     }
-
-    QStringList list = JlCompress::extractDir(dirName, target);
-
-    qCDebug(scriptengine) << list;
-
-    if (!list.isEmpty()) {
-        return list;
-    } else {
-        qCDebug(scriptengine) << "Extraction failed";
-        return list;
+    // a symbolic link entry would be made as a link to any place, and an entry stored under it would write through
+    // the link (QuaZip makes an archive's links since 1.0): an archive with one is refused whole, before anything is
+    // written
+    {
+        QuaZip zip(zipPath);
+        if (!zip.open(QuaZip::mdUnzip)) {
+            qCWarning(scriptengine) << "Refused to unzip" << zipPath << ": not a readable zip archive";
+            return QStringList();
+        }
+        for (bool more = zip.goToFirstFile(); more; more = zip.goToNextFile()) {
+            QuaZipFileInfo64 info;
+            if (!zip.getCurrentFileInfo(&info)) {
+                qCWarning(scriptengine) << "Refused to unzip" << zipPath << ": an entry could not be read";
+                return QStringList();
+            }
+            if (info.isSymbolicLink()) {
+                qCWarning(scriptengine) << "Refused to unzip" << zipPath << ": the entry" << info.name.left(200)
+                                        << "is a symbolic link";
+                return QStringList();
+            }
+        }
     }
+
+    const QStringList list = JlCompress::extractDir(zipPath, target);
+
+    // the archive's permission bits are not kept (QuaZip applies them since 1.0): files 0644, folders 0755
+    const QFile::Permissions fileBits = QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadGroup | QFileDevice::ReadOther;
+    const QFile::Permissions folderBits = fileBits | QFileDevice::ExeOwner | QFileDevice::ExeGroup | QFileDevice::ExeOther;
+    if (QDir(target).exists()) {
+        QFile::setPermissions(target, folderBits);
+        QDirIterator it(target, QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString entry = it.next();
+            QFile::setPermissions(entry, it.fileInfo().isDir() ? folderBits : fileBits);
+        }
+    }
+    return list;
 #endif
 }
 
