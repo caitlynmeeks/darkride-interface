@@ -1866,8 +1866,6 @@ void Rig::initNodeConstraints(const HFMModel& hfmModel) {
         }
         nodeConstraint.sourceRestLocal = modelAxesLocalRotation(_absoluteDefaultPoses, nodeConstraint.source);
         nodeConstraint.jointRestLocal = modelAxesLocalRotation(_absoluteDefaultPoses, nodeConstraint.joint);
-        nodeConstraint.sourceToJoint = glm::inverse(modelAxesRotation(_absoluteDefaultPoses, nodeConstraint.source)) *
-                                       modelAxesRotation(_absoluteDefaultPoses, nodeConstraint.joint);
         _nodeConstraints.push_back(nodeConstraint);
     }
     // parents first, so a constraint on a constrained joint's child sees it turned
@@ -1924,17 +1922,24 @@ void Rig::applyNodeConstraints(AnimPoseVec& relativePoses, AnimPoseVec& absolute
             const glm::quat aim = rotationBetween(from, to);
             jointRotation = safeMix(glm::quat(), aim, constraint.weight) * restRotation;
         } else {
-            glm::quat turn = glm::inverse(constraint.sourceRestLocal) * modelAxesLocalRotation(absolutePoses, constraint.source);
+            const glm::quat source = modelAxesLocalRotation(absolutePoses, constraint.source);
+            glm::quat turn;
             if (constraint.type == hfm::NodeConstraint::Type::Roll) {
-                // the turn's twist about the axis
+                // the source's turn from its rest, in the joint's rest axes (as three-vrm's VRMRollConstraint), and its
+                // twist about the joint's axis
+                turn = glm::inverse(constraint.jointRestLocal) * source * glm::inverse(constraint.sourceRestLocal) *
+                       constraint.jointRestLocal;
                 const glm::vec3 axis = glm::normalize(constraint.axis);
                 const glm::vec3 along = glm::dot(glm::vec3(turn.x, turn.y, turn.z), axis) * axis;
                 glm::quat twist(turn.w, along.x, along.y, along.z);
                 const float length = glm::length(twist);
                 turn = length > EPSILON ? twist / length : glm::quat();
+            } else {
+                // the source's turn from its rest, in its own axes, taken in the joint's own (as three-vrm's
+                // VRMRotationConstraint): Seed-san's robot arm, mounted turned on her back, follows her arm joint by joint
+                turn = glm::inverse(constraint.sourceRestLocal) * source;
             }
-            const glm::quat turnInJoint = glm::inverse(constraint.sourceToJoint) * turn * constraint.sourceToJoint;
-            jointRotation = parentRotation * constraint.jointRestLocal * safeMix(glm::quat(), turnInJoint, constraint.weight);
+            jointRotation = parentRotation * constraint.jointRestLocal * safeMix(glm::quat(), turn, constraint.weight);
         }
         // back into the rig's joint axes, relative to the parent
         const glm::quat rigRotation = jointRotation * _animSkeleton->getJointRotationOffset(constraint.joint);
