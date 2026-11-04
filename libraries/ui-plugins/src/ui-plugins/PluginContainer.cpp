@@ -12,6 +12,8 @@
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
+#include <QAction>        // QtWidgets in Qt 5, QtGui in Qt 6
+#include <QActionGroup>
 
 #include <ui/Menu.h>
 #include <MainWindow.h>

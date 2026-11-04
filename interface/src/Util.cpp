@@ -182,7 +182,7 @@ void runTimingTests() {
     const int EXTRA_JUNK_SIZE = 200;
     extraJunk.append((unsigned char)255);
     for (int i = 0; i < EXTRA_JUNK_SIZE; i++) {
-        extraJunk.append(QString("junk"));
+        extraJunk.append("junk");
     }
 
     {
@@ -266,7 +266,7 @@ void runUnitTests() {
         QByteArray codedValueBuffer = codedValue;
         
         codedValueBuffer.append((unsigned char)255);
-        codedValueBuffer.append(QString("junk"));
+        codedValueBuffer.append("junk");
         
         qDebug() << "codedValueBuffer:";
         outputBufferBits((const unsigned char*)codedValueBuffer.constData(), codedValueBuffer.size());

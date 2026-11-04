@@ -22,9 +22,11 @@
 #include "RightsLine.h"
 
 void MetaverseRequests::send(const QString& method, const QString& path, const QVariant& body, QJSValue callback) {
-    auto answer = [callback](const QJSValue& error, int status, const QVariant& data) mutable {
+    // the engine that owns this object (the panels' QML engine), which made the callback: QJSValue::engine() is gone in Qt 6
+    QJSEngine* engine = qjsEngine(this);
+    auto answer = [callback, engine](const QJSValue& error, int status, const QVariant& data) mutable {
         if (callback.isCallable()) {
-            callback.call({ error, QJSValue(status), callback.engine() ? callback.engine()->toScriptValue(data) : QJSValue() });
+            callback.call({ error, QJSValue(status), engine ? engine->toScriptValue(data) : QJSValue() });
         }
     };
     if (!path.startsWith("/api/") || path.contains("..")) {

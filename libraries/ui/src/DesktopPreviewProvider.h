@@ -6,8 +6,10 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 
+#include <QtCore/QObject>
+#include <QtGui/QImage>
+
 #include <DependencyManager.h>
-#include <QImage>
 
 class DesktopPreviewProvider : public QObject, public Dependency {
     SINGLETON_DEPENDENCY
