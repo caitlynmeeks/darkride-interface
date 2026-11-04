@@ -253,10 +253,11 @@ bool RecordingScriptingInterface::saveRecordingToAsset(const ScriptCallback& get
             QString clip_atp_url = "";
             if (upload->getError() == AssetUpload::NoError) {
                 clip_atp_url = QString("%1:%2").arg(URL_SCHEME_ATP, hash);
-                upload->deleteLater();
             } else {
                 qCWarning(scriptengine) << "Error during the Asset upload.";
             }
+            // the upload is done with either way (a failed one was never freed before)
+            upload->deleteLater();
             getClipAtpUrl.post({ clip_atp_url });
         });
         upload->start();
