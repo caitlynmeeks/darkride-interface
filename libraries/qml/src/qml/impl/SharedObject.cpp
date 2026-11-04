@@ -84,7 +84,8 @@ SharedObject::SharedObject() {
     _quickWindow->setFormat(getDefaultOpenGLSurfaceFormat());
     _quickWindow->setColor(QColor(255, 255, 255, 0));
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    _quickWindow->setClearBeforeRendering(true);   // Qt 6 always clears to the window's colour
+    // (Qt 6 always clears to the window's colour)
+    _quickWindow->setClearBeforeRendering(true);
 #endif
 
 
@@ -304,17 +305,18 @@ void SharedObject::releaseTextureAndFence() {
     }
 }
 
-void SharedObject::setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& size) {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    // (A) Qt's own render target round this frame's cache texture (Qt builds its depth-stencil; our FBO is unused);
-    // (B), one fixed target per surface and a blit into the cache texture, comes behind TIVOLI_QML_TARGET (entry 21)
+// Qt's own render target round the texture (Qt builds its depth-stencil; our FBO is unused): shape (A) gives it this
+// frame's cache texture, shape (B) one fixed texture per surface size (RenderEventHandler, entry 21)
+void SharedObject::setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& size) {
     Q_UNUSED(fbo);
     _quickWindow->setRenderTarget(QQuickRenderTarget::fromOpenGLTexture(texture, size));
-#else
-    Q_UNUSED(texture);
-    _quickWindow->setRenderTarget(fbo, size);
-#endif
 }
+#else
+void SharedObject::setRenderTarget(uint32_t fbo, const QSize& size) {
+    _quickWindow->setRenderTarget(fbo, size);
+}
+#endif
 
 QSize SharedObject::getSize() const {
     QMutexLocker locker(&_mutex);
