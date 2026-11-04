@@ -84,7 +84,7 @@ void TraceEvent::writeJson(QTextStream& out) const {
     QJsonObject ev {
         { "name", QJsonValue(name) },
         { "cat", category.categoryName() },
-        { "ph", QString(type) },
+        { "ph", QString(QLatin1Char(type)) },
         { "ts", timestamp },
         { "pid", processID },
         { "tid", threadID }

@@ -13,6 +13,7 @@
 #include <QtCore/QObject>
 
 #include <functional>
+#include <utility>
 
 #if defined(Q_OS_WIN)
 // Enable event queue debugging
@@ -22,6 +23,18 @@
 namespace hifi { namespace qt {
 void addBlockingForbiddenThread(const QString& name, QThread* thread = nullptr);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt 6.5's Q_ARG and Q_RETURN_ARG make typed arguments (QMetaMethodArgument, QTemplatedMetaMethodReturnArgument<T>),
+// not QGenericArgument, and Qt's own invokeMethod takes any number of them. checkedBlockingInvoke gives the warnings and
+// the profile range of the Qt 5 forms below, around the call.
+bool checkedBlockingInvoke(const char* function, const std::function<bool()>& invoke);
+template <typename... Args>
+bool blockingInvokeMethod(const char* function, QObject* obj, const char* member, Args&&... args) {
+    return checkedBlockingInvoke(function, [&] {
+        return QMetaObject::invokeMethod(obj, member, Qt::BlockingQueuedConnection, std::forward<Args>(args)...);
+    });
+}
+#else
 bool blockingInvokeMethod(
     const char* function,
     QObject *obj, const char *member,
@@ -50,6 +63,7 @@ bool blockingInvokeMethod(
     QGenericArgument val7 = QGenericArgument(),
     QGenericArgument val8 = QGenericArgument(),
     QGenericArgument val9 = QGenericArgument());
+#endif
 
 // The same hop for a callable: f runs on obj's thread and the caller waits. The warnings (a forbidden thread) and the
 // profile range are the named forms'; on obj's own thread f runs in place, with the warning the named forms give,
