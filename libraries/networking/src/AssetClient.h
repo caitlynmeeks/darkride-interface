@@ -16,6 +16,7 @@
 #include <QtQml/QJSEngine>
 #include <QString>
 
+#include <chrono>
 #include <map>
 
 #include <DependencyManager.h>
@@ -28,6 +29,7 @@
 #include "Node.h"
 #include "ReceivedMessage.h"
 
+class QTimer;
 class GetMappingRequest;
 class SetMappingRequest;
 class GetAllMappingsRequest;
@@ -61,6 +63,16 @@ public:
     Q_INVOKABLE AssetUpload* createUpload(const QString& filename);
     Q_INVOKABLE AssetUpload* createUpload(const QByteArray& data);
 
+    // An upload or a mapping operation (a script's or the editor's one-off asks) whose answer hasn't come this long
+    // after both its sending and the asset server's last answer of any kind fails as a network error, so the asker
+    // never waits forever when an answer is lost; an upload gets extra time for its size. Asset fetches are left to
+    // the resource cache's own retries: under a heavy load their answers can wait a long time behind other data.
+    using Clock = std::chrono::steady_clock;
+    static constexpr std::chrono::seconds NO_ANSWER_TIMEOUT { 60 };
+    static constexpr qint64 UPLOAD_ALLOWANCE_BYTES_PER_SECOND { 16 * 1024 };
+    static Clock::time_point answerDeadline(Clock::time_point sentAt, Clock::time_point lastAnswerAt,
+                                            qint64 uploadSize);
+
 public slots:
     void initCaching();
 
@@ -79,6 +91,8 @@ private slots:
 
     void handleNodeKilled(SharedNodePointer node);
     void handleNodeClientConnectionReset(SharedNodePointer node);
+
+    void failUnansweredRequests();
 
 private:
     MessageID getAssetMapping(const AssetUtils::AssetHash& hash, MappingOperationCallback callback);
@@ -113,6 +127,20 @@ private:
     std::unordered_map<SharedNodePointer, std::unordered_map<MessageID, GetAssetRequestData>> _pendingRequests;
     std::unordered_map<SharedNodePointer, std::unordered_map<MessageID, GetInfoCallback>> _pendingInfoRequests;
     std::unordered_map<SharedNodePointer, std::unordered_map<MessageID, UploadResultCallback>> _pendingUploads;
+
+    // the uploads and mapping operations sent and not yet answered (an entry whose request is gone is dropped by the
+    // next check), and when the asset server last answered anything; the check runs every few seconds only while
+    // something waits
+    struct AwaitedAnswer {
+        Clock::time_point sentAt;
+        qint64 uploadSize;
+        bool isUpload;
+    };
+    void awaitAnswer(MessageID messageID, bool isUpload, qint64 uploadSize = 0);
+    void noteAnswer() { _lastAnswerAt = Clock::now(); }
+    std::unordered_map<MessageID, AwaitedAnswer> _awaitedAnswers;
+    Clock::time_point _lastAnswerAt;
+    QTimer* _unansweredCheckTimer { nullptr };
 
     QString _cacheDir;
 

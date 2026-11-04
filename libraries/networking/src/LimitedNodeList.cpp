@@ -376,6 +376,16 @@ bool LimitedNodeList::packetSourceAndHashMatchAndTrackBandwidth(const udt::Packe
 
                     return false;
                 }
+
+                // The packet passed the hash check, so this node is talking to us from this address. Until one of our
+                // pings to it is answered there is no active socket for it, and sendPacket to the node drops what we
+                // send: a one-off answer (the asset server's reply to an upload) is lost and the asker waits forever.
+                // So when the address is the local or public one the domain server gave us for the node, use it now.
+                // Never in the domain server (it sets its nodes' sockets itself), and only on the node's own thread,
+                // where ping replies activate sockets too.
+                if (!sourceNode->getActiveSocket() && !isDomainServer() && QThread::currentThread() == sourceNode->thread()) {
+                    activateSocketFromVerifiedPacket(*sourceNode, packet.getSenderSockAddr(), headerType);
+                }
             }
 
             // No matter if this packet is handled or not, we update the timestamp for the last time we heard
@@ -391,6 +401,31 @@ bool LimitedNodeList::packetSourceAndHashMatchAndTrackBandwidth(const udt::Packe
     }
 
     return false;
+}
+
+bool LimitedNodeList::activateSocketFromVerifiedPacket(Node& node, const HifiSockAddr& senderSockAddr,
+                                                       PacketType packetType) {
+    if (node.getActiveSocket()) {
+        return false;
+    }
+
+    // only the two addresses the domain server gave us for this node; a symmetric NAT's address stays the pings' job
+    bool isLocal = !node.getLocalSocket().isNull() && senderSockAddr == node.getLocalSocket();
+    bool isPublic = !isLocal && !node.getPublicSocket().isNull() && senderSockAddr == node.getPublicSocket();
+    if (!isLocal && !isPublic) {
+        return false;
+    }
+
+    // the node last: its printer turns spacing off
+    const QString socketName = isLocal ? "local" : "public";
+    qCDebug(networking) << "A verified" << packetType << "came before any ping answer; using the" << socketName
+        << "socket now of" << node;
+    if (isLocal) {
+        node.activateLocalSocket();
+    } else {
+        node.activatePublicSocket();
+    }
+    return true;
 }
 
 void LimitedNodeList::fillPacketHeader(const NLPacket& packet, HMACAuth* hmacAuth) {
