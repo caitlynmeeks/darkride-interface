@@ -16,11 +16,16 @@ set(QUAZIP_SHA256 5240f4a3475648773ba10af8b0ebe549cbfc5d6de00470a517330a80068a4f
 
 macro(TARGET_QUAZIP)
   if (NOT TARGET QuaZip::QuaZip)
-    # zip and unzip only: no bzip2, file names as UTF-8 (no QTextCodec, so Qt 6 needs no Core5Compat), no tests or
-    # install, and no fetching of other libraries (zlib comes from vcpkg or the system)
+    # zip and unzip only: no bzip2, no tests or install, and no fetching of other libraries (zlib comes from vcpkg or
+    # the system). File names: Qt 5 through QTextCodec (in Qt 5's Core; QuaZip refuses Qt 5 without it), Qt 6 as UTF-8
+    # through QStringConverter, so Qt 6 needs no Core5Compat
     set(QUAZIP_QT_MAJOR_VERSION ${QT_VERSION_MAJOR} CACHE STRING "Qt major version for QuaZip" FORCE)
     set(QUAZIP_BZIP2 OFF CACHE BOOL "" FORCE)
-    set(QUAZIP_ENABLE_QTEXTCODEC OFF CACHE BOOL "" FORCE)
+    if (QT_VERSION_MAJOR EQUAL 6)
+      set(QUAZIP_ENABLE_QTEXTCODEC OFF CACHE BOOL "" FORCE)
+    else()
+      set(QUAZIP_ENABLE_QTEXTCODEC ON CACHE BOOL "" FORCE)
+    endif()
     set(QUAZIP_FETCH_LIBS OFF CACHE BOOL "" FORCE)
     set(QUAZIP_INSTALL OFF CACHE BOOL "" FORCE)
     set(QUAZIP_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
