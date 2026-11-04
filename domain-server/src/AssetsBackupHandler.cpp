@@ -331,7 +331,15 @@ std::pair<bool, QString> AssetsBackupHandler::recoverBackup(const QString& backu
                     continue;
                 }
 
-                writeAssetFile(asset, zipFile.readAll());
+                // an asset is named by its content's hash: an entry whose bytes don't match its name (a damaged or
+                // made-up backup, or a link entry, which reads as its target's path) is left out, not restored as junk
+                auto data = zipFile.readAll();
+                if (QString::fromLatin1(AssetUtils::hashData(data).toHex()).compare(asset, Qt::CaseInsensitive) != 0) {
+                    qCWarning(asset_backup) << "Skipping asset file" << asset << "in the backup: its content doesn't match its name";
+                    continue;
+                }
+
+                writeAssetFile(asset, data);
             }
         }
 
