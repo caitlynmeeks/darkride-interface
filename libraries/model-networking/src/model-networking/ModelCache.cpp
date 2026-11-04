@@ -121,7 +121,7 @@ void GeometryReader::run() {
         QThread::currentThread()->setPriority(originalPriority);
     });
 
-    if (!_resource.data()) {
+    if (!_resource.toStrongRef()) {   // a weak pointer's data() is gone in Qt 6; the strong ref says the same
         return;
     }
 
