@@ -607,7 +607,7 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
                 properties.setParentJointIndexChanged(false);
 
                 if (wantTerseEditLogging()) {
-                    qCDebug(entities) << (senderNode ? senderNode->getUUID() : "null") << "physical edits suppressed";
+                    qCDebug(entities) << (senderNode ? senderNode->getUUID().toString() : QString("null")) << "physical edits suppressed";
                 }
             } else if (isPhysics) {
                 EntityItem::PendingTeleport pending = entity->getPendingTeleport();
@@ -872,7 +872,7 @@ void EntityTree::unhookChildAvatar(const EntityItemID entityID) {
         EntityItemPointer entity = findEntityByEntityItemID(entityID);
         entity->forEachDescendant([&](SpatiallyNestablePointer child) {
             if (child->getNestableType() == NestableType::Avatar) {
-                child->setParentID(nullptr);
+                child->setParentID(QUuid());
             }
         });
     }
@@ -1044,7 +1044,7 @@ void EntityTree::processRemovedEntities(const DeleteEntityOperator& theOperator)
         } else {
             theEntity->forEachDescendant([&](SpatiallyNestablePointer child) {
                 if (child->getNestableType() == NestableType::Avatar) {
-                    child->setParentID(nullptr);
+                    child->setParentID(QUuid());
                 }
             });
 

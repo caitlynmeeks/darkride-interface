@@ -420,7 +420,7 @@ QString getCollisionGroupAsString(uint16_t group) {
     return "";
 }
 
-uint16_t getCollisionGroupAsBitMask(const QStringRef& name) {
+uint16_t getCollisionGroupAsBitMask(QStringView name) {   // QStringRef is gone in Qt 6; a view works on both
     if (0 == name.compare(QString("dynamic"))) {
         return USER_COLLISION_GROUP_DYNAMIC;
     } else if (0 == name.compare(QString("static"))) {
@@ -448,7 +448,7 @@ QString EntityItemProperties::getCollisionMaskAsString() const {
 }
 
 void EntityItemProperties::setCollisionMaskFromString(const QString& maskString) {
-    QVector<QStringRef> groups = maskString.splitRef(',');
+    const auto groups = QStringView(maskString).split(',');
     uint16_t mask = 0x0000;
     for (auto groupName : groups) {
         mask |= getCollisionGroupAsBitMask(groupName);
@@ -3694,7 +3694,7 @@ OctreeElement::AppendState EntityItemProperties::encodeEntityEditPacket(PacketTy
         int finalizedSize = packetData->getFinalizedSize();
 
         if (finalizedSize <= buffer.size()) {
-            buffer.replace(0, finalizedSize, finalizedData, finalizedSize);
+            memcpy(buffer.data(), finalizedData, finalizedSize);   // the first finalizedSize bytes overwritten (Qt 6's replace overloads are ambiguous here)
             buffer.resize(finalizedSize);
         } else {
             qCDebug(entities) << "ERROR - encoded edit message doesn't fit in output buffer.";

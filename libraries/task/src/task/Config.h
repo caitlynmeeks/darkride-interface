@@ -50,7 +50,7 @@ public:
 
         _default = toJsonValue(*this).toObject().toVariantMap();
 
-        _presets.unite(list.toVariantMap());
+        _presets.insert(list.toVariantMap());
         if (C::isEnabled()) {
             _presets.insert(DEFAULT, _default);
         }

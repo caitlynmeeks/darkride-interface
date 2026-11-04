@@ -144,6 +144,5 @@ private:
 
 };
 
-Q_DECLARE_METATYPE(NestableType)
 
 #endif // hifi_GraphicsScriptingInterface_h

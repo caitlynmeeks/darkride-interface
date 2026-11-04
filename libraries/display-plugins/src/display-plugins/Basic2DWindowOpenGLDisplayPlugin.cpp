@@ -14,7 +14,11 @@
 #include <QScreen>
 #include <QtGui/QWindow>
 #include <QtGui/QGuiApplication>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QAction>
+#else
 #include <QtWidgets/QAction>
+#endif
 
 #include <ui-plugins/PluginContainer.h>
 #include <PathUtils.h>

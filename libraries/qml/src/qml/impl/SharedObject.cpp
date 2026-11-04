@@ -10,6 +10,12 @@
 
 #include <QtCore/qlogging.h>
 #include <QtQuick/QQuickWindow>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtQuick/QQuickGraphicsDevice>
+#include <QtQuick/QQuickRenderTarget>
+#include <QtQuick/QSGRendererInterface>
+#include <mutex>
+#endif
 #include <QtQuick/QQuickItem>
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
@@ -66,11 +72,21 @@ SharedObject::SharedObject() {
     // NOTE: Must be created on the main thread so that OffscreenQmlSurface can send it events
     // NOTE: Must be created on the rendering thread or it will refuse to render,
     //       so we wait until after its ctor to move object/context to this thread.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the scene graph is told to draw through OpenGL once, before the first QQuickWindow in the process (our
+    // renderer samples the surfaces' GL textures directly; any other backend would be a copy per frame). This is the
+    // right call only if no QQuickWindow was made before the first surface: main() is where it belongs (R2, to do).
+    static std::once_flag graphicsApiOnce;
+    std::call_once(graphicsApiOnce, [] { QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL); });
+#endif
     QQuickWindow::setDefaultAlphaBuffer(true);
     _quickWindow = new QQuickWindow(_renderControl);
     _quickWindow->setFormat(getDefaultOpenGLSurfaceFormat());
     _quickWindow->setColor(QColor(255, 255, 255, 0));
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    // (Qt 6 always clears to the window's colour)
     _quickWindow->setClearBeforeRendering(true);
+#endif
 
 
     QObject::connect(qApp, &QCoreApplication::aboutToQuit, this, &SharedObject::onAboutToQuit);
@@ -270,7 +286,13 @@ void SharedObject::initializeRenderControl(QOpenGLContext* context) {
     }
 
     if (!nsightActive()) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Qt 6: the context is handed to the window as its graphics device, then the control initialises on it
+        _quickWindow->setGraphicsDevice(QQuickGraphicsDevice::fromOpenGLContext(context));
+        _renderControl->initialize();
+#else
         _renderControl->initialize(context);
+#endif
     }
 }
 
@@ -283,9 +305,18 @@ void SharedObject::releaseTextureAndFence() {
     }
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt's own render target round the texture (Qt builds its depth-stencil; our FBO is unused): shape (A) gives it this
+// frame's cache texture, shape (B) one fixed texture per surface size (RenderEventHandler, entry 21)
+void SharedObject::setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& size) {
+    Q_UNUSED(fbo);
+    _quickWindow->setRenderTarget(QQuickRenderTarget::fromOpenGLTexture(texture, size));
+}
+#else
 void SharedObject::setRenderTarget(uint32_t fbo, const QSize& size) {
     _quickWindow->setRenderTarget(fbo, size);
 }
+#endif
 
 QSize SharedObject::getSize() const {
     QMutexLocker locker(&_mutex);

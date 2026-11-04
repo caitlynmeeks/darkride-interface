@@ -74,7 +74,11 @@ private:
     // Called by the render event handler, from the render thread
     void initializeRenderControl(QOpenGLContext* context);
     void releaseTextureAndFence();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    void setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& size);   // Qt's target round the texture
+#else
     void setRenderTarget(uint32_t fbo, const QSize& size);
+#endif
 
     QQmlEngine* acquireEngine(OffscreenSurface* surface);
     void releaseEngine(QQmlEngine* engine);
