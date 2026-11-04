@@ -31,7 +31,7 @@
 #include <QRegularExpression>
 #include <RegexCompat.h>
 
-#include <quazip5/quazip.h>
+#include <quazip/quazip.h>
 
 #include <NumericalConstants.h>
 #include <PerfStat.h>
