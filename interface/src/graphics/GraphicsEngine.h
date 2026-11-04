@@ -91,7 +91,7 @@ private:
 
 protected:
 
-    mutable QMutex _renderArgsMutex{ QMutex::Recursive };
+    mutable QRecursiveMutex _renderArgsMutex;
     AppRenderArgs _appRenderArgs;
     std::atomic<render::ItemID> _traceItem { render::Item::INVALID_ITEM_ID };
     std::mutex _traceMutex;

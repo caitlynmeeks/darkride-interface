@@ -131,7 +131,7 @@ void FBXWriter::encodeFBXProperty(QDataStream& out, const FBXProperty& prop) {
             out << prop.value<int16_t>();
             break;
 
-        case QVariant::Type::Bool:
+        case QMetaType::Bool:
             out.device()->write("C", 1);
             out << prop.toBool();
             break;

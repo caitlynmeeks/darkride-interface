@@ -14,7 +14,7 @@
 
 #include <QtGui/QSurfaceFormat>
 #include <QtGui/QOpenGLContext>
-#include <QtGui/QOpenGLDebugLogger>
+#include <QOpenGLDebugLogger>   // QtGui on Qt 5, the QtOpenGL module on Qt 6
 
 #ifdef Q_OS_MACOS
 #include <dispatch/dispatch.h>

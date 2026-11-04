@@ -205,7 +205,7 @@ FSTReader::ModelType FSTReader::predictModelType(const QVariantHash& mapping) {
 
     QVariantHash joints;
 
-    if (mapping.contains("joint") && mapping["joint"].type() == QVariant::Hash) {
+    if (mapping.contains("joint") && mapping["joint"].userType() == QMetaType::QVariantHash) {
         joints = mapping["joint"].toHash();
     }
 

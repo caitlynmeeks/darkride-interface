@@ -32,6 +32,7 @@
 #include <glm/gtx/transform.hpp>
 
 #include <QtGui/QImage>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QBuffer>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -328,9 +329,10 @@ HFMTexture AssimpSerializer::getHfmTexture(aiString aiPath) {
     } else {
         HFMTexture texture = HFMTexture();
 
-        QRegExp indexFinder = QRegExp("^\\*([0-9]+)$");
-        if (indexFinder.exactMatch(path)) {
-            auto index = indexFinder.cap(1).toUInt();
+        static const QRegularExpression indexFinder("^\\*([0-9]+)$");
+        QRegularExpressionMatch indexMatch = indexFinder.match(path);
+        if (indexMatch.hasMatch()) {
+            auto index = indexMatch.captured(1).toUInt();
 
             if (index < scene->mNumTextures) {
                 auto aiTexture = scene->mTextures[index];

@@ -104,13 +104,8 @@ namespace baker {
                     const auto& normals = safeGet(normalsPerBlendshape, j);
                     const auto& tangents = safeGet(tangentsPerBlendshape, j);
                     auto& blendshape = blendshapesOut[j];
-                    #if (QT_VERSION < QT_VERSION_CHECK(5, 14, 0))
-                    blendshape.normals = QVector<glm::vec3>::fromStdVector(normals);
-                    blendshape.tangents = QVector<glm::vec3>::fromStdVector(tangents);
-                    #else
                     blendshape.normals = QVector<glm::vec3>(normals.begin(), normals.end());
                     blendshape.tangents = QVector<glm::vec3>(tangents.begin(), tangents.end());
-                    #endif
                 }
             }
         }
@@ -136,11 +131,6 @@ namespace baker {
                 auto& meshOut = meshesOut[i];
                 meshOut.triangleListMesh = triangleListMeshesIn[i];
                 meshOut._mesh = safeGet(graphicsMeshesIn, i);
-                #if (QT_VERSION < QT_VERSION_CHECK(5, 14, 0))
-                meshOut.normals = QVector<glm::vec3>::fromStdVector(safeGet(normalsPerMeshIn, i));
-                meshOut.tangents = QVector<glm::vec3>::fromStdVector(safeGet(tangentsPerMeshIn, i));
-                meshOut.blendshapes = QVector<hfm::Blendshape>::fromStdVector(safeGet(blendshapesPerMeshIn, i));
-                #else
                 meshOut.normals = QVector<glm::vec3>(
                     safeGet(normalsPerMeshIn, i).begin(),
                     safeGet(normalsPerMeshIn, i).end()
@@ -153,7 +143,6 @@ namespace baker {
                     safeGet(blendshapesPerMeshIn, i).begin(),
                     safeGet(blendshapesPerMeshIn, i).end()
                 );
-                #endif
             }
             output = meshesOut;
         }

@@ -247,7 +247,7 @@ glm::uint32 scriptable::ScriptableMeshPart::fillAttribute(const QString& attribu
 QVector<glm::uint32> scriptable::ScriptableMeshPart::findNearbyPartVertexIndices(const glm::vec3& origin, float epsilon) const {
     QSet<glm::uint32> result;
     if (!isValid()) {
-        return result.values().toVector();
+        return QVector<glm::uint32>(result.cbegin(), result.cend());   // QList::toVector is gone in Qt 6
     }
     auto mesh = getMeshPointer();
     auto offset = getFirstVertexIndex();
@@ -266,7 +266,7 @@ QVector<glm::uint32> scriptable::ScriptableMeshPart::findNearbyPartVertexIndices
             result << vertexIndex;
         }
     }
-    return result.values().toVector();
+    return QVector<glm::uint32>(result.cbegin(), result.cend());   // QList::toVector is gone in Qt 6
 }
 
 scriptable::ScriptableMeshPartPointer scriptable::ScriptableMeshPart::cloneMeshPart() {

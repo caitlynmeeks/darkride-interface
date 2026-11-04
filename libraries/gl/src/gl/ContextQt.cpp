@@ -16,11 +16,13 @@
 #include <QtGui/QWindow>
 #include "QOpenGLContextWrapper.h"
 
-#ifdef Q_OS_WIN
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/qopenglcontext_platform.h>
+#elif defined(Q_OS_WIN)
 #include <QtPlatformHeaders/QWGLNativeContext>
 #endif
 
-#include <QtGui/QOpenGLDebugMessage>
+#include <QOpenGLDebugMessage>   // QtGui on Qt 5, the QtOpenGL module on Qt 6
 
 #include "GLHelpers.h"
 
@@ -37,9 +39,14 @@ void Context::makeCurrent(QOpenGLContext* context, QSurface* surface) {
 #if defined(GL_CUSTOM_CONTEXT)
 void Context::createWrapperContext() {
     if (0 != _hglrc && nullptr == _qglContext) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Qt 6 adopts a native context through its platform interface (QtPlatformHeaders are gone)
+        _qglContext = QNativeInterface::QWGLContext::fromNative(_hglrc, _hwnd);
+#else
         _qglContext = new QOpenGLContext();
         _qglContext->setNativeHandle(QVariant::fromValue(QWGLNativeContext(_hglrc, _hwnd)));
         _qglContext->create();
+#endif
     }
 }
 #endif
