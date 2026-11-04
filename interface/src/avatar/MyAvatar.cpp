@@ -2384,7 +2384,12 @@ const float SCRIPT_PRIORITY = 1.0f + 1.0f;
 const float RECORDER_PRIORITY = 1.0f + 1.0f;
 
 void MyAvatar::setJointRotations(const QVector<glm::quat>& jointRotations) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     int numStates = glm::min(_skeletonModel->getJointStateCount(), jointRotations.size());
+#else
+    // Qt 6's QVector::size() is a qsizetype
+    int numStates = glm::min(_skeletonModel->getJointStateCount(), (int)jointRotations.size());
+#endif
     for (int i = 0; i < numStates; ++i) {
         // HACK: ATM only Recorder calls setJointRotations() so we hardcode its priority here
         _skeletonModel->setJointRotation(i, true, jointRotations[i], RECORDER_PRIORITY);
