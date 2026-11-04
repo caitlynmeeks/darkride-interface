@@ -1037,6 +1037,9 @@ void EntityTree::processRemovedEntities(const DeleteEntityOperator& theOperator)
     const RemovedEntities& entities = theOperator.getEntities();
     foreach(const EntityToDeleteDetails& details, entities) {
         EntityItemPointer theEntity = details.entity;
+        // mark it dead first: the simulation's delete hook asserts it, and the renderers' update passes and shape
+        // checks skip a dead entity
+        theEntity->die();
         if (getIsServer()) {
             // set up the deleted entities ID
             QWriteLocker recentlyDeletedEntitiesLocker(&_recentlyDeletedEntitiesLock);
