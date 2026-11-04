@@ -203,7 +203,7 @@ void QmlWindowClass::emitWebEvent(const QVariant& webMessage) {
         const QString RAISE_KEYBOARD = "_RAISE_KEYBOARD";
         const QString RAISE_KEYBOARD_NUMERIC = "_RAISE_KEYBOARD_NUMERIC";
         const QString LOWER_KEYBOARD = "_LOWER_KEYBOARD";
-        QString messageString = webMessage.type() == QVariant::String ? webMessage.toString() : "";
+        QString messageString = webMessage.userType() == QMetaType::QString ? webMessage.toString() : "";
         if (messageString.left(RAISE_KEYBOARD.length()) == RAISE_KEYBOARD) {
             setKeyboardRaised(asQuickItem(), true, messageString == RAISE_KEYBOARD_NUMERIC);
         } else if (messageString == LOWER_KEYBOARD) {

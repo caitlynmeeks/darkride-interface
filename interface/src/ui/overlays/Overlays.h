@@ -751,7 +751,7 @@ signals:
 private:
     void cleanupOverlaysToDelete();
 
-    mutable QMutex _mutex { QMutex::Recursive };
+    mutable QRecursiveMutex _mutex;
     QMap<QUuid, Overlay::Pointer> _overlays;
     QHash<QUuid, int> _worldOverlays;  // a 2D overlay a world's script made: the world (ScriptCaller::world()); under _mutex
     QList<Overlay::Pointer> _overlaysToDelete;

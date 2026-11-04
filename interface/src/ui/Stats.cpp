@@ -335,7 +335,7 @@ void Stats::updateStats(bool force) {
         // If the urls have changed, update the list
         if (shouldUpdateUrls) {
             _downloadUrls.clear();
-            foreach (const auto& resource, loadingRequests) {
+            for (const auto& resource : loadingRequests) {
                 _downloadUrls << resource->getURL().toString();
             }
             emit downloadUrlsChanged();
@@ -512,7 +512,7 @@ void Stats::updateStats(bool force) {
         // First iterate all the records, and for the ones that should be included, insert them into
         // a new Map sorted by average time...
         bool onlyDisplayTopTen = Menu::getInstance()->isOptionChecked(MenuOption::OnlyDisplayTopTen);
-        QMap<float, QString> sortedRecords;
+        QMultiMap<float, QString> sortedRecords;   // several records can share a time
         auto allRecords = PerformanceTimer::getAllTimerRecords();
         QMapIterator<QString, PerformanceTimerRecord> i(allRecords);
 
@@ -520,16 +520,14 @@ void Stats::updateStats(bool force) {
             i.next();
             if (includeTimingRecord(i.key())) {
                 float averageTime = (float)i.value().getMovingAverage() / (float)USECS_PER_MSEC;
-                sortedRecords.insertMulti(averageTime, i.key());
+                sortedRecords.insert(averageTime, i.key());
             }
         }
 
         int linesDisplayed = 0;
-        QMapIterator<float, QString> j(sortedRecords);
-        j.toBack();
         QString perfLines;
-        while (j.hasPrevious()) {
-            j.previous();
+        for (auto j = sortedRecords.constEnd(); j != sortedRecords.constBegin();) {   // slowest first
+            --j;
             static const QChar noBreakingSpace = QChar::Nbsp;
             QString functionName = j.value();
             const PerformanceTimerRecord& record = allRecords.value(functionName);

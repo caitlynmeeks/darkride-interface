@@ -15,7 +15,6 @@
 #include <QQuickItem>
 #include <QHash>
 #include <QList>
-#include <QSignalMapper>
 #include <QAction>
 #include <QMenu>
 #include "OffscreenUi.h"

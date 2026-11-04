@@ -10,6 +10,7 @@
 //
 
 #include "ModelsBrowser.h"
+#include <QtCore/QRegularExpression>
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -292,7 +293,7 @@ bool ModelHandler::parseXML(QByteArray xmlFile) {
     }
     
     QXmlStreamReader xml(xmlFile);
-    QRegExp rx(_nameFilter);
+    const QRegularExpression rx(QRegularExpression::anchoredPattern(_nameFilter));   // the whole name, as QRegExp::exactMatch did
     bool truncated = false;
     QString lastKey;
     
@@ -323,7 +324,7 @@ bool ModelHandler::parseXML(QByteArray xmlFile) {
                 if(xml.tokenType() == QXmlStreamReader::StartElement && xml.name() == KEY_NAME) {
                     xml.readNext();
                     lastKey = xml.text().toString();
-                    if (rx.exactMatch(xml.text().toString())) {
+                    if (rx.match(xml.text().toString()).hasMatch()) {
                         // Add the found file to the list
                         QList<QStandardItem*> model;
                         model << new QStandardItem(QFileInfo(xml.text().toString()).baseName());
