@@ -36,6 +36,7 @@ private slots:
     void testWorldRule();
     void testWorldRuleOnRequests();
     void testRefusalAtLoad();
+    void testEntityScriptDownloadIsRuled();
     void testAppScriptsFolder();
     void testAppScriptsForAWorldFromTheNetwork();
     void testResourcesNotForWorlds();

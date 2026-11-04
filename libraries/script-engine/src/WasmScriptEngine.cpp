@@ -1036,7 +1036,10 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
     }
     EntityScriptDetails newDetails;
     newDetails.scriptText = entityScript;
-    const QString refusal = entityScriptRefusal(entityScript);
+    QString refusal = entityScriptRefusal(entityScript);
+    if (refusal.isEmpty()) {
+        refusal = ruleEntityScriptFetch(entityScript);
+    }
     if (!refusal.isEmpty()) {
         newDetails.status = EntityScriptStatus::ERROR_LOADING_SCRIPT;
         newDetails.errorInfo = "not run: " + refusal;

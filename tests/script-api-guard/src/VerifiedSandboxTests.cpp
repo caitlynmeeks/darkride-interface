@@ -41,6 +41,7 @@
 #include <controllers/impl/endpoints/ActionEndpoint.h>
 #include <controllers/impl/RouteBuilderProxy.h>
 #include <controllers/UserInputMapper.h>
+#include <ScriptCache.h>
 #include <ScriptCaller.h>
 #include <controllers/ScriptingInterface.h>
 #include <ScriptNetworkPolicy.h>
@@ -500,6 +501,50 @@ void VerifiedSandboxTests::testRefusalAtLoad() {
         QVERIFY(engine.entityScriptRefusal("file:///a/b.js").isEmpty());
         QCOMPARE(engine.effectiveSandbox(QUrl("file:///a/b.js")), QUrl("file:///a/b.js"));
     }
+}
+
+void VerifiedSandboxTests::testEntityScriptDownloadIsRuled() {
+    // an entity script's own download is judged as the world's, as an include is: a scheme or an address refused
+    // before any name lookup is never asked for; any other goes to the address judged (ScriptCache::ruleFetch)
+    DependencyManager::set<ScriptCache>();
+    const QString app = QUrl::fromLocalFile(_root + "/app/scripts/entities/example.js").toString();
+    const QStringList privateAddresses { "http://127.0.0.1:8000/entity.js", "http://192.168.1.20/entity.js",
+                                         "http://localhost/entity.js", "http://[::1]/entity.js" };
+    const QStringList fetched { "https://example.invalid/world/entity.js", "atp:/entity.js",
+                                "(function () { return {}; })", "javascript:(function () { return {}; })" };
+    // the entity script server: as from the network, whatever the world
+    {
+        WasmScriptEngine server(ScriptEngine::ENTITY_SERVER_SCRIPT, NO_SCRIPT, "about:Entities 1");
+        for (const QString& script : privateAddresses + QStringList { "file:///a/b.js", "ftp://example.com/entity.js" }) {
+            QVERIFY2(!server.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+        for (const QString& script : fetched) {
+            QVERIFY2(server.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+    }
+    // a client in a world on the internet: the same, and the app's own scripts load
+    {
+        EntitiesEngine engine;
+        for (const QString& script : privateAddresses) {
+            QVERIFY2(!engine.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+        for (const QString& script : fetched + QStringList { app, "qrc:///scripts/x.js" }) {
+            QVERIFY2(engine.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+    }
+    // a world on this machine or its network: its scripts keep every address, as before
+    for (const char* world : { THIS_MACHINE_WORLD, HOME_NETWORK_WORLD }) {
+        setWorld(world);
+        EntitiesEngine engine;
+        for (const QString& script : privateAddresses) {
+            QVERIFY2(engine.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+    }
+    setWorld(PUBLIC_WORLD);
+    // a visitor's own scripts' engine never loads entity scripts; an operator's own agent keeps every address
+    WasmScriptEngine ownAgent(ScriptEngine::AGENT_SCRIPT, NO_SCRIPT, "http://127.0.0.1:8797/body.js");
+    QVERIFY(ownAgent.ruleEntityScriptFetch("http://127.0.0.1:8000/entity.js").isEmpty());
+    DependencyManager::destroy<ScriptCache>();
 }
 
 void VerifiedSandboxTests::testAppScriptsFolder() {

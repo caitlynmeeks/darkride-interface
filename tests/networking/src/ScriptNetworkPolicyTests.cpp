@@ -20,7 +20,11 @@
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
 
+#include <memory>
+
 #include <PathUtils.h>
+#include <ResourceManager.h>
+#include <ResourceRequest.h>
 #include <ScriptCaller.h>
 #include <ScriptNetworkPolicy.h>
 
@@ -314,6 +318,24 @@ void ScriptNetworkPolicyTests::testPinnedNameIsCheckedOnEveryRequest() {
     ScriptNetworkPolicy::pin(wrong, decision);
     wrong.setPeerVerifyName("not-example.invalid");
     QCOMPARE(fetch(wrong), QNetworkReply::SslHandshakeFailedError);
+}
+
+void ScriptNetworkPolicyTests::everyWebRequestRuled() {
+    // a process whose web requests are all its scripts' (the entity script server): every http, https and ftp request
+    // is held to the rule as from the network; its own files are not web requests
+    ResourceManager manager(false);
+    const QUrl origin("about:entity-server");
+    auto made = [&manager](const QString& url) {
+        return std::unique_ptr<ResourceRequest>(manager.createResourceRequest(nullptr, QUrl(url), false));
+    };
+    QVERIFY(!made("http://127.0.0.1:1/sound.wav")->isNetworkRuled());
+    manager.ruleEveryWebRequest(origin);
+    for (const char* url : { "http://127.0.0.1:1/sound.wav", "https://example.com/script.js", "ftp://example.com/a.wav" }) {
+        auto request = made(url);
+        QVERIFY2(request && request->isNetworkRuled(), url);
+        QCOMPARE(request->networkRuleOrigin(), origin);
+    }
+    QVERIFY(!made(QUrl::fromLocalFile(QDir::tempPath() + "/a.wav").toString())->isNetworkRuled());
 }
 
 void ScriptNetworkPolicyTests::worldLeft() {
