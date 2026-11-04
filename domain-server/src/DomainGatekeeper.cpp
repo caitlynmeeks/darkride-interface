@@ -23,6 +23,7 @@
 
 #include "DomainServer.h"
 #include "DomainServerNodeData.h"
+#include <shared/WireStream.h>
 
 using SharedAssignmentPointer = QSharedPointer<Assignment>;
 
@@ -58,6 +59,7 @@ void DomainGatekeeper::processConnectRequestPacket(QSharedPointer<ReceivedMessag
     }
 
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
 
     // read a NodeConnectionData object from the packet so we can pass around this data while we're inspecting it
     NodeConnectionData nodeConnection = NodeConnectionData::fromDataStream(packetStream, message->getSenderSockAddr());
@@ -854,6 +856,7 @@ void DomainGatekeeper::processICEPeerInformationPacket(QSharedPointer<ReceivedMe
     // loop through the packet and pull out network peers
     // any peer we don't have we add to the hash, otherwise we update
     QDataStream iceResponseStream(message->getMessage());
+    hifi::stream::pin(iceResponseStream);
 
     auto receivedPeer = SharedNetworkPeer::create();
     iceResponseStream >> *receivedPeer;
@@ -890,6 +893,7 @@ void DomainGatekeeper::processICEPingPacket(QSharedPointer<ReceivedMessage> mess
 
 void DomainGatekeeper::processICEPingReplyPacket(QSharedPointer<ReceivedMessage> message) {
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
 
     QUuid nodeUUID;
     packetStream >> nodeUUID;

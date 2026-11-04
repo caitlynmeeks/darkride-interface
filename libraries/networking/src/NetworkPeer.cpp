@@ -21,6 +21,7 @@
 #include "NetworkLogging.h"
 #include <Trace.h>
 #include "NodeType.h"
+#include <shared/WireStream.h>
 
 const NetworkPeer::LocalID NetworkPeer::NULL_LOCAL_ID;
 
@@ -183,6 +184,7 @@ QByteArray NetworkPeer::toByteArray() const {
     QByteArray peerByteArray;
 
     QDataStream peerStream(&peerByteArray, QIODevice::Append);
+    hifi::stream::pin(peerStream);
     peerStream << *this;
 
     return peerByteArray;

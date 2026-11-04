@@ -51,6 +51,7 @@
 #include "OctreeQueryNode.h"
 #include "OctreeUtils.h"
 #include "OctreeEntitiesFileParser.h"
+#include <shared/WireStream.h>
 
 QVector<QString> PERSIST_EXTENSIONS = {"json", "json.gz"};
 
@@ -683,6 +684,7 @@ bool Octree::readFromFile(const char* fileName) {
     }
 
     QDataStream fileInputStream(&file);
+    hifi::stream::pin(fileInputStream);
     QFileInfo fileInfo(qFileName);
     uint64_t fileLength = fileInfo.size();
     QUrl relativeURL = QUrl::fromLocalFile(qFileName).adjusted(QUrl::RemoveFilename);
@@ -709,6 +711,7 @@ bool Octree::readJSONFromGzippedFile(QString qFileName) {
     }
 
     QDataStream jsonStream(jsonData);
+    hifi::stream::pin(jsonStream);
     QUrl relativeURL = QUrl::fromLocalFile(qFileName).adjusted(QUrl::RemoveFilename);
 
     return readJSONFromStream(-1, jsonStream, false, relativeURL);
@@ -748,10 +751,12 @@ bool Octree::readFromURL(
 
     if (wasCompressed) {
         QDataStream inputStream(uncompressedJsonData);
+        hifi::stream::pin(inputStream);
         return readFromStream(uncompressedJsonData.size(), inputStream, isImport, relativeURL);
     }
 
     QDataStream inputStream(data);
+    hifi::stream::pin(inputStream);
     return readFromStream(data.size(), inputStream, isImport, relativeURL);
 }
 
@@ -768,10 +773,12 @@ bool Octree::readFromByteArray(
 
     if (wasCompressed) {
         QDataStream inputStream(uncompressedJsonData);
+        hifi::stream::pin(inputStream);
         return readFromStream(uncompressedJsonData.size(), inputStream, false, relativeURL);
     }
 
     QDataStream inputStream(data);
+    hifi::stream::pin(inputStream);
     return readFromStream(data.size(), inputStream, false, relativeURL);
 }
 

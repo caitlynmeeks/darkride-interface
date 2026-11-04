@@ -38,6 +38,7 @@
 #include "udt/PacketHeaders.h"
 #include "RSAKeypairGenerator.h"
 #include "SharedUtil.h"
+#include <shared/WireStream.h>
 
 
 const bool VERBOSE_HTTP_REQUEST_DEBUGGING = false;
@@ -153,6 +154,7 @@ QVariantMap accountMapFromFile(bool& success) {
     if (accountFile.open(QIODevice::ReadOnly)) {
         // grab the current QVariantMap from the settings file
         QDataStream readStream(&accountFile);
+        hifi::stream::pin(readStream);
         QVariantMap accountMap;
 
         readStream >> accountMap;
@@ -432,6 +434,7 @@ bool writeAccountMapToFile(const QVariantMap& accountMap) {
         accountFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 
         QDataStream writeStream(&accountFile);
+        hifi::stream::pin(writeStream);
 
         // persist the updated account QVariantMap to file
         writeStream << accountMap;
