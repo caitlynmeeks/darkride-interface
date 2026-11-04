@@ -400,7 +400,7 @@ void Flow::calculateConstraints(const std::shared_ptr<AnimSkeleton>& skeleton,
         if (parentIndex == -1) {
             continue;
         }
-        auto group = QStringRef(&name, 0, 3).toString().toUpper();
+        auto group = name.left(3).toUpper();
         auto split = name.split("_");
         bool isSimJoint = (group == simPrefix);
         bool isFlowJoint = split.size() > 2 && split[0].toUpper() == flowPrefix;
@@ -409,14 +409,14 @@ void Flow::calculateConstraints(const std::shared_ptr<AnimSkeleton>& skeleton,
             if (isSimJoint) {
                 for (int j = 1; j < name.size() - 1; j++) {
                     bool toFloatSuccess;
-                    QStringRef(&name, (int)(name.size() - j), 1).toString().toFloat(&toFloatSuccess);
+                    name.mid((int)(name.size() - j), 1).toFloat(&toFloatSuccess);
                     if (!toFloatSuccess && (name.size() - j) > (int)simPrefix.size()) {
-                        group = QStringRef(&name, (int)simPrefix.size(), (int)(name.size() - j + 1) - (int)simPrefix.size()).toString();
+                        group = name.mid((int)simPrefix.size(), (int)(name.size() - j + 1) - (int)simPrefix.size());
                         break;
                     }
                 }
                 if (group.isEmpty()) {
-                    group = QStringRef(&name, (int)simPrefix.size(), name.size() - (int)simPrefix.size()).toString();
+                    group = name.mid((int)simPrefix.size(), (int)name.size() - (int)simPrefix.size());
                 }
                 qCDebug(animation) << "Sim joint added to flow: " << name;
             } else {

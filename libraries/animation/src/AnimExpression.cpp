@@ -10,7 +10,6 @@
 
 #include "AnimExpression.h"
 
-#include <QRegExp>
 
 #include <StreamUtils.h>
 
@@ -81,13 +80,13 @@ AnimExpression::Token AnimExpression::consumeIdentifier(const QString& str, QStr
     int pos = (int)(begin - str.begin());
     int len = (int)(iter - begin);
 
-    QStringRef stringRef(const_cast<const QString*>(&str), pos, len);
-    if (stringRef == "true") {
+    QString word = str.mid(pos, len);
+    if (word == "true") {
         return Token(true);
-    } else if (stringRef == "false") {
+    } else if (word == "false") {
         return Token(false);
     } else {
-        return Token(stringRef);
+        return Token(word);
     }
 }
 
@@ -117,7 +116,7 @@ AnimExpression::Token AnimExpression::consumeNumber(const QString& str, QString:
     // parse whole integer part
     int pos = (int)(begin - str.begin());
     int len = (int)(iter - begin);
-    QString sub = QStringRef(const_cast<const QString*>(&str), pos, len).toString();
+    QString sub = str.mid(pos, len);
     int whole = sub.toInt();
 
     // parse optional fractional part
@@ -130,7 +129,7 @@ AnimExpression::Token AnimExpression::consumeNumber(const QString& str, QString:
 
         int pos = (int)(begin - str.begin());
         int len = (int)(iter - begin);
-        QString sub = QStringRef(const_cast<const QString*>(&str), pos, len).toString();
+        QString sub = str.mid(pos, len);
         int fraction = sub.toInt();
 
         return Token(computeFloat(whole, fraction));

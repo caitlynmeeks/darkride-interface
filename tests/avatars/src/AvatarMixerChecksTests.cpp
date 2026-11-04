@@ -169,7 +169,7 @@ void AvatarMixerChecksTests::aShortIdentityIsDropped() {
     QVERIFY(!identityRefusal(QByteArray()).isEmpty());
     const QByteArray whole = identity(MODEL, {}, "Caity", "Caity");
     // cut inside the session id, the address, and the attachment count
-    for (int length : { 10, 22, 30, whole.size() - 25 }) {
+    for (int length : { 10, 22, 30, (int)whole.size() - 25 }) {
         QVERIFY2(!identityRefusal(whole.left(length)).isEmpty(), qPrintable(QString("cut at %1").arg(length)));
     }
 }

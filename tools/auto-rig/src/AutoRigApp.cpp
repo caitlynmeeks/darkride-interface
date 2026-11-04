@@ -24,7 +24,7 @@
 #include <QImage>
 #include <QJsonObject>
 #include <QPainter>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QUrl>
 
 #include <AssimpSerializer.h>
@@ -513,7 +513,7 @@ AutoRigApp::AutoRigApp(int argc, char* argv[]) : QCoreApplication(argc, argv) {
             return;
         }
         QString name = parser.isSet(nameOption) ? parser.value(nameOption) : QFileInfo(inputPath).completeBaseName();
-        name.replace(QRegExp("[^A-Za-z0-9_-]+"), "_");
+        name.replace(QRegularExpression("[^A-Za-z0-9_-]+"), "_");
         const autorig::WrittenAvatar written =
             autorig::writeAvatar(*model, body, result, inputPath, parser.value(outputOption), name,
                                  parser.isSet(flipVOption)   ? autorig::FlipV::Always

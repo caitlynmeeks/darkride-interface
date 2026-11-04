@@ -1742,7 +1742,7 @@ QNetworkReply* GLTFSerializer::request(hifi::URL& url, bool isTest) {
     auto connection = QObject::connect(qApp, &QCoreApplication::aboutToQuit, [&] { aboutToQuit = true; });
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
     QNetworkRequest netRequest(url);
-    netRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    netRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     QNetworkReply* netReply = isTest ? networkAccessManager.head(netRequest) : networkAccessManager.get(netRequest);
     if (!qApp || aboutToQuit) {
         netReply->deleteLater();

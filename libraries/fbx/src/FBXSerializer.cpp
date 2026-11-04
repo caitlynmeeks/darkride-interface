@@ -36,7 +36,7 @@ glm::vec3 parseVec3(const QString& string) {
     glm::vec3 value;
     for (int i = 0; i < 3; i++) {
         // duplicate last value if there aren't three elements
-        value[i] = elements.at(min(i, elements.size() - 1)).trimmed().toFloat();
+        value[i] = elements.at(min(i, (int)elements.size() - 1)).trimmed().toFloat();
     }
     return value;
 }
@@ -275,7 +275,7 @@ typedef QPair<int, float> WeightedIndex;
 
 void addBlendshapes(const ExtractedBlendshape& extracted, const QList<WeightedIndex>& indices, ExtractedMesh& extractedMesh) {
     foreach (const WeightedIndex& index, indices) {
-        extractedMesh.mesh.blendshapes.resize(max(extractedMesh.mesh.blendshapes.size(), index.first + 1));
+        extractedMesh.mesh.blendshapes.resize(max((int)extractedMesh.mesh.blendshapes.size(), index.first + 1));
         extractedMesh.blendshapeIndexMaps.resize(extractedMesh.mesh.blendshapes.size());
         HFMBlendshape& blendshape = extractedMesh.mesh.blendshapes[index.first];
         QHash<int, int>& blendshapeIndexMap = extractedMesh.blendshapeIndexMaps[index.first];
