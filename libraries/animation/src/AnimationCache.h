@@ -111,6 +111,19 @@ private:
  * @property {string[]} jointNames - The names of the joints that are animated. <em>Read-only.</em>
  * @property {AnimationFrameObject[]} frames - The frames in the animation. <em>Read-only.</em>
  */
+
+/**jsdoc
+ * Gets the names of the joints that are animated.
+ * @function AnimationObject.getJointNames
+ * @returns {string[]} The names of the joints that are animated.
+ */
+
+/**jsdoc
+ * Gets the frames in the animation.
+ * @function AnimationObject.getFrames
+ * @returns {AnimationFrameObject[]} The frames in the animation.
+ */
+
 /**jsdoc
  * Joint rotations in one frame of an {@link AnimationObject}.
  *

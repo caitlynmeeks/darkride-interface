@@ -800,7 +800,7 @@ bool decodeNothing(const ValueCodec&, const QCborValue&, AnimationDetails&) {
     return true;  // animationDetailsFromScriptValue: "nothing for now"
 }
 
-// --- animations (libraries/animation/src/AnimationObject.cpp) -------------------------------------------------------------
+// --- animations (libraries/animation/src/AnimationCache.h) -------------------------------------------------------------
 
 QCborValue encodeAnimation(const ValueCodec& codec, const AnimationPointer& animation) {
     // a new wrapper for each crossing, which the script owns, as the QtScript engine's variant was

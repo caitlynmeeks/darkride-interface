@@ -13,7 +13,6 @@
 
 #include <string>
 
-
 #include "AvatarLogging.h"
 
 #if defined(__GNUC__) && !defined(__clang__)

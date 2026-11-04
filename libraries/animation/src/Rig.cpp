@@ -1623,7 +1623,7 @@ void Rig::animationStateCallbackResult(int identifier, const QVariant& result) {
 void Rig::updateAnimationStateHandlers() { // called on avatar update thread (which may be main thread)
     QMutexLocker locker(&_stateMutex);
     // It might pay to produce just one AnimVariantMap copy here, with a union of all the requested propertyNames,
-    // rather than having each callAnimationStateHandler invocation make its own copy.
+    // rather than having each handler call make its own copy.
     // However, that copying is done on the script's own time rather than ours, so even if it's less cpu, it would be more
     // work on the avatar update thread (which is possibly the main thread).
     for (auto data = _stateHandlers.begin(); data != _stateHandlers.end(); data++) {
