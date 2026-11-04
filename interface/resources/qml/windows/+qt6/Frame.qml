@@ -12,7 +12,7 @@ import QtQuick 2.5
 import Qt5Compat.GraphicalEffects   // Qt 6: QtGraphicalEffects lives in the Qt5Compat module (the Qt 5 file is beside this +qt6 folder)
 
 import stylesUit 1.0
-import "../js/Utils.js" as Utils
+import "../../js/Utils.js" as Utils
 
 Item {
     id: frame
