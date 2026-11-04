@@ -63,6 +63,8 @@ FocusScope {
 
     activeFocusOnTab: true
     anchors.margins: 2  // the border below lies outside; the view inside it, as before
+    implicitWidth: 240  // Controls 1's TableView was a ScrollView with this implicit size: a Column gives the
+    implicitHeight: 150 // table this height when no one sets one
 
     HifiConstants { id: hifi }
 
