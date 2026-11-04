@@ -503,7 +503,7 @@ QVariant ScriptEngine::cloneEntityScriptDetails(const EntityItemID& entityID) {
 }
 
 QFuture<QVariant> ScriptEngine::getLocalEntityScriptDetails(const EntityItemID& entityID) {
-    return QtConcurrent::run(this, &ScriptEngine::cloneEntityScriptDetails, entityID);
+    return QtConcurrent::run([this, entityID] { return cloneEntityScriptDetails(entityID); });
 }
 
 bool ScriptEngine::getEntityScriptDetails(const EntityItemID& entityID, EntityScriptDetails &details) const {
