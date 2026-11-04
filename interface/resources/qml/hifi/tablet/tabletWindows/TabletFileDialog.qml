@@ -12,7 +12,6 @@ import QtQuick 2.7
 import Qt.labs.folderlistmodel 2.2
 import Qt.labs.settings 1.0
 import "../../../js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1)
-import QtQuick.Controls 1.4 as QQC1
 import QtQuick.Controls 2.3
 
 import ".."
@@ -543,7 +542,7 @@ Rectangle {
                 }
             }
 
-            QQC1.TableViewColumn {
+            TableViewColumn {
                 id: fileNameColumn
                 role: "fileName"
                 title: "Name"
@@ -551,7 +550,7 @@ Rectangle {
                 movable: false
                 resizable: true
             }
-            QQC1.TableViewColumn {
+            TableViewColumn {
                 id: fileMofifiedColumn
                 role: "fileModified"
                 title: "Date"
@@ -560,7 +559,7 @@ Rectangle {
                 resizable: true
                 visible: !selectDirectory
             }
-            QQC1.TableViewColumn {
+            TableViewColumn {
                 role: "fileSize"
                 title: "Size"
                 width: fileTableView.width - fileNameColumn.width - fileMofifiedColumn.width
