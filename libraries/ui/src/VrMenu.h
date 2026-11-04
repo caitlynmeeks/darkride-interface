@@ -36,7 +36,6 @@ protected:
 
     friend class MenuUserData;
     friend class OffscreenUi;
-    const unsigned int _userDataId { QObject::registerUserData() };
 };
 
 #endif // hifi_VrMenu_h

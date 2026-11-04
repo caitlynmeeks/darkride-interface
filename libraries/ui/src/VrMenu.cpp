@@ -10,6 +10,7 @@
 
 #include "VrMenu.h"
 
+#include <QtCore/QHash>
 #include <QtQml>
 #include <QMenuBar>
 #include <QDebug>
@@ -17,25 +18,33 @@
 #include "OffscreenUi.h"
 #include "ui/Logging.h"
 
-static unsigned int USER_DATA_ID = 0;
+class MenuUserData;
+// The binding of each action and of each QML item, by the object (QObject's user data, which held it, is gone in
+// Qt 6). An entry goes with its action; main thread only
+static QHash<const QObject*, MenuUserData*>& menuUserData() {
+    static QHash<const QObject*, MenuUserData*> map;
+    return map;
+}
 
 // Binds together a Qt Action or Menu with the QML Menu or MenuItem
 //
 // TODO On reflection, it may be pointless to use the UUID.  Perhaps
 // simply creating the bidirectional link pointing to both the widget
 // and qml object and inject the pointer into both objects
-class MenuUserData : public QObjectUserData {
+class MenuUserData {
 public:
     MenuUserData(QAction* action, QObject* qmlObject, QObject* qmlParent) {
-        if (!USER_DATA_ID) {
-            USER_DATA_ID = DependencyManager::get<OffscreenUi>()->getMenuUserDataId();
-        }
         _action = action;
         _qml = qmlObject;
         _qmlParent = qmlParent;
 
-        action->setUserData(USER_DATA_ID, this);
-        qmlObject->setUserData(USER_DATA_ID, this);
+        menuUserData()[action] = this;
+        menuUserData()[qmlObject] = this;
+        _actionGoneConnection = QObject::connect(action, &QObject::destroyed, [this] { delete this; });
+        _qmlGoneConnection = QObject::connect(qmlObject, &QObject::destroyed, [this] {
+            menuUserData().remove(_qml);
+            _qml = nullptr;
+        });
         qmlObject->setObjectName(uuid.toString());
         // Make sure we can find it again in the future
         updateQmlItemFromAction();
@@ -85,8 +94,12 @@ public:
     ~MenuUserData() {
         QObject::disconnect(_changedConnection);
         QObject::disconnect(_shutdownConnection);
-        _action->setUserData(USER_DATA_ID, nullptr);
-        _qml->setUserData(USER_DATA_ID, nullptr);
+        QObject::disconnect(_actionGoneConnection);
+        QObject::disconnect(_qmlGoneConnection);
+        menuUserData().remove(_action);
+        if (_qml) {
+            menuUserData().remove(_qml);
+        }
     }
 
     void updateQmlItemFromAction() {
@@ -107,8 +120,8 @@ public:
         _qml->setProperty("checked", 0);
         _qml->setProperty("visible", 0);
 
-        _action->setUserData(USER_DATA_ID, nullptr);
-        _qml->setUserData(USER_DATA_ID, nullptr);
+        menuUserData().remove(_action);
+        menuUserData().remove(_qml);
     }
 
 
@@ -119,7 +132,7 @@ public:
             qWarning() << "Attempted to fetch MenuUserData for null object";
             return false;
         }
-        return (nullptr != static_cast<MenuUserData*>(object->userData(USER_DATA_ID)));
+        return menuUserData().contains(object);
     }
 
     static MenuUserData* forObject(QAction* object) {
@@ -127,7 +140,7 @@ public:
             qWarning() << "Attempted to fetch MenuUserData for null object";
             return nullptr;
         }
-        auto result = static_cast<MenuUserData*>(object->userData(USER_DATA_ID));
+        auto result = menuUserData().value(object, nullptr);
         if (!result) {
             qWarning() << "Unable to find MenuUserData for object " << object;
             if (auto action = dynamic_cast<QAction*>(object)) {
@@ -145,6 +158,8 @@ private:
 
     QMetaObject::Connection _shutdownConnection;
     QMetaObject::Connection _changedConnection;
+    QMetaObject::Connection _actionGoneConnection;
+    QMetaObject::Connection _qmlGoneConnection;
     QAction* _action { nullptr };
     QObject* _qml { nullptr };
     QObject* _qmlParent{ nullptr };

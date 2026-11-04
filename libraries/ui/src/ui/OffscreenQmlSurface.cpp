@@ -14,7 +14,11 @@
 #include <gl/Config.h>
 
 #include <QtGui/QOpenGLContext>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtOpenGL/QOpenGLFunctions_4_1_Core>   // the OpenGL module in Qt 6
+#else
 #include <QtGui/QOpenGLFunctions_4_1_Core>
+#endif
 #include <QtWidgets/QWidget>
 #include <QtQml/QtQml>
 #include <QtQml/QQmlEngine>
@@ -450,12 +454,12 @@ PointerEvent::EventType OffscreenQmlSurface::choosePointerEventType(QEvent::Type
     }
 }
 
-void OffscreenQmlSurface::hoverBeginEvent(const PointerEvent& event, class QTouchDevice& device) {
+void OffscreenQmlSurface::hoverBeginEvent(const PointerEvent& event, OffscreenTouchDevice& device) {
     handlePointerEvent(event, device);
     _activeTouchPoints[event.getID()].hovering = true;
 }
 
-void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, class QTouchDevice& device) {
+void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, OffscreenTouchDevice& device) {
     _activeTouchPoints[event.getID()].hovering = false;
     // Send a fake mouse move event if
     // - the event told us to
@@ -470,7 +474,7 @@ void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, class QTouchD
     }
 }
 
-bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, class QTouchDevice& device, bool release) {
+bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, OffscreenTouchDevice& device, bool release) {
 
     // Ignore mouse interaction if we're paused
     if (!getRootItem() || isPaused()) {
@@ -479,13 +483,28 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, class QT
 
     QPointF windowPoint(event.getPos2D().x, event.getPos2D().y);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the point's state and position live on a QEventPoint, the event takes the points at construction
+    const auto PRESSED = QEventPoint::Pressed;
+    const auto RELEASED = QEventPoint::Released;
+    const auto MOVED = QEventPoint::Updated;
+    QEventPoint::State state = QEventPoint::Stationary;
+    const bool movedFromLast = _activeTouchPoints.count(event.getID())
+                               && windowPoint != _activeTouchPoints[event.getID()].touchPoint.scenePosition();
+#else
+    const auto PRESSED = Qt::TouchPointPressed;
+    const auto RELEASED = Qt::TouchPointReleased;
+    const auto MOVED = Qt::TouchPointMoved;
     Qt::TouchPointState state = Qt::TouchPointStationary;
+    const bool movedFromLast = _activeTouchPoints.count(event.getID())
+                               && windowPoint != _activeTouchPoints[event.getID()].touchPoint.pos();
+#endif
     if (event.getType() == PointerEvent::Press && event.getButton() == PointerEvent::PrimaryButton) {
-        state = Qt::TouchPointPressed;
+        state = PRESSED;
     } else if (event.getType() == PointerEvent::Release && event.getButton() == PointerEvent::PrimaryButton) {
-        state = Qt::TouchPointReleased;
-    } else if (_activeTouchPoints.count(event.getID()) && windowPoint != _activeTouchPoints[event.getID()].touchPoint.pos()) {
-        state = Qt::TouchPointMoved;
+        state = RELEASED;
+    } else if (movedFromLast) {
+        state = MOVED;
     }
 
     // Remove the touch point if:
@@ -493,7 +512,7 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, class QT
     // - this was a release event and we aren't still hovering
     auto touchPoint = _activeTouchPoints.find(event.getID());
     bool removeTouchPoint =
-        release || (touchPoint != _activeTouchPoints.end() && !touchPoint->second.hovering && state == Qt::TouchPointReleased);
+        release || (touchPoint != _activeTouchPoints.end() && !touchPoint->second.hovering && state == RELEASED);
     QEvent::Type touchType = QEvent::TouchUpdate;
     if (_activeTouchPoints.empty()) {
         // If the first active touch point is being created, send a begin
@@ -503,6 +522,24 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, class QT
         touchType = QEvent::TouchEnd;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    {
+        QEventPoint point(event.getID(), state, windowPoint, windowPoint);
+        _activeTouchPoints[event.getID()].touchPoint = point;
+        if (state == PRESSED) {
+            _activeTouchPoints[event.getID()].pressed = true;
+        } else if (state == RELEASED) {
+            _activeTouchPoints[event.getID()].pressed = false;
+        }
+    }
+    QList<QEventPoint> touchPoints;
+    for (const auto& entry : _activeTouchPoints) {
+        touchPoints.push_back(entry.second.touchPoint);
+    }
+    QTouchEvent touchEvent(touchType, &device, event.getKeyboardModifiers(), touchPoints);
+    touchEvent.setTimestamp((ulong)QDateTime::currentMSecsSinceEpoch());
+    touchEvent.ignore();
+#else
     {
         QTouchEvent::TouchPoint point;
         point.setId(event.getID());
@@ -510,9 +547,9 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, class QT
         point.setPos(windowPoint);
         point.setScreenPos(windowPoint);
         _activeTouchPoints[event.getID()].touchPoint = point;
-        if (state == Qt::TouchPointPressed) {
+        if (state == PRESSED) {
             _activeTouchPoints[event.getID()].pressed = true;
-        } else if (state == Qt::TouchPointReleased) {
+        } else if (state == RELEASED) {
             _activeTouchPoints[event.getID()].pressed = false;
         }
     }
@@ -534,6 +571,7 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, class QT
         touchEvent.setTimestamp((ulong)QDateTime::currentMSecsSinceEpoch());
         touchEvent.ignore();
     }
+#endif
 
     // Send mouse events to the surface so that HTML dialog elements work with mouse press and hover.
     //

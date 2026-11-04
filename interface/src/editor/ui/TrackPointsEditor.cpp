@@ -278,7 +278,7 @@ void TrackPointsEditor::rebuildList() {
         _selected = _items.size() - 1;
     }
     _list->setCurrentRow(_selected);
-    int rows = glm::clamp(_items.size(), 1, ROWS_SHOWN);
+    int rows = glm::clamp(int(_items.size()), 1, ROWS_SHOWN);   // size() is qsizetype on Qt 6
     _list->setFixedHeight(rows * ROW_PIXELS + 6);
     _list->setVerticalScrollBarPolicy(_items.size() > ROWS_SHOWN ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
     _updating = false;

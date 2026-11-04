@@ -10,6 +10,12 @@
 //
 #include "OffscreenUi.h"
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QPointingDevice>
+#else
+#include <QtGui/QTouchDevice>
+#endif
+
 #include <QtCore/QMetaMethod>
 #include <QtCore/QVariant>
 #include <QtGui/QGuiApplication>
@@ -152,16 +158,27 @@ bool OffscreenUi::editFocusedItem(const char* action) {
     return false;
 }
 
-static QTouchDevice _touchDevice;
-OffscreenUi::OffscreenUi() {
+// the touch device the pointer events are delivered as (Qt 6: a QPointingDevice, made once the app exists)
+static OffscreenTouchDevice& touchDevice() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    static QPointingDevice* device = new QPointingDevice("OffscreenUiTouchDevice", 0, QInputDevice::DeviceType::TouchScreen,
+                                                         QPointingDevice::PointerType::Finger,
+                                                         QInputDevice::Capability::Position, 4, 0);
+    return *device;
+#else
+    static QTouchDevice device;
     static std::once_flag once;
     std::call_once(once, [&] {
-        _touchDevice.setCapabilities(QTouchDevice::Position);
-        _touchDevice.setType(QTouchDevice::TouchScreen);
-        _touchDevice.setName("OffscreenUiTouchDevice");
-        _touchDevice.setMaximumTouchPoints(4);
+        device.setCapabilities(QTouchDevice::Position);
+        device.setType(QTouchDevice::TouchScreen);
+        device.setName("OffscreenUiTouchDevice");
+        device.setMaximumTouchPoints(4);
     });
+    return device;
+#endif
+}
 
+OffscreenUi::OffscreenUi() {
     auto pointerManager = DependencyManager::get<PointerManager>();
     connect(pointerManager.data(), &PointerManager::hoverBeginHUD, this, &OffscreenUi::hoverBeginEvent);
     connect(pointerManager.data(), &PointerManager::hoverContinueHUD, this, &OffscreenUi::handlePointerEvent);
@@ -172,15 +189,15 @@ OffscreenUi::OffscreenUi() {
 }
 
 void OffscreenUi::hoverBeginEvent(const PointerEvent& event) {
-    OffscreenQmlSurface::hoverBeginEvent(event, _touchDevice);
+    OffscreenQmlSurface::hoverBeginEvent(event, touchDevice());
 }
 
 void OffscreenUi::hoverEndEvent(const PointerEvent& event) {
-    OffscreenQmlSurface::hoverEndEvent(event, _touchDevice);
+    OffscreenQmlSurface::hoverEndEvent(event, touchDevice());
 }
 
 void OffscreenUi::handlePointerEvent(const PointerEvent& event) {
-    OffscreenQmlSurface::handlePointerEvent(event, _touchDevice);
+    OffscreenQmlSurface::handlePointerEvent(event, touchDevice());
 }
 
 QObject* OffscreenUi::getFlags() {
@@ -1309,10 +1326,6 @@ bool OffscreenUi::eventFilter(QObject* originalDestination, QEvent* event) {
     }
 
     return result;
-}
-
-unsigned int OffscreenUi::getMenuUserDataId() const {
-    return _vrMenu->_userDataId;
 }
 
 ModalDialogListener::ModalDialogListener(QQuickItem *dialog) : _dialog(dialog) {

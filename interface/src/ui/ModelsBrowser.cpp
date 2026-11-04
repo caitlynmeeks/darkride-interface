@@ -225,7 +225,7 @@ void ModelHandler::update() {
         QUrl url(_model.item(i,0)->data(Qt::UserRole).toString());
         QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
         QNetworkRequest request(url);
-        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // FollowRedirectsAttribute is gone in Qt 6
         request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
         QNetworkReply* reply = networkAccessManager.head(request);
         connect(reply, SIGNAL(finished()), SLOT(downloadFinished()));
@@ -278,7 +278,7 @@ void ModelHandler::queryNewFiles(QString marker) {
     url.setQuery(query);
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
     QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // FollowRedirectsAttribute is gone in Qt 6
     request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
     QNetworkReply* reply = networkAccessManager.get(request);
     connect(reply, SIGNAL(finished()), SLOT(downloadFinished()));
