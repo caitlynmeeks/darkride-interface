@@ -18,6 +18,7 @@
 #include "QVariantGLM.h"
 
 #include "EntityTree.h"
+#include <shared/WireStream.h>
 #include "PhysicsLogging.h"
 
 const uint16_t CONE_TWIST_VERSION_WITH_UNUSED_PAREMETERS = 1;
@@ -346,6 +347,7 @@ QVariantMap ObjectConstraintConeTwist::getArguments() {
 QByteArray ObjectConstraintConeTwist::serialize() const {
     QByteArray serializedConstraintArguments;
     QDataStream dataStream(&serializedConstraintArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     dataStream << DYNAMIC_TYPE_CONE_TWIST;
     dataStream << getID();
@@ -370,6 +372,7 @@ QByteArray ObjectConstraintConeTwist::serialize() const {
 
 void ObjectConstraintConeTwist::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;
