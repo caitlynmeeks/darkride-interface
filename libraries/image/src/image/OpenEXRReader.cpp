@@ -59,10 +59,11 @@ private:
 
 #endif
 
-// The largest EXR read at all: a 4096 x 4096 lightmap is the largest the exporter writes, and the pixels are held
-// twice while read (the library's half floats, then our floats); the window's size is a 32-bit field of the file
+// The largest EXR read at all: an 8192 x 4096 equirectangular sky, twice the largest lightmap the exporter writes
+// (4096 x 4096); the pixels are held twice while read (the library's half floats, then our floats), and the
+// window's size is a 32-bit field of the file, so the cap comes before any allocation
 static const int64_t MAX_EXR_DIMENSION { 8192 };
-static const int64_t MAX_EXR_PIXELS { int64_t(4096) * 4096 };
+static const int64_t MAX_EXR_PIXELS { int64_t(8192) * 4096 };
 
 image::Image image::readOpenEXR(QIODevice& content, const std::string& filename) {
 #if !defined(Q_OS_ANDROID)
