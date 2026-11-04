@@ -13,8 +13,6 @@
 #define hifi_AnimationCache_h
 
 #include <QtCore/QRunnable>
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
 
 #include <DependencyManager.h>
 #include <hfm/HFM.h>
@@ -95,5 +93,37 @@ private:
     QByteArray _data;
 };
 
+
+// What a script sees of an animation (AnimationCache.getAnimation): the record the script engine makes of it
+// (WasmTypeConversions), as documented here.
+/**jsdoc
+ * Information about an animation resource, created by {@link AnimationCache.getAnimation}.
+ *
+ * @class AnimationObject
+ * @hideconstructor
+ *
+ * @hifi-interface
+ * @hifi-client-entity
+ * @hifi-avatar
+ * @hifi-server-entity
+ * @hifi-assignment-client
+ *
+ * @property {string[]} jointNames - The names of the joints that are animated. <em>Read-only.</em>
+ * @property {AnimationFrameObject[]} frames - The frames in the animation. <em>Read-only.</em>
+ */
+/**jsdoc
+ * Joint rotations in one frame of an {@link AnimationObject}.
+ *
+ * @class AnimationFrameObject
+ * @hideconstructor
+ *
+ * @hifi-interface
+ * @hifi-client-entity
+ * @hifi-avatar
+ * @hifi-server-entity
+ * @hifi-assignment-client
+ *
+ * @property {Quat[]} rotations - Joint rotations. <em>Read-only.</em>
+ */
 
 #endif // hifi_AnimationCache_h

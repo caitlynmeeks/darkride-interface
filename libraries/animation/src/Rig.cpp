@@ -13,7 +13,6 @@
 
 #include <glm/gtx/vector_angle.hpp>
 #include <queue>
-#include <QScriptValueIterator>
 #include <QWriteLocker>
 #include <QReadLocker>
 
@@ -21,7 +20,6 @@
 #include <NumericalConstants.h>
 #include <DebugDraw.h>
 #include <PerfStat.h>
-#include <ScriptValueUtils.h>
 #include <shared/NsightHelpers.h>
 
 #include "AnimationLogging.h"
@@ -1586,37 +1584,6 @@ void Rig::computeMotionAnimationState(float deltaTime, const glm::vec3& localPos
 }
 
 // Allow script to add/remove handlers and report results, from within their thread.
-QScriptValue Rig::addAnimationStateHandler(QScriptValue handler, QScriptValue propertiesList) { // called in script thread
-
-    // validate argument types
-    if (handler.isFunction() && (isListOfStrings(propertiesList) || propertiesList.isUndefined() || propertiesList.isNull())) {
-        QMutexLocker locker(&_stateMutex);
-        // Find a safe id, even if there are lots of many scripts add and remove handlers repeatedly.
-        while (!_nextStateHandlerId || _stateHandlers.contains(_nextStateHandlerId)) { // 0 is unused, and don't reuse existing after wrap.
-            _nextStateHandlerId++;
-        }
-        StateHandler& data = _stateHandlers[_nextStateHandlerId];
-        data.function = handler;
-        data.useNames = propertiesList.isArray();
-        if (data.useNames) {
-            data.propertyNames = propertiesList.toVariant().toStringList();
-        }
-        return QScriptValue(_nextStateHandlerId); // suitable for giving to removeAnimationStateHandler
-    } else {
-        qCWarning(animation) << "Rig::addAnimationStateHandler invalid arguments, expected (function, string[])";
-        return QScriptValue(QScriptValue::UndefinedValue);
-    }
-}
-
-void Rig::removeAnimationStateHandler(QScriptValue identifier) { // called in script thread
-    // validate arguments
-    if (identifier.isNumber()) {
-        QMutexLocker locker(&_stateMutex);
-        _stateHandlers.remove(identifier.toInt32()); // silently continues if handler not present. 0 is unused
-    } else {
-        qCWarning(animation) << "Rig::removeAnimationStateHandler invalid argument, expected a number";
-    }
-}
 
 int Rig::addAnimationStateCallback(const ScriptCallback& handler, const QStringList& propertyNames, bool useNames) { // called in script thread
     if (!handler.isValid()) {
@@ -1653,15 +1620,6 @@ void Rig::animationStateCallbackResult(int identifier, const QVariant& result) {
     found.value().results.animVariantMapFromVariantMap(result.toMap());
 }
 
-void Rig::animationStateHandlerResult(int identifier, QScriptValue result) { // called synchronously from script
-    QMutexLocker locker(&_stateMutex);
-    auto found = _stateHandlers.find(identifier);
-    if (found == _stateHandlers.end()) {
-        return; // Don't use late-breaking results that got reported after the handler was removed.
-    }
-    found.value().results.animVariantMapFromScriptValue(result); // Into our own copy.
-}
-
 void Rig::updateAnimationStateHandlers() { // called on avatar update thread (which may be main thread)
     QMutexLocker locker(&_stateMutex);
     // It might pay to produce just one AnimVariantMap copy here, with a union of all the requested propertyNames,
@@ -1672,11 +1630,10 @@ void Rig::updateAnimationStateHandlers() { // called on avatar update thread (wh
         // call out:
         int identifier = data.key();
         StateHandler& value = data.value();
-        QScriptValue& function = value.function;
         int rigId = _rigId;
         if (value.callback.isValid()) {
-            // a handler on the WebAssembly script engine: called on its thread with the variables as a map, the
-            // map it returns read back here; the results gathered below as for a QtScript handler
+            // the handler is called on its script's thread with the variables as a map, the map it returns read
+            // back here; the results gathered below
             value.callback.request(QVariantList { _animVars.animVariantMapToVariantMap(value.propertyNames, value.useNames) },
                                    [rigId, identifier](const QVariant& result) {
                                        std::lock_guard<std::mutex> guard(rigRegistryMutex);
@@ -1688,37 +1645,6 @@ void Rig::updateAnimationStateHandlers() { // called on avatar update thread (wh
             _animVars.copyVariantsFrom(value.results);
             continue;
         }
-        auto handleResult = [rigId, identifier](QScriptValue result) { // called in script thread to get the result back to us.
-            // Hold the rigRegistryMutex to ensure thread-safe access to the rigRegistry, but
-            // also to prevent the rig from being deleted while this lambda is being executed.
-            std::lock_guard<std::mutex> guard(rigRegistryMutex);
-
-            // if the rig pointer is in the registry, it has not been deleted yet.
-            auto iter = rigRegistry.find(rigId);
-            if (iter != rigRegistry.end()) {
-                Rig* rig = iter->second;
-                assert(rig);
-                rig->animationStateHandlerResult(identifier, result);
-            }
-        };
-        // invokeMethod makes a copy of the args, and copies of AnimVariantMap do copy the underlying map, so this will correctly capture
-        // the state of _animVars and allow continued changes to _animVars in this thread without conflict.
-        QMetaObject::invokeMethod(function.engine(), "callAnimationStateHandler",  Qt::QueuedConnection,
-                                  Q_ARG(QScriptValue, function),
-                                  Q_ARG(AnimVariantMap, _animVars),
-                                  Q_ARG(QStringList, value.propertyNames),
-                                  Q_ARG(bool, value.useNames),
-                                  Q_ARG(AnimVariantResultHandler, handleResult));
-        // It turns out that, for thread-safety reasons, ScriptEngine::callAnimationStateHandler will invoke itself if called from other
-        // than the script thread. Thus the above _could_ be replaced with an ordinary call, which will then trigger the same
-        // invokeMethod as is done explicitly above. However, the script-engine library depends on this animation library, not vice versa.
-        // We could create an AnimVariantCallingMixin class in shared, with an abstract virtual slot
-        // AnimVariantCallingMixin::callAnimationStateHandler (and move AnimVariantMap/AnimVaraintResultHandler to shared), but the
-        // call site here would look like this instead of the above:
-        //   dynamic_cast<AnimVariantCallingMixin*>(function.engine())->callAnimationStateHandler(function, ..., handleResult);
-        // This works (I tried it), but the result would be that we would still have same runtime type checks as the invokeMethod above
-        // (occuring within the ScriptEngine::callAnimationStateHandler invokeMethod trampoline), _plus_ another runtime check for the dynamic_cast.
-
         // Gather results in (likely from an earlier update).
         // Note: the behavior is undefined if a handler (re-)sets a trigger. Scripts should not be doing that.
         _animVars.copyVariantsFrom(value.results); // If multiple handlers write the same anim var, the last registgered wins. (_map preserves order).
