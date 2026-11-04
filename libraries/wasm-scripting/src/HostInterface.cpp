@@ -824,11 +824,16 @@ QVariant HostInterface::invoke(QObject* object, int methodIndex, const QVector<i
     const QMetaObject* meta = object->metaObject();
     QMetaMethod method = meta->method(methodIndex);
     const int count = types.size();
+    // each argument under the method's own spelling of its type, as the return value below: QMetaMethod::invoke
+    // compares that name with the method's declaration, and the metatype's own name differs from it on Qt 6 ("Mode"
+    // declared, "Probe::Mode" registered; "glm::vec3" declared, "glm::vec<3,float>" registered)
+    const QList<QByteArray> parameterTypeNames = method.parameterTypes();
     QGenericArgument generic[MAX_INVOKE_ARGUMENTS];
     for (int i = 0; i < count; ++i) {
         const int type = types[i];
+        const char* name = i < parameterTypeNames.size() ? parameterTypeNames.at(i).constData() : QMetaType::typeName(type);
         // QGenericArgument keeps the name pointer and the data pointer: both outlive the invoke below
-        generic[i] = QGenericArgument(QMetaType::typeName(type), type == QMetaType::QVariant ? &converted[i] : converted[i].constData());
+        generic[i] = QGenericArgument(name, type == QMetaType::QVariant ? &converted[i] : converted[i].constData());
     }
 
     const int returnType = returnTypeOf(method);
