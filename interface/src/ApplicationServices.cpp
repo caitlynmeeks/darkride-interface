@@ -41,6 +41,8 @@
 #include <PathUtils.h>
 #include <PickManager.h>
 #include <PointerManager.h>
+#include <RealClicks.h>
+#include <ScriptCaller.h>
 #include <Preferences.h>
 #include <RecordingScriptingInterface.h>
 #include <ResourceManager.h>
@@ -223,6 +225,31 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
     DependencyManager::set<ToolbarScriptingInterface>();
     DependencyManager::set<AssetMappingsScriptingInterface>();
     DependencyManager::set<DomainConnectionModel>();
+
+    // security finding #54, with editor-ui: the tablet opens a world's page only within a short while after a real
+    // press on one of the world's entities (RealClicks). A real press (the desktop mouse, the app's lasers) reaches
+    // mousePressOnEntity on an unmarked thread; a press a world's script sends in (Entities.sendMousePressOnEntity)
+    // is emitted on that world's own thread, where ScriptCaller says so, and doesn't count; nor does a trigger of a
+    // pointer a world's script made (a mapping could drive it). The direct connection keeps the emitting thread, so
+    // the check reads it; the registry is thread-safe and touches no UI.
+    {
+        auto entities = DependencyManager::get<EntityScriptingInterface>();
+        QObject::connect(entities.data(), &EntityScriptingInterface::mousePressOnEntity, entities.data(),
+                         [](const EntityItemID& entityID, const PointerEvent& event) {
+            if (ScriptCaller::isWorld()) {
+                return;
+            }
+            auto pointers = DependencyManager::get<PointerManager>();
+            if (pointers && pointers->isWorldPointer(event.getID())) {
+                return;
+            }
+            RealClicks::note(entityID);
+        }, Qt::DirectConnection);
+        RealClicks::setOwnershipCheck([](const QUuid& entityID) {
+            auto entities = DependencyManager::get<EntityScriptingInterface>();
+            return entities && entities->worldMayUse(entityID);
+        });
+    }
 
 
     // Speech recognition where the platform has it; discoverability (the metaverse's where-are-you); Darkride chat and the

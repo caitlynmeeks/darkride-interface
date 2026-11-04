@@ -36,6 +36,19 @@ Item {
     property color loadingBackground: "white"
     property bool firstLoadDone: false
 
+    // security finding #54: a page a world's script opened. The tablet shows it under its own screen type (WorldWeb),
+    // so no app's handler wires to it; it gets no EventBridge: at every main-frame navigation of the view, the first
+    // included, the web channel is taken off the view (no transport for the document that follows), see below. Before
+    // the first navigation the view's engine isn't live and a change to its channel doesn't take, which is why this
+    // is done at navigation and not when the roots mark the view. A window the page asks for opens nowhere (below).
+    // The page runs and talks to nothing.
+    property bool worldPage: false
+
+    function unwireEventBridge() {
+        webViewCore.webChannel = null;
+        console.log("FlickableWebViewCore: a world's page, no EventBridge (security finding #54): " + webViewCore.url);
+    }
+
     onUrlChanged: {
         permissionPopupBackground.visible = false;
     }
@@ -175,7 +188,18 @@ Item {
         }
 
         onNewViewRequested: {
+            if (flick.worldPage) {
+                return;   // a world's page gets no window: the request is opened nowhere
+            }
             newViewRequestedCallback(request)
+        }
+
+        // security finding #54: a world's page gets no EventBridge: at each main-frame navigation (the first included)
+        // the channel comes off before the document exists (urlChanged comes once its scripts have started, too late)
+        onNavigationRequested: function (request) {
+            if (flick.worldPage && request.isMainFrame) {
+                flick.unwireEventBridge();
+            }
         }
 
         // Prior to 5.10, the WebEngineView loading property is true during initial page loading and then stays false
