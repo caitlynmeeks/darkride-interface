@@ -113,6 +113,7 @@ private slots:
     void handleTempDomainSuccess(QNetworkReply* requestReply);
     void handleTempDomainError(QNetworkReply* requestReply);
 
+    void handleMetaverseHeartbeatSuccess(QNetworkReply* requestReply);
     void handleMetaverseHeartbeatError(QNetworkReply* requestReply);
 
     void queuedQuit(QString quitMessage, int exitCode);
@@ -200,6 +201,10 @@ private:
 
     QJsonObject jsonForSocket(const HifiSockAddr& socket);
     QJsonObject jsonObjectForNode(const SharedNodePointer& node);
+    // what the world server knows about whether others can reach it, for the overview's "Check my world" (/api/health)
+    QJsonObject healthJSON();
+    // asks the outside check service (darkride-world-check) to knock on this server's ports from the internet
+    bool checkFromOutside(HTTPConnection* connection);
 
     bool shouldReplicateNode(const Node& node);
 
@@ -265,6 +270,11 @@ private:
     int _noReplyICEHeartbeats { 0 };
     int _numHeartbeatDenials { 0 };
     bool _connectedToICEServer { false };
+
+    // the last heartbeat to the metaverse that went through, and the last that didn't (ms since the epoch, 0 = none yet)
+    qint64 _lastMetaverseHeartbeatOK { 0 };
+    qint64 _lastMetaverseHeartbeatFailed { 0 };
+    QString _lastMetaverseHeartbeatError;
 
     DomainType _type { DomainType::NonMetaverse };
 

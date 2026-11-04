@@ -1195,6 +1195,185 @@ body.dr-app {
   }
 }
 
+/* "Check my world": one line per check, opening to why and how to fix it */
+.dr-health-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.dr-health-overall {
+  margin: 0;
+  font-weight: 600;
+}
+
+.dr-health-overall.dr-health-ok { color: var(--dr-green); }
+.dr-health-overall.dr-health-warn { color: var(--dr-amber); }
+.dr-health-overall.dr-health-fail { color: var(--dr-red); }
+
+.dr-health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dr-health-row {
+  border-bottom: 1px solid var(--dr-border);
+}
+
+.dr-health-row:last-child {
+  border-bottom: none;
+}
+
+.dr-health-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 4px;
+  background: none;
+  border: none;
+  color: inherit;
+  text-align: left;
+}
+
+.dr-health-head:not([disabled]):hover {
+  background: var(--dr-selection);
+}
+
+.dr-health-head[disabled] {
+  cursor: default;
+  opacity: 1;
+}
+
+.dr-health-icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dr-text-faint);
+}
+
+.dr-health-ok .dr-health-icon { background: var(--dr-green); box-shadow: 0 0 8px rgba(80, 250, 123, 0.6); }
+.dr-health-info .dr-health-icon { background: var(--dr-cyan); }
+.dr-health-warn .dr-health-icon { background: var(--dr-amber); }
+.dr-health-fail .dr-health-icon { background: var(--dr-red); }
+
+.dr-health-title {
+  flex: none;
+  min-width: 170px;
+  font-weight: 600;
+}
+
+.dr-health-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dr-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.dr-health-state {
+  flex: none;
+  font-size: 12px;
+  color: var(--dr-text-faint);
+}
+
+.dr-health-warn .dr-health-state { color: var(--dr-amber); }
+.dr-health-fail .dr-health-state { color: var(--dr-red); }
+
+.dr-health-more {
+  padding: 0 4px 12px 26px;
+  color: var(--dr-text-muted);
+  font-size: 13.5px;
+}
+
+.dr-health-more p {
+  margin: 0 0 6px;
+}
+
+.dr-health-more .dr-health-fix {
+  color: var(--dr-text);
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.dr-health-more ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.dr-health-more li {
+  margin-bottom: 3px;
+  overflow-wrap: anywhere;
+}
+
+.dr-health-link-row {
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.dr-health-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dr-border);
+}
+
+.dr-health-when {
+  color: var(--dr-text-faint);
+  font-size: 12.5px;
+}
+
+.dr-health-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dr-health-diagnostics {
+  margin-top: 12px;
+}
+
+.dr-health-diagnostics textarea {
+  font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.dr-health-hide-ip {
+  margin: 0;
+  font-weight: normal;
+  font-size: 13px;
+  color: var(--dr-text-muted);
+}
+
+@media (max-width: 700px) {
+  .dr-health-head {
+    flex-wrap: wrap;
+  }
+
+  .dr-health-title {
+    min-width: 0;
+  }
+
+  /* the state next to the title, the summary under both */
+  .dr-health-state {
+    margin-left: auto;
+  }
+
+  .dr-health-summary {
+    order: 3;
+    flex-basis: 100%;
+    padding-left: 22px;
+  }
+}
+
 /* the content page: picking a file, what's installed, and backups that can't be used */
 .dr-file-pick {
   display: flex;
