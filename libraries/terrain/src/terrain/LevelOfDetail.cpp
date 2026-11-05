@@ -556,8 +556,19 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
     }
     bool drawnChanged = false;
 
+    // the frame's cost by part, for the caller that logs re-choices: the clock is read only while counting
+    const bool costing = _cutShownCounting;
+    FrameCost frameCost;
+    frameCost.frame = _frame;
+    auto clock = [costing]() { return costing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point(); };
+    auto msSince = [costing](const std::chrono::steady_clock::time_point& since) {
+        return costing ? std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - since).count() : 0.0f;
+    };
+    auto mark = clock();
+
     // the meshes back from the pool (an empty one for a node no surface crosses: it is settled)
     for (AsyncMesher::Result& result : _mesher.collect()) {
+        ++frameCost.results;
         auto job = _jobs.find(result.tag);
         if (job == _jobs.end()) {
             continue;
@@ -576,6 +587,8 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         _requestsDirty = true;
         drawnChanged = true;
     }
+
+    frameCost.collectMs = msSince(mark);
 
     // what the grid's edits reached
     if (!grid.takeChanges(_changes)) {
@@ -604,7 +617,10 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
     const bool moved = glm::length((camera - _cutCamera) * voxelMetres) > 2.0f * voxel;
     if (_cutWanted || moved || grid.getStructureVersion() != _cutStructure || voxelMetres != _cutVoxelMetres ||
             grid.getVoxelCount() != _cutVoxelCount) {
+        mark = clock();
         _cut.update(grid, camera, voxelMetres, _settings);
+        frameCost.choiceMs = msSince(mark);
+        frameCost.chose = true;
         _cutChosenAt = std::chrono::steady_clock::now();
         _cutChosenFrame = _frame;
         _cutWanted = false;
@@ -619,6 +635,7 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
     // the meshes to make: the wanted cut's, and the shown cut's that edits put out of date; nearest first
     if (_requestsDirty) {
         _requestsDirty = false;
+        mark = clock();
         std::map<EntryKey, float> requests;
         auto consider = [&](const LodCut::Node& node) {
             if (node.isGridChunk) {
@@ -644,6 +661,8 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         std::sort(order.begin(), order.end(), [](const std::pair<float, EntryKey>& a, const std::pair<float, EntryKey>& b) {
             return a.first < b.first;
         });
+        frameCost.requestsMs = msSince(mark);
+        frameCost.requests = (int)order.size();
         // The first node always goes, so the queue drains; each later one only if the budget still holds it, judged
         // by what its level's last sends took: the frame's spend ends near the budget, not a whole node past it.
         // (A send is the hand-over alone, microseconds: the sampling runs on the pool, from one snapshot of the
@@ -665,12 +684,15 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
             const bool hadMesh = entry.hasMesh;
             const uint64_t version = entry.version;
             send(order[i].second, entry, grid, view);
+            ++frameCost.sent;
             drawnChanged = drawnChanged || (entry.version != version) || (hadMesh != entry.hasMesh);
             const float cost = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - before).count();
             float& smoothed = _nodeCostMs[level];
             smoothed = smoothed > 0.0f ? smoothed * 0.75f + cost * 0.25f : cost;
         }
+        frameCost.sendsMs = msSince(start);
     }
+    mark = clock();
 
     // the wanted cut is shown once every node of it has its mesh (at once when nothing is shown yet), or once a
     // node without one has held it back for the settings' force time
@@ -705,7 +727,25 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         rebuildDrawn();
         ++_drawnVersion;
     }
+    frameCost.drawnMs = msSince(mark);
+    noteFrameCost(frameCost);
     return drawnChanged;
+}
+
+void LevelOfDetail::noteFrameCost(const FrameCost& cost) {
+    if (!_cutShownCounting) {
+        return;
+    }
+    if (cost.chose) {
+        _reChoiceDone = _reChoice;
+        _reChoice = ReChoice();
+        _reChoice.serial = _reChoiceDone.serial + 1;
+        _reChoice.nodes = _cut.getNodes().size();
+        _reChoice.own = cost;
+        _reChoice.worst = cost;
+    } else if (cost.totalMs() > _reChoice.worst.totalMs()) {
+        _reChoice.worst = cost;
+    }
 }
 
 float LevelOfDetail::getFrameBudgetMs() const {

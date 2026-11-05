@@ -225,6 +225,31 @@ public:
     // Whether a cut shown counts its nodes and new meshes (a map of the drawn set and a lookup per node): off, only
     // the serial, ms and frames are kept, so the count is paid only by a caller that reads it.
     void setCutShownCounting(bool counting) { _cutShownCounting = counting; }
+    // What one frame's update cost on the calling thread, by part, in ms: the meshes collected from the pool, the
+    // cut's choice, the requests pass over the cut's nodes, the sends, and the shown set's upkeep (the compare,
+    // the eviction, the drawn list). Kept only while cuts shown are counted (a clock read per part).
+    struct FrameCost {
+        uint64_t frame { 0 };
+        bool chose { false };        // the cut was chosen again this frame
+        float collectMs { 0.0f };
+        float choiceMs { 0.0f };
+        float requestsMs { 0.0f };
+        float sendsMs { 0.0f };
+        float drawnMs { 0.0f };
+        int results { 0 };           // meshes collected
+        int requests { 0 };          // nodes wanting a mesh after the pass
+        int sent { 0 };              // nodes sent to the pool
+        float totalMs() const { return collectMs + choiceMs + requestsMs + sendsMs + drawnMs; }
+    };
+    // A re-choice of the cut, for a caller that logs it once the next one has come: the re-choice frame's own cost
+    // and the costliest frame from it to the next re-choice (the frame its meshes came back in, as a rule).
+    struct ReChoice {
+        uint64_t serial { 0 };
+        size_t nodes { 0 };          // nodes of the cut chosen
+        FrameCost own;
+        FrameCost worst;
+    };
+    const ReChoice& getReChoiceDone() const { return _reChoiceDone; }
 
     // The grid was replaced: every mesh here is out of date. What is drawn stays until the new cut's meshes are in.
     void gridReplaced();
@@ -263,6 +288,9 @@ private:
     void rebuildDrawn();
     // The cut wanted is about to be shown in place of the cut shown: counts what it brings (CutShown).
     void noteCutShown(const std::vector<LodCut::Node>& wanted);
+    // A frame's cost is in: a re-choice frame opens a new record and closes the last; any other frame may be the
+    // open record's costliest.
+    void noteFrameCost(const FrameCost& cost);
     void evict();
     // The wanted cut's node without a mesh (first in key order), while the cut shown is held back by it; returns
     // whether the cut may be shown anyway (no node is stalled, or the stall has reached the force time).
@@ -293,6 +321,8 @@ private:
     std::chrono::steady_clock::time_point _cutChosenAt;   // when the cut wanted was last chosen
     uint64_t _cutChosenFrame { 0 };
     CutShown _cutShown;
+    ReChoice _reChoice;              // the re-choice in progress
+    ReChoice _reChoiceDone;          // the last one closed
     bool _cutShownCounting { false };
 };
 
