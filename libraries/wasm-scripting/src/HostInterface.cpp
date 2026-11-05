@@ -60,13 +60,21 @@ bool isOwnEnum(const QMetaMethod& method, QByteArray name) {
     return meta->indexOfEnumerator(name.constData()) != -1;
 }
 
+// An enumeration Qt knows only as a metatype, with no meta-object behind it (no Q_ENUM, as PlainLevels::Level in the
+// tests): a script can't be given its keys and the API has never carried it. Qt 5 leaves such a type unresolved;
+// Qt 6 registers every type a method mentions, so it is set aside here, the same on both.
+bool isNamelessEnum(int type) {
+    return type != QMetaType::UnknownType && (QMetaType::typeFlags(type) & QMetaType::IsEnumeration) &&
+           !QMetaType::metaObjectForType(type);
+}
+
 // A parameter's type id. moc leaves an enum declared with its unqualified name ("Mode") unresolved; the
 // registered name is the qualified one ("Probe::Mode"), so that is tried with the method's class scope. A
 // pointer to a const object ("const AudioEffectOptions*") is registered, if at all, without the const.
 int parameterTypeOf(const QMetaMethod& method, int index) {
     int type = method.parameterType(index);
     if (type != QMetaType::UnknownType) {
-        return type;
+        return isNamelessEnum(type) ? QMetaType::UnknownType : type;
     }
     QByteArray name = method.parameterTypes().at(index);
     if (name.startsWith("const ") && name.endsWith('*')) {
@@ -87,7 +95,7 @@ int parameterTypeOf(const QMetaMethod& method, int index) {
 int returnTypeOf(const QMetaMethod& method) {
     int type = method.returnType();
     if (type != QMetaType::UnknownType) {
-        return type;
+        return isNamelessEnum(type) ? QMetaType::UnknownType : type;
     }
     QByteArray name = method.typeName();
     if (!name.contains("::") && method.enclosingMetaObject()) {
@@ -824,11 +832,16 @@ QVariant HostInterface::invoke(QObject* object, int methodIndex, const QVector<i
     const QMetaObject* meta = object->metaObject();
     QMetaMethod method = meta->method(methodIndex);
     const int count = types.size();
+    // each argument under the method's own spelling of its type, as the return value below: QMetaMethod::invoke
+    // compares that name with the method's declaration, and the metatype's own name differs from it on Qt 6 ("Mode"
+    // declared, "Probe::Mode" registered; "glm::vec3" declared, "glm::vec<3,float>" registered)
+    const QList<QByteArray> parameterTypeNames = method.parameterTypes();
     QGenericArgument generic[MAX_INVOKE_ARGUMENTS];
     for (int i = 0; i < count; ++i) {
         const int type = types[i];
+        const char* name = i < parameterTypeNames.size() ? parameterTypeNames.at(i).constData() : QMetaType::typeName(type);
         // QGenericArgument keeps the name pointer and the data pointer: both outlive the invoke below
-        generic[i] = QGenericArgument(QMetaType::typeName(type), type == QMetaType::QVariant ? &converted[i] : converted[i].constData());
+        generic[i] = QGenericArgument(name, type == QMetaType::QVariant ? &converted[i] : converted[i].constData());
     }
 
     const int returnType = returnTypeOf(method);
