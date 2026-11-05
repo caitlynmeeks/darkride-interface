@@ -11,6 +11,8 @@
 
 #include "AudioFileWav.h"
 
+#include "AudioQtCompat.h"
+
 bool AudioFileWav::create(const QAudioFormat& audioFormat, const QString& filepath) {
     if (_file.isOpen()) {
         _file.close();
@@ -60,9 +62,9 @@ void AudioFileWav::addHeader(const QAudioFormat& audioFormat) {
     stream << quint16(1);
     stream << quint16(audioFormat.channelCount());
     stream << quint32(audioFormat.sampleRate());
-    stream << quint32(audioFormat.sampleRate() * audioFormat.channelCount() * audioFormat.sampleSize() / 8); // bytes per second
-    stream << quint16(audioFormat.channelCount() * audioFormat.sampleSize() / 8); // block align
-    stream << quint16(audioFormat.sampleSize()); // bits Per Sample
+    stream << quint32(audioFormat.sampleRate() * audioFormat.channelCount() * hifi::audio::sampleBits(audioFormat) / 8); // bytes per second
+    stream << quint16(audioFormat.channelCount() * hifi::audio::sampleBits(audioFormat) / 8); // block align
+    stream << quint16(hifi::audio::sampleBits(audioFormat)); // bits Per Sample
     // Init data chunck
     stream.writeRawData("data", 4);
     stream << quint32(0);

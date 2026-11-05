@@ -83,9 +83,9 @@ public:
     const IgnoreBox& getIgnoreBox() const { return _ignoreBox; }
 
 protected:
-    // disallow copying of PositionalAudioStream objects
-    PositionalAudioStream(const PositionalAudioStream&);
-    PositionalAudioStream& operator= (const PositionalAudioStream&);
+    // disallow copying of PositionalAudioStream objects (deleted: see InboundAudioStream.h)
+    PositionalAudioStream(const PositionalAudioStream&) = delete;
+    PositionalAudioStream& operator= (const PositionalAudioStream&) = delete;
 
     int parsePositionalData(const QByteArray& positionalByteArray);
 

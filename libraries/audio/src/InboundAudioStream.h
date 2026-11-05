@@ -121,9 +121,10 @@ private:
     void framesAvailableChanged();
 
 protected:
-    // disallow copying of InboundAudioStream objects
-    InboundAudioStream(const InboundAudioStream&);
-    InboundAudioStream& operator= (const InboundAudioStream&);
+    // disallow copying of InboundAudioStream objects (deleted, not only undeclared-and-undefined: Qt 6's moc asks
+    // whether a class is copyable, and a subclass's implicit copy constructor would otherwise name this one)
+    InboundAudioStream(const InboundAudioStream&) = delete;
+    InboundAudioStream& operator= (const InboundAudioStream&) = delete;
 
     /// parses the info between the seq num and the audio data in the network packet and calculates
     /// how many audio samples this packet contains (used when filling in samples for dropped packets).

@@ -26,7 +26,6 @@
 #include <QtCore/QVector>
 #include <QtMultimedia/QAudio>
 #include <QtMultimedia/QAudioFormat>
-#include <QtMultimedia/QAudioInput>
 #include <AbstractAudioInterface.h>
 #include <AudioEffectOptions.h>
 #include <AudioStreamStats.h>
@@ -74,8 +73,6 @@
 #define DEFAULT_AEC_ENABLED true
 #endif
 
-class QAudioInput;
-class QAudioOutput;
 class QIODevice;
 
 class Transform;
@@ -358,19 +355,19 @@ private:
     Gate _gate{ this };
 
     Mutex _injectorsMutex;
-    QAudioInput* _audioInput{ nullptr };
+    hifi::audio::Source* _audioInput{ nullptr };
     QTimer* _dummyAudioInput{ nullptr };
     QAudioFormat _desiredInputFormat;
     QAudioFormat _inputFormat;
     QIODevice* _inputDevice{ nullptr };
     int _numInputCallbackBytes{ 0 };
-    QAudioOutput* _audioOutput{ nullptr };
+    hifi::audio::Sink* _audioOutput{ nullptr };
     std::atomic<bool> _audioOutputInitialized { false };
     QAudioFormat _desiredOutputFormat;
     QAudioFormat _outputFormat;
     int _outputFrameSize{ 0 };
     int _numOutputCallbackBytes{ 0 };
-    QAudioOutput* _loopbackAudioOutput{ nullptr };
+    hifi::audio::Sink* _loopbackAudioOutput{ nullptr };
     QIODevice* _loopbackOutputDevice{ nullptr };
     AudioRingBuffer _inputRingBuffer{ 0 };
     LocalInjectorsStream _localInjectorsStream{ 0 , 1 };
