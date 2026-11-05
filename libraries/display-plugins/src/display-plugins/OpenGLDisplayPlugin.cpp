@@ -175,6 +175,12 @@ public:
         _context->makeCurrent();
         CHECK_GL_ERROR();
         while (!_shutdown) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+            // one autorelease pool per pass: Qt 6.11's Cocoa plugin autoreleases the window's colour profile data in
+            // every swap, and this thread has no event loop to drain it (16 KB a present, kept for the thread's life,
+            // 11-05); the pool ends with the pass, after the swap and the lock's release
+            gl::AutoreleasePool autoreleasePool;
+#endif
             if (_pendingOtherThreadOperation) {
                 setPresentStage(PresentLendingContext);
                 PROFILE_RANGE(render, "MainThreadOp")
