@@ -19,9 +19,12 @@
 #include <QtNetwork/QNetworkDatagram>
 #include <QtNetwork/QUdpSocket>
 
+#include <AssetClient.h>
+#include <AssetUpload.h>
 #include <DependencyManager.h>
 #include <LimitedNodeList.h>
 #include <NodeList.h>
+#include <SharedUtil.h>
 #include <StatTracker.h>
 #include <udt/ControlPacket.h>
 #include <udt/Packet.h>
@@ -242,4 +245,99 @@ void UnansweredPeerTests::aLateAnswerAfterTheGiveUp() {
     const int expected = int(next - firstAfter14);
     QVERIFY2(arrived >= expected * 9 / 10,
              qPrintable(QString("%1 of the %2 packets sent from 14 s on arrived").arg(arrived).arg(expected)));
+}
+
+// A packet that passed the hash check came from one of the node's two known addresses: that address is used at once,
+// before any ping is answered, so a one-off answer (the asset server's reply to an upload) isn't dropped. Any other
+// address (a symmetric NAT's) is left to the pings, and a node with an active socket keeps it.
+void UnansweredPeerTests::aVerifiedPacketsAddressIsUsedBeforeAnyPing() {
+    const HifiSockAddr publicSocket(QHostAddress("203.0.113.9"), 41000);
+    const HifiSockAddr localSocket(QHostAddress("192.168.1.30"), 41001);
+    const auto packetType = PacketType::AssetUpload;
+
+    Node fromLocal(QUuid::createUuid(), NodeType::Agent, publicSocket, localSocket);
+    QVERIFY(!fromLocal.getActiveSocket());
+    QVERIFY(LimitedNodeList::activateSocketFromVerifiedPacket(fromLocal, localSocket, packetType));
+    QVERIFY(fromLocal.getActiveSocket() == &fromLocal.getLocalSocket());
+
+    Node fromPublic(QUuid::createUuid(), NodeType::Agent, publicSocket, localSocket);
+    QVERIFY(LimitedNodeList::activateSocketFromVerifiedPacket(fromPublic, publicSocket, packetType));
+    QVERIFY(fromPublic.getActiveSocket() == &fromPublic.getPublicSocket());
+
+    Node fromElsewhere(QUuid::createUuid(), NodeType::Agent, publicSocket, localSocket);
+    QVERIFY(!LimitedNodeList::activateSocketFromVerifiedPacket(fromElsewhere,
+                                                               HifiSockAddr(QHostAddress("203.0.113.9"), 41002), packetType));
+    QVERIFY(!LimitedNodeList::activateSocketFromVerifiedPacket(fromElsewhere,
+                                                               HifiSockAddr(QHostAddress("198.51.100.1"), 41000), packetType));
+    QVERIFY(!fromElsewhere.getActiveSocket());
+
+    // already answering at its public address: a packet from its local one changes nothing here (pings decide that)
+    QVERIFY(!LimitedNodeList::activateSocketFromVerifiedPacket(fromPublic, localSocket, packetType));
+    QVERIFY(fromPublic.getActiveSocket() == &fromPublic.getPublicSocket());
+
+    // a node whose local address the domain server left blank (a loopback node's public one is blanked the same way)
+    Node noLocal(QUuid::createUuid(), NodeType::Agent, publicSocket, HifiSockAddr());
+    QVERIFY(!LimitedNodeList::activateSocketFromVerifiedPacket(noLocal, HifiSockAddr(), packetType));
+    QVERIFY(LimitedNodeList::activateSocketFromVerifiedPacket(noLocal, publicSocket, packetType));
+    QVERIFY(noLocal.getActiveSocket() == &noLocal.getPublicSocket());
+}
+
+// An upload or mapping operation fails as a network error when no answer has come 60 s after both its sending and
+// the asset server's last answer of any kind; an upload gets a second per 16 KB on top.
+void UnansweredPeerTests::anUnansweredUploadOrMappingHasADeadline() {
+    using namespace std::chrono;
+    const AssetClient::Clock::time_point sentAt { seconds(1000) };
+
+    // nothing answered since the sending
+    QVERIFY(AssetClient::answerDeadline(sentAt, sentAt - seconds(30), 0) == sentAt + seconds(60));
+    QVERIFY(AssetClient::answerDeadline(sentAt, AssetClient::Clock::time_point(), 0) == sentAt + seconds(60));
+
+    // the asset server answered something else later: the wait starts again from there
+    QVERIFY(AssetClient::answerDeadline(sentAt, sentAt + seconds(45), 0) == sentAt + seconds(105));
+
+    // an upload: a second for every 16 KB
+    QVERIFY(AssetClient::answerDeadline(sentAt, sentAt, 54) == sentAt + seconds(60) + milliseconds(54 * 1000 / (16 * 1024)));
+    QVERIFY(AssetClient::answerDeadline(sentAt, sentAt, 10 * 16 * 1024) == sentAt + seconds(70));
+    QVERIFY(AssetClient::answerDeadline(sentAt, sentAt, 100LL * 1024 * 1024) == sentAt + seconds(60) + seconds(6400));
+}
+
+// The forced case: an asset server that is alive (heard from all the time, as its pings are in the bug) but never
+// answers the upload (our own silent socket). The upload fails as a network error between 60 and 66 s (the deadline,
+// then the next 5-s check), instead of waiting forever. (A wholly silent server is removed as a silent node after
+// ~15 s and fails its requests then, as before.) Run it alone: ~66 s.
+void UnansweredPeerTests::anUnansweredUploadFailsAtItsDeadline() {
+    QUdpSocket silent;
+    QVERIFY(silent.bind(QHostAddress(QHostAddress::LocalHost), 0));
+    const HifiSockAddr server(QHostAddress::LocalHost, silent.localPort());
+
+    auto nodeList = DependencyManager::get<LimitedNodeList>();
+    auto assetServer = nodeList->addOrUpdateNode(QUuid::createUuid(), NodeType::AssetServer, server, server);
+    assetServer->activatePublicSocket();
+    auto assetClient = DependencyManager::set<AssetClient>();
+
+    auto upload = assetClient->createUpload(QByteArray("// nobody answers this upload\n"));
+    bool finished = false;
+    AssetUpload::Error error = AssetUpload::NoError;
+    qint64 finishedAt = 0;
+    QElapsedTimer clock;
+    connect(upload, &AssetUpload::finished, this, [&](AssetUpload* done, const QString&) {
+        finished = true;
+        error = done->getError();
+        finishedAt = clock.elapsed();
+    });
+    clock.start();
+    upload->start();
+    while (!finished && clock.elapsed() < 80000) {
+        assetServer->setLastHeardMicrostamp(usecTimestampNow());
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+
+    QVERIFY2(finished, "the upload never finished");
+    QCOMPARE(error, AssetUpload::NetworkError);
+    QVERIFY2(finishedAt >= 60000 && finishedAt < 66000, qPrintable(QString("finished at %1 ms").arg(finishedAt)));
+
+    upload->deleteLater();
+    nodeList->killNodeWithUUID(assetServer->getUUID());
+    assetClient.clear();
+    DependencyManager::destroy<AssetClient>();
 }
