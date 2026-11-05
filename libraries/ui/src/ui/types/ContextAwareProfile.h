@@ -18,7 +18,11 @@
 #include <QtCore/QSharedPointer>
 
 #if !defined(Q_OS_ANDROID)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtWebEngineQuick/QQuickWebEngineProfile>   // Qt 6: the QML web view's module is WebEngineQuick
+#else
 #include <QtWebEngine/QQuickWebEngineProfile>
+#endif
 #include <QtWebEngineCore/QWebEngineUrlRequestInterceptor>
 
 using ContextAwareProfileParent = QQuickWebEngineProfile;

@@ -29,8 +29,15 @@
 
 #if !defined(Q_OS_ANDROID)
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtWebEngineQuick/QQuickWebEngineProfile>   // Qt 6: the QML web view's module is WebEngineQuick
+#include <QtWebEngineCore/QWebEngineScript>   // Qt 6: a profile's user scripts are these values, in its collection
+#include <QtCore/QMetaObject>
+#include <QtCore/QVariant>
+#else
 #include <QtWebEngine/QQuickWebEngineProfile>
 #include <QtWebEngine/QQuickWebEngineScript>
+#endif
 
 namespace {
 
@@ -106,6 +113,22 @@ void RequestFilters::disableServiceWorkers(QQuickWebEngineProfile* profile) {
         "  try { delete Window.prototype.caches; delete window.caches; } catch (e) {}"
         "  try { delete Navigator.prototype.serviceWorker; } catch (e) {}"
         "})();");
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 has no QQuickWebEngineScript: the script is a QWebEngineScript value, put into the profile's script
+    // collection. That collection's class (QQuickWebEngineScriptCollection) is a QML type without a public header, so
+    // its invokable insert is called by name on the object the profile's userScripts property holds.
+    QWebEngineScript script;
+    script.setName("darkride-no-cache-storage");
+    script.setSourceCode(NO_CACHE_STORAGE);
+    script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+    script.setWorldId(QWebEngineScript::MainWorld);
+    script.setRunsOnSubFrames(true);
+    if (auto collection = profile->property("userScripts").value<QObject*>()) {
+        QMetaObject::invokeMethod(collection, "insert", Q_ARG(QWebEngineScript, script));
+    } else {
+        qWarning() << "RequestFilters: the web profile has no user-script collection; the no-cache-storage script is not installed";
+    }
+#else
     auto script = new QQuickWebEngineScript(profile);
     script->setName("darkride-no-cache-storage");
     script->setSourceCode(NO_CACHE_STORAGE);
@@ -114,6 +137,7 @@ void RequestFilters::disableServiceWorkers(QQuickWebEngineProfile* profile) {
     script->setRunOnSubframes(true);
     auto scripts = profile->userScripts();
     scripts.append(&scripts, script);
+#endif
 
     // The service workers and Cache Storage that sites stored in earlier runs
     static std::once_flag once;
