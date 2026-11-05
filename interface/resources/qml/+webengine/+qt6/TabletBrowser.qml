@@ -30,7 +30,7 @@ Item {
     }
 
     onUrlChanged: {
-        permissionPopupBackground.visible = false;
+        permissionPopupBackground.withdraw();
     }
 
     WebEngineView {

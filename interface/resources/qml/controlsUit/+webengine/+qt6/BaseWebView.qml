@@ -24,7 +24,7 @@ WebEngineView {
     }
 
     onUrlChanged: {
-        permissionPopupBackground.visible = false;
+        permissionPopupBackground.withdraw();
     }
 
     onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo

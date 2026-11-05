@@ -50,7 +50,7 @@ Item {
     }
 
     onUrlChanged: {
-        permissionPopupBackground.visible = false;
+        permissionPopupBackground.withdraw();
     }
 
     StylesUIt.HifiConstants {
