@@ -114,7 +114,7 @@ Item {
                     z: 2000
                     imageWidth: 442
                     imageHeight: 670
-                    source: "../../../images/calibration-help.png"
+                    source: Qt.resolvedUrl("../../../images/calibration-help.png")   // Qt 6 resolves a plain string from ImageMessageBox's folder
                 }
 
                 Rectangle {
