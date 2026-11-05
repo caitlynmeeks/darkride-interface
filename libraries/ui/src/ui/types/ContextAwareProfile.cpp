@@ -27,6 +27,9 @@
 #endif
 
 static const QString RESTRICTED_FLAG_PROPERTY = "RestrictFileAccess";
+#if SHARED_WEB_PROFILES
+static const QString WEB_ENTITY_FLAG_PROPERTY = "WebEntitySurface";
+#endif
 
 #if SHARED_WEB_PROFILES
 ContextAwareProfile::ContextAwareProfile(bool restricted) : _isRestricted(restricted) {
@@ -38,6 +41,10 @@ ContextAwareProfile::~ContextAwareProfile() {
 bool ContextAwareProfile::isContextRestricted(QQmlContext* context) {
     // no flag means unrestricted: see the Qt 5 isRestrictedGetProperty below
     return context->contextProperty(RESTRICTED_FLAG_PROPERTY).toBool();
+}
+
+bool ContextAwareProfile::isWebEntityContext(QQmlContext* context) {
+    return context->contextProperty(WEB_ENTITY_FLAG_PROPERTY).toBool();
 }
 #else
 QReadWriteLock ContextAwareProfile::_contextMapProtect;
@@ -100,6 +107,19 @@ void ContextAwareProfile::useStorage(const QString& storageName) {
     setOffTheRecord(false);
 }
 #endif
+
+void ContextAwareProfile::separateWebEntitySurface(QQmlContext* context) {
+#if SHARED_WEB_PROFILES
+    // on the surface's root context, so a context made under it later finds the flag too; only this class's views are
+    // made on these surfaces
+    context->setContextProperty(WEB_ENTITY_FLAG_PROPERTY, true);
+#if !defined(Q_OS_ANDROID)
+    TivoliWebEngineProfile::registerWithContext(context);
+#endif
+#else
+    Q_UNUSED(context)
+#endif
+}
 
 void ContextAwareProfile::restrictContext(QQmlContext* context, bool restrict) {
 

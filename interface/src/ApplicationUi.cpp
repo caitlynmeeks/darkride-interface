@@ -227,6 +227,10 @@ void Application::initializeUi() {
             surfaceContext->setContextProperty("AudioScriptingInterface", DependencyManager::get<AudioScriptingInterface>().data());
             surfaceContext->setContextProperty("Account", AccountServicesScriptingInterface::getInstance()); // DEPRECATED - TO BE REMOVED
         }
+        // the pool's surfaces show HTML Web entities: here, before the surface's QML loads
+        if (rootObject == render::entities::WebEntityRenderer::QML) {
+            ContextAwareProfile::separateWebEntitySurface(surfaceContext);
+        }
     });
 
     {

@@ -45,6 +45,11 @@ class ContextAwareProfile : public ContextAwareProfileParent {
     Q_OBJECT
 public:
     static void restrictContext(QQmlContext* context, bool restrict = true);
+
+    // A Web entity's surface: on Qt 6 Web entities keep their web data apart from the app's own views. Call it before the
+    // surface's QML loads. Nothing on Qt 5.
+    static void separateWebEntitySurface(QQmlContext* context);
+
     bool isRestricted();
     Q_INVOKABLE bool isRestrictedGetProperty();
 protected:
@@ -64,6 +69,9 @@ protected:
 
     // The file-access flag set on a context or on one of its parents
     static bool isContextRestricted(QQmlContext* context);
+
+    // Whether a context is a Web entity's surface or a child of one
+    static bool isWebEntityContext(QQmlContext* context);
 #else
     ContextAwareProfile(QQmlContext* parent);
 #endif

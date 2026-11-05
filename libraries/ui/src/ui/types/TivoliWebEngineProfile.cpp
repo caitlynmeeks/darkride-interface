@@ -22,12 +22,7 @@
 
 #if !defined(Q_OS_ANDROID)
 
-#if SHARED_WEB_PROFILES
 static const QString QML_WEB_ENGINE_STORAGE_NAME = "qmlWebEngine";
-static const QString QML_WEB_ENGINE_RESTRICTED_STORAGE_NAME = "qmlWebEngineRestricted";
-#else
-static const QString QML_WEB_ENGINE_STORAGE_NAME = "qmlWebEngine";
-#endif
 
 static std::set<TivoliWebEngineProfile*> TivoliWebEngineProfile_instances;
 static std::mutex TivoliWebEngineProfile_mutex;
@@ -64,11 +59,13 @@ void TivoliWebEngineProfile::RequestInterceptor::interceptRequest(QWebEngineUrlR
 void TivoliWebEngineProfile::registerWithContext(QQmlContext* context) {
 #if SHARED_WEB_PROFILES
     Q_ASSERT(QThread::currentThread() == qApp->thread());   // one object per folder: never two made at once
-    static TivoliWebEngineProfile* shared[2] { nullptr, nullptr };   // by the file-access flag
+    static TivoliWebEngineProfile* shared[2][2] { { nullptr, nullptr }, { nullptr, nullptr } };   // by Web entity, file access
+    const bool webEntity = isWebEntityContext(context);
     const bool restricted = isContextRestricted(context);
-    TivoliWebEngineProfile*& profile = shared[restricted];
+    TivoliWebEngineProfile*& profile = shared[webEntity][restricted];
     if (!profile) {
-        profile = new TivoliWebEngineProfile(restricted ? QML_WEB_ENGINE_RESTRICTED_STORAGE_NAME : QML_WEB_ENGINE_STORAGE_NAME, restricted);
+        const QString storageName = QML_WEB_ENGINE_STORAGE_NAME + (webEntity ? "WebEntities" : "") + (restricted ? "Restricted" : "");
+        profile = new TivoliWebEngineProfile(storageName, restricted);
         QQmlEngine::setObjectOwnership(profile, QQmlEngine::CppOwnership);
     }
     context->setContextProperty("TivoliWebEngineProfile", profile);
