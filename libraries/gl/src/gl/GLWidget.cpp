@@ -125,9 +125,10 @@ void GLWidget::makeWindowAnOpenGLSurface() {
     _remakingWindow = false;
     qCDebug(glLogging) << "view window made again as an OpenGL surface:" << window->surfaceType() << window->format().majorVersion() << window->format().minorVersion() << window->format().profile();
     // A screen change outside the main window's own events (the window dragged to another display, a display's
-    // parameters changed) is a view change too: the guard runs the context's update for it. Per QWindow object, so
-    // made again whenever the window is.
-    connect(window, &QWindow::screenChanged, this, [](QScreen*) { gl::ViewChangeGuard guard(0); }, Qt::UniqueConnection);
+    // parameters changed) is a view change too: the guard runs the context's update for it. Per QWindow object (this
+    // runs once per object: at the context's creation, and for each window Qt replaces), so no unique-connection
+    // flag, which Qt refuses for a lambda anyway (run 12's warning).
+    connect(window, &QWindow::screenChanged, this, [](QScreen*) { gl::ViewChangeGuard guard(0); });
 }
 
 #endif

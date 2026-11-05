@@ -36,6 +36,9 @@
 #include <QtGui/QImage>
 #include <QtGui/QImageWriter>
 #include <QOpenGLFramebufferObject>   // QtGui on Qt 5, the QtOpenGL module on Qt 6
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtCore/QPointer>
+#endif
 
 #include <NumericalConstants.h>
 #include <DependencyManager.h>
@@ -426,7 +429,25 @@ bool OpenGLDisplayPlugin::activate() {
     // (DisplayLink, RefreshRateController); it follows the window from screen to screen
     if (!isHmd()) {
         auto widget = _container->getPrimaryWidget();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Qt 6 replaces the main window's QWindow when a QQuickWidget dock joins it (QWidget::setParent's recreate()):
+        // the lambdas below resolve the window at every use instead of keeping the one of the activation, whose
+        // frameGeometry() the watchdog read after its death (run 12, 11-05). The screen and visibility connections
+        // are made again by the watchdog when the window object has changed.
+        struct LiveWindow {
+            PluginContainer* container;
+            QWindow* get() const {
+                auto widget = container->getPrimaryWidget();
+                return (widget && widget->window()) ? widget->window()->windowHandle() : nullptr;
+            }
+            QWindow* operator->() const { return get(); }
+            explicit operator bool() const { return get() != nullptr; }
+        };
+        LiveWindow window { _container };
+        Q_UNUSED(widget);   // the Qt 5 line above stays; here the lambdas look the widget up themselves
+#else
         QWindow* window = (widget && widget->window()) ? widget->window()->windowHandle() : nullptr;
+#endif
         if (window) {
             // the link runs while the window can be seen: a minimized or hidden window has nothing to pace, and the
             // link's thread would wake at every refresh for nothing (10-21 review). The display is the one under the
@@ -456,8 +477,13 @@ bool OpenGLDisplayPlugin::activate() {
             startLink();
             QObject::disconnect(_screenConnection);
             QObject::disconnect(_visibilityConnection);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            _screenConnection = connect(window.get(), &QWindow::screenChanged, this, [startLink](QScreen*) { startLink(); });
+            _visibilityConnection = connect(window.get(), &QWindow::visibilityChanged, this, [startLink](QWindow::Visibility) { startLink(); });
+#else
             _screenConnection = connect(window, &QWindow::screenChanged, this, [startLink](QScreen*) { startLink(); });
             _visibilityConnection = connect(window, &QWindow::visibilityChanged, this, [startLink](QWindow::Visibility) { startLink(); });
+#endif
             // the watchdog, every 2 s on the main thread: a link on another display than the window's, or one that has
             // gone quiet while the window can be seen, is started again on the window's display, and said so
             if (!_linkWatchdog) {
@@ -466,7 +492,24 @@ bool OpenGLDisplayPlugin::activate() {
                 _linkWatchdog->setTimerType(Qt::VeryCoarseTimer);
             }
             _linkWatchdog->disconnect();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            connect(_linkWatchdog, &QTimer::timeout, this, [this, window, displayUnderWindow, startLink, tracked = QPointer<QWindow>()]() mutable {
+                QWindow* now = window.get();
+                if (!now) {
+                    return;
+                }
+                if (now != tracked.data()) {
+                    // the window object changed (or this is the first tick): the screen and visibility signals of the
+                    // window it has now
+                    QObject::disconnect(_screenConnection);
+                    QObject::disconnect(_visibilityConnection);
+                    _screenConnection = connect(now, &QWindow::screenChanged, this, [startLink](QScreen*) { startLink(); });
+                    _visibilityConnection = connect(now, &QWindow::visibilityChanged, this, [startLink](QWindow::Visibility) { startLink(); });
+                    tracked = now;
+                }
+#else
             connect(_linkWatchdog, &QTimer::timeout, this, [this, window, displayUnderWindow] {
+#endif
                 QWindow::Visibility visibility = window->visibility();
                 if (visibility == QWindow::Minimized || visibility == QWindow::Hidden) {
                     return;
