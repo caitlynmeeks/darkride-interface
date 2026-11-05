@@ -144,6 +144,35 @@ void FSTReader::writeVariant(QBuffer& buffer, hifi::VariantMultiHash::const_iter
     }
 }
 
+bool FSTReader::isOneLine(const QString& text) {
+    for (const QChar c : text) {
+        const QChar::Category category = c.category();
+        if (category == QChar::Other_Control || category == QChar::Separator_Line ||
+            category == QChar::Separator_Paragraph) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool FSTReader::isLineValue(const QString& text) {
+    return !text.contains('=') && isOneLine(text);
+}
+
+QString FSTReader::jsonLineValue(const QJsonDocument& json) {
+    const QString compact = QString::fromUtf8(json.toJson(QJsonDocument::Compact));
+    QString value;
+    value.reserve(compact.size());
+    for (const QChar c : compact) {
+        if (c == '=' || !isOneLine(QString(c))) {
+            value += QString("\\u%1").arg((uint)c.unicode(), 4, 16, QChar('0'));
+        } else {
+            value += c;
+        }
+    }
+    return value;
+}
+
 QByteArray FSTReader::writeMapping(const hifi::VariantMultiHash& mapping) {
     static const QStringList PREFERED_ORDER = QStringList() << NAME_FIELD << TYPE_FIELD << SCALE_FIELD << FILENAME_FIELD
     << MARKETPLACE_ID_FIELD << TEXDIR_FIELD << SCRIPT_FIELD << JOINT_FIELD

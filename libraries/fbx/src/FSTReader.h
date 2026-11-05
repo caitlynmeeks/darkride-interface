@@ -13,6 +13,7 @@
 #define hifi_FSTReader_h
 
 #include <QBuffer>
+#include <QJsonDocument>
 #include <QStringList>
 #include <QVariantHash>
 
@@ -57,6 +58,19 @@ public:
 
     /// Writes an FST mapping to a byte array.
     static QByteArray writeMapping(const hifi::VariantMultiHash& mapping);
+
+    /// Whether text stays on one line of an .fst: no line break or other control character. The reader would start a
+    /// new line there, with a key of its own.
+    static bool isOneLine(const QString& text);
+
+    /// Whether text can be one value of an .fst line without changing what the line says: one line (isOneLine) and no
+    /// '=' (the reader splits a line at every '='). Model files and packages name joints and shape keys freely, so a
+    /// line built from such a name is written only when the name passes this.
+    static bool isLineValue(const QString& text);
+
+    /// JSON as one value of an .fst line: compact, with each character isLineValue refuses written as a \u escape
+    /// (such a character can only be inside a JSON string, where the escape means the same), so it always passes.
+    static QString jsonLineValue(const QJsonDocument& json);
 
     /// Predicts the type of model by examining the mapping 
     static ModelType predictModelType(const hifi::VariantMultiHash& mapping);
