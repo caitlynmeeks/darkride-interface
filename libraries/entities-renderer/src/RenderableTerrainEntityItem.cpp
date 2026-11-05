@@ -16,6 +16,7 @@
 
 #include <glm/gtx/transform.hpp>
 #include <QCryptographicHash>
+#include <QtCore/QScopedPointer>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
@@ -1467,7 +1468,9 @@ void TerrainEntityRenderer::fetchTerrain(const QString& url, uint32_t version) {
         if (!request) {
             return;
         }
-        request->deleteLater();
+        // the request lives on the Resource Manager's thread: it is deleted only after the last read below, on every
+        // way out of this handler
+        QScopedPointer<ResourceRequest, QScopedPointerDeleteLater> holder(request);
         auto entity = std::dynamic_pointer_cast<RenderableTerrainEntityItem>(_entity);
         if (!entity) {
             return;

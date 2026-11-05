@@ -13,6 +13,7 @@
 
 #include <gpu/Batch.h>
 #include <QJsonDocument>
+#include <QtCore/QScopedPointer>
 #include <QJsonObject>
 #include <QUrl>
 #include <ResourceManager.h>
@@ -608,7 +609,9 @@ void ZoneEntityRenderer::fetchProbeVolume(const QString& url) {
         if (!request) {
             return;
         }
-        request->deleteLater();
+        // the request lives on the Resource Manager's thread: it is deleted only after the last read below, on every
+        // way out of this handler
+        QScopedPointer<ResourceRequest, QScopedPointerDeleteLater> holder(request);
         if (url != _probeVolumeURL) {
             return;
         }
