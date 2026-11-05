@@ -307,6 +307,18 @@ public:
     {}
 };
 
+// A joint that turns with another (a VRM's VRMC_node_constraint): by its twist about an axis (Roll), to point an axis at
+// it (Aim), or by all of its turn (Rotation). The rig applies them after the animations and before Flow.
+class NodeConstraint {
+public:
+    enum class Type { Roll, Aim, Rotation };
+    Type type { Type::Rotation };
+    QString joint;   // the joint it turns, by the name it ends up with
+    QString source;  // the joint it follows
+    glm::vec3 axis;  // Roll: the axis of the source's twist; Aim: the joint's axis that points at the source
+    float weight { 1.0f };
+};
+
 class FlowData {
 public:
     FlowData() {};
@@ -430,6 +442,14 @@ public:
     // ownBlendshapeNames[i], which starts at ownBlendshapeDefaults[i] (0 to 1).
     QStringList ownBlendshapeNames;
     QVector<float> ownBlendshapeDefaults;
+    std::vector<NodeConstraint> nodeConstraints;
+    // How far the eye joints turn as the gaze does: by the gaze's turn times eyeLookScale, up to eyeLookMaxAngle (radians).
+    // A VRM says how far its eyes may turn (lookAt); VRoid's flat irises leave their eye-whites past about 10 degrees.
+    float eyeLookScale { 1.0f };
+    float eyeLookMaxAngle { 25.0f * 3.14159265f / 180.0f };
+    // A model whose eyes look by expression instead (a VRM's EyeUp, EyeDown, EyeIn and EyeOut blendshapes): how much of
+    // each per radian of the gaze's turn that way; 0 where they don't
+    float eyeLookExpressionScale { 0.0f };
 
     void debugDump() const;
 };
