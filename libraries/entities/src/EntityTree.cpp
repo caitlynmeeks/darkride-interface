@@ -38,6 +38,7 @@
 #include "WebEntityItem.h"
 #include "ScriptAddressCheck.h"
 #include "ScriptCaller.h"
+#include <shared/WireStream.h>
 
 static const quint64 DELETED_ENTITIES_EXTRA_USECS_TO_CONSIDER = USECS_PER_MSEC * 50;
 const float EntityTree::DEFAULT_MAX_TMP_ENTITY_LIFETIME = 60 * 60; // 1 hour
@@ -2790,6 +2791,7 @@ QByteArray EntityTree::remapActionDataIDs(QByteArray actionData, QHash<EntityIte
     }
 
     QDataStream serializedActionsStream(actionData);
+    hifi::stream::pin(serializedActionsStream);
     QVector<QByteArray> serializedActions;
     serializedActionsStream >> serializedActions;
 
@@ -2798,6 +2800,7 @@ QByteArray EntityTree::remapActionDataIDs(QByteArray actionData, QHash<EntityIte
     QHash<QUuid, EntityDynamicPointer> remappedActions;
     foreach(QByteArray serializedAction, serializedActions) {
         QDataStream serializedActionStream(serializedAction);
+        hifi::stream::pin(serializedActionStream);
         EntityDynamicType actionType;
         QUuid oldActionID;
         serializedActionStream >> actionType;
@@ -2821,6 +2824,7 @@ QByteArray EntityTree::remapActionDataIDs(QByteArray actionData, QHash<EntityIte
 
     QByteArray result;
     QDataStream remappedSerializedActionsStream(&result, QIODevice::WriteOnly);
+    hifi::stream::pin(remappedSerializedActionsStream);
     remappedSerializedActionsStream << remappedSerializedActions;
     return result;
 }

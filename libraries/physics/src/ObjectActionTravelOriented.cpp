@@ -17,6 +17,7 @@
 #include <PhysicsHelpers.h>
 #include <QVariantGLM.h>
 
+#include <shared/WireStream.h>
 #include "PhysicsLogging.h"
 
 const uint16_t ObjectActionTravelOriented::actionVersion = 1;
@@ -190,6 +191,7 @@ QVariantMap ObjectActionTravelOriented::getArguments() {
 QByteArray ObjectActionTravelOriented::serialize() const {
     QByteArray serializedActionArguments;
     QDataStream dataStream(&serializedActionArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     dataStream << DYNAMIC_TYPE_TRAVEL_ORIENTED;
     dataStream << getID();
@@ -208,6 +210,7 @@ QByteArray ObjectActionTravelOriented::serialize() const {
 
 void ObjectActionTravelOriented::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;

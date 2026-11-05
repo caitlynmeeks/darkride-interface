@@ -17,6 +17,7 @@
 #include <PhysicsHelpers.h>
 #include <QVariantGLM.h>
 
+#include <shared/WireStream.h>
 #include "PhysicsLogging.h"
 
 const float TRACTOR_MAX_SPEED = 10.0f;
@@ -424,6 +425,7 @@ void ObjectActionTractor::serializeParameters(QDataStream& dataStream) const {
 QByteArray ObjectActionTractor::serialize() const {
     QByteArray serializedActionArguments;
     QDataStream dataStream(&serializedActionArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     dataStream << DYNAMIC_TYPE_TRACTOR;
     dataStream << getID();
@@ -459,6 +461,7 @@ void ObjectActionTractor::deserializeParameters(QByteArray serializedArguments, 
 
 void ObjectActionTractor::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;
