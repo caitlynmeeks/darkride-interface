@@ -12,6 +12,7 @@
 #include "ContextAwareProfile.h"
 
 #include <cassert>
+#include <QtCore/QDebug>
 #include <QtCore/QReadLocker>
 #include <QtCore/QThread>
 #include <QtCore/QWriteLocker>
@@ -106,6 +107,10 @@ void ContextAwareProfile::useStorage(QQuickWebEngineProfile* profile, const QStr
     // Last: going on the record opens the preferences file at the data path of that moment (ProfileAdapter::
     // setOffTheRecord, setupPrefService), so a walled client's path has to be in place first.
     profile->setOffTheRecord(false);
+
+#if SHARED_WEB_PROFILES
+    qDebug() << "Web profile" << storageName << "on" << profile->persistentStoragePath();   // a few lines a run, at most
+#endif
 }
 
 QObject* ContextAwareProfile::radioProfile() {
