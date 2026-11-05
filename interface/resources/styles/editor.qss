@@ -268,6 +268,13 @@ QToolBar#EditorToolBar::separator, QToolBar#EditorTerrainBar::separator {
     background: #232323;
     margin: 4px 6px;
 }
+/* Qt's overflow button, at the end of a strip too narrow for its tools. Our own picture: drawing the system's stops Qt 6 on
+   macOS here. No padding or border: it's a small button */
+QToolBar#EditorToolBar QToolButton#qt_toolbar_ext_button, QToolBar#EditorTerrainBar QToolButton#qt_toolbar_ext_button {
+    qproperty-icon: url(:/styles/toolbar-overflow.svg);
+    border: none;
+    padding: 0;
+}
 
 /* the splitters between the panels and the viewport */
 QMainWindow::separator {
