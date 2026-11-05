@@ -58,6 +58,18 @@ public:
     AudioInjector(AudioDataPointer audioData, const AudioInjectorOptions& injectorOptions);
     ~AudioInjector();
 
+    /// Where the parts of an InjectAudio header that change every frame start, counted from the start of the packet.
+    struct InjectAudioHeader {
+        int loopbackOffset { -1 };
+        int positionOffset { -1 };
+        int volumeOffset { -1 };
+        int audioOffset { -1 };
+    };
+    /// Writes an InjectAudio packet's header, from the sequence number up to the audio, in the pinned wire format
+    /// (shared/WireStream.h), so a Qt 5 and a Qt 6 build send the same bytes.
+    static InjectAudioHeader writeInjectAudioHeader(QIODevice* device, const QUuid& streamID,
+                                                    const AudioInjectorOptions& options, uchar loopbackFlag);
+
     bool isFinished() const { return (stateHas(AudioInjectorState::Finished)); }
 
     int getCurrentSendOffset() const { return _currentSendOffset; }
