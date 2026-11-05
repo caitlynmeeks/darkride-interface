@@ -763,6 +763,16 @@ void OffscreenQmlSurface::lowerKeyboard() {
     }
 }
 
+// Qt 6's web view has a drawing item from QtWebEngineCore, which is built without C++ type information: a dynamic_cast
+// on it reads a null pointer and crashes, at the first web page (rendering's run 16). qobject_cast doesn't need that.
+static QQuickItem* toQuickItem(QObject* object) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return qobject_cast<QQuickItem*>(object);
+#else
+    return dynamic_cast<QQuickItem*>(object);
+#endif
+}
+
 void OffscreenQmlSurface::setKeyboardRaised(QObject* object, bool raised, bool numeric, bool passwordField) {
     qCDebug(uiLogging) << "setKeyboardRaised: " << object << ", raised: " << raised << ", numeric: " << numeric
                        << ", password: " << passwordField;
@@ -781,7 +791,7 @@ void OffscreenQmlSurface::setKeyboardRaised(QObject* object, bool raised, bool n
     if (!android || hmd) {
         // if HMD is being worn, allow keyboard to open.  allow it to close, HMD or not.
         if (!raised || hmd) {
-            QQuickItem* item = dynamic_cast<QQuickItem*>(object);
+            QQuickItem* item = toQuickItem(object);
             if (!item) {
                 return;
             }
@@ -812,7 +822,7 @@ void OffscreenQmlSurface::setKeyboardRaised(QObject* object, bool raised, bool n
 
                     return;
                 }
-                item = dynamic_cast<QQuickItem*>(item->parentItem());
+                item = toQuickItem(item->parentItem());
             }
         }
     }
