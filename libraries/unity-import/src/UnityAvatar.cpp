@@ -27,6 +27,7 @@
 
 #include <BlendshapeConstants.h>
 #include <FBXSerializer.h>
+#include <FSTReader.h>
 #include <Humanoid.h>
 
 #include "AvatarMenuImport.h"
@@ -500,6 +501,27 @@ const char* GESTURE_SCRIPT = R"JS(//
 
 }  // namespace
 
+QStringList jointMapLines(const QVariantMap& humanDescription, QHash<QString, QString>& skeletonNames, QStringList& notes) {
+    QStringList lines;
+    for (const QVariant& entry : humanDescription.value("human").toList()) {
+        const QVariantMap bone = entry.toMap();
+        const int index = humanoid::boneFromUnityName(bone.value("humanName").toString());
+        if (index < 0) {
+            notes << "unknown humanoid bone " + bone.value("humanName").toString();
+            continue;
+        }
+        const QString boneName = bone.value("boneName").toString();
+        if (!FSTReader::isLineValue(boneName)) {
+            notes << "left out: the joint for " + humanoid::standardName(index) +
+                         ", whose name has a line break or '=', which an .fst line cannot hold";
+            continue;
+        }
+        lines << QString("jointMap = %1 = %2").arg(humanoid::standardName(index), boneName);
+        skeletonNames.insert(boneName, humanoid::standardName(index));
+    }
+    return lines;
+}
+
 QVector<AvatarSource> findAvatars(const unity::Package& package) {
     QVector<AvatarSource> found;
     for (const auto* prefab : package.withExtension(".prefab")) {
@@ -545,9 +567,14 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
         return result;
     }
     QStringList& notes = result.notes;
+    QSet<QString> unwritableNames;  // joints and shape keys left out of the .fst: an .fst line cannot hold their names
 
     // The model, unchanged, and read as the engine will read it.
     const QString modelFile = name + "." + QFileInfo(model->path).suffix().toLower();
+    if (!FSTReader::isLineValue(modelFile)) {
+        result.error = "the avatar's name or its model's file type has a line break or '=', which an .fst line cannot hold";
+        return result;
+    }
     result.modelPath = folder.filePath(modelFile);
     {
         QFile file(result.modelPath);
@@ -577,18 +604,8 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
     // Humanoid joints: Unity's humanoid map names them; the engine knows them by Darkride's standard names.
     const QVariantMap importer = package.meta(avatar.modelGuid).value("ModelImporter").toMap();
     const QVariantMap human = importer.value("humanDescription").toMap();
-    QStringList jointMap;
     QHash<QString, QString> skeletonNames;  // the file's joint name -> the avatar's, where jointMap renames it
-    for (const QVariant& entry : human.value("human").toList()) {
-        const QVariantMap bone = entry.toMap();
-        const int index = humanoid::boneFromUnityName(bone.value("humanName").toString());
-        if (index < 0) {
-            notes << "unknown humanoid bone " + bone.value("humanName").toString();
-            continue;
-        }
-        jointMap << QString("jointMap = %1 = %2").arg(humanoid::standardName(index), bone.value("boneName").toString());
-        skeletonNames.insert(bone.value("boneName").toString(), humanoid::standardName(index));
-    }
+    const QStringList jointMap = jointMapLines(human, skeletonNames, notes);
     if (jointMap.isEmpty()) {
         notes << "the model has no humanoid map; it will not animate";
     }
@@ -598,7 +615,7 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
     QStringList avatarFiles;
     const QVariantMap frames = humanoidFrames(human, notes);
     if (!frames.isEmpty()) {
-        humanoidLines << "humanoid = " + QString::fromUtf8(QJsonDocument::fromVariant(frames).toJson(QJsonDocument::Compact));
+        humanoidLines << "humanoid = " + FSTReader::jsonLineValue(QJsonDocument::fromVariant(frames));
         struct Clip {
             QString file;
             int frames { 1 };
@@ -734,6 +751,10 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
         if (!pose.changed) {
             continue;
         }
+        if (!FSTReader::isLineValue(hfmModel->joints[i].name)) {
+            unwritableNames.insert(hfmModel->joints[i].name);
+            continue;
+        }
         glm::vec3 fileTranslation, fileScale;
         glm::quat fileRotation;
         unity::jointLocalPose(hfmModel->joints[i], fileTranslation, fileRotation, fileScale);
@@ -757,8 +778,8 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
             { "rotation", numbers({ rotation.x, rotation.y, rotation.z, rotation.w }) },
             { "scale", numbers({ scale.x, scale.y, scale.z }) },
         };
-        poseLines << QString("jointDefaultPose = %1 = %2").arg(hfmModel->joints[i].name)
-                         .arg(QString::fromUtf8(QJsonDocument(json).toJson(QJsonDocument::Compact)));
+        poseLines << QString("jointDefaultPose = %1 = %2")
+                         .arg(hfmModel->joints[i].name, FSTReader::jsonLineValue(QJsonDocument(json)));
     }
     if (!poseLines.isEmpty()) {
         notes << QString("%1 bones rest as the prefab and the starting animations set them").arg(poseLines.size());
@@ -808,6 +829,10 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
             otherConstraints["VRCRotationConstraint on an object the model does not have"]++;
             continue;
         }
+        if (!FSTReader::isLineValue(skeletonName(joint))) {
+            unwritableNames.insert(skeletonName(joint));
+            continue;
+        }
         QJsonArray sources;
         const QVariantMap sourceMap = f.value("Sources").toMap();
         for (int i = 0; i < 16; i++) {
@@ -844,8 +869,8 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
         if (unity::toNumber(f.value("FreezeToWorld")) != 0.0) {
             notes << "not yet: a rotation constraint frozen to the world (" + skeletonName(joint) + ")";
         }
-        constraintLines << QString("rotationConstraint = %1 = %2").arg(skeletonName(joint))
-                               .arg(QString::fromUtf8(QJsonDocument(json).toJson(QJsonDocument::Compact)));
+        constraintLines << QString("rotationConstraint = %1 = %2")
+                               .arg(skeletonName(joint), FSTReader::jsonLineValue(QJsonDocument(json)));
     }
     if (!constraintLines.isEmpty()) {
         notes << QString("%1 rotation constraints (twist bones and the like)").arg(constraintLines.size());
@@ -861,7 +886,7 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
                                                 paths, skeletonNames, sortChildrenByName);
     QStringList springBoneLines;
     if (springBones.bones + springBones.contacts > 0) {
-        springBoneLines << "springBones = " + QString::fromUtf8(QJsonDocument(springBones.json).toJson(QJsonDocument::Compact));
+        springBoneLines << "springBones = " + FSTReader::jsonLineValue(QJsonDocument(springBones.json));
         notes << QString("%1 spring bones moving %2 joints, %3 colliders and %4 contacts written for the engine to simulate")
                      .arg(springBones.bones).arg(springBones.joints).arg(springBones.colliders).arg(springBones.contacts);
     }
@@ -937,7 +962,7 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
     const AvatarMenuData avatarMenu = avatarMenuData(package, avatar.descriptor, menuInputs);
     QStringList menuLines;
     if (avatarMenu.layers + avatarMenu.controls > 0) {
-        menuLines << "avatarMenu = " + QString::fromUtf8(QJsonDocument(avatarMenu.json).toJson(QJsonDocument::Compact));
+        menuLines << "avatarMenu = " + FSTReader::jsonLineValue(QJsonDocument(avatarMenu.json));
         notes << QString("avatar menu: %1 controls driving %2 animator layers (%3 states); the engine runs them")
                      .arg(avatarMenu.controls).arg(avatarMenu.layers).arg(avatarMenu.states);
     }
@@ -997,9 +1022,25 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
     }
     // The engine's reader keeps a shape key's name whole only when the .fst names it; otherwise it keeps what follows
     // the last dot ("vrc.v.aa" reads "aa").
-    const QSet<QString> shapes(hfmModel->blendshapeChannelNames.begin(), hfmModel->blendshapeChannelNames.end());
+    // Only names an .fst line can hold: the descriptor's and the clips' shape-key names are checked here too, since a name
+    // passes by what follows its last dot.
+    QSet<QString> shapes;
+    for (const QString& shape : hfmModel->blendshapeChannelNames) {
+        if (FSTReader::isLineValue(shape)) {
+            shapes.insert(shape);
+        } else {
+            unwritableNames.insert(shape);
+        }
+    }
     auto hasShape = [&](const QString& shape) {
-        return !shape.isEmpty() && (shapes.contains(shape) || shapes.contains(shape.section('.', -1)));
+        if (shape.isEmpty()) {
+            return false;
+        }
+        if (!FSTReader::isLineValue(shape)) {
+            unwritableNames.insert(shape);
+            return false;
+        }
+        return shapes.contains(shape) || shapes.contains(shape.section('.', -1));
     };
 
     // The shape keys the prefab sets on its renderers (by index) and then the effects layer at the start (an outfit's fit,
@@ -1032,7 +1073,7 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
     QStringList startingNames;
     for (auto it = startingWeights.begin(); it != startingWeights.end(); ++it) {
         if (it.value() > 0.0f) {
-            shapeLines << QString("blendshapeDefault = %1 = %2").arg(it.key()).arg(it.value());
+            shapeLines << QString("blendshapeDefault = %1 = %2").arg(it.key(), QString::number(it.value()));
             startingNames << it.key();
         }
     }
@@ -1115,9 +1156,20 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
         << menuLines;
     if (!avatarFiles.isEmpty()) {
         // Named here so File > Put Avatar in My Files sends them up beside the .fst.
-        fst << "avatarFiles = " + QString::fromUtf8(QJsonDocument(QJsonArray::fromStringList(avatarFiles)).toJson(QJsonDocument::Compact));
+        fst << "avatarFiles = " + FSTReader::jsonLineValue(QJsonDocument(QJsonArray::fromStringList(avatarFiles)));
     }
-    fst << "materialMap = " + QString::fromUtf8(QJsonDocument(materialMap).toJson(QJsonDocument::Compact));
+    fst << "materialMap = " + FSTReader::jsonLineValue(QJsonDocument(materialMap));
+    if (!unwritableNames.isEmpty()) {
+        notes << QString("left out: %1 joint or shape-key names with a line break or '=', which an .fst line cannot hold")
+                     .arg(unwritableNames.size());
+    }
+    // Every line above is built from checked names; this is the last guard that each stays one line.
+    for (const QString& line : fst) {
+        if (!FSTReader::isOneLine(line)) {
+            result.error = "a line of the .fst would break in two";
+            return result;
+        }
+    }
     result.fstPath = folder.filePath(name + ".fst");
     QFile file(result.fstPath);
     if (!file.open(QIODevice::WriteOnly) || file.write((fst.join('\n') + '\n').toUtf8()) < 0) {
