@@ -18,6 +18,11 @@ void RenderControl::setRenderWindow(QWindow* renderWindow) {
 }
 
 QWindow* RenderControl::renderWindow(QPoint* offset) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (_renderWindow.isNull()) {
+        return QQuickRenderControl::renderWindow(offset);
+    }
+#endif
     if (nullptr == _renderWindow) {
         return QQuickRenderControl::renderWindow(offset);
     }
