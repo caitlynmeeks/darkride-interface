@@ -495,6 +495,8 @@ protected:
 
     PrimitiveMode _primitiveMode { PrimitiveMode::SOLID };
     bool _useDualQuaternionSkinning { false };
+    // What the model's file is read with when it isn't an .fst, which brings its own (SkeletonModel: worn as an avatar)
+    QVariantHash _resourceMapping;
 
     // debug rendering support
     int _debugMeshBoxesID = GeometryCache::UNKNOWN_ID;

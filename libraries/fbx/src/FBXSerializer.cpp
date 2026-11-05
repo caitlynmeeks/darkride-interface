@@ -463,6 +463,17 @@ HFMModel* FBXSerializer::extractHFMModel(const hifi::VariantHash& mapping, const
     const bool keepOwnBlendshapes = !ownBlendshapeDefaults.isEmpty() ||
         mapping.value("ownBlendshapes").toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
     QHash<hifi::ByteArray, int> ownBlendshapeSlots;
+    // A model worn as an avatar without an .fst, or whose .fst says "autoHumanoid = true", takes other names for the
+    // blendshapes it has no channel of the engine's name for, such as ARKit's (findBlendshapeSource)
+    const bool autoHumanoid = mapping.value("autoHumanoid").toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
+    // every channel: its ID, its name as the standard names are matched, and its whole name, for the fallback and the
+    // own blend shapes, which are worked out once all are known
+    struct BlendshapeChannel {
+        QString id;
+        hifi::ByteArray name;
+        hifi::ByteArray wholeName;
+    };
+    QVector<BlendshapeChannel> blendshapeChannels;
 #if defined(DEBUG_FBXSERIALIZER)
     int unknown = 0;
 #endif
@@ -1100,15 +1111,7 @@ HFMModel* FBXSerializer::extractHFMModel(const hifi::VariantHash& mapping, const
                         }
                         QString id = getID(object.properties);
                         hfmModel.blendshapeChannelNames << name;
-                        if (keepOwnBlendshapes && !blendshapeIndices.contains(name)) {
-                            // the model's own blend shape, by its whole name, in a slot after the standard ones
-                            auto slot = ownBlendshapeSlots.find(wholeName);
-                            if (slot == ownBlendshapeSlots.end()) {
-                                slot = ownBlendshapeSlots.insert(wholeName, hfmModel.ownBlendshapeNames.size());
-                                hfmModel.ownBlendshapeNames << QString::fromUtf8(wholeName);
-                            }
-                            blendshapeChannelIndices.insert(id, WeightedIndex((int)Blendshapes::BlendshapeCount + *slot, 1.0f));
-                        }
+                        blendshapeChannels.append({ id, name, wholeName });
                         foreach (const WeightedIndex& index, blendshapeIndices.values(name)) {
                             blendshapeChannelIndices.insert(id, index);
                         }
@@ -1246,6 +1249,58 @@ HFMModel* FBXSerializer::extractHFMModel(const hifi::VariantHash& mapping, const
         if (hifiGlobalNodeID.isEmpty()) {
             auto light = lights.begin();
             _lightmapLevel = (*light).second.intensity;
+        }
+    }
+
+    // A blendshape with no FST mapping and no channel of its own name takes another name the model may use for it, such
+    // as ARKit's, when the model is worn without an .fst or its .fst asks
+    QSet<hifi::ByteArray> fallbackChannelNames;
+    if (autoHumanoid && !blendshapeChannels.isEmpty()) {
+        QStringList channelNames;
+        for (const BlendshapeChannel& channel : blendshapeChannels) {
+            channelNames << QString::fromUtf8(channel.name);
+        }
+        QSet<int> found;
+        for (const WeightedIndex& index : blendshapeChannelIndices) {
+            found.insert(index.first);
+        }
+        for (int i = 0; i < (int)Blendshapes::BlendshapeCount; i++) {
+            if (found.contains(i) || blendshapeMappings.contains(BLENDSHAPE_NAMES[i])) {
+                continue;
+            }
+            BlendshapeSource source = findBlendshapeSource(i, channelNames);
+            if (source.name.isEmpty()) {
+                continue;
+            }
+            for (const BlendshapeChannel& channel : blendshapeChannels) {
+                if (QString::fromUtf8(channel.name) == source.name) {
+                    blendshapeChannelIndices.insert(channel.id, WeightedIndex(i, source.weight));
+                    fallbackChannelNames.insert(channel.name);
+                }
+            }
+            if (source.proceduralGain != 1.0f) {
+                if (hfmModel.proceduralBlendshapeGains.size() <= i) {
+                    hfmModel.proceduralBlendshapeGains.resize((int)Blendshapes::BlendshapeCount);
+                    hfmModel.proceduralBlendshapeGains.fill(1.0f);
+                }
+                hfmModel.proceduralBlendshapeGains[i] = source.proceduralGain;
+            }
+        }
+    }
+
+    // the model's own blend shapes, by their whole names, in slots after the standard ones: every channel the standard
+    // names and the fallback don't take, so none moves twice
+    if (keepOwnBlendshapes) {
+        for (const BlendshapeChannel& channel : blendshapeChannels) {
+            if (blendshapeIndices.contains(channel.name) || fallbackChannelNames.contains(channel.name)) {
+                continue;
+            }
+            auto slot = ownBlendshapeSlots.find(channel.wholeName);
+            if (slot == ownBlendshapeSlots.end()) {
+                slot = ownBlendshapeSlots.insert(channel.wholeName, hfmModel.ownBlendshapeNames.size());
+                hfmModel.ownBlendshapeNames << QString::fromUtf8(channel.wholeName);
+            }
+            blendshapeChannelIndices.insert(channel.id, WeightedIndex((int)Blendshapes::BlendshapeCount + *slot, 1.0f));
         }
     }
 

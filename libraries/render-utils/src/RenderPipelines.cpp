@@ -446,6 +446,16 @@ void RenderPipelines::updateMultiMaterial(graphics::MultiMaterial& multiMaterial
                         wasSet = true;
                     }
                     break;
+                case graphics::MaterialKey::TOON_VAL_BIT:
+                    if (materialKey.isToon()) {
+                        schema._toonShadeColor = glm::vec4(material->getToonShadeColor(false), 0.0f);
+                        schema._toonShadingShift = material->getToonShadingShift();
+                        schema._toonShadingToony = material->getToonShadingToony();
+                        schema._toonGiEqualization = material->getToonGiEqualization();
+                        schemaKey.setToon(true);
+                        wasSet = true;
+                    }
+                    break;
                 case graphics::MaterialKey::ALBEDO_VAL_BIT:
                     if (materialKey.isAlbedo()) {
                         schema._albedo = material->getAlbedo(false);
@@ -712,6 +722,7 @@ void RenderPipelines::updateMultiMaterial(graphics::MultiMaterial& multiMaterial
         switch (flag) {
             case graphics::MaterialKey::EMISSIVE_VAL_BIT:
             case graphics::MaterialKey::UNLIT_VAL_BIT:
+            case graphics::MaterialKey::TOON_VAL_BIT:
             case graphics::MaterialKey::ALBEDO_VAL_BIT:
             case graphics::MaterialKey::METALLIC_VAL_BIT:
             case graphics::MaterialKey::GLOSSY_VAL_BIT:
