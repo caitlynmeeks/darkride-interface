@@ -69,6 +69,7 @@ public:
                                         // dimmed by the sun's shadow. Without it the lightmap holds the baked light
                                         // only and replaces the ambient diffuse term, the sun and the local lights
                                         // running as usual (Unity's Baked Indirect; LIGHTMAPS.md). Goes with the map
+        RESERVED_23_BIT,                // kept for #40's KEEP_BACK_FACE_NORMAL_BIT (doubleSidedNormals), which takes it
         TOON_VAL_BIT,                   // toon shaded, as a VRM's MToon: lit where the light falls, the shade colour where
                                         // it doesn't, with a soft or sharp step between (Material::setToon)
 
