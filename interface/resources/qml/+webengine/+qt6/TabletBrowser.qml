@@ -75,7 +75,7 @@ Item {
                 console.log("Web Entity JS message: " + sourceID + " " + lineNumber + " " +  message);
             });
 
-            webview.profile.httpUserAgent = "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Mobile Safari/537.36";
+            // no profile.httpUserAgent here: on Qt 6 the profile is shared, and a write reaches every live view on it
             web.address = url;
         }
 

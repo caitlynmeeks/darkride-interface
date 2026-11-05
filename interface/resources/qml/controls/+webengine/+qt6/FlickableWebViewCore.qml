@@ -151,11 +151,7 @@ Item {
             webChannel.registerObject("eventBridge", eventBridge);
             webChannel.registerObject("eventBridgeWrapper", eventBridgeWrapper);
 
-            if (webViewCoreUserAgent !== undefined) {
-                webViewCore.profile.httpUserAgent = webViewCoreUserAgent
-            } else {
-                webViewCore.profile.httpUserAgent += " Darkride"; // TODO: add /<version>
-            }
+            // no profile.httpUserAgent here: on Qt 6 the profile is shared, and a write reaches every live view on it
             // Ensure the JS from the web-engine makes it to our logging
             webViewCore.javaScriptConsoleMessage.connect(function(level, message, lineNumber, sourceID) {
                 console.log("Web Entity JS message: " + sourceID + " " + lineNumber + " " +  message);
