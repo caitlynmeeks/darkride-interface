@@ -911,9 +911,15 @@ void VoxelGrid::fillBelow(float height, uint8_t material) {
 }
 
 void VoxelGrid::compactChunks() {
+    // only a chunk that will fold is written (and so copied, while a snapshot shares it): the others are read
     for (ChunkNode& slot : _slots) {
         forEachLeaf(slot, ChunkKey(), [](const ChunkKey&, ChunkNode& node) {
-            if (!node.getChunk().isUniform()) {
+            const Chunk& chunk = node.getChunk();
+            if (chunk.isUniform()) {
+                return;
+            }
+            const std::vector<Voxel>& voxels = chunk.getVoxels();
+            if (std::all_of(voxels.begin(), voxels.end(), [&](const Voxel& voxel) { return voxel == voxels[0]; })) {
                 node.mutableChunk().compact();
             }
         });
