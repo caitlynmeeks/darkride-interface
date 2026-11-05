@@ -723,6 +723,10 @@ void LevelOfDetail::noteCutShown(const std::vector<LodCut::Node>& wanted) {
         shown.msSinceChosen = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - _cutChosenAt).count();
         shown.framesSinceChosen = _frame - _cutChosenFrame;
     }
+    if (!_cutShownCounting) {
+        _cutShown = shown;
+        return;
+    }
     shown.nodes = wanted.size();
     // a node's mesh is new to the drawing when the last drawn set had no mesh at its key, or an older one
     std::map<ChunkKey, uint64_t> drawnVersions;

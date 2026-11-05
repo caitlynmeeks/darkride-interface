@@ -207,6 +207,8 @@ EntityItemPointer RenderableTerrainEntityItem::factory(const EntityItemID& entit
 }
 
 RenderableTerrainEntityItem::RenderableTerrainEntityItem(const EntityItemID& entityItemID) : TerrainEntityItem(entityItemID) {
+    // the level of detail counts what each cut shown brings only when the line that reports it is asked for
+    _levelOfDetail.setCutShownCounting(qEnvironmentVariableIsSet("TIVOLI_TERRAIN_LOD_DIAG"));
 }
 
 int RenderableTerrainEntityItem::paintTexelsPerVoxel(float voxelMetres, const glm::ivec2& voxelFootprint) {

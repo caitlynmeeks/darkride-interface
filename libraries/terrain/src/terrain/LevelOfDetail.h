@@ -216,6 +216,9 @@ public:
         size_t newIndices { 0 };
     };
     const CutShown& getCutShown() const { return _cutShown; }
+    // Whether a cut shown counts its nodes and new meshes (a map of the drawn set and a lookup per node): off, only
+    // the serial, ms and frames are kept, so the count is paid only by a caller that reads it.
+    void setCutShownCounting(bool counting) { _cutShownCounting = counting; }
 
     // The grid was replaced: every mesh here is out of date. What is drawn stays until the new cut's meshes are in.
     void gridReplaced();
@@ -282,6 +285,7 @@ private:
     std::chrono::steady_clock::time_point _cutChosenAt;   // when the cut wanted was last chosen
     uint64_t _cutChosenFrame { 0 };
     CutShown _cutShown;
+    bool _cutShownCounting { false };
 };
 
 } // namespace terrain
