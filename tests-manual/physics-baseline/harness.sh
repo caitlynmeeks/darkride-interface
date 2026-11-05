@@ -14,7 +14,7 @@
 #   client <name> <args...>          the client walled off in $R/<name>-home, --allowMultipleInstances (a second
 #                                    client would otherwise hand its --url to one already running and exit) and
 #                                    --tokens "{}" (no sign-in), stdout and stderr to $R/<name>.log; the ktx cache
-#                                    is deleted when it exits (kept with KEEP_KTX=1, for a warm run of the same
+#                                    and web folder are deleted when it exits (kept with KEEP_KTX=1, for a warm run of the same
 #                                    client next). Titled "Darkride - $SESSION - TEST, not yours" ("QUIET TEST" while
 #                                    the lock is held --quiet) unless the runner passes its own --clientLabel; the
 #                                    client takes its Dock icon from those words (TestClientIcon.h). Takes the machine lock first (lock_take), unless
@@ -299,7 +299,8 @@ client_start() {
         [ "$_status" != 0 ] || _status=1
     fi
     if [ -n "$_wallhome" ] || [ -n "${CFFIXED_USER_HOME:-}" ]; then
-        _touched=$(find "$HOME/Library/Application Support/Tivoli Cloud VR" "$HOME/Library/Caches/Tivoli Cloud VR" \
+        # all the user's Tivoli folders: a dev build's are "Tivoli Cloud VR - dev", which a check of the plain name misses
+        _touched=$(find "$HOME/Library/Application Support/Tivoli Cloud VR"* "$HOME/Library/Caches/Tivoli Cloud VR"* \
                        -newer "$_log.started" -type f 2>/dev/null | wc -l | tr -d ' ')
         if [ "$_touched" = 0 ]; then
             echo "client_start: WALLED OFF: nothing in ~/Library's Tivoli Cloud VR folders changed"
@@ -329,7 +330,8 @@ client() {
     XDG_CONFIG_HOME="$R/$_name-home/config" TIVOLI_APP_DATA_DIR="$R/$_name-home/data" \
         client_start "$R/$_name.log" --allowMultipleInstances --tokens "{}" "$@"
     _status=$?
-    [ -n "${KEEP_KTX:-}" ] || rm -rf "$R/$_name-home/data/ktx_cache"
+    # the web views' folder goes with it: a walled client keeps its web storage and cache there
+    [ -n "${KEEP_KTX:-}" ] || rm -rf "$R/$_name-home/data/ktx_cache" "$R/$_name-home/data/QtWebEngine"
     return $_status
 }
 
