@@ -99,13 +99,7 @@ void QmlDock::makeContent() {
     gl::ViewChangeGuard guard;
     QQmlEngine* engine = desktop->engine();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    // drawn on the main thread, as a QQuickWidget is: Qt's threaded loop would make its GL context current on a render
-    // thread, where macOS traps the context's update on a resize (team/rendering/QT6-R1-ENTRY.md). Read when the first
-    // real Qt Quick window is made; the offscreen panels have no render loop.
-    if (!qEnvironmentVariableIsSet("QSG_RENDER_LOOP")) {
-        qputenv("QSG_RENDER_LOOP", "basic");
-    }
-    _view = new DockQuickView(engine);
+    _view = new DockQuickView(engine);   // on the basic render loop: main.cpp
     QSurfaceFormat format = getDefaultOpenGLSurfaceFormat();
     format.setSwapInterval(0);   // a swap on the main thread must never wait for the display
     _view->setFormat(format);
