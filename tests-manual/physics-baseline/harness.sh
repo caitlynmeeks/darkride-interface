@@ -277,8 +277,15 @@ client_start() {
     _opener=$!
     _cpid=""; _i=0
     while [ -z "$_cpid" ] && [ "$_i" -lt 120 ] && kill -0 $_opener 2>/dev/null; do
-        # never open's own pid: its command line carries the flag too, and pgrep lists it first
-        _cpid=$(pgrep -f -- "-DarkrideTestRun $_log" | grep -vx "$_opener" | head -1)
+        # never open's own pid: its command line carries the flag too, and pgrep lists it first. By name, not by $!, which
+        # is another process when zsh sources this file (qa's client.log.pid held open's pid under zsh, 2026-11-05)
+        _cpid=""
+        for _p in $(pgrep -f -- "-DarkrideTestRun $_log"); do
+            case "$(ps -o comm= -p "$_p" 2>/dev/null)" in
+                */open|open|"") ;;
+                *) _cpid=$_p; break ;;
+            esac
+        done
         _i=$((_i + 1)); sleep 0.5
     done
     # the client's pid beside its log, and CLIENT_TIMEOUT=<s>: SIGTERM after that long, SIGKILL 5 s later (the client
