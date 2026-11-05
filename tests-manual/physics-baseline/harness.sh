@@ -14,7 +14,7 @@
 #   client <name> <args...>          the client walled off in $R/<name>-home, --allowMultipleInstances (a second
 #                                    client would otherwise hand its --url to one already running and exit) and
 #                                    --tokens "{}" (no sign-in), stdout and stderr to $R/<name>.log; the ktx cache
-#                                    is deleted when it exits (kept with KEEP_KTX=1, for a warm run of the same
+#                                    and web folder are deleted when it exits (kept with KEEP_KTX=1, for a warm run of the same
 #                                    client next). Titled "Darkride - $SESSION - TEST, not yours" ("QUIET TEST" while
 #                                    the lock is held --quiet) unless the runner passes its own --clientLabel; the
 #                                    client takes its Dock icon from those words (TestClientIcon.h). Takes the machine lock first (lock_take), unless
@@ -35,7 +35,12 @@
 #                                    puts ~/Library; HOME doesn't move it) unless the caller set one, and once it has
 #                                    quit, "WALLED OFF" or "NOT WALLED OFF" says whether ~/Library's Tivoli Cloud VR
 #                                    folders changed while it ran. Its caches, the ktx cache too (unless KEEP_KTX=1),
-#                                    are deleted after; its log stays. CLIENT_FOREGROUND=1 opens it in front
+#                                    are deleted after; its log stays. A dev or test build's folders are the user's too
+#                                    ("Tivoli Cloud VR - dev"), and TIVOLI_APP_DATA_DIR doesn't move Qt's own caches: it
+#                                    gets <the app's folder>/.wall-home, one per build tree, kept between runs so its QML
+#                                    cache stays warm after the build's first launch. A caller's CFFIXED_USER_HOME is left
+#                                    alone; CLIENT_REAL_HOME=1 keeps the real ~/Library: Caity's own hand tests only.
+#                                    CLIENT_FOREGROUND=1 opens it in front
 #                                    instead, still through open (a client someone plays, or a timing run that needs
 #                                    the window on top). Elsewhere than macOS it runs the binary straight.
 #                                    The client's pid goes in <log>.pid while it runs; CLIENT_TIMEOUT=<s> stops a
@@ -227,11 +232,14 @@ client_start() {
     # unknown and go on
     [ -n "${CLIENT_MIC:-}" ] || set -- --noAudioInput "$@"
     _since=$(date '+%Y-%m-%d %H:%M:%S')
-    # a release build's own home, away from the user's ~/Library (see the header); the user's folders are checked after
-    _wallhome=""
-    if [ -n "$_app" ] && [ -z "${CFFIXED_USER_HOME:-}" ] &&
-       [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$_app/Contents/Info.plist" 2>/dev/null)" = com.tivolicloud.interface ]; then
-        _wallhome="$_log.home"
+    # a home of its own, away from the user's ~/Library (see the header); the user's folders are checked after
+    _wallhome=""; _dropcaches=""
+    if [ -n "$_app" ] && [ -z "${CFFIXED_USER_HOME:-}" ] && [ -z "${CLIENT_REAL_HOME:-}" ]; then
+        if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$_app/Contents/Info.plist" 2>/dev/null)" = com.tivolicloud.interface ]; then
+            _wallhome="$_log.home"; _dropcaches=1
+        else
+            _wallhome="$(dirname "$_app")/.wall-home"
+        fi
         mkdir -p "$_wallhome"
     fi
     [ -z "$_wallhome${CFFIXED_USER_HOME:-}" ] || : > "$_log.started"
@@ -269,7 +277,8 @@ client_start() {
     _opener=$!
     _cpid=""; _i=0
     while [ -z "$_cpid" ] && [ "$_i" -lt 120 ] && kill -0 $_opener 2>/dev/null; do
-        _cpid=$(pgrep -f -- "-DarkrideTestRun $_log" | head -1)
+        # never open's own pid: its command line carries the flag too, and pgrep lists it first
+        _cpid=$(pgrep -f -- "-DarkrideTestRun $_log" | grep -vx "$_opener" | head -1)
         _i=$((_i + 1)); sleep 0.5
     done
     # the client's pid beside its log, and CLIENT_TIMEOUT=<s>: SIGTERM after that long, SIGKILL 5 s later (the client
@@ -299,7 +308,8 @@ client_start() {
         [ "$_status" != 0 ] || _status=1
     fi
     if [ -n "$_wallhome" ] || [ -n "${CFFIXED_USER_HOME:-}" ]; then
-        _touched=$(find "$HOME/Library/Application Support/Tivoli Cloud VR" "$HOME/Library/Caches/Tivoli Cloud VR" \
+        # all the user's Tivoli folders: a dev build's are "Tivoli Cloud VR - dev", which a check of the plain name misses
+        _touched=$(find "$HOME/Library/Application Support/Tivoli Cloud VR"* "$HOME/Library/Caches/Tivoli Cloud VR"* \
                        -newer "$_log.started" -type f 2>/dev/null | wc -l | tr -d ' ')
         if [ "$_touched" = 0 ]; then
             echo "client_start: WALLED OFF: nothing in ~/Library's Tivoli Cloud VR folders changed"
@@ -310,7 +320,7 @@ client_start() {
         rm -f "$_log.started"
         # its caches (QML, web, and the ktx cache, 0.3 to 1.5 GB, which 1.0.x keeps beside its log in Application
         # Support; KEEP_KTX=1 keeps it): the log stays, in $_wallhome/Library/Application Support
-        if [ -n "$_wallhome" ]; then
+        if [ -n "$_dropcaches" ]; then
             rm -rf "$_wallhome/Library/Caches"
             [ -n "${KEEP_KTX:-}" ] || find "$_wallhome" -type d -name ktx_cache -prune -exec rm -rf {} +
         fi
@@ -329,7 +339,8 @@ client() {
     XDG_CONFIG_HOME="$R/$_name-home/config" TIVOLI_APP_DATA_DIR="$R/$_name-home/data" \
         client_start "$R/$_name.log" --allowMultipleInstances --tokens "{}" "$@"
     _status=$?
-    [ -n "${KEEP_KTX:-}" ] || rm -rf "$R/$_name-home/data/ktx_cache"
+    # the web views' folder goes with it: a walled client keeps its web storage and cache there
+    [ -n "${KEEP_KTX:-}" ] || rm -rf "$R/$_name-home/data/ktx_cache" "$R/$_name-home/data/QtWebEngine"
     return $_status
 }
 
