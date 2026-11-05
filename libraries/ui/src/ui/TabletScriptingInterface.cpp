@@ -681,13 +681,14 @@ void TabletProxy::returnToPreviousAppImpl(bool localSafeContext, bool fromWorld)
 
 void TabletProxy::returnToPreviousApp() {
     bool localSafeContext = hifi::scripting::isLocalAccessSafeThread();
+    const bool fromWorld = ScriptCaller::isWorld();   // read on the calling thread, before any hop (as worldPageAllowed)
     qDebug() << "TabletProxy::returnToPreviousApp -> localSafeContext: " << localSafeContext;
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "returnToPreviousAppImpl", Q_ARG(bool, localSafeContext), Q_ARG(bool, !localSafeContext));
+        QMetaObject::invokeMethod(this, "returnToPreviousAppImpl", Q_ARG(bool, localSafeContext), Q_ARG(bool, fromWorld));
         return;
     }
 
-    returnToPreviousAppImpl(localSafeContext);
+    returnToPreviousAppImpl(localSafeContext, fromWorld);
 }
 
 void TabletProxy::loadQMLSource(const QVariant& path, bool resizable) {

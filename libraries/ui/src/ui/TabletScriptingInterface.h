@@ -316,6 +316,8 @@ public:
      * @deprecated This function is deprecated and will be removed.
      */
     // Internal function, do not call from scripts.
+    // fromWorld: a world's script's call (ScriptCaller::isWorld): in the headset it never
+    // brings the tablet (the VR screen) up by itself
     Q_INVOKABLE void returnToPreviousAppImpl(bool localSafeContext, bool fromWorld = false);
 
     /**jsdoc
