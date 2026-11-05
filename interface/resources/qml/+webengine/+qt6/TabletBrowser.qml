@@ -30,7 +30,7 @@ Item {
     }
 
     onUrlChanged: {
-        permissionPopupBackground.visible = false;
+        permissionPopupBackground.withdraw();
     }
 
     WebEngineView {
@@ -75,22 +75,18 @@ Item {
                 console.log("Web Entity JS message: " + sourceID + " " + lineNumber + " " +  message);
             });
 
-            webview.profile.httpUserAgent = "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Mobile Safari/537.36";
+            // no profile.httpUserAgent here: on Qt 6 the profile is shared, and a write reaches every live view on it
             web.address = url;
         }
 
-        onFeaturePermissionRequested: {
-            if (permissionPopupBackground.visible === true) {
-                console.log("Browser engine requested a new permission, but user is already being presented with a different permission request. Aborting request for new permission...");
-                return;
-            }
-            permissionPopupBackground.securityOrigin = securityOrigin;
-            permissionPopupBackground.feature = feature;
-
-            permissionPopupBackground.visible = true;
+        onPermissionRequested: function (permission) {
+            permissionPopupBackground.ask(permission);
         }
 
         onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
+            if (WebEngineView.LoadStartedStatus === loadRequest.status) {
+                permissionPopupBackground.withdraw();
+            }
             keyboardRaised = false;
             punctuationMode = false;
             keyboard.resetShiftMode(false);
@@ -132,8 +128,5 @@ Item {
 
     HifiControls.PermissionPopupBackground {
         id: permissionPopupBackground
-        onSendPermission: {
-            webview.grantFeaturePermission(securityOrigin, feature, shouldGivePermission);
-        }
     }
 }

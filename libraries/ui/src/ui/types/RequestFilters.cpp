@@ -140,14 +140,19 @@ void RequestFilters::disableServiceWorkers(QQuickWebEngineProfile* profile) {
 #endif
 
     // The service workers and Cache Storage that sites stored in earlier runs
-    static std::once_flag once;
-    std::call_once(once, [profile] {
+    auto deleteStored = [profile] {
         QDir serviceWorkers(profile->persistentStoragePath() + "/Service Worker");
         if (serviceWorkers.exists()) {
             qDebug() << "Deleting the web views' service workers and Cache Storage in" << serviceWorkers.absolutePath()
                      << ":" << (serviceWorkers.removeRecursively() ? "done" : "failed");
         }
-    });
+    };
+#if SHARED_WEB_PROFILES
+    deleteStored();   // each object is made once, on a folder of its own
+#else
+    static std::once_flag once;   // every object shares the one folder
+    std::call_once(once, deleteStored);
+#endif
 }
 
 void RequestFilters::interceptTivoliWebEngineRequest(QWebEngineUrlRequestInfo& info, bool restricted) {

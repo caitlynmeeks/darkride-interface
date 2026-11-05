@@ -12,17 +12,43 @@
 #include "ContextAwareProfile.h"
 
 #include <cassert>
+#include <QtCore/QDebug>
 #include <QtCore/QReadLocker>
 #include <QtCore/QThread>
 #include <QtCore/QWriteLocker>
 #include <QtQml/QQmlContext>
+#include <QtQml/QQmlEngine>
 
 #include <shared/QtHelpers.h>
 #include <PathUtils.h>
 #include <SharedUtil.h>
 
-static const QString RESTRICTED_FLAG_PROPERTY = "RestrictFileAccess";
+#if SHARED_WEB_PROFILES && !defined(Q_OS_ANDROID)
+#include "FileTypeProfile.h"
+#include "TivoliWebEngineProfile.h"
+#endif
 
+static const QString RESTRICTED_FLAG_PROPERTY = "RestrictFileAccess";
+#if SHARED_WEB_PROFILES
+static const QString WEB_ENTITY_FLAG_PROPERTY = "WebEntitySurface";
+#endif
+
+#if SHARED_WEB_PROFILES
+ContextAwareProfile::ContextAwareProfile(bool restricted) : _isRestricted(restricted) {
+}
+
+ContextAwareProfile::~ContextAwareProfile() {
+}
+
+bool ContextAwareProfile::isContextRestricted(QQmlContext* context) {
+    // no flag means unrestricted: see the Qt 5 isRestrictedGetProperty below
+    return context->contextProperty(RESTRICTED_FLAG_PROPERTY).toBool();
+}
+
+bool ContextAwareProfile::isWebEntityContext(QQmlContext* context) {
+    return context->contextProperty(WEB_ENTITY_FLAG_PROPERTY).toBool();
+}
+#else
 QReadWriteLock ContextAwareProfile::_contextMapProtect;
 ContextAwareProfile::ContextMap ContextAwareProfile::_contextMap;
 
@@ -58,30 +84,78 @@ ContextAwareProfile::~ContextAwareProfile() {
         }
     }
 }
+#endif
 
 #if !defined(Q_OS_ANDROID)
-void ContextAwareProfile::useStorage(const QString& storageName) {
-    setStorageName(storageName);
+void ContextAwareProfile::useStorage(QQuickWebEngineProfile* profile, const QString& storageName) {
+    profile->setStorageName(storageName);
 
     // A walled-off client (TIVOLI_APP_DATA_DIR) keeps its web storage in its own folder, away from the user's. Its
     // cache too: Qt puts that in the system's cache folder otherwise. As RadioSkinPicker::walledStoragePath does.
     if (!qEnvironmentVariableIsEmpty("TIVOLI_APP_DATA_DIR")) {
         const QString folder = PathUtils::getAppDataPath() + "QtWebEngine/" + storageName;
-        setPersistentStoragePath(folder);
-        setCachePath(folder);
+        profile->setPersistentStoragePath(folder);
+        profile->setCachePath(folder);
     }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    // Qt 6.8+ stores a page's permission answers per profile by default, on disk, for good: on a shared profile one yes
+    // would cover every view on it. Each page asks each time. Before going on the record, so no stored answers load.
+    profile->setPersistentPermissionsPolicy(QQuickWebEngineProfile::PersistentPermissionsPolicy::AskEveryTime);
+#endif
 
     // Last: going on the record opens the preferences file at the data path of that moment (ProfileAdapter::
     // setOffTheRecord, setupPrefService), so a walled client's path has to be in place first.
-    setOffTheRecord(false);
+    profile->setOffTheRecord(false);
+
+#if SHARED_WEB_PROFILES
+    qDebug() << "Web profile" << storageName << "on" << profile->persistentStoragePath();   // a few lines a run, at most
+#endif
+}
+
+QObject* ContextAwareProfile::radioProfile() {
+    // One object for the whole run, never deleted, made here and not in the panel's QML. The panel's page comes and goes,
+    // and a second browser context on the folder would fight the first over its locks; and QML would put it on the record
+    // before a walled client's folders could be set. The page is the app's own: no interceptor, as before.
+    static QQuickWebEngineProfile* profile = [] {
+        auto result = new QQuickWebEngineProfile();
+        result->setHttpCacheType(QQuickWebEngineProfile::MemoryHttpCache);
+        result->setPersistentCookiesPolicy(QQuickWebEngineProfile::NoPersistentCookies);
+        useStorage(result, "DarkrideRadio");
+        QQmlEngine::setObjectOwnership(result, QQmlEngine::CppOwnership);
+        return result;
+    }();
+    return profile;
 }
 #endif
+
+void ContextAwareProfile::separateWebEntitySurface(QQmlContext* context) {
+#if SHARED_WEB_PROFILES
+    // on the surface's root context, so a context made under it later finds the flag too; only this class's views are
+    // made on these surfaces
+    context->setContextProperty(WEB_ENTITY_FLAG_PROPERTY, true);
+#if !defined(Q_OS_ANDROID)
+    TivoliWebEngineProfile::registerWithContext(context);
+#endif
+#else
+    Q_UNUSED(context)
+#endif
+}
 
 void ContextAwareProfile::restrictContext(QQmlContext* context, bool restrict) {
 
     // set the QML property
     context->setContextProperty(RESTRICTED_FLAG_PROPERTY, restrict);
 
+#if SHARED_WEB_PROFILES
+    // The context takes the objects for this setting. Before anything in it has bound them, always: setContextProperty
+    // re-runs every view's profile: binding, and a live view rebuilds its page on a new profile. The desktop surface, the
+    // one context that had objects already, is restricted as its root context is made (Application::initializeUi).
+#if !defined(Q_OS_ANDROID)
+    FileTypeProfile::registerWithContext(context);
+    TivoliWebEngineProfile::registerWithContext(context);
+#endif
+#else
     // broadcast the new value to any registered ContextAwareProfile objects
     QReadLocker guard(&_contextMapProtect);
     ContextMap::const_iterator setLookup = _contextMap.find(context);
@@ -92,9 +166,13 @@ void ContextAwareProfile::restrictContext(QQmlContext* context, bool restrict) {
             (*profileIterator)->_isRestricted.store(restrict);
         }
     }
+#endif
 }
 
 bool ContextAwareProfile::isRestrictedGetProperty() {
+#if SHARED_WEB_PROFILES
+    return _isRestricted.load();
+#else
     if (QThread::currentThread() != thread()) {
         bool restrictedResult = false;
         BLOCKING_INVOKE_METHOD(this, "isRestrictedGetProperty", Q_RETURN_ARG(bool, restrictedResult));
@@ -112,6 +190,7 @@ bool ContextAwareProfile::isRestrictedGetProperty() {
 
     // Tivoli: local files are necessary
     return false; 
+#endif
 }
 
 bool ContextAwareProfile::isRestricted() {

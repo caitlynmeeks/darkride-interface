@@ -437,27 +437,15 @@ Rectangle {
         active: root.live
         sourceComponent: WebEngineView {
             id: view
-            // a walled-off client's radio keeps its storage in that client's own folder (RadioSkins.walledStoragePath),
-            // set before the page first loads
-            Component.onCompleted: {
-                var walled = typeof RadioSkins !== "undefined" ? RadioSkins.walledStoragePath : "";
-                if (walled !== "") {
-                    view.profile.persistentStoragePath = walled;
-                }
-                view.url = root.pageUrl;
-            }
+            Component.onCompleted: view.url = root.pageUrl
             backgroundColor: "#0c1022"   // the page's own background (radio.css --navy), behind it while it loads
             // the skin's pixels at a whole size: twice once both of the player's windows fit twice; on Windows always 1x,
             // where the switch to 2x froze the page's picture (its web engine is Chrome 83) while the music played on
             // (windowz, 10-31)
             zoomFactor: Qt.platform.os !== "windows" && width >= 600 && height >= 500 ? 2 : 1
 
-            profile: WebEngineProfile {
-                storageName: "DarkrideRadio"
-                offTheRecord: false
-                httpCacheType: WebEngineProfile.MemoryHttpCache
-                persistentCookiesPolicy: WebEngineProfile.NoPersistentCookies
-            }
+            // one profile for the whole run, a walled-off client's folders set before it opens them (ContextAwareProfile)
+            profile: TivoliWebEngineProfile.radioProfile
             // the page is the app's own (qrc): it may reach the stations, never the computer's files
             settings.localContentCanAccessRemoteUrls: true
             settings.localContentCanAccessFileUrls: false

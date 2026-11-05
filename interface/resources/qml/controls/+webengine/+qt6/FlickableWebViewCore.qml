@@ -50,7 +50,7 @@ Item {
     }
 
     onUrlChanged: {
-        permissionPopupBackground.visible = false;
+        permissionPopupBackground.withdraw();
     }
 
     StylesUIt.HifiConstants {
@@ -151,27 +151,15 @@ Item {
             webChannel.registerObject("eventBridge", eventBridge);
             webChannel.registerObject("eventBridgeWrapper", eventBridgeWrapper);
 
-            if (webViewCoreUserAgent !== undefined) {
-                webViewCore.profile.httpUserAgent = webViewCoreUserAgent
-            } else {
-                webViewCore.profile.httpUserAgent += " Darkride"; // TODO: add /<version>
-            }
+            // no profile.httpUserAgent here: on Qt 6 the profile is shared, and a write reaches every live view on it
             // Ensure the JS from the web-engine makes it to our logging
             webViewCore.javaScriptConsoleMessage.connect(function(level, message, lineNumber, sourceID) {
                 console.log("Web Entity JS message: " + sourceID + " " + lineNumber + " " +  message);
             });
         }
 
-        onFeaturePermissionRequested: {
-            if (permissionPopupBackground.visible === true) {
-                console.log("Browser engine requested a new permission, but user is already being presented with a different permission request. Aborting request for new permission...");
-                return;
-            }
-
-            permissionPopupBackground.securityOrigin = securityOrigin;
-            permissionPopupBackground.feature = feature;
-
-            permissionPopupBackground.visible = true;
+        onPermissionRequested: function (permission) {
+            permissionPopupBackground.ask(permission);
         }
 
         //disable popup
@@ -202,6 +190,9 @@ Item {
         property bool loadingLatched: false
         property var loadingRequest: null
         onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
+            if (WebEngineView.LoadStartedStatus === loadRequest.status) {
+                permissionPopupBackground.withdraw();
+            }
             webViewCore.loadingRequest = loadRequest;
             webViewCore.safeLoading = webViewCore.loading && !loadingLatched;
             webViewCore.loadingLatched |= webViewCore.loading;
@@ -233,9 +224,6 @@ Item {
 
     ControlsUit.PermissionPopupBackground {
         id: permissionPopupBackground
-        onSendPermission: {
-            webViewCore.grantFeaturePermission(securityOrigin, feature, shouldGivePermission);
-        }
     }
 
 }

@@ -24,10 +24,13 @@ WebEngineView {
     }
 
     onUrlChanged: {
-        permissionPopupBackground.visible = false;
+        permissionPopupBackground.withdraw();
     }
 
     onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
+        if (WebEngineView.LoadStartedStatus === loadRequest.status) {
+            permissionPopupBackground.withdraw();
+        }
         // Required to support clicking on "hifi://" links
         if (WebEngineView.LoadStartedStatus == loadRequest.status) {
             var url = loadRequest.url.toString();
@@ -41,24 +44,14 @@ WebEngineView {
 
     WebSpinner { }
 
-    onFeaturePermissionRequested: {
-        if (permissionPopupBackground.visible === true) {
-            console.log("Browser engine requested a new permission, but user is already being presented with a different permission request. Aborting request for new permission...");
-            return;
-        }
-        permissionPopupBackground.securityOrigin = securityOrigin;
-        permissionPopupBackground.feature = feature;
-
-        permissionPopupBackground.visible = true;
+    onPermissionRequested: function (permission) {
+        permissionPopupBackground.ask(permission);
     }
 
     ControlsUit.PermissionPopupBackground {
         id: permissionPopupBackground
         z: 100
         unit: 1
-        onSendPermission: {
-            root.grantFeaturePermission(securityOrigin, feature, shouldGivePermission);
-        }
     }
 
     onContextMenuRequested: {

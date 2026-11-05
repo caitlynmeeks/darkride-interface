@@ -14,14 +14,20 @@ AlertPanel {
     property string requestingOrigin
     signal permissionButtonPressed(int buttonNumber)
 
+    // What the question can name, by the request's type. It's also the allow-list: a request of any other type never
+    // reaches the visitor (PermissionPopupBackground.ask ends it denied).
     readonly property var permissionLanguage: ({
-        [WebEngineView.MediaAudioCapture]: "wants to use your microphone",
-        [WebEngineView.MediaVideoCapture]: "wants to use your camera",
-        [WebEngineView.MediaAudioVideoCapture]: "wants to use your microphone and camera",
-        [WebEngineView.Geolocation]: "wants to know your location",
-        [WebEngineView.DesktopVideoCapture]: "wants to share your screen",
-        [WebEngineView.DesktopAudioVideoCapture]: "wants to share your screen and its sound"
+        [WebEnginePermission.PermissionType.MediaAudioCapture]: "wants to use your microphone",
+        [WebEnginePermission.PermissionType.MediaVideoCapture]: "wants to use your camera",
+        [WebEnginePermission.PermissionType.MediaAudioVideoCapture]: "wants to use your microphone and camera",
+        [WebEnginePermission.PermissionType.Geolocation]: "wants to know your location",
+        [WebEnginePermission.PermissionType.DesktopVideoCapture]: "wants to share your screen",
+        [WebEnginePermission.PermissionType.DesktopAudioVideoCapture]: "wants to share your screen and its sound"
     })
+
+    function canAsk(type) {
+        return permissionLanguage[type] !== undefined;
+    }
 
     // the site's name, as "music.example.com", from its address
     readonly property string site: {
@@ -29,7 +35,7 @@ AlertPanel {
         return match ? match[1] : "This page";
     }
 
-    title: site + " " + (permissionLanguage[currentRequestedPermission] || "wants to use a device on this computer")
+    title: site + " " + (permissionLanguage[currentRequestedPermission] || "")
     text: "Allow it only if you trust this site."
     buttons: [
         { text: "Don't Allow", value: 0, role: "plain", cancel: true },
