@@ -609,6 +609,8 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
     if (_cutWanted || moved || grid.getStructureVersion() != _cutStructure || voxelMetres != _cutVoxelMetres ||
             grid.getVoxelCount() != _cutVoxelCount) {
         _cut.update(grid, camera, voxelMetres, _settings);
+        _cutChosenAt = std::chrono::steady_clock::now();
+        _cutChosenFrame = _frame;
         _cutWanted = false;
         _cutCamera = camera;
         _cutVoxelMetres = voxelMetres;
@@ -646,10 +648,17 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         std::sort(order.begin(), order.end(), [](const std::pair<float, EntryKey>& a, const std::pair<float, EntryKey>& b) {
             return a.first < b.first;
         });
+        // The first node always goes, so the queue drains; each later one only if the budget still holds it, judged
+        // by what its level's last sends took: the frame's spend ends near the budget, not a whole node past it.
+        const float budget = getFrameBudgetMs();
         const auto start = std::chrono::steady_clock::now();
         for (size_t i = 0; i < order.size(); ++i) {
-            const float spent = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
-            if (i > 0 && spent > _settings.sampleBudgetMs) {
+            const auto before = std::chrono::steady_clock::now();
+            const float spent = std::chrono::duration<float, std::milli>(before - start).count();
+            const int level = order[i].second.key.level;
+            const auto estimate = _nodeCostMs.find(level);
+            const float expected = estimate != _nodeCostMs.end() ? estimate->second : 0.0f;
+            if (i > 0 && spent + expected > budget) {
                 _requestsDirty = true;   // the rest next frame
                 break;
             }
@@ -658,6 +667,9 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
             const uint64_t version = entry.version;
             send(order[i].second, entry, grid);
             drawnChanged = drawnChanged || (entry.version != version) || (hadMesh != entry.hasMesh);
+            const float cost = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - before).count();
+            float& smoothed = _nodeCostMs[level];
+            smoothed = smoothed > 0.0f ? smoothed * 0.75f + cost * 0.25f : cost;
         }
     }
 
@@ -681,6 +693,7 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
             }
         }
         if (trackStall(grid, stalled)) {
+            noteCutShown(wanted);
             _shown = wanted;
             drawnChanged = true;
         }
@@ -694,6 +707,47 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         ++_drawnVersion;
     }
     return drawnChanged;
+}
+
+float LevelOfDetail::getFrameBudgetMs() const {
+    if (_frameBudgetMs > 0.0f && _frameBudgetMs < _settings.sampleBudgetMs) {
+        return _frameBudgetMs;
+    }
+    return _settings.sampleBudgetMs;
+}
+
+void LevelOfDetail::noteCutShown(const std::vector<LodCut::Node>& wanted) {
+    CutShown shown;
+    shown.serial = _cutShown.serial + 1;
+    if (_cutChosenAt != std::chrono::steady_clock::time_point()) {
+        shown.msSinceChosen = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - _cutChosenAt).count();
+        shown.framesSinceChosen = _frame - _cutChosenFrame;
+    }
+    shown.nodes = wanted.size();
+    // a node's mesh is new to the drawing when the last drawn set had no mesh at its key, or an older one
+    std::map<ChunkKey, uint64_t> drawnVersions;
+    for (const Drawn& drawn : _drawn) {
+        if (!drawn.isGridChunk && drawn.mesh) {
+            drawnVersions[drawn.key] = drawn.version;
+        }
+    }
+    for (const LodCut::Node& node : wanted) {
+        if (node.isGridChunk) {
+            continue;
+        }
+        auto found = _entries.find(EntryKey { node.key, node.context.getSignature() });
+        if (found == _entries.end() || !found->second.hasMesh || found->second.mesh.isEmpty()) {
+            continue;
+        }
+        auto drawn = drawnVersions.find(node.key);
+        if (drawn != drawnVersions.end() && drawn->second == found->second.version) {
+            continue;
+        }
+        ++shown.newMeshes;
+        shown.newVertices += found->second.mesh.getVertexCount();
+        shown.newIndices += found->second.mesh.indices.size();
+    }
+    _cutShown = shown;
 }
 
 bool LevelOfDetail::trackStall(VoxelGrid& grid, const LodCut::Node* stalled) {

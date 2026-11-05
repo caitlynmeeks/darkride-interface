@@ -8,6 +8,7 @@
 
 #include "RenderableTerrainEntityItem.h"
 
+#include <algorithm>
 #include <atomic>
 
 #include <cfloat>
@@ -401,11 +402,30 @@ bool RenderableTerrainEntityItem::updateMeshes() {
     return changed;
 }
 
+// The level of detail's sampling runs on this thread, in the frame: it may take this share of a frame, the frame
+// measured as the median of the last periods between updates (the display's interval at a steady rate: long frames
+// and the catch-ups after them fall either side of it), never less than the floor so the queue drains. At 72 Hz the
+// share is the settings' own 4 ms and nothing changes; at 120 and 144 Hz a cut spreads over frames where one frame
+// could not hold it (2.5 and 2.1 ms). The periods are taken once enough are in.
+static const float LOD_SAMPLE_SHARE_OF_FRAME = 0.3f;
+static const float LOD_SAMPLE_BUDGET_FLOOR_MS = 1.0f;
+
 bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWorld) {
     terrain::LodSettings settings = _levelOfDetail.getSettings();
     if (settings.detail != levelOfDetail) {
         settings.detail = levelOfDetail;
         _levelOfDetail.setSettings(settings);
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (_lastLodUpdate != std::chrono::steady_clock::time_point()) {
+        _framePeriodsMs[_framePeriodCount++ % _framePeriodsMs.size()] = std::chrono::duration<float, std::milli>(now - _lastLodUpdate).count();
+    }
+    _lastLodUpdate = now;
+    if (_framePeriodCount >= _framePeriodsMs.size()) {
+        std::array<float, 16> periods = _framePeriodsMs;
+        std::sort(periods.begin(), periods.end());
+        const float framePeriodMs = periods[periods.size() / 2];
+        _levelOfDetail.setFrameBudgetMs(std::max(LOD_SAMPLE_BUDGET_FLOOR_MS, LOD_SAMPLE_SHARE_OF_FRAME * framePeriodMs));
     }
     const glm::vec3 camera(worldToVoxelMatrix() * glm::vec4(cameraWorld, 1.0f));
     // a chunk of the grid is drawn with its own mesh once that is there, or known to have no surface
@@ -436,6 +456,17 @@ bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWor
             << (stall.forced ? "shows a new cut without a node that has had no mesh for" : "asks again for the mesh of a node that has had none for")
             << (int)stall.ms << "ms: level" << stall.key.level << "at" << stall.key.coords.x << stall.key.coords.y << stall.key.coords.z
             << qPrintable(state);
+    }
+    // One line per cut shown, when asked for (TIVOLI_TERRAIN_LOD_DIAG=1): how long after its choice it came, in ms
+    // and frames, and what it brings to the GPU (the vertex buffer is de-indexed: a TerrainVertex per index).
+    static const bool lodDiag = qEnvironmentVariableIsSet("TIVOLI_TERRAIN_LOD_DIAG");
+    const terrain::LevelOfDetail::CutShown& cut = _levelOfDetail.getCutShown();
+    if (lodDiag && cut.serial != _cutShownLogged) {
+        _cutShownLogged = cut.serial;
+        qCDebug(entitiesrenderer) << "Terrain LOD cut" << cut.serial << "shown" << cut.msSinceChosen << "ms /" << cut.framesSinceChosen
+            << "frames after its choice:" << cut.nodes << "nodes," << cut.newMeshes << "new meshes,"
+            << (qulonglong)(cut.newIndices * sizeof(TerrainVertex)) << "bytes to upload; sample budget"
+            << _levelOfDetail.getFrameBudgetMs() << "ms";
     }
     return changed;
 }

@@ -199,6 +199,23 @@ public:
         uint64_t events { 0 };
     };
     const Stall& getStall() const { return _stall; }
+    // The time this frame may spend sampling nodes, when less than the settings' sampleBudgetMs: the caller sets it
+    // every frame from the frames it is given (a share of the display's interval), so a cut spreads over frames
+    // instead of landing in one. 0, or more than the settings' value, means the settings' value.
+    void setFrameBudgetMs(float ms) { _frameBudgetMs = ms; }
+    float getFrameBudgetMs() const;   // the budget in force: the smaller of the two
+    // The cut last shown, for a caller that logs it: which (a serial), how long after its choice it came (ms and
+    // frames), and the meshes it brings to the drawing that the last drawn set did not have (new, or made again).
+    struct CutShown {
+        uint64_t serial { 0 };
+        float msSinceChosen { 0.0f };
+        uint64_t framesSinceChosen { 0 };
+        size_t nodes { 0 };          // nodes of the cut
+        size_t newMeshes { 0 };
+        size_t newVertices { 0 };
+        size_t newIndices { 0 };
+    };
+    const CutShown& getCutShown() const { return _cutShown; }
 
     // The grid was replaced: every mesh here is out of date. What is drawn stays until the new cut's meshes are in.
     void gridReplaced();
@@ -233,6 +250,8 @@ private:
     // Samples the node and sends it to the pool, or settles it at once when no surface can cross it.
     void send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid);
     void rebuildDrawn();
+    // The cut wanted is about to be shown in place of the cut shown: counts what it brings (CutShown).
+    void noteCutShown(const std::vector<LodCut::Node>& wanted);
     void evict();
     // The wanted cut's node without a mesh (first in key order), while the cut shown is held back by it; returns
     // whether the cut may be shown anyway (no node is stalled, or the stall has reached the force time).
@@ -258,6 +277,11 @@ private:
     std::vector<std::pair<glm::ivec3, glm::ivec3>> _changes;
     Stall _stall;
     std::chrono::steady_clock::time_point _stallSince;
+    float _frameBudgetMs { 0.0f };
+    std::map<int, float> _nodeCostMs;   // what sampling a node of a level last took, smoothed: the estimate before a send
+    std::chrono::steady_clock::time_point _cutChosenAt;   // when the cut wanted was last chosen
+    uint64_t _cutChosenFrame { 0 };
+    CutShown _cutShown;
 };
 
 } // namespace terrain

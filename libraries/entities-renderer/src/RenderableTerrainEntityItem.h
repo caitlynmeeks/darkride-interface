@@ -29,6 +29,7 @@
 #define hifi_RenderableTerrainEntityItem_h
 
 #include <array>
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <set>
@@ -207,6 +208,12 @@ private:
     uint64_t _structureVersion { 0 };   // the grid's, when the meshes were last checked against its chunks
     bool _staleMeshes { false };        // meshes of chunks that are gone wait for their replacements' meshes
     uint64_t _stallEventsLogged { 0 };  // the level of detail's stall events already in the log
+    // The frames this renderer is given, to size the level of detail's sampling budget as a share of one
+    // (updateLevelOfDetail): the last periods between updates, in ms, and the update before
+    std::array<float, 16> _framePeriodsMs {};
+    uint64_t _framePeriodCount { 0 };
+    std::chrono::steady_clock::time_point _lastLodUpdate;
+    uint64_t _cutShownLogged { 0 };     // the level of detail's cut-shown serial already in the log
     ShapeInfo _shapeInfo;
     bool _shapeReady { false };
     bool _shapeStale { false };
