@@ -203,8 +203,9 @@ bool OffscreenSurface::eventFilter(QObject* originalDestination, QEvent* event) 
             if (QCoreApplication::sendEvent(_sharedObject->getWindow(), &mappedEvent)) {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
                 // Qt Quick accepts a move whenever anything is hovered, and the desktop's hover area always is. So a
-                // move stays in the QML only if an item holds the mouse; any other goes on to the view and the app.
-                return mappedEvent.exclusivePointGrabber() != nullptr;
+                // move stays in the QML only if it is a drag an item holds; any other goes on to the view and the app.
+                // (Qt Quick gives a holder no move without a button, so one whose release went missing keeps nothing.)
+                return mappedEvent.buttons() != Qt::NoButton && mappedEvent.exclusivePointGrabber() != nullptr;
 #else
                 return mappedEvent.isAccepted();
 #endif
