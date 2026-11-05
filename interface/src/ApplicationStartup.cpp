@@ -145,7 +145,11 @@ public:
         return staticInstance;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    bool nativeEventFilter(const QByteArray &eventType, void* msg, qintptr* result) Q_DECL_OVERRIDE {
+#else
     bool nativeEventFilter(const QByteArray &eventType, void* msg, long* result) Q_DECL_OVERRIDE {
+#endif
         if (eventType == "windows_generic_MSG") {
             MSG* message = (MSG*)msg;
 
