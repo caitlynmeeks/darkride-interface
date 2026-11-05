@@ -41,6 +41,16 @@ namespace {
             ((void (*)(void*, SEL))objc_msgSend)(target, sel_registerName(selector));
         }
     }
+    void sendMessage(void* target, const char* selector, void* argument) {
+        if (target) {
+            ((void (*)(void*, SEL, void*))objc_msgSend)(target, sel_registerName(selector), argument);
+        }
+    }
+    void sendMessage(void* target, const char* selector, bool argument) {
+        if (target) {
+            ((void (*)(void*, SEL, bool))objc_msgSend)(target, sel_registerName(selector), argument);
+        }
+    }
     bool onMainThread() {
         return QThread::currentThread() == QCoreApplication::instance()->thread();
     }
@@ -132,6 +142,12 @@ bool Context::makeCurrent() {
 }
 
 void Context::swapBuffers() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    // no window (its re-creation under way, replaceWindow): nothing to swap into
+    if (!_window) {
+        return;
+    }
+#endif
     qglContext()->swapBuffers(_window);
 }
 
@@ -155,6 +171,27 @@ void Context::updateForViewChange() {
         return;
     }
     sendMessage(nativeGLContext(_qglContext), "update");
+}
+
+void Context::replaceWindow(QWindow* window) {
+    // Qt's own attach (setDrawable) only runs inside QOpenGLContext::makeCurrent, which the main thread may not
+    // call once the present thread owns the context: the drawable is set natively. On macOS a QWindow's winId is
+    // its NSView; the view wants the display's full resolution, as Qt's attach asks (a retina display otherwise
+    // draws at half size).
+    if (!onMainThread()) {
+        return;
+    }
+    _window = window;
+    void* context = nativeGLContext(_qglContext);
+    if (window) {
+        void* view = (void*)window->winId();
+        sendMessage(view, "setWantsBestResolutionOpenGLSurface:", true);
+        sendMessage(context, "setView:", view);
+        sendMessage(context, "update");
+    } else {
+        sendMessage(context, "clearDrawable");
+    }
+    updateSwapchainMemoryCounter();
 }
 #endif
 #endif
