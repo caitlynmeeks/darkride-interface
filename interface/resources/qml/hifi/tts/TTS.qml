@@ -13,9 +13,9 @@
 import Hifi 1.0 as Hifi
 import QtQuick 2.10
 import QtQuick.Controls 2.3
-import "qrc:////qml//stylesUit" as HifiStylesUit
-import "qrc:////qml//controlsUit" as HifiControlsUit
-import "qrc:////qml//controls" as HifiControls
+import "qrc:///qml/stylesUit" as HifiStylesUit
+import "qrc:///qml/controlsUit" as HifiControlsUit
+import "qrc:///qml/controls" as HifiControls
 
 Rectangle {
     HifiStylesUit.HifiConstants { id: hifi; }
