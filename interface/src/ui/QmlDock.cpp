@@ -14,7 +14,13 @@
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QKeyEvent>
+#include <QtGui/QSurfaceFormat>
+#include <QtQuick/QQuickView>
+#else
 #include <QtQuickWidgets/QQuickWidget>
+#endif
 #include <QtWidgets/QAbstractButton>
 
 #include <gl/GLHelpers.h>
@@ -22,6 +28,29 @@
 
 #include "DockTitleBar.h"
 #include "InterfaceLogging.h"
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// The panel's window on Qt 6. A window's keys don't climb to its container as a widget's do, so a key the page didn't
+// take goes on to the controls from here, as QmlDock::event sends a QQuickWidget's on Qt 5 (push to talk's T, walking).
+class DockQuickView : public QQuickView {
+public:
+    explicit DockQuickView(QQmlEngine* engine) : QQuickView(engine, nullptr) {}
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override {
+        QQuickView::keyPressEvent(event);
+        if (!event->isAccepted() && QCoreApplication::sendEvent(QCoreApplication::instance(), event)) {
+            event->accept();
+        }
+    }
+    void keyReleaseEvent(QKeyEvent* event) override {
+        QQuickView::keyReleaseEvent(event);
+        if (!event->isAccepted() && QCoreApplication::sendEvent(QCoreApplication::instance(), event)) {
+            event->accept();
+        }
+    }
+};
+#endif
 
 QmlDock::QmlDock(const QString& name, const QUrl& source, QWidget* parent) : QDockWidget(name, parent), _source(source) {
     setObjectName(name + "Dock");
@@ -69,9 +98,18 @@ void QmlDock::makeContent() {
     }
     gl::ViewChangeGuard guard;
     QQmlEngine* engine = desktop->engine();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    _view = new DockQuickView(engine);   // on the basic render loop: main.cpp
+    QSurfaceFormat format = getDefaultOpenGLSurfaceFormat();
+    format.setSwapInterval(0);   // a swap on the main thread must never wait for the display
+    _view->setFormat(format);
+    _view->setResizeMode(QQuickView::SizeRootObjectToView);
+    _view->setColor(Qt::black);   // what shows before the page's first frame, instead of white
+#else
     _view = new QQuickWidget(engine, this);
     _view->setResizeMode(QQuickWidget::SizeRootObjectToView);
     _view->setMinimumSize(320, 240);
+#endif
     // the names the overlay panels find are the desktop's: the panel is made in a context under it
     auto context = new QQmlContext(desktop, _view);
     auto component = new QQmlComponent(engine, _source, QQmlComponent::PreferSynchronous, _view);
@@ -81,7 +119,14 @@ void QmlDock::makeContent() {
         return;
     }
     _view->setContent(_source, component, object);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    _container = QWidget::createWindowContainer(_view, this);
+    _container->setMinimumSize(320, 240);
+    _container->setFocusPolicy(Qt::StrongFocus);
+    setWidget(_container);
+#else
     setWidget(_view);
+#endif
     qCDebug(interfaceapp) << objectName() << "made," << (isFloating() ? "floating" : "docked");
 }
 
@@ -95,7 +140,16 @@ void QmlDock::releaseContent() {
     }
     gl::ViewChangeGuard guard;
     setWidget(nullptr);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (_container) {
+        delete _container;   // and the view it holds
+        _container = nullptr;
+    } else {
+        delete _view;   // its panel failed to load, so it never went into a container
+    }
+#else
     delete _view;   // the page, its component and its context are the view's children
+#endif
     _view = nullptr;
 }
 

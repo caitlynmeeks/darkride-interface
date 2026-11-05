@@ -54,6 +54,12 @@ int main(int argc, const char* argv[]) {
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE")) {
         qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
     }
+    // The docked panels' windows (ui/QmlDock.h) draw on the main thread, as a QQuickWidget does: Qt's threaded loop would
+    // make their GL contexts current on a render thread, where macOS traps the context's update on a resize
+    // (team/rendering/QT6-R1-ENTRY.md). Here, not at the first dock: setenv racing another thread's getenv isn't safe
+    if (!qEnvironmentVariableIsSet("QSG_RENDER_LOOP")) {
+        qputenv("QSG_RENDER_LOOP", "basic");
+    }
 #endif
     StartupProfiler::phase("main: surface format, application name, command line");
 #ifdef Q_OS_MACOS
