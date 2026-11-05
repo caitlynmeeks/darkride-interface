@@ -18,6 +18,7 @@
 class OffscreenSurfaceTests : public QObject {
     Q_OBJECT
 private slots:
+    void cleanup();
     void testAHoverLeavesTheMoveToTheApp();
     void testADragOnTheViewLeavesTheMoveToTheApp();
     void testAnItemHoldingTheMouseKeepsTheMove();

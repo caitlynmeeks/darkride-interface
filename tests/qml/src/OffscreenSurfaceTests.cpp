@@ -91,6 +91,11 @@ protected:
 
 } // namespace
 
+// A surface's shared half goes with deleteLater, and no event loop runs here: this takes it down, so that is tested too.
+void OffscreenSurfaceTests::cleanup() {
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 // The hover counts are the control here and below: the moves did reach the QML, and it let them go on.
 void OffscreenSurfaceTests::testAHoverLeavesTheMoveToTheApp() {
     ViewSurface surface;
