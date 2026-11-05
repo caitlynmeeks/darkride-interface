@@ -70,6 +70,12 @@ namespace gl {
     // How the main thread puts its pending window changes in place at once (on macOS, a Core Animation commit,
     // which otherwise waits for the end of the run loop pass): set by the app, run by ViewChangeGuard
     void setViewChangeFlush(const std::function<void()>& flush);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    // How the view's GL context takes the view's new frame once the change is in place (gl::Context::updateForViewChange,
+    // on the main thread, under the lock): set by the GL widget, run by ViewChangeGuard. Qt 6 only: Qt 5 queued the
+    // context's update to the main thread by itself when the present thread made the context current.
+    void setViewChangeContextUpdate(const std::function<void()>& update);
+#endif
     // Whether a ViewChangeGuard has ended since the last call: the presenting thread then lets the main thread catch
     // the context up with the view before it draws (on macOS, making the context current on another thread after its
     // view changed queues Qt's update of the context for the main thread, QCocoaGLContext::update, which attaches the

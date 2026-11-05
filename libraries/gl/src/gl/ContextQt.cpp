@@ -25,6 +25,27 @@
 #include <QOpenGLDebugMessage>   // QtGui on Qt 5, the QtOpenGL module on Qt 6
 
 #include "GLHelpers.h"
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+#include <QtCore/QCoreApplication>
+#include <QtCore/QThread>
+#include <objc/message.h>
+#include <objc/runtime.h>
+namespace {
+    // The NSOpenGLContext behind a Qt context (Qt 6's native interface) and a message to it, from C++
+    void* nativeGLContext(QOpenGLContext* context) {
+        auto cocoa = context ? context->nativeInterface<QNativeInterface::QCocoaGLContext>() : nullptr;
+        return cocoa ? (void*)cocoa->nativeContext() : nullptr;
+    }
+    void sendMessage(void* target, const char* selector) {
+        if (target) {
+            ((void (*)(void*, SEL))objc_msgSend)(target, sel_registerName(selector));
+        }
+    }
+    bool onMainThread() {
+        return QThread::currentThread() == QCoreApplication::instance()->thread();
+    }
+}
+#endif
 
 using namespace gl;
 
@@ -93,6 +114,18 @@ void Context::setupDebugLogging(QOpenGLContext *context) {
 #if !defined(GL_CUSTOM_CONTEXT)
 bool Context::makeCurrent() {
     updateSwapchainMemoryCounter();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    // Off the main thread (the present thread), the context is made current natively. Qt 6's makeCurrent runs
+    // -[NSOpenGLContext update] on the calling thread when the view's frame changed (Qt 5 queued it to the main
+    // thread), and AppKit on macOS 26 traps in it off the main thread (the first Qt 6 runs, 11-04). The main thread's
+    // calls stay Qt's: the first one attaches the view to the context, and an update there is where AppKit allows it;
+    // after a change of the view, the view-change guard runs the update on the main thread (updateForViewChange).
+    if (!onMainThread()) {
+        sendMessage(nativeGLContext(_qglContext), "makeCurrentContext");
+        gl::initModuleGl();
+        return true;
+    }
+#endif
     bool result = _qglContext->makeCurrent(_window);
     gl::initModuleGl();
     return result;
@@ -103,10 +136,27 @@ void Context::swapBuffers() {
 }
 
 void Context::doneCurrent() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    if (!onMainThread()) {
+        sendMessage((void*)objc_getClass("NSOpenGLContext"), "clearCurrentContext");
+        return;
+    }
+#endif
     if (_qglContext) {
         _qglContext->doneCurrent();
     }
 }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+
+void Context::updateForViewChange() {
+    // Main thread, with the global lock held (the present thread is between frames, the context current nowhere):
+    // the context takes the view's new frame, as Qt's queued update did on Qt 5
+    if (!onMainThread()) {
+        return;
+    }
+    sendMessage(nativeGLContext(_qglContext), "update");
+}
+#endif
 #endif
 
 Q_GUI_EXPORT QOpenGLContext *qt_gl_global_share_context();

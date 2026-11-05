@@ -69,6 +69,10 @@ namespace gl {
         static void makeCurrent(QOpenGLContext* context, QSurface* surface);
         void swapBuffers();
         void doneCurrent();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+        // After the view's frame changed: -[NSOpenGLContext update] on the main thread (see makeCurrent)
+        void updateForViewChange();
+#endif
         virtual void create(QOpenGLContext* shareContext = nullptr);
         QOpenGLContext* qglContext() const { return _qglContext; }
         void moveToThread(QThread* thread);

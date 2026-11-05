@@ -124,6 +124,15 @@ bool gl::isPresentationPaused() {
 void gl::setViewChangeFlush(const std::function<void()>& flush) {
     _viewChangeFlush = flush;
 }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+
+// how the view's GL context takes the view's new frame, on the main thread (main thread only)
+static std::function<void()> _viewChangeContextUpdate;
+
+void gl::setViewChangeContextUpdate(const std::function<void()>& update) {
+    _viewChangeContextUpdate = update;
+}
+#endif
 
 gl::ViewChangeGuard::ViewChangeGuard(int eventType) {
     if (_viewChangeDepth++ == 0) {
@@ -141,6 +150,13 @@ gl::ViewChangeGuard::~ViewChangeGuard() {
     if (_viewChangeDepth == 1 && _viewChangeFlush) {
         _viewChangeFlush();
     }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    // the change is in place: the context takes the view's new frame here, on the main thread, while the present
+    // thread is still held off (Qt 5: queued by Qt from the present thread's next makeCurrent)
+    if (_viewChangeDepth == 1 && _viewChangeContextUpdate) {
+        _viewChangeContextUpdate();
+    }
+#endif
     if (--_viewChangeDepth == 0) {
         _presentationPausedUntil = steadyMilliseconds() + (_viewChangeFlush ? PAUSE_AFTER_FLUSH_MS : PAUSE_WITHOUT_FLUSH_MS);
         _viewChanged = true;

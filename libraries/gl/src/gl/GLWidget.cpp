@@ -25,6 +25,9 @@
 
 #include "Context.h"
 #include "GLHelpers.h"
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include "GLLogging.h"
+#endif
 
 class GLPaintEngine : public QPaintEngine {
     bool begin(QPaintDevice *pdev) override { return true; }
@@ -46,6 +49,9 @@ GLWidget::GLWidget() {
 }
 
 GLWidget::~GLWidget() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    gl::setViewChangeContextUpdate(nullptr);
+#endif
     delete _paintEngine;
     _paintEngine = nullptr;
 }
@@ -60,8 +66,30 @@ int GLWidget::getDeviceHeight() const {
 
 void GLWidget::createContext(QOpenGLContext* shareContext) {
     _context = new gl::Context();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 creates a widget's native window as a raster surface, which QOpenGLContext::makeCurrent refuses (Qt 5
+    // created it GL-capable, so this view worked unchanged), and a surface type set after the creation is not enough:
+    // the Cocoa plugin set the view up for raster drawing, and AppKit traps in -[NSOpenGLContext update] on the
+    // present thread (run 3, 11-04). So the window's native side is made again as an OpenGL surface, the way the
+    // offscreen context's own window is made (gl::OffscreenContext::create); the QWindow object, and so every
+    // windowHandle() the callers hold, stays the same. Main thread, before the present thread exists.
+    {
+        QWindow* window = windowHandle();
+        window->destroy();
+        window->setSurfaceType(QSurface::OpenGLSurface);
+        window->setFormat(getDefaultOpenGLSurfaceFormat());
+        window->create();
+        // destroy() hid the window and create() doesn't show it again (Qt restores that only when a window changes
+        // screen): shown again here, else the view is never exposed and Qt's Cocoa GL skips every flush (run 4, 11-04)
+        window->setVisible(true);
+        qCDebug(glLogging) << "view window made again as an OpenGL surface:" << window->surfaceType() << window->format().majorVersion() << window->format().minorVersion() << window->format().profile();
+    }
+#endif
     _context->setWindow(windowHandle());
     _context->create(shareContext);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    gl::setViewChangeContextUpdate([this] { _context->updateForViewChange(); });
+#endif
     _context->makeCurrent();
     _context->clear();
     _context->doneCurrent();
