@@ -89,6 +89,12 @@ void ContextAwareProfile::useStorage(const QString& storageName) {
         setCachePath(folder);
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    // Qt 6.8+ stores a page's permission answers per profile by default, on disk, for good: on a shared profile one yes
+    // would cover every view on it. Each page asks each time. Before going on the record, so no stored answers load.
+    setPersistentPermissionsPolicy(QQuickWebEngineProfile::PersistentPermissionsPolicy::AskEveryTime);
+#endif
+
     // Last: going on the record opens the preferences file at the data path of that moment (ProfileAdapter::
     // setOffTheRecord, setupPrefService), so a walled client's path has to be in place first.
     setOffTheRecord(false);
