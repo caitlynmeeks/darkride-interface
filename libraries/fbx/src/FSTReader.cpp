@@ -18,6 +18,7 @@
 
 #include <NetworkAccessManager.h>
 #include <SharedUtil.h>
+#include <hfm/ModelFormatLogging.h>
 
 hifi::VariantMultiHash FSTReader::parseMapping(QIODevice* device) {
     hifi::VariantMultiHash properties;
@@ -122,25 +123,34 @@ QStringList FSTReader::getFaceTrackingOnlyBlendshapes(const hifi::VariantMultiHa
     return names;
 }
 
+// A line of an .fst, written only when it stays one line: its keys and values can come from a model file's names.
+static void writeLine(QBuffer& buffer, const QByteArray& line) {
+    if (!FSTReader::isOneLine(QString::fromUtf8(line))) {
+        qCWarning(modelformat) << "FSTReader: left out a line holding a line break:" << line.left(line.indexOf(' '));
+        return;
+    }
+    buffer.write(line + "\n");
+}
+
 void FSTReader::writeVariant(QBuffer& buffer, hifi::VariantMultiHash::const_iterator& it) {
     QByteArray key = it.key().toUtf8() + " = ";
     const hifi::VariantMultiHash hashValue = hifi::multiHashFromVariant(it.value());
     if (hashValue.isEmpty()) {
-        buffer.write(key + it.value().toByteArray() + "\n");
+        writeLine(buffer, key + it.value().toByteArray());
         return;
     }
     for (hifi::VariantMultiHash::const_iterator second = hashValue.constBegin(); second != hashValue.constEnd(); second++) {
         QByteArray extendedKey = key + second.key().toUtf8();
         QVariantList listValue = second.value().toList();
         if (listValue.isEmpty()) {
-            buffer.write(extendedKey + " = " + second.value().toByteArray() + "\n");
+            writeLine(buffer, extendedKey + " = " + second.value().toByteArray());
             continue;
         }
-        buffer.write(extendedKey);
+        QByteArray line = extendedKey;
         for (QVariantList::const_iterator third = listValue.constBegin(); third != listValue.constEnd(); third++) {
-            buffer.write(" = " + third->toByteArray());
+            line += " = " + third->toByteArray();
         }
-        buffer.write("\n");
+        writeLine(buffer, line);
     }
 }
 
@@ -185,10 +195,7 @@ QByteArray FSTReader::writeMapping(const hifi::VariantMultiHash& mapping) {
         if (it != mapping.constEnd()) {
             if (key == SCRIPT_FIELD) { // writeVariant does not handle strings added using insertMulti.
                 for (auto multi : mapping.values(key)) {
-                    buffer.write(key.toUtf8());
-                    buffer.write(" = ");
-                    buffer.write(multi.toByteArray());
-                    buffer.write("\n");
+                    writeLine(buffer, key.toUtf8() + " = " + multi.toByteArray());
                 }
             } else {
                 writeVariant(buffer, it);

@@ -11,8 +11,8 @@
 
 #include <QtTest/QtTest>
 
-// Names from model files and Unity packages on .fst lines: what an .fst line can hold, and the Unity importer's jointMap
-// lines from a hand-made .meta.
+// Names from model files and Unity packages on .fst lines: what an .fst line can hold, the Unity importer's jointMap
+// lines from a hand-made .meta, and FSTReader::writeMapping's lines.
 class FSTLineTests : public QObject {
     Q_OBJECT
 private slots:
@@ -21,6 +21,7 @@ private slots:
     void jsonKeepsItsMeaningOnOneLine();
     void plainJsonIsUnchanged();
     void jointNamesStayOnTheirLine();
+    void writeMappingKeepsLinesWhole();
 };
 
 #endif // hifi_FSTLineTests_h

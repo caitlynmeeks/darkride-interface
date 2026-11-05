@@ -157,3 +157,43 @@ void FSTLineTests::jointNamesStayOnTheirLine() {
     QCOMPARE(jointMap.size(), 1);
     QCOMPARE(jointMap.value("Hips").toString(), QString("J_Hips"));
 }
+
+void FSTLineTests::writeMappingKeepsLinesWhole() {
+    // a mapping as the model packager makes one: jointIndex's names are the model file's joint names
+    hifi::VariantMultiHash jointIndex;
+    jointIndex.insert("Hips", 0);
+    jointIndex.insert("Spine\ntexdir = elsewhere", 1);
+    hifi::VariantMultiHash joint;
+    joint.insert("jointRoot", "Hips");
+    joint.insert("jointLean", "Spine\ntexdir = elsewhere");
+    hifi::VariantMultiHash mapping;
+    mapping.insert(NAME_FIELD, "test");
+    mapping.insert(FILENAME_FIELD, "test.fbx\ntexdir = elsewhere");
+    mapping.insert(SCRIPT_FIELD, "a.js");
+    mapping.insert(SCRIPT_FIELD, "b.js\ntexdir = elsewhere");
+    mapping.insert(JOINT_INDEX_FIELD, hifi::variantFromMultiHash(jointIndex));
+    mapping.insert(JOINT_FIELD, hifi::variantFromMultiHash(joint));
+    hifi::VariantMultiHash blendshapes;
+    blendshapes.insert("JawOpen", QVariantList { "MouthOpen", "0.7" });
+    blendshapes.insert("LipsFunnel", QVariantList { QString("Mouth") + QChar(0x2028) + "texdir = elsewhere", "0.4" });
+    mapping.insert(BLENDSHAPE_FIELD, hifi::variantFromMultiHash(blendshapes));
+
+    const QByteArray text = FSTReader::writeMapping(mapping);
+    for (const QByteArray& line : text.split('\n')) {
+        QVERIFY2(FSTReader::isOneLine(QString::fromUtf8(line)), line.constData());
+    }
+
+    // every line that holds a line break is left out whole; the others read back as written
+    const hifi::VariantMultiHash read = FSTReader::readMapping(text);
+    QCOMPARE(keysWithLines(read), QStringList({ "bs", "joint", "jointIndex", "name", "script" }));
+    QCOMPARE(read.value(NAME_FIELD).toString(), QString("test"));
+    QCOMPARE(read.values(SCRIPT_FIELD).size(), 1);
+    QCOMPARE(read.value(SCRIPT_FIELD).toString(), QString("a.js"));
+    const hifi::VariantMultiHash readIndex = hifi::multiHashFromVariant(read.value(JOINT_INDEX_FIELD));
+    QCOMPARE(QStringList(readIndex.uniqueKeys()), QStringList { "Hips" });
+    QCOMPARE(readIndex.value("Hips").toString(), QString("0"));
+    const hifi::VariantMultiHash readJoint = hifi::multiHashFromVariant(read.value(JOINT_FIELD));
+    QCOMPARE(QStringList(readJoint.uniqueKeys()), QStringList { "jointRoot" });
+    const hifi::VariantMultiHash readShapes = hifi::multiHashFromVariant(read.value(BLENDSHAPE_FIELD));
+    QCOMPARE(QStringList(readShapes.uniqueKeys()), QStringList { "JawOpen" });
+}

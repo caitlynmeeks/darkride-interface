@@ -778,8 +778,8 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
             { "rotation", numbers({ rotation.x, rotation.y, rotation.z, rotation.w }) },
             { "scale", numbers({ scale.x, scale.y, scale.z }) },
         };
-        poseLines << QString("jointDefaultPose = %1 = %2").arg(hfmModel->joints[i].name)
-                         .arg(FSTReader::jsonLineValue(QJsonDocument(json)));
+        poseLines << QString("jointDefaultPose = %1 = %2")
+                         .arg(hfmModel->joints[i].name, FSTReader::jsonLineValue(QJsonDocument(json)));
     }
     if (!poseLines.isEmpty()) {
         notes << QString("%1 bones rest as the prefab and the starting animations set them").arg(poseLines.size());
@@ -869,8 +869,8 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
         if (unity::toNumber(f.value("FreezeToWorld")) != 0.0) {
             notes << "not yet: a rotation constraint frozen to the world (" + skeletonName(joint) + ")";
         }
-        constraintLines << QString("rotationConstraint = %1 = %2").arg(skeletonName(joint))
-                               .arg(FSTReader::jsonLineValue(QJsonDocument(json)));
+        constraintLines << QString("rotationConstraint = %1 = %2")
+                               .arg(skeletonName(joint), FSTReader::jsonLineValue(QJsonDocument(json)));
     }
     if (!constraintLines.isEmpty()) {
         notes << QString("%1 rotation constraints (twist bones and the like)").arg(constraintLines.size());
@@ -1073,7 +1073,7 @@ WrittenAvatar writeAvatar(const unity::Package& package, const AvatarSource& ava
     QStringList startingNames;
     for (auto it = startingWeights.begin(); it != startingWeights.end(); ++it) {
         if (it.value() > 0.0f) {
-            shapeLines << QString("blendshapeDefault = %1 = %2").arg(it.key()).arg(it.value());
+            shapeLines << QString("blendshapeDefault = %1 = %2").arg(it.key(), QString::number(it.value()));
             startingNames << it.key();
         }
     }
