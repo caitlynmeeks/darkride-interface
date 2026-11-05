@@ -85,6 +85,12 @@
     Script.scriptEnding.connect(function () {
         try { Controller.keyPressEvent.disconnect(onKey); } catch (e) {}
         try { Messages.messageReceived.disconnect(onMessage); } catch (e) {}
-        say("ending (" + keys + " keys seen)");
+        // taken off, this avatar's world is left before its scripts are stopped: this is refused. (Not so at a quit.)
+        var late = null;
+        try {
+            late = Entities.addEntity({ type: "Box", name: "avatar-script late", position: { x: 0, y: 0, z: 0 },
+                                        dimensions: { x: 0.1, y: 0.1, z: 0.1 }, collisionless: true, lifetime: 5 });
+        } catch (e) {}
+        say("ending (" + keys + " keys seen), late entity " + (late && !Uuid.isNull(late) ? "MADE" : "refused"));
     });
 })();
