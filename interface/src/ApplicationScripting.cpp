@@ -168,6 +168,8 @@ void Application::onDesktopRootContextCreated(QQmlContext* surfaceContext) {
 
     surfaceContext->setContextProperty("Overlays", &_overlays);
     surfaceContext->setContextProperty("Window", DependencyManager::get<WindowScriptingInterface>().data());
+    // the same object by its class's name: on Qt 6, QML's own Window type takes the name "Window"
+    surfaceContext->setContextProperty("WindowScriptingInterface", DependencyManager::get<WindowScriptingInterface>().data());
     surfaceContext->setContextProperty("Desktop", DependencyManager::get<DesktopScriptingInterface>().data());
     surfaceContext->setContextProperty("MenuInterface", MenuScriptingInterface::getInstance());
     surfaceContext->setContextProperty("Settings", new QMLSettingsScriptingInterface(surfaceContext));
@@ -283,6 +285,7 @@ void Application::setupQmlSurface(QQmlContext* surfaceContext, bool setAdditiona
         surfaceContext->setContextProperty("Controller", DependencyManager::get<controller::ScriptingInterface>().data());
         surfaceContext->setContextProperty("Pointers", DependencyManager::get<PointerScriptingInterface>().data());
         surfaceContext->setContextProperty("Window", DependencyManager::get<WindowScriptingInterface>().data());
+        surfaceContext->setContextProperty("WindowScriptingInterface", DependencyManager::get<WindowScriptingInterface>().data());
         surfaceContext->setContextProperty("Reticle", qApp->getApplicationCompositor().getReticleInterface());
         surfaceContext->setContextProperty("About", AboutUtil::getInstance());
         surfaceContext->setContextProperty("ResourceRequestObserver", DependencyManager::get<ResourceRequestObserver>().data());
