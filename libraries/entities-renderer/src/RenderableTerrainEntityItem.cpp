@@ -1462,12 +1462,14 @@ void TerrainEntityRenderer::fetchTerrain(const QString& url, uint32_t version) {
         return;
     }
     _request->setCacheEnabled(false);
-    connect(_request, &ResourceRequest::finished, this, [this, url, version] {
-        ResourceRequest* request = _request;
-        _request = nullptr;
-        if (!request) {
-            return;
+    // this fetch's own number and request: the handler answers to both
+    const uint64_t serial = ++_fetchSerial;
+    ResourceRequest* request = _request;
+    connect(_request, &ResourceRequest::finished, this, [this, request, serial, url, version] {
+        if (_request != request || _fetchSerial != serial) {
+            return;   // not the current fetch: nothing of it is touched
         }
+        _request = nullptr;
         // the request lives on the Resource Manager's thread: it is deleted only after the last read below, on every
         // way out of this handler
         QScopedPointer<ResourceRequest, QScopedPointerDeleteLater> holder(request);
