@@ -603,6 +603,25 @@ ScriptEnginePointer ScriptEngines::loadScript(const QUrl& scriptFilename, bool i
             Q_ARG(bool, quitWhenFinished));
         return result;
     }
+    return loadScriptEngine(scriptFilename, isUserLoaded, reload, quitWhenFinished, nullptr);
+}
+
+ScriptEnginePointer ScriptEngines::loadAvatarScript(const QUrl& scriptFilename, int world) {
+    if (thread() != QThread::currentThread()) {
+        ScriptEnginePointer result { nullptr };
+        QMetaObject::invokeMethod(this, [&] { result = loadAvatarScript(scriptFilename, world); },
+                                  Qt::BlockingQueuedConnection);
+        return result;
+    }
+    return loadScriptEngine(scriptFilename, false, false, false, [world](const ScriptEnginePointer& engine) {
+        engine->setType(ScriptEngine::Type::AVATAR);
+        engine->setWorldId(world);
+    });
+}
+
+ScriptEnginePointer ScriptEngines::loadScriptEngine(const QUrl& scriptFilename, bool isUserLoaded, bool reload,
+                                                    bool quitWhenFinished,
+                                                    const std::function<void(const ScriptEnginePointer&)>& prepare) {
     QUrl scriptUrl;
     if (!KNOWN_SCHEMES.contains(scriptFilename.scheme(), Qt::CaseInsensitive)) {
         // deal with a "url" like c:/something
@@ -621,6 +640,10 @@ ScriptEnginePointer ScriptEngines::loadScript(const QUrl& scriptFilename, bool i
     scriptEngine = scriptEngineFactory(_context, NO_SCRIPT, "about:" + scriptFilename.fileName(), scriptUrl);
     scriptEngine->setUserLoaded(isUserLoaded);
     scriptEngine->setQuitWhenFinished(quitWhenFinished);
+    if (prepare) {
+        // before the fetch: a cached script's load, and so its run, can follow at once
+        prepare(scriptEngine);
+    }
 
     if (scriptFilename.isEmpty() || !scriptUrl.isValid() || scriptFilename == QUrl(ScriptEngine::CONSOLE_SCRIPT_NAME)) {
         // nothing to fetch (the console's engine runs only what is typed into it): it starts at once, outside the

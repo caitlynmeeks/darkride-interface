@@ -68,7 +68,7 @@ QString ScriptSettingsInterface::ruledKey(const QString& setting) const {
     if (!_engine) {
         return setting;
     }
-    const bool worldScript = _engine->isEntityClientScript() || _engine->isEntityServerScript();
+    const bool worldScript = _engine->holdsWorldRules() || _engine->isEntityServerScript();
     if (!worldScript && (!_engine->isClientSide() ||
                          !ScriptNetworkPolicy::applies(_engine->currentScriptOrigin(), _engine->worldIsLocal()))) {
         return setting;
@@ -82,7 +82,7 @@ bool ScriptSettingsInterface::refuses(const QString& setting) const {
     }
     // a world's script never gets a protected setting, whatever its world (one served from this machine or its
     // network included); the network rule's exemptions are for what a script may reach, not for these
-    const bool worldScript = _engine->isEntityClientScript() || _engine->isEntityServerScript();
+    const bool worldScript = _engine->holdsWorldRules() || _engine->isEntityServerScript();
     return Setting::refusedProtected(worldScript, !worldScript && _engine->isClientSide() &&
                                      ScriptNetworkPolicy::applies(_engine->currentScriptOrigin(), _engine->worldIsLocal()));
 }

@@ -24,6 +24,11 @@ namespace ScriptCaller {
     /// the world across): it counts as every world's.
     constexpr int ANY_WORLD = -1;
 
+    /// A world id no engine had before (> 0), one series for every engine that runs a world's scripts: a client's
+    /// entities engines (one per world served) and an avatar's scripts (a world of their own), so that an id names
+    /// one of them and retireWorld reaches the right one.
+    int newWorld();
+
     /// Which world's script makes the current call: 0 when it is no world's (the app's or the visitor's own), else the
     /// id of the world's entities engine (markThreadAsWorld), or ANY_WORLD.
     int world();

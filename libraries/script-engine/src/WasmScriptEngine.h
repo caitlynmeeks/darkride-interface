@@ -163,6 +163,9 @@ public:
 
     /// The names of the globals registered so far (the hosts' and the engine's own), in no order. For tests.
     QStringList registeredGlobalNames() const;
+    /// The class of the object registered under a global's name (a stand-in's, RefusedGlobal, when the script API
+    /// policy refused it), or empty for none. For tests.
+    QString registeredGlobalClass(const QString& name) const;
 
     /// A guest function called with arguments, on this thread, for its result (what a ScriptCallback's call
     /// comes to); postCallback queues one without a result, from any thread.

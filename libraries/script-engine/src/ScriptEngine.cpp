@@ -338,9 +338,9 @@ void ScriptEngine::registerStandardGlobals() {
     registerGlobalObject("Vec3", _vec3Library);
     registerGlobalObject("Mat4", _mat4Library);
     registerGlobalObject("Uuid", _uuidLibrary);
-    // a world's entity scripts get their own Messages: the world's send path, the app's channels refused (WorldMessages)
-    registerGlobalObject("Messages", isEntityClientScript() ? static_cast<QObject*>(new WorldMessages(this))
-                                                            : DependencyManager::get<MessagesClient>().data());
+    // a world's scripts get their own Messages: the world's send path, the app's channels refused (WorldMessages)
+    registerGlobalObject("Messages", holdsWorldRules() ? static_cast<QObject*>(new WorldMessages(this))
+                                                       : DependencyManager::get<MessagesClient>().data());
     registerGlobalObject("File", new FileScriptingInterface(this));
     registerGlobalObject("console", _consoleScriptingInterface);
 
