@@ -271,6 +271,8 @@ void ScriptNetworkPolicyTests::testRequestsGoToTheCheckedAddress() {
     QCOMPARE(https.url().toString(), QString("https://93.184.216.34:8443/a?b=1"));
     QCOMPARE(https.rawHeader("Host"), QByteArray("example.com:8443"));
     QCOMPARE(https.peerVerifyName(), QString("example.com"));
+    // the name goes in the Host header, so the request stays on HTTP/1.1 (Qt 6 would ask for HTTP/2)
+    QCOMPARE(https.attribute(QNetworkRequest::Http2AllowedAttribute).toBool(), false);
     ScriptNetworkPolicy::Decision v6 = ScriptNetworkPolicy::checkAddresses({ publicV6 });
     QNetworkRequest http(QUrl("http://example.com/"));
     ScriptNetworkPolicy::pin(http, v6);
