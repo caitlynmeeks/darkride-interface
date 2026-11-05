@@ -79,18 +79,14 @@ Item {
             web.address = url;
         }
 
-        onFeaturePermissionRequested: {
-            if (permissionPopupBackground.visible === true) {
-                console.log("Browser engine requested a new permission, but user is already being presented with a different permission request. Aborting request for new permission...");
-                return;
-            }
-            permissionPopupBackground.securityOrigin = securityOrigin;
-            permissionPopupBackground.feature = feature;
-
-            permissionPopupBackground.visible = true;
+        onPermissionRequested: function (permission) {
+            permissionPopupBackground.ask(permission);
         }
 
         onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
+            if (WebEngineView.LoadStartedStatus === loadRequest.status) {
+                permissionPopupBackground.withdraw();
+            }
             keyboardRaised = false;
             punctuationMode = false;
             keyboard.resetShiftMode(false);
@@ -132,8 +128,5 @@ Item {
 
     HifiControls.PermissionPopupBackground {
         id: permissionPopupBackground
-        onSendPermission: {
-            webview.grantFeaturePermission(securityOrigin, feature, shouldGivePermission);
-        }
     }
 }

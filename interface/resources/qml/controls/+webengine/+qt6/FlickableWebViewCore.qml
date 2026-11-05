@@ -158,16 +158,8 @@ Item {
             });
         }
 
-        onFeaturePermissionRequested: {
-            if (permissionPopupBackground.visible === true) {
-                console.log("Browser engine requested a new permission, but user is already being presented with a different permission request. Aborting request for new permission...");
-                return;
-            }
-
-            permissionPopupBackground.securityOrigin = securityOrigin;
-            permissionPopupBackground.feature = feature;
-
-            permissionPopupBackground.visible = true;
+        onPermissionRequested: function (permission) {
+            permissionPopupBackground.ask(permission);
         }
 
         //disable popup
@@ -198,6 +190,9 @@ Item {
         property bool loadingLatched: false
         property var loadingRequest: null
         onLoadingChanged: function (loadRequest) {   // our own name for the parameter: Qt 6 calls it loadingInfo
+            if (WebEngineView.LoadStartedStatus === loadRequest.status) {
+                permissionPopupBackground.withdraw();
+            }
             webViewCore.loadingRequest = loadRequest;
             webViewCore.safeLoading = webViewCore.loading && !loadingLatched;
             webViewCore.loadingLatched |= webViewCore.loading;
@@ -229,9 +224,6 @@ Item {
 
     ControlsUit.PermissionPopupBackground {
         id: permissionPopupBackground
-        onSendPermission: {
-            webViewCore.grantFeaturePermission(securityOrigin, feature, shouldGivePermission);
-        }
     }
 
 }
