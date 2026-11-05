@@ -148,7 +148,7 @@ JSConsole::JSConsole(QWidget* parent, const ScriptEnginePointer& scriptEngine) :
     QWidget(parent),
     _ui(new Ui::Console),
     _currentCommandInHistory(NO_CURRENT_HISTORY_COMMAND),
-    _savedHistoryFilename(QStandardPaths::writableLocation(QStandardPaths::DataLocation) + "/" + HISTORY_FILENAME),
+    _savedHistoryFilename(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/" + HISTORY_FILENAME),
     _commandHistory(_readLines(_savedHistoryFilename)),
     _completer(new QCompleter(this)) {
 

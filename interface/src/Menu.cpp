@@ -17,6 +17,7 @@
 #include <gpu/Context.h>
 
 #include <Mirrors.h>
+#include <QActionGroup>   // Qt 6 moved it to QtGui; found through either module's include path
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QMenuBar>
