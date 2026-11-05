@@ -9,7 +9,7 @@
 //
 
 import QtQuick 2.5
-import ".."   // Qt 6: this +qt6 twin of the Qt 5 file beside it is what Qt 6 loads; its sibling types are one folder up
+import "qrc:///qml/controlsUit"   // Qt 6: this +qt6 twin of the Qt 5 file beside it is what Qt 6 loads; its sibling types, by an absolute address
 
 BaseWebView {
     onNewWindowRequested: function (request) {   // Qt 6: newViewRequested became newWindowRequested

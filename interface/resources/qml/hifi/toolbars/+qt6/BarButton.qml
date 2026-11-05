@@ -66,7 +66,7 @@ Item {
         if (src.match(/\bhttp/) || src.match(/\bfile:/) || src.match(/^data:/) || src.match(/^qrc:/)) {
             return src;
         }
-        return "../../../../" + src;
+        return "qrc:///" + src;
     }
 
     // a moment after the click, as the docked bar: the button may open a panel that takes the mouse

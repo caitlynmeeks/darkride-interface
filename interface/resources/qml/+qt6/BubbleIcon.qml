@@ -10,7 +10,7 @@ import Hifi 1.0 as Hifi
 import QtQuick 2.5
 import Qt5Compat.GraphicalEffects   // Qt 6: QtGraphicalEffects lives in the Qt5Compat module (the Qt 5 file is beside this +qt6 folder)
 
-import "../hifi/audio" as HifiAudio
+import "qrc:///qml/hifi/audio" as HifiAudio
 
 import TabletScriptingInterface 1.0
 
@@ -83,7 +83,7 @@ Rectangle {
     }
     Image {
         id: bubbleIcon
-        source: "../../icons/tablet-icons/bubble-i.svg";
+        source: "qrc:///icons/tablet-icons/bubble-i.svg";
         sourceSize: Qt.size(32, 32);
         smooth: true;
         anchors.top: parent.top

@@ -1,7 +1,7 @@
 import QtQuick 2.5
 import QtWebEngine   // Qt 6: versionless (this +qt6 twin of the Qt 5 file beside it is what Qt 6 loads)
 
-import "../../dialogs/alert"
+import "qrc:///qml/dialogs/alert"
 
 // A web page asks for the microphone, the camera, the location or the screen: the alert every popup uses, naming the
 // site that asks, over the page.

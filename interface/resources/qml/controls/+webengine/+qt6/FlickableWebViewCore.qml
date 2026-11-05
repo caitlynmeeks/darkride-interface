@@ -219,7 +219,7 @@ Item {
         //anchoring doesnt works here when changing content size
         x: flick.width/2 - width/2
         y: flick.height/2 - height/2
-        source: "../../../../icons/loader-snake-64-w.gif"
+        source: "qrc:///icons/loader-snake-64-w.gif"
         visible: webViewCore.safeLoading && /^(http.*|)$/i.test(webViewCore.url.toString())
         playing: visible
         z: 10000

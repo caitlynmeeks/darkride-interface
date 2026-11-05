@@ -18,7 +18,7 @@
 
 import QtQuick 2.15
 import QtWebEngine   // Qt 6: versionless (this +qt6 twin of the Qt 5 file beside it is what Qt 6 loads)
-import "../panel"
+import "qrc:///qml/darkride/panel"
 
 Rectangle {
     id: root
