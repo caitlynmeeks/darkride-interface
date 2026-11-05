@@ -2795,8 +2795,8 @@ std::pair<bool, QString>  DomainServer::isAuthenticatedRequest(HTTPConnection* c
                     QVariant settingsPasswordVariant = _settingsManager.valueForKeyPath(BASIC_AUTH_PASSWORD_KEY_PATH);
 
                     QString settingsPassword = settingsPasswordVariant.isValid() ? settingsPasswordVariant.toString() : "";
-                    QString hexHeaderPassword = headerPassword.isEmpty() ?
-                        "" : QCryptographicHash::hash(headerPassword.toUtf8(), QCryptographicHash::Sha256).toHex();
+                    QString hexHeaderPassword = headerPassword.isEmpty() ? QString() :
+                        QString::fromLatin1(QCryptographicHash::hash(headerPassword.toUtf8(), QCryptographicHash::Sha256).toHex());
 
                     if (settingsUsername == headerUsername && hexHeaderPassword == settingsPassword) {
                         return { true, headerUsername };
