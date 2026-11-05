@@ -43,6 +43,10 @@ class QQmlContext;
 
 class ContextAwareProfile : public ContextAwareProfileParent {
     Q_OBJECT
+#if !defined(Q_OS_ANDROID)
+    // here so that it's in every surface's context, as this class's objects are, on any Qt
+    Q_PROPERTY(QObject* radioProfile READ radioProfile CONSTANT)
+#endif
 public:
     static void restrictContext(QQmlContext* context, bool restrict = true);
 
@@ -52,6 +56,11 @@ public:
 
     bool isRestricted();
     Q_INVOKABLE bool isRestrictedGetProperty();
+
+#if !defined(Q_OS_ANDROID)
+    // The Radio panel's web profile
+    static QObject* radioProfile();
+#endif
 protected:
 
     class RequestInterceptor : public RequestInterceptorParent {
@@ -78,8 +87,8 @@ protected:
     ~ContextAwareProfile();
 
 #if !defined(Q_OS_ANDROID)
-    // Puts the profile on its storage: on disk, under that name
-    void useStorage(const QString& storageName);
+    // Puts a profile on its storage: on disk, under that name
+    static void useStorage(QQuickWebEngineProfile* profile, const QString& storageName);
 #endif
 
 private:

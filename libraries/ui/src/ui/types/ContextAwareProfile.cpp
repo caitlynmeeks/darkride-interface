@@ -16,6 +16,7 @@
 #include <QtCore/QThread>
 #include <QtCore/QWriteLocker>
 #include <QtQml/QQmlContext>
+#include <QtQml/QQmlEngine>
 
 #include <shared/QtHelpers.h>
 #include <PathUtils.h>
@@ -85,26 +86,41 @@ ContextAwareProfile::~ContextAwareProfile() {
 #endif
 
 #if !defined(Q_OS_ANDROID)
-void ContextAwareProfile::useStorage(const QString& storageName) {
-    setStorageName(storageName);
+void ContextAwareProfile::useStorage(QQuickWebEngineProfile* profile, const QString& storageName) {
+    profile->setStorageName(storageName);
 
     // A walled-off client (TIVOLI_APP_DATA_DIR) keeps its web storage in its own folder, away from the user's. Its
     // cache too: Qt puts that in the system's cache folder otherwise. As RadioSkinPicker::walledStoragePath does.
     if (!qEnvironmentVariableIsEmpty("TIVOLI_APP_DATA_DIR")) {
         const QString folder = PathUtils::getAppDataPath() + "QtWebEngine/" + storageName;
-        setPersistentStoragePath(folder);
-        setCachePath(folder);
+        profile->setPersistentStoragePath(folder);
+        profile->setCachePath(folder);
     }
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
     // Qt 6.8+ stores a page's permission answers per profile by default, on disk, for good: on a shared profile one yes
     // would cover every view on it. Each page asks each time. Before going on the record, so no stored answers load.
-    setPersistentPermissionsPolicy(QQuickWebEngineProfile::PersistentPermissionsPolicy::AskEveryTime);
+    profile->setPersistentPermissionsPolicy(QQuickWebEngineProfile::PersistentPermissionsPolicy::AskEveryTime);
 #endif
 
     // Last: going on the record opens the preferences file at the data path of that moment (ProfileAdapter::
     // setOffTheRecord, setupPrefService), so a walled client's path has to be in place first.
-    setOffTheRecord(false);
+    profile->setOffTheRecord(false);
+}
+
+QObject* ContextAwareProfile::radioProfile() {
+    // One object for the whole run, never deleted, made here and not in the panel's QML. The panel's page comes and goes,
+    // and a second browser context on the folder would fight the first over its locks; and QML would put it on the record
+    // before a walled client's folders could be set. The page is the app's own: no interceptor, as before.
+    static QQuickWebEngineProfile* profile = [] {
+        auto result = new QQuickWebEngineProfile();
+        result->setHttpCacheType(QQuickWebEngineProfile::MemoryHttpCache);
+        result->setPersistentCookiesPolicy(QQuickWebEngineProfile::NoPersistentCookies);
+        useStorage(result, "DarkrideRadio");
+        QQmlEngine::setObjectOwnership(result, QQmlEngine::CppOwnership);
+        return result;
+    }();
+    return profile;
 }
 #endif
 

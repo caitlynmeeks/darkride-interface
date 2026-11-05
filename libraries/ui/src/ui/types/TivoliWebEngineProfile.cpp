@@ -34,9 +34,9 @@ TivoliWebEngineProfile::TivoliWebEngineProfile(QQmlContext* parent) : Parent(par
 #endif
 {
 #if SHARED_WEB_PROFILES
-    useStorage(storageName);
+    useStorage(this, storageName);
 #else
-    useStorage(QML_WEB_ENGINE_STORAGE_NAME);
+    useStorage(this, QML_WEB_ENGINE_STORAGE_NAME);
 #endif
     RequestFilters::disableServiceWorkers(this);
 
