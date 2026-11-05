@@ -326,7 +326,7 @@ Item {
                 }
                 onClicked: {
                     Tablet.playSound(TabletEnums.ButtonClick);
-                    Window.openUrl("https://darkride.ai/?signUp");
+                    WindowScriptingInterface.openUrl("https://darkride.ai/?signUp");
                 }
             }
             TextMetrics {
@@ -354,7 +354,7 @@ Item {
                 linkColor: hifi.colors.blueAccent
                 onLinkActivated: {
                     Tablet.playSound(TabletEnums.ButtonClick);
-                    Window.openUrl(link);
+                    WindowScriptingInterface.openUrl(link);
                     lightboxPopup.titleText = "Can't Access Account";
                     lightboxPopup.bodyText = lightboxPopup.cantAccessBodyText;
                     lightboxPopup.button2text = "CLOSE";

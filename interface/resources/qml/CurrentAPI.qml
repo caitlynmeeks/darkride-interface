@@ -435,7 +435,7 @@ Item {
                     var datarow = memberModel.get(i);
                     buffer += "\n" + datarow.apiMember + "    " + datarow.apiType + "    " + datarow.apiValue;
                 }
-                Window.copyToClipboard(buffer);
+                WindowScriptingInterface.copyToClipboard(buffer);
                 focus = true;
             } 
         }

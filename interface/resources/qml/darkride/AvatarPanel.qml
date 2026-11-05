@@ -316,7 +316,7 @@ Page {
         }
         function choose() {
             choosing = true;
-            Window.browseAsync("A picture for " + (avatar.name || "this avatar"), "", "Images (*.png *.jpg *.jpeg)");
+            WindowScriptingInterface.browseAsync("A picture for " + (avatar.name || "this avatar"), "", "Images (*.png *.jpg *.jpeg)");
         }
         function chosen(path) {
             choosing = false;
@@ -373,7 +373,7 @@ Page {
         }
     }
     Connections {
-        target: Window
+        target: WindowScriptingInterface
         function onBrowseChanged(filename) {
             if (thumb.choosing) {
                 thumb.chosen(filename);

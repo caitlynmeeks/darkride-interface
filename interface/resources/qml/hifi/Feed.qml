@@ -51,7 +51,7 @@ Column {
             'include_actions=' + actions,
             'restriction=' + (Account.isLoggedIn() ? 'open,hifi' : 'open'),
             'require_online=true',
-            'protocol=' + encodeURIComponent(Window.protocolSignature())
+            'protocol=' + encodeURIComponent(WindowScriptingInterface.protocolSignature())
         ];
         endpoint: '/api/v1/user_stories?' + options.join('&') + (PlatformInfo.isStandalone() ? '&standalone_optimized=true' : '')
         itemsPerPage: 4;

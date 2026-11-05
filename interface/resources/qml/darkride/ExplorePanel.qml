@@ -42,7 +42,7 @@ Page {
 
     readonly property var kinds: ["popular", "liked", "private"]
     readonly property string tabSetting: "io.darkride.explorePanel.tab"
-    readonly property string protocol: Window.protocolSignature()
+    readonly property string protocol: WindowScriptingInterface.protocolSignature()
 
     // what a failed metaverse request tells the player: the metaverse's own words where it wrote them for people (its
     // rule, 10-28: a 409, a 429, or a 400/403/404 whose message is a sentence, not "Forbidden" or "Not Found"; its
@@ -408,7 +408,7 @@ Page {
     // AddressManager lives on the network thread, and QML may not connect to an object on another thread (the client
     // aborts), so a world change is heard from Window and the history is read when it may have changed
     Connections {
-        target: Window
+        target: WindowScriptingInterface
         function onDomainChanged() { explore.hoppingWorld = ""; here.refresh(); history.refresh(); }
         // the loading screen's Cancel: a hop that hasn't left stops there (a new instance's late address is dropped by
         // the screen), one that has goes back, which changes the world anyway
@@ -571,7 +571,7 @@ Page {
             action: true
             label: "Copy Link"
             onClicked: {
-                Window.copyToClipboard(here.current.instance.address);
+                WindowScriptingInterface.copyToClipboard(here.current.instance.address);
                 here.status = "Copied " + here.current.instance.address + ".";
             }
         }

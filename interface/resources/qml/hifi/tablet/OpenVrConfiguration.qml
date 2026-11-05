@@ -884,7 +884,7 @@ Flickable {
                     hoverEnabled: true
                     onEntered: privacyPolicyUnderline.visible = true;
                     onExited: privacyPolicyUnderline.visible = false;
-                    onClicked: Window.openUrl("https://darkride.ai/privacy-policy");   // was Tivoli's, now a redirect to GitHub (Caity 10-29)
+                    onClicked: WindowScriptingInterface.openUrl("https://darkride.ai/privacy-policy");   // was Tivoli's, now a redirect to GitHub (Caity 10-29)
                 }
             }
 

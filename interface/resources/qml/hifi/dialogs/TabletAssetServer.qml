@@ -328,7 +328,7 @@ Rectangle {
         if (!url) {
             return;
         }
-        Window.copyToClipboard(url);
+        WindowScriptingInterface.copyToClipboard(url);
     }
 
     function renameEl(index, data) {

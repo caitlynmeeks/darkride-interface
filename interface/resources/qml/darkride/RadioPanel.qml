@@ -498,7 +498,7 @@ Rectangle {
                 root.fileRequest = request;
                 var skin = request.acceptedMimeTypes.join(" ").indexOf("wsz") >= 0;
                 console.log("Radio: a file dialog for", skin ? "a skin" : "a sound file");
-                Window.browseAsync(skin ? "Load a skin" : "Play a file", "",
+                WindowScriptingInterface.browseAsync(skin ? "Load a skin" : "Play a file", "",
                     skin ? "Classic skins (*.wsz *.zip)" : "Sound files (*.mp3 *.ogg *.wav *.flac *.m4a *.aac)");
             }
             onJavaScriptDialogRequested: function (request) {
