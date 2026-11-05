@@ -47,6 +47,14 @@ int main(int argc, const char* argv[]) {
     // own and is unchanged
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the panels' QML is drawn for Qt 5's default Controls style, which Qt 6 calls "Basic"; left alone, Qt 6 picks
+    // the platform's native style (macOS), which ignores our custom backgrounds, ticks and slider handles. A style the
+    // user's environment already names is kept. Before the QML engine starts
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE")) {
+        qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+    }
+#endif
     StartupProfiler::phase("main: surface format, application name, command line");
 #ifdef Q_OS_MACOS
     // before anything of AppKit's runs: AutoFill is set up when the app first becomes active
