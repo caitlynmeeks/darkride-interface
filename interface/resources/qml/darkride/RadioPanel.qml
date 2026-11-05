@@ -63,7 +63,7 @@ Rectangle {
     // the Avatar panel's pictures), its answer handed back to the page's request
     property var fileRequest: null
     Connections {
-        target: typeof Window !== "undefined" ? Window : null
+        target: typeof WindowScriptingInterface !== "undefined" ? WindowScriptingInterface : null
         function onBrowseChanged(filename) {
             var request = root.fileRequest;
             if (!request) {
@@ -483,7 +483,7 @@ Rectangle {
             }
             onFileDialogRequested: function (request) {
                 request.accepted = true;
-                if (typeof Window === "undefined") {
+                if (typeof WindowScriptingInterface === "undefined") {
                     request.dialogReject();
                     return;
                 }
