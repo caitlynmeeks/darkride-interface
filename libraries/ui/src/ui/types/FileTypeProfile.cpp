@@ -33,8 +33,7 @@ FileTypeProfile::FileTypeProfile(QQmlContext* parent) :
     );
     setHttpUserAgent(WEB_ENGINE_USER_AGENT);
 
-    setStorageName(QML_WEB_ENGINE_STORAGE_NAME);
-    setOffTheRecord(false);
+    useStorage(QML_WEB_ENGINE_STORAGE_NAME);
     RequestFilters::disableServiceWorkers(this);
 
     auto requestInterceptor = new RequestInterceptor(this);

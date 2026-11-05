@@ -26,8 +26,7 @@ static std::mutex TivoliWebEngineProfile_mutex;
 
 TivoliWebEngineProfile::TivoliWebEngineProfile(QQmlContext* parent) : Parent(parent)
 {
-    setStorageName(QML_WEB_ENGINE_STORAGE_NAME);
-    setOffTheRecord(false);
+    useStorage(QML_WEB_ENGINE_STORAGE_NAME);
     RequestFilters::disableServiceWorkers(this);
 
     // we use the HFWebEngineRequestInterceptor to make sure that web requests are authenticated for the interface user
