@@ -132,6 +132,13 @@ static void writeLine(QBuffer& buffer, const QByteArray& line) {
     buffer.write(line + "\n");
 }
 
+// A heading's value as a list of values ("bs = JawOpen = MouthOpen = 0.7"), or empty for a single value. Only a real list
+// counts, as Qt 5's QVariant::toList() did: Qt 6's toList() also turns a text value into a list of its characters.
+static QVariantList listOf(const QVariant& value) {
+    const int type = value.userType();
+    return type == QMetaType::QVariantList || type == QMetaType::QStringList ? value.toList() : QVariantList();
+}
+
 void FSTReader::writeVariant(QBuffer& buffer, hifi::VariantMultiHash::const_iterator& it) {
     QByteArray key = it.key().toUtf8() + " = ";
     const hifi::VariantMultiHash hashValue = hifi::multiHashFromVariant(it.value());
@@ -141,7 +148,7 @@ void FSTReader::writeVariant(QBuffer& buffer, hifi::VariantMultiHash::const_iter
     }
     for (hifi::VariantMultiHash::const_iterator second = hashValue.constBegin(); second != hashValue.constEnd(); second++) {
         QByteArray extendedKey = key + second.key().toUtf8();
-        QVariantList listValue = second.value().toList();
+        QVariantList listValue = listOf(second.value());
         if (listValue.isEmpty()) {
             writeLine(buffer, extendedKey + " = " + second.value().toByteArray());
             continue;

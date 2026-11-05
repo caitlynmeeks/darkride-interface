@@ -36,7 +36,10 @@ const QByteArray FST_TEXT =
     "jointIndex = Hips = 0\n";
 
 QString text(const QVariant& value) {
-    const QVariantList list = value.toList();
+    // only a real list: Qt 6's toList() also makes a list of a text value's characters
+    const int type = value.userType();
+    const QVariantList list = type == QMetaType::QVariantList || type == QMetaType::QStringList ? value.toList()
+                                                                                                  : QVariantList();
     if (list.isEmpty()) {
         return value.toString();
     }
