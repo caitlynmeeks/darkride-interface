@@ -15,6 +15,7 @@
 
 #include "AvatarEntityOwnerTests.h"
 
+#include <AccountManager.h>
 #include <AddressManager.h>
 #include <EntityItemProperties.h>
 #include <EntitySimulation.h>
@@ -62,6 +63,8 @@ struct VisitorTree {
     VisitorTree() {
         tree = EntityTreePointer(new EntityTree());
         tree->createRootElement();
+        // the simulation points back at its tree before the tree takes it (setSimulation asserts so in a debug build)
+        simulation->setEntityTree(tree);
         tree->setSimulation(simulation);
         // a client tree takes a world's entity from addEntity only with rights to make one, or serverless; the world's
         // entities stand here for the ones the entity server sends
@@ -111,6 +114,8 @@ struct VisitorTree {
 } // namespace
 
 void AvatarEntityOwnerTests::initTestCase() {
+    // the node list reaches for the account manager (its signals at construction, its domain connect later)
+    DependencyManager::set<AccountManager>();
     DependencyManager::set<AddressManager>();
     DependencyManager::set<NodeList>(NodeType::Agent, INVALID_PORT);
     DependencyManager::set<SpatialParentFinder, TreeParentFinder>();

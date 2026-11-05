@@ -27,6 +27,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 
+#include <AccountManager.h>
 #include <AddressManager.h>
 #include <AudioScriptingInterface.h>
 #include <DependencyManager.h>
@@ -34,6 +35,7 @@
 #include <PathUtils.h>
 #include <ResourceManager.h>
 #include <ResourceScriptingInterface.h>
+#include <platform/Platform.h>
 
 #include <HttpRequestObject.h>
 #include <ScriptApiPolicy.h>
@@ -116,7 +118,11 @@ void VerifiedSandboxTests::initTestCase() {
     QVERIFY(writeFile(_root + "/app/scripts/entities/example.js", "(function () {});"));
     QVERIFY(writeFile(_root + "/app/scripts/entities/helper.js", "var helper = 1;"));
     PathUtils::defaultScriptsLocation(_root + "/app/scripts");
-    // a world on the internet, unless a test says otherwise
+    // a world on the internet, unless a test says otherwise. The node list reaches for the account manager and the
+    // platform description when it tries the world's domain server (its connect timer fires inside a test's wait on
+    // a slow, unoptimized build), so both exist before it, as in the client
+    platform::create();
+    DependencyManager::set<AccountManager>();
     DependencyManager::set<AddressManager>();
     DependencyManager::set<NodeList>(NodeType::Agent, INVALID_PORT);
     setWorld(PUBLIC_WORLD);
