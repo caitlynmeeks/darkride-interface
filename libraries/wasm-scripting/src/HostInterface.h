@@ -89,7 +89,7 @@ class ValueCodec;
 
 class HostInterface {
 public:
-    static const int32_t ABI_VERSION = 1;
+    static constexpr int32_t ABI_VERSION = 1;   // inline (C++17): usable by reference without a definition in a .cpp
     static const QString MODULE_NAME;  // "darkride"
     static const QString ERROR_KEY;    // "@error"
 

@@ -13,6 +13,7 @@
 
 #include <QtCore/QFile>
 #include <QtCore/QThread>
+#include <QtQml/QJSEngine>
 
 #include <AssetRequest.h>
 #include <AssetUpload.h>
@@ -148,9 +149,18 @@ void AssetMappingsScriptingInterface::getAllMappings(QJSValue callback) {
     auto assetClient = DependencyManager::get<AssetClient>();
     auto request = assetClient->createGetAllMappingsRequest();
 
-    connect(request, &GetAllMappingsRequest::finished, this, [callback](GetAllMappingsRequest* request) mutable {
+    connect(request, &GetAllMappingsRequest::finished, this, [this, callback](GetAllMappingsRequest* request) mutable {
         auto mappings = request->getMappings();
-        auto map = callback.engine()->newObject();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        QJSEngine* engine = qjsEngine(this);   // the engine this object is exposed to (Qt 6 has no QJSValue::engine())
+#else
+        QJSEngine* engine = callback.engine();
+#endif
+        if (!engine) {
+            request->deleteLater();
+            return;
+        }
+        auto map = engine->newObject();
 
         for (auto& kv : mappings ) {
             map.setProperty(kv.first, kv.second.hash);

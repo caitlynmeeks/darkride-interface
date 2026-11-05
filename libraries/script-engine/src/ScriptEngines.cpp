@@ -509,7 +509,7 @@ void ScriptEngines::stopAllScripts(bool restart) {
         return;
     }
 
-    for (QHash<QUrl, ScriptEnginePointer>::const_iterator it = _scriptEnginesHash.constBegin();
+    for (auto it = _scriptEnginesHash.constBegin();
         it != _scriptEnginesHash.constEnd(); it++) {
         ScriptEnginePointer scriptEngine = it.value();
         // skip already stopped scripts
@@ -551,7 +551,7 @@ bool ScriptEngines::stopScript(const QString& rawScriptURL, bool restart) {
 
         QReadLocker lock(&_scriptEnginesHashLock);
         if (_scriptEnginesHash.contains(scriptURL)) {
-            ScriptEnginePointer scriptEngine = _scriptEnginesHash[scriptURL];
+            ScriptEnginePointer scriptEngine = _scriptEnginesHash.value(scriptURL);
             if (restart) {
                 bool isUserLoaded = scriptEngine->isUserLoaded();
                 ScriptEngine::Type type = scriptEngine->getType();
@@ -666,7 +666,7 @@ void ScriptEngines::onScriptEngineLoaded(const QString& rawScriptURL) {
         QWriteLocker lock(&_scriptEnginesHashLock);
         QUrl url = QUrl(rawScriptURL);
         QUrl normalized = normalizeScriptURL(url);
-        _scriptEnginesHash.insertMulti(normalized, scriptEngine);
+        _scriptEnginesHash.insert(normalized, scriptEngine);
     }
 
     // Update settings with new script

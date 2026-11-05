@@ -848,7 +848,7 @@ QVariant HostInterface::invoke(QObject* object, int methodIndex, const QVector<i
         invoked = method.invoke(object, Qt::DirectConnection, returnArgument, generic[0], generic[1], generic[2], generic[3],
                                 generic[4], generic[5], generic[6], generic[7], generic[8], generic[9]);
         if (invoked) {
-            result = returnType == QMetaType::QVariant ? *static_cast<QVariant*>(buffer) : QVariant(returnType, buffer);
+            result = returnType == QMetaType::QVariant ? *static_cast<QVariant*>(buffer) : variantOfType(returnType, buffer);
         }
         QMetaType::destroy(returnType, buffer);
     }

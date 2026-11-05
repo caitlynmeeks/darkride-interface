@@ -28,13 +28,17 @@ WheelEvent::WheelEvent() :
 }
 
 WheelEvent::WheelEvent(const QWheelEvent& event) {
-    x = event.x();
-    y = event.y();
-    
-    delta = event.delta();
-    if (event.orientation() == Qt::Horizontal) {
+    const QPoint at = event.position().toPoint();
+    x = at.x();
+    y = at.y();
+
+    // the turn in eighths of a degree on one axis, as Qt 5's delta() and orientation() gave it
+    const QPoint angle = event.angleDelta();
+    if (angle.x() != 0 && angle.y() == 0) {
+        delta = angle.x();
         orientation = "HORIZONTAL";
     } else {
+        delta = angle.y();
         orientation = "VERTICAL";
     }
     

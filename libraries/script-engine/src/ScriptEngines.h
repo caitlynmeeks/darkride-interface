@@ -356,7 +356,7 @@ protected:
 
     ScriptEngine::Context _context;
     QReadWriteLock _scriptEnginesHashLock;
-    QHash<QUrl, ScriptEnginePointer> _scriptEnginesHash;
+    QMultiHash<QUrl, ScriptEnginePointer> _scriptEnginesHash;   // several engines may share a normalized URL
     QSet<ScriptEnginePointer> _allKnownScriptEngines;
     QMutex _allScriptsMutex;
     ScriptsModel _scriptsModel;
