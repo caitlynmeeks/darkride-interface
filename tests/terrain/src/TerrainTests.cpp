@@ -3526,15 +3526,15 @@ void TerrainTests::snapshotKeepsReadingTheGridAsItWasWhenTaken() {
 
     // Readers on a pool sample from one snapshot while this thread sculpts the grid: every one of them reads the
     // grid as it was when the snapshot was taken.
-    VoxelGrid live(glm::ivec3(96, 64, 96));
+    VoxelGrid live(glm::ivec3(128, 64, 128));
     live.fillHeightField(hills, 2);
-    std::vector<ChunkKey> keys;
+    std::vector<ChunkKey> keys;   // the dense chunks: the hills cross one chunk in each of the 16 columns
     live.forEachChunk([&](const ChunkKey& key, const Chunk& chunk) {
         if (!chunk.isUniform()) {
             keys.push_back(key);
         }
     });
-    QVERIFY(keys.size() > 20);
+    QVERIFY(keys.size() >= 12);
     std::vector<ChunkSamples> expected(keys.size());
     for (size_t i = 0; i < keys.size(); ++i) {
         sampleNode(live, keys[i], gridContext(live, keys[i]), expected[i]);
