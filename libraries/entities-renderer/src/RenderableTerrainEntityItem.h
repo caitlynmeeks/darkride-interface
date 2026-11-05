@@ -214,6 +214,7 @@ private:
     uint64_t _framePeriodCount { 0 };
     std::chrono::steady_clock::time_point _lastLodUpdate;
     uint64_t _cutShownLogged { 0 };     // the level of detail's cut-shown serial already in the log
+    uint64_t _reChoiceLogged { 0 };     // and its re-choice serial
     ShapeInfo _shapeInfo;
     bool _shapeReady { false };
     bool _shapeStale { false };

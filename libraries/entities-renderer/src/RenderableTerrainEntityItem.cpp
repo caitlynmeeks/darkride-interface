@@ -471,6 +471,19 @@ bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWor
             << (qulonglong)(cut.newIndices * sizeof(TerrainVertex)) << "bytes to upload; sample budget"
             << _levelOfDetail.getFrameBudgetMs() << "ms";
     }
+    // One line per re-choice of the cut, once the next has come: the re-choice frame's own cost by part and the
+    // costliest frame from it to the next re-choice (the level of detail keeps them while the line is asked for).
+    const terrain::LevelOfDetail::ReChoice& reChoice = _levelOfDetail.getReChoiceDone();
+    if (lodDiag && reChoice.serial != _reChoiceLogged) {
+        _reChoiceLogged = reChoice.serial;
+        const terrain::LevelOfDetail::FrameCost& own = reChoice.own;
+        const terrain::LevelOfDetail::FrameCost& worst = reChoice.worst;
+        qCDebug(entitiesrenderer) << "Terrain LOD re-choice" << reChoice.serial << ":" << reChoice.nodes << "nodes; own frame choice"
+            << own.choiceMs << "requests" << own.requestsMs << "(" << own.requests << ") sends" << own.sendsMs << "(" << own.sent
+            << ") collect" << own.collectMs << "(" << own.results << ") drawn" << own.drawnMs << "=" << own.totalMs()
+            << "ms; worst frame +" << (qlonglong)(worst.frame - own.frame) << ": collect" << worst.collectMs << "(" << worst.results
+            << ") drawn" << worst.drawnMs << "=" << worst.totalMs() << "ms";
+    }
     return changed;
 }
 
