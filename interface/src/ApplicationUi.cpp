@@ -175,6 +175,9 @@ void Application::initializeUi() {
         return result.toPoint();
     });
 
+    // Again, on purpose: the same flag and the same objects, so nothing changes, unless the call above ever stops running
+    // before Desktop.qml loads. Then this closes the door late rather than leaving it open.
+    ContextAwareProfile::restrictContext(offscreenUi->getSurfaceContext(), true);
     offscreenUi->resume();
     connect(_window, &MainWindow::windowGeometryChanged, [this](const QRect& r){
         _display.resizeGL();
