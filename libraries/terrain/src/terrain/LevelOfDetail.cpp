@@ -49,7 +49,7 @@ float trilinear(const float d[8], const glm::vec3& f) {
 // the grid's chunks. A node's own voxels are the grid's at its points, whatever chunk holds them.
 class NodeSampler {
 public:
-    NodeSampler(const VoxelGrid& grid, const ChunkKey& key, const NodeContext& context) :
+    NodeSampler(const GridView& grid, const ChunkKey& key, const NodeContext& context) :
         _grid(grid),
         _key(key),
         _context(context),
@@ -117,7 +117,7 @@ private:
         return Voxel(rescaleDistance(distance, std::ldexp(1.0f, level - coarse)), voxelAt(nearest).material);
     }
 
-    const VoxelGrid& _grid;
+    const GridView& _grid;
     const ChunkKey _key;
     const NodeContext& _context;
     const glm::ivec3 _voxelCount;
@@ -128,7 +128,7 @@ private:
 
 // A node's own voxels when it is not one of the grid's chunks: the grid's voxels at its points, read from each chunk
 // under it in strides (a coarse node takes every 2nd, 4th... voxel of the chunks it covers).
-void sampleOwnVoxels(const VoxelGrid& grid, const ChunkKey& key, const NodeSampler& sampler, ChunkSamples& samples) {
+void sampleOwnVoxels(const GridView& grid, const ChunkKey& key, const NodeSampler& sampler, ChunkSamples& samples) {
     const int unit = unitOf(key.level);
     const glm::ivec3 originFine = key.getOrigin() * FINEST;
     const glm::ivec3 extentFine = grid.getChunkCount() * CHUNK_SIZE * FINEST;
@@ -219,7 +219,7 @@ uint64_t NodeContext::getSignature() const {
     return signature;
 }
 
-glm::ivec3 terrain::contextProbe(const VoxelGrid& grid, const ChunkKey& key, int index) {
+glm::ivec3 terrain::contextProbe(const GridView& grid, const ChunkKey& key, int index) {
     const glm::ivec3 sides = NodeContext::sidesOf(index);
     const glm::ivec3 originFine = key.getOrigin() * FINEST;
     const int spanFine = spanFineOf(key.level);
@@ -230,7 +230,7 @@ glm::ivec3 terrain::contextProbe(const VoxelGrid& grid, const ChunkKey& key, int
     return clampFine(grid.getVoxelCount(), probe);
 }
 
-NodeContext terrain::gridContext(const VoxelGrid& grid, const ChunkKey& key) {
+NodeContext terrain::gridContext(const GridView& grid, const ChunkKey& key) {
     NodeContext context;
     for (int i = 0; i < 27; ++i) {
         if (i != NodeContext::CENTRE) {
@@ -240,7 +240,7 @@ NodeContext terrain::gridContext(const VoxelGrid& grid, const ChunkKey& key) {
     return context;
 }
 
-void terrain::sampleNode(const VoxelGrid& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples) {
+void terrain::sampleNode(const GridView& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples) {
     samples.setKey(key);
     samples.clearBlocks();
     samples.setLimits(grid.limitOf(key.level, key.getOrigin(), CHUNK_SIZE), grid.limitOf(key.level + 1, key.getOrigin(), 2 * CHUNK_SIZE));
@@ -520,32 +520,28 @@ LevelOfDetail::Entry& LevelOfDetail::entryFor(const LodCut::Node& node) {
     return entry;
 }
 
-void LevelOfDetail::send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid) {
+void LevelOfDetail::send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid, std::shared_ptr<const GridView>& view) {
     entry.stale = false;
-    auto settle = [&] {
-        entry.mesh = ChunkMesh();
-        entry.hasMesh = true;
-        entry.version = ++_nextVersion;
-    };
+    if (!view) {
+        view = std::make_shared<const GridView>(grid.snapshot());
+    }
     // the grid voxels its samples read, the nearest within the grid where they reach past it: when those are all
-    // one value on one side, no surface crosses the node
+    // one value on one side, no surface crosses the node (one against a closed face of the box may need a cap
+    // there even with its voxels all ground), and the job says so without sampling
     const glm::ivec3 low = glm::clamp(glm::max(entry.readLow, glm::ivec3(0)) / FINEST, glm::ivec3(0), grid.getVoxelCount() - 1);
     const glm::ivec3 high = glm::max(glm::min(glm::max(entry.readHigh, glm::ivec3(0)) / FINEST, grid.getChunkCount() * CHUNK_SIZE - 1), low);
-    // (a node against a closed face of the box may need a cap there even with its voxels all ground)
-    if (!grid.capsReach(low, high) && grid.isOneSided(low, high)) {
-        settle();
-        return;
-    }
-    auto samples = std::make_shared<ChunkSamples>();
-    sampleNode(grid, entryKey.key, entry.context, *samples);
-    if (samples->isOneSided()) {
-        settle();
-        return;
-    }
     const uint64_t tag = ++_nextTag;
     _jobs[tag] = entryKey;
     entry.inFlight = true;
-    _mesher.submitSamples(samples, tag, 1);   // ahead of the grid's chunks: these are what is drawn
+    const ChunkKey key = entryKey.key;
+    const NodeContext context = entry.context;
+    _mesher.submitSampler(key, [view, key, context, low, high](ChunkSamples& samples) {
+        if (!view->capsReach(low, high) && view->isOneSided(low, high)) {
+            return false;
+        }
+        sampleNode(*view, key, context, samples);
+        return true;
+    }, tag, 1);   // ahead of the grid's chunks: these are what is drawn
 }
 
 bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres,
@@ -560,7 +556,7 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
     }
     bool drawnChanged = false;
 
-    // the meshes back from the pool
+    // the meshes back from the pool (an empty one for a node no surface crosses: it is settled)
     for (AsyncMesher::Result& result : _mesher.collect()) {
         auto job = _jobs.find(result.tag);
         if (job == _jobs.end()) {
@@ -650,8 +646,11 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         });
         // The first node always goes, so the queue drains; each later one only if the budget still holds it, judged
         // by what its level's last sends took: the frame's spend ends near the budget, not a whole node past it.
+        // (A send is the hand-over alone, microseconds: the sampling runs on the pool, from one snapshot of the
+        // grid for every node sent this frame.)
         const float budget = getFrameBudgetMs();
         const auto start = std::chrono::steady_clock::now();
+        std::shared_ptr<const GridView> view;
         for (size_t i = 0; i < order.size(); ++i) {
             const auto before = std::chrono::steady_clock::now();
             const float spent = std::chrono::duration<float, std::milli>(before - start).count();
@@ -665,7 +664,7 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
             Entry& entry = _entries[order[i].second];
             const bool hadMesh = entry.hasMesh;
             const uint64_t version = entry.version;
-            send(order[i].second, entry, grid);
+            send(order[i].second, entry, grid, view);
             drawnChanged = drawnChanged || (entry.version != version) || (hadMesh != entry.hasMesh);
             const float cost = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - before).count();
             float& smoothed = _nodeCostMs[level];

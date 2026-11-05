@@ -53,7 +53,8 @@ struct LodSettings {
     // A node drawn as its children stays so until the camera is this fraction further away again, so a camera
     // moving to and fro across the line does not switch it at every step.
     float hysteresis { 0.25f };
-    // Time a frame may spend sampling nodes for meshing on the editing thread (the meshing itself runs on a pool).
+    // Time a frame may spend on the editing thread handing nodes to the pool, where they are sampled and meshed:
+    // a ceiling on the hand-over (its cost is microseconds a node).
     float sampleBudgetMs { 4.0f };
     // A new cut is shown only once every node of it has its mesh (LevelOfDetail). A node that has had none for the
     // nudge time is asked for again, in case its mesh was lost; one that still has none at the force time no longer
@@ -94,12 +95,13 @@ private:
 // The point at which a node's context reads the place on the given side of it (NodeContext's index): just outside
 // the node on the axes where the place is below or above it, halfway along the others; in finest units, clamped
 // into the grid.
-glm::ivec3 contextProbe(const VoxelGrid& grid, const ChunkKey& key, int index);
+glm::ivec3 contextProbe(const GridView& grid, const ChunkKey& key, int index);
 // The levels of the grid's own chunks around one of them: the context its samples from VoxelGrid::sampleChunk() see.
-NodeContext gridContext(const VoxelGrid& grid, const ChunkKey& key);
+NodeContext gridContext(const GridView& grid, const ChunkKey& key);
 // The samples a node is meshed from, with the levels around it given by the context: as VoxelGrid::sampleChunk()
 // gives a chunk's for meshing, to the bit where the node is one of the grid's chunks and the context the grid's.
-void sampleNode(const VoxelGrid& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples);
+// Reads the grid only: on the editing thread, or on any thread from a snapshot (VoxelGrid::snapshot).
+void sampleNode(const GridView& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples);
 
 // The nodes to draw for a camera: a cut through the octree of the grid's chunks extended upward with coarser levels.
 class LodCut {
@@ -153,8 +155,10 @@ private:
 };
 
 // The meshes a terrain draws: the grid's own chunks' near the camera, meshes of coarser nodes made here further
-// away, kept up to date as the camera moves and the grid is edited. Lives on the editing thread; only the meshing
-// runs on the pool. A new cut is shown only once every node of it has its mesh, so the ground never shows a crack
+// away, kept up to date as the camera moves and the grid is edited. Lives on the editing thread; the sampling and
+// the meshing of a node run on the pool, from a snapshot of the grid taken when the node is sent (a node's samples
+// are the grid as it was then; an edit after that marks the node stale and it is sent again, as before). A new
+// cut is shown only once every node of it has its mesh, so the ground never shows a crack
 // or a hole while the camera moves (meshes of nodes edited meanwhile are swapped in one by one, as the grid's own
 // chunks' are). The first cut, and the first after the grid is cleared, is shown node by node as the meshes come.
 class LevelOfDetail {
@@ -174,7 +178,8 @@ public:
     // Once a frame on the editing thread, after the grid's own chunks' meshes have been brought up to date: takes
     // the grid's changes, chooses the cut for the camera (a point of the grid's voxel space, voxels of voxelMetres),
     // collects the meshes the pool has finished, sends out the nodes whose meshes are missing or out of date
-    // (nearest first, within the settings' time budget) and shows the cut wanted once it is ready.
+    // (nearest first, within the settings' time budget, each sampled and meshed on the pool from one snapshot of
+    // the grid) and shows the cut wanted once it is ready.
     // gridChunkReady(key) says whether the terrain's own mesh of the grid's chunk at the key is there to draw (or
     // known to be empty). Returns whether what is drawn changed.
     bool update(VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres,
@@ -199,9 +204,10 @@ public:
         uint64_t events { 0 };
     };
     const Stall& getStall() const { return _stall; }
-    // The time this frame may spend sampling nodes, when less than the settings' sampleBudgetMs: the caller sets it
-    // every frame from the frames it is given (a share of the display's interval), so a cut spreads over frames
-    // instead of landing in one. 0, or more than the settings' value, means the settings' value.
+    // The time this frame may spend handing nodes to the pool, when less than the settings' sampleBudgetMs: the
+    // caller sets it every frame from the frames it is given (a share of the display's interval), so a cut's
+    // hand-over spreads over frames instead of landing in one. 0, or more than the settings' value, means the
+    // settings' value.
     void setFrameBudgetMs(float ms) { _frameBudgetMs = ms; }
     float getFrameBudgetMs() const;   // the budget in force: the smaller of the two
     // The cut last shown, for a caller that logs it: which (a serial), how long after its choice it came (ms and
@@ -250,8 +256,10 @@ private:
     };
 
     Entry& entryFor(const LodCut::Node& node);
-    // Samples the node and sends it to the pool, or settles it at once when no surface can cross it.
-    void send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid);
+    // Sends the node to the pool, to be sampled and meshed there from the snapshot of the grid (taken from the grid
+    // on the first send of a frame, shared by every node sent that frame). A node no surface can cross comes back
+    // with an empty mesh, as one whose samples hold none does.
+    void send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid, std::shared_ptr<const GridView>& view);
     void rebuildDrawn();
     // The cut wanted is about to be shown in place of the cut shown: counts what it brings (CutShown).
     void noteCutShown(const std::vector<LodCut::Node>& wanted);
@@ -281,7 +289,7 @@ private:
     Stall _stall;
     std::chrono::steady_clock::time_point _stallSince;
     float _frameBudgetMs { 0.0f };
-    std::map<int, float> _nodeCostMs;   // what sampling a node of a level last took, smoothed: the estimate before a send
+    std::map<int, float> _nodeCostMs;   // what sending a node of a level last took, smoothed: the estimate before a send
     std::chrono::steady_clock::time_point _cutChosenAt;   // when the cut wanted was last chosen
     uint64_t _cutChosenFrame { 0 };
     CutShown _cutShown;

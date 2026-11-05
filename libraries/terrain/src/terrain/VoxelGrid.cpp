@@ -74,6 +74,24 @@ bool ChunkKey::intersects(const glm::ivec3& low, const glm::ivec3& high) const {
 
 // --- ChunkNode ----------------------------------------------------------------------------------
 
+namespace {
+
+// The chunk of a node that has none of its own (a new node, or one just split): one empty chunk shared by all of
+// them, which no node ever writes (shared, so mutableChunk() copies it first).
+const std::shared_ptr<Chunk>& emptyChunk() {
+    static const std::shared_ptr<Chunk> chunk = std::make_shared<Chunk>();
+    return chunk;
+}
+
+} // namespace
+
+ChunkNode::ChunkNode() : _chunk(emptyChunk()) {
+}
+
+ChunkNode::ChunkNode(Chunk chunk) : _chunk(std::make_shared<Chunk>(std::move(chunk))) {
+}
+
+// A copy shares the chunk (a GridView taken from the grid shares every chunk this way) and has children of its own.
 ChunkNode::ChunkNode(const ChunkNode& other) : _chunk(other._chunk) {
     if (other._children) {
         _children.reset(new ChunkNode[8]);
@@ -91,17 +109,28 @@ ChunkNode& ChunkNode::operator=(const ChunkNode& other) {
     return *this;
 }
 
+Chunk& ChunkNode::mutableChunk() {
+    // Copies of a chunk's pointer are made only on the editing thread (a GridView taken from the grid) and dropped
+    // anywhere (a view going out of use on a worker): a count of one read here means nothing else holds it, and no
+    // other thread can come to hold it meanwhile. Otherwise the node takes a copy of its own and leaves the shared
+    // chunk to its readers as it was.
+    if (_chunk.use_count() != 1) {
+        _chunk = std::make_shared<Chunk>(*_chunk);
+    }
+    return *_chunk;
+}
+
 void ChunkNode::split(std::array<Chunk, 8>&& children) {
     _children.reset(new ChunkNode[8]);
     for (int i = 0; i < 8; ++i) {
-        _children[i]._chunk = std::move(children[i]);
+        _children[i]._chunk = std::make_shared<Chunk>(std::move(children[i]));
     }
-    _chunk = Chunk();
+    _chunk = emptyChunk();
 }
 
 void ChunkNode::merge(Chunk chunk) {
     _children.reset();
-    _chunk = std::move(chunk);
+    _chunk = std::make_shared<Chunk>(std::move(chunk));
 }
 
 // --- ChunkSamples -------------------------------------------------------------------------------
@@ -155,27 +184,27 @@ void VoxelGrid::setMaxLevel(int level) {
     _maxLevel = glm::clamp(level, 0, MAX_CHUNK_LEVEL);
 }
 
-glm::ivec3 VoxelGrid::chunkOf(const glm::ivec3& voxel) {
+glm::ivec3 GridView::chunkOf(const glm::ivec3& voxel) {
     return floorDivide(voxel, CHUNK_SIZE);
 }
 
-glm::ivec3 VoxelGrid::localOf(const glm::ivec3& voxel) {
+glm::ivec3 GridView::localOf(const glm::ivec3& voxel) {
     return voxel - chunkOf(voxel) * CHUNK_SIZE;
 }
 
-bool VoxelGrid::containsVoxel(const glm::ivec3& voxel) const {
+bool GridView::containsVoxel(const glm::ivec3& voxel) const {
     return glm::all(glm::greaterThanEqual(voxel, glm::ivec3(0))) && glm::all(glm::lessThan(voxel, _voxelCount));
 }
 
-bool VoxelGrid::containsChunk(const glm::ivec3& chunk) const {
+bool GridView::containsChunk(const glm::ivec3& chunk) const {
     return glm::all(glm::greaterThanEqual(chunk, glm::ivec3(0))) && glm::all(glm::lessThan(chunk, _chunkCount));
 }
 
-bool VoxelGrid::containsChunk(const ChunkKey& key) const {
+bool GridView::containsChunk(const ChunkKey& key) const {
     return key.level >= 0 && key.level <= MAX_CHUNK_LEVEL && containsChunk(key.getSlot());
 }
 
-VoxelGrid::Found VoxelGrid::locate(const glm::ivec3& fine) const {
+GridView::Found GridView::locate(const glm::ivec3& fine) const {
     ChunkKey key(0, fine >> (CHUNK_SHIFT + MAX_CHUNK_LEVEL));
     const ChunkNode* node = &_slots[chunkIndexOf(key.coords)];
     while (node->isSplit()) {
@@ -186,7 +215,7 @@ VoxelGrid::Found VoxelGrid::locate(const glm::ivec3& fine) const {
     return { node, key };
 }
 
-const ChunkNode* VoxelGrid::nodeAt(const ChunkKey& key) const {
+const ChunkNode* GridView::nodeAt(const ChunkKey& key) const {
     if (!containsChunk(key)) {
         return nullptr;
     }
@@ -204,11 +233,11 @@ ChunkNode* VoxelGrid::nodeAt(const ChunkKey& key) {
     return const_cast<ChunkNode*>(static_cast<const VoxelGrid*>(this)->nodeAt(key));
 }
 
-ChunkKey VoxelGrid::chunkCovering(const glm::ivec3& voxel) const {
+ChunkKey GridView::chunkCovering(const glm::ivec3& voxel) const {
     return chunkCoveringPoint(0, voxel);
 }
 
-ChunkKey VoxelGrid::chunkCoveringPoint(int level, const glm::ivec3& point) const {
+ChunkKey GridView::chunkCoveringPoint(int level, const glm::ivec3& point) const {
     if (_slots.empty()) {
         return ChunkKey();
     }
@@ -217,14 +246,14 @@ ChunkKey VoxelGrid::chunkCoveringPoint(int level, const glm::ivec3& point) const
     return locate(clamped << (MAX_CHUNK_LEVEL - level)).key;
 }
 
-ChunkKey VoxelGrid::chunkCoveringFine(const glm::ivec3& fine) const {
+ChunkKey GridView::chunkCoveringFine(const glm::ivec3& fine) const {
     if (_slots.empty()) {
         return ChunkKey();
     }
     return locate(glm::clamp(fine, glm::ivec3(0), (_voxelCount - 1) * FINEST)).key;
 }
 
-void VoxelGrid::collectLeaves(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
+void GridView::collectLeaves(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
                               std::vector<ChunkKey>& keys) const {
     if (!key.intersects(low, high)) {
         return;
@@ -238,7 +267,7 @@ void VoxelGrid::collectLeaves(const ChunkNode& node, const ChunkKey& key, const 
     }
 }
 
-std::vector<ChunkKey> VoxelGrid::chunksCovering(const glm::ivec3& low, const glm::ivec3& high) const {
+std::vector<ChunkKey> GridView::chunksCovering(const glm::ivec3& low, const glm::ivec3& high) const {
     std::vector<ChunkKey> keys;
     if (_slots.empty()) {
         return keys;
@@ -263,17 +292,17 @@ std::vector<ChunkKey> VoxelGrid::chunksCovering(const glm::ivec3& low, const glm
     return keys;
 }
 
-bool VoxelGrid::hasChunk(const ChunkKey& key) const {
+bool GridView::hasChunk(const ChunkKey& key) const {
     const ChunkNode* node = nodeAt(key);
     return node && !node->isSplit();
 }
 
-bool VoxelGrid::isSplit(const ChunkKey& key) const {
+bool GridView::isSplit(const ChunkKey& key) const {
     const ChunkNode* node = nodeAt(key);
     return node && node->isSplit();
 }
 
-const Chunk& VoxelGrid::getChunk(const ChunkKey& key) const {
+const Chunk& GridView::getChunk(const ChunkKey& key) const {
     const ChunkNode* node = nodeAt(key);
     assert(node && !node->isSplit());
     static const Chunk NOTHING;
@@ -282,17 +311,17 @@ const Chunk& VoxelGrid::getChunk(const ChunkKey& key) const {
 
 Chunk* VoxelGrid::findChunk(const ChunkKey& key) {
     ChunkNode* node = nodeAt(key);
-    return node && !node->isSplit() ? &node->getChunk() : nullptr;
+    return node && !node->isSplit() ? &node->mutableChunk() : nullptr;
 }
 
-const Chunk* VoxelGrid::findChunk(const ChunkKey& key) const {
+const Chunk* GridView::findChunk(const ChunkKey& key) const {
     const ChunkNode* node = nodeAt(key);
     return node && !node->isSplit() ? &node->getChunk() : nullptr;
 }
 
 // --- reading the field --------------------------------------------------------------------------
 
-const Voxel& VoxelGrid::get(const glm::ivec3& voxel) const {
+const Voxel& GridView::get(const glm::ivec3& voxel) const {
     static const Voxel NOTHING;
     if (_slots.empty()) {
         return NOTHING;
@@ -310,14 +339,14 @@ bool VoxelGrid::set(const glm::ivec3& voxel, const Voxel& value) {
     const Found found = locate(voxel << MAX_CHUNK_LEVEL);
     const glm::ivec3 local = (voxel << found.key.level) - found.key.coords * CHUNK_SIZE;
     // the grid is not const here, and the node is one of its own
-    if (!const_cast<ChunkNode*>(found.node)->getChunk().set(local.x, local.y, local.z, value)) {
+    if (!const_cast<ChunkNode*>(found.node)->mutableChunk().set(local.x, local.y, local.z, value)) {
         return false;
     }
     voxelsChanged(found.key, local, local);
     return true;
 }
 
-Voxel VoxelGrid::sampleAt(int level, const glm::ivec3& point) const {
+Voxel GridView::sampleAt(int level, const glm::ivec3& point) const {
     if (_slots.empty()) {
         return Voxel();
     }
@@ -342,7 +371,7 @@ Voxel VoxelGrid::sampleAt(int level, const glm::ivec3& point) const {
     return interpolateAt(found, fine, level);
 }
 
-Voxel VoxelGrid::interpolateAt(const Found& found, const glm::ivec3& fine, int level) const {
+Voxel GridView::interpolateAt(const Found& found, const glm::ivec3& fine, int level) const {
     // The point lies between the voxels of a coarser chunk: trilinear between the eight around it, the material
     // of the nearest. A corner beyond the chunk's edge is the neighbour's there, at whatever level it keeps it.
     const int coarse = found.key.level;
@@ -369,7 +398,7 @@ Voxel VoxelGrid::interpolateAt(const Found& found, const glm::ivec3& fine, int l
     return Voxel(rescaleDistance(distance, (float)(1 << (level - coarse))), voxelAt(nearest).material);
 }
 
-Voxel VoxelGrid::voxelAtFine(const glm::ivec3& fine, int level) const {
+Voxel GridView::voxelAtFine(const glm::ivec3& fine, int level) const {
     if (_slots.empty()) {
         return Voxel();
     }
@@ -383,7 +412,7 @@ Voxel VoxelGrid::voxelAtFine(const glm::ivec3& fine, int level) const {
     return Voxel(rescaleDistance(voxel.getDistance(), std::ldexp(1.0f, level - found.key.level)), voxel.material);
 }
 
-bool VoxelGrid::leavesAreOneSided(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
+bool GridView::leavesAreOneSided(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
                                   int& side) const {
     if (!key.intersects(low, high)) {
         return true;
@@ -407,7 +436,7 @@ bool VoxelGrid::leavesAreOneSided(const ChunkNode& node, const ChunkKey& key, co
     return side == chunkSide;
 }
 
-bool VoxelGrid::isOneSided(const glm::ivec3& low, const glm::ivec3& high) const {
+bool GridView::isOneSided(const glm::ivec3& low, const glm::ivec3& high) const {
     if (_slots.empty()) {
         return true;
     }
@@ -432,7 +461,7 @@ bool VoxelGrid::isOneSided(const glm::ivec3& low, const glm::ivec3& high) const 
     return true;
 }
 
-glm::ivec3 VoxelGrid::limitOf(int level, const glm::ivec3& origin, int most) const {
+glm::ivec3 GridView::limitOf(int level, const glm::ivec3& origin, int most) const {
     glm::ivec3 limit;
     for (int axis = 0; axis < 3; ++axis) {
         const int end = _voxelCount[axis] - origin[axis];   // grid voxels from the node's corner to the grid's end
@@ -445,7 +474,7 @@ glm::ivec3 VoxelGrid::limitOf(int level, const glm::ivec3& origin, int most) con
     return limit;
 }
 
-VoxelGrid::FieldSample VoxelGrid::fieldAt(const glm::vec3& position) const {
+GridView::FieldSample GridView::fieldAt(const glm::vec3& position) const {
     FieldSample sample;
     if (_slots.empty()) {
         return sample;
@@ -625,7 +654,7 @@ void VoxelGrid::installChunk(const ChunkKey& key, Chunk value, bool resample) {
         node = &node->getChild(childIndexOf((key.coords >> (key.level - level)) & 1));
     }
     if (node->isSplit()) {
-        forEachLeaf(*node, key, [&](const ChunkKey& leaf, const Chunk&) { _dirtyChunks.erase(leaf); });
+        forEachLeaf(*node, key, [&](const ChunkKey& leaf, ChunkNode&) { _dirtyChunks.erase(leaf); });
         ++_structureVersion;
     }
     node->merge(std::move(value));
@@ -683,7 +712,7 @@ bool VoxelGrid::takeChanges(std::vector<std::pair<glm::ivec3, glm::ivec3>>& boxe
     return told;
 }
 
-void VoxelGrid::sampleChunk(const ChunkKey& key, ChunkSamples& samples, bool forMeshing) const {
+void GridView::sampleChunk(const ChunkKey& key, ChunkSamples& samples, bool forMeshing) const {
     samples.setKey(key);
     samples.clearBlocks();
     samples.setLimits(limitOf(key.level, key.getOrigin(), CHUNK_SIZE), limitOf(key.level + 1, key.getOrigin(), 2 * CHUNK_SIZE));
@@ -772,7 +801,7 @@ void VoxelGrid::setCaps(uint8_t caps) {
     }
 }
 
-bool VoxelGrid::capsReach(const glm::ivec3& low, const glm::ivec3& high) const {
+bool GridView::capsReach(const glm::ivec3& low, const glm::ivec3& high) const {
     if (_caps == CAP_NONE) {
         return false;
     }
@@ -787,7 +816,7 @@ bool VoxelGrid::capsReach(const glm::ivec3& low, const glm::ivec3& high) const {
     return false;
 }
 
-void VoxelGrid::applyCaps(ChunkSamples& samples) const {
+void GridView::applyCaps(ChunkSamples& samples) const {
     if (_caps == CAP_NONE || _slots.empty()) {
         return;
     }
@@ -883,17 +912,21 @@ void VoxelGrid::fillBelow(float height, uint8_t material) {
 
 void VoxelGrid::compactChunks() {
     for (ChunkNode& slot : _slots) {
-        forEachLeaf(slot, ChunkKey(), [](const ChunkKey&, Chunk& chunk) { chunk.compact(); });
+        forEachLeaf(slot, ChunkKey(), [](const ChunkKey&, ChunkNode& node) {
+            if (!node.getChunk().isUniform()) {
+                node.mutableChunk().compact();
+            }
+        });
     }
 }
 
-int VoxelGrid::countChunks() const {
+int GridView::countChunks() const {
     int count = 0;
     forEachChunk([&](const ChunkKey&, const Chunk&) { ++count; });
     return count;
 }
 
-int VoxelGrid::countDenseChunks() const {
+int GridView::countDenseChunks() const {
     int count = 0;
     forEachChunk([&](const ChunkKey&, const Chunk& chunk) {
         if (!chunk.isUniform()) {
@@ -903,7 +936,7 @@ int VoxelGrid::countDenseChunks() const {
     return count;
 }
 
-int VoxelGrid::getFinestLevel() const {
+int GridView::getFinestLevel() const {
     int finest = 0;
     forEachChunk([&](const ChunkKey& key, const Chunk&) { finest = std::max(finest, key.level); });
     return finest;
