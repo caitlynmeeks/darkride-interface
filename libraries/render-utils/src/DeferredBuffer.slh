@@ -34,11 +34,16 @@ const float FRAG_PACK_LIGHTMAPPED_INDIRECT_NON_METALLIC = 0.7;
 const float FRAG_PACK_LIGHTMAPPED_INDIRECT_METALLIC = 0.8;
 const float FRAG_PACK_LIGHTMAPPED_INDIRECT_RANGE_INV = 1.0 / (FRAG_PACK_LIGHTMAPPED_INDIRECT_METALLIC - FRAG_PACK_LIGHTMAPPED_INDIRECT_NON_METALLIC);
 
+// Toon shaded (a VRM's MToon): the albedo is its lit colour, the scattering/emissive buffer its shade colour and shading
+// shift, and the roughness its toony (packDeferredFragmentToon)
+const float FRAG_PACK_TOON = 0.95;
+
 const int FRAG_MODE_UNLIT = 0;
 const int FRAG_MODE_SHADED = 1;
 const int FRAG_MODE_LIGHTMAPPED = 2;
 const int FRAG_MODE_SCATTERING = 3;
 const int FRAG_MODE_LIGHTMAPPED_INDIRECT = 4;
+const int FRAG_MODE_TOON = 5;
 
 // The modes split at the gaps halfway between their ranges. The value is stored in 8 bits, which rounds a range's
 // top up past it (fully metallic, 0.1, is stored as 26/255 = 0.102), so splitting at the tops read fully metallic
@@ -56,9 +61,12 @@ void unpackModeMetallic(float rawValue, out int mode, out float metallic) {
     } else if (rawValue <= 0.5 * (FRAG_PACK_UNLIT + FRAG_PACK_LIGHTMAPPED_INDIRECT_NON_METALLIC)) {
         mode = FRAG_MODE_UNLIT;
         metallic = 0.0;
-    } else {
+    } else if (rawValue <= 0.5 * (FRAG_PACK_LIGHTMAPPED_INDIRECT_METALLIC + FRAG_PACK_TOON)) {
         mode = FRAG_MODE_LIGHTMAPPED_INDIRECT;
         metallic = clamp((rawValue - FRAG_PACK_LIGHTMAPPED_INDIRECT_NON_METALLIC) * FRAG_PACK_LIGHTMAPPED_INDIRECT_RANGE_INV, 0.0, 1.0);
+    } else {
+        mode = FRAG_MODE_TOON;
+        metallic = 0.0;
     }
 }
 
@@ -80,6 +88,10 @@ float packUnlit() {
 
 float packLightmappedIndirectMetallic(float metallic) {
     return mix(FRAG_PACK_LIGHTMAPPED_INDIRECT_NON_METALLIC, FRAG_PACK_LIGHTMAPPED_INDIRECT_METALLIC, metallic);
+}
+
+float packToon() {
+    return FRAG_PACK_TOON;
 }
 
 <@endif@>

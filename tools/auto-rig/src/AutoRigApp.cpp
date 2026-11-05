@@ -38,12 +38,13 @@
 
 #include <AutoRig.h>
 #include <AvatarWriter.h>
+#include <FstBake.h>
 #include <StandardSkeleton.h>
 
 #include "RigCheck.h"
 #include "RigPreview.h"
 
-static HFMModel::Pointer readModel(const QString& path) {
+static HFMModel::Pointer readModel(const QString& path, bool ownBlendshapes = false) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         return nullptr;
@@ -52,7 +53,10 @@ static HFMModel::Pointer readModel(const QString& path) {
     const QFileInfo info(path);
     const QString suffix = info.suffix().toLower();
     const QUrl url = QUrl::fromLocalFile(info.absoluteFilePath());
-    const QVariantHash mapping;
+    QVariantHash mapping;
+    if (ownBlendshapes) {
+        mapping.insert("ownBlendshapes", "true");
+    }
     if (suffix == "fbx") {
         return FBXSerializer().read(data, mapping, url);
     }
@@ -316,6 +320,7 @@ AutoRigApp::AutoRigApp(int argc, char* argv[]) : QCoreApplication(argc, argv) {
     const QCommandLineOption jointsOnlyOption("joints-only", "place the joints and skip the skin weights");
     const QCommandLineOption dumpOption("dump", "print an FBX file's node tree and stop", "file");
     const QCommandLineOption inspectOption("inspect", "print a model's meshes, materials and textures and stop", "file");
+    const QCommandLineOption bakeOption("bake", "print the .fst lines Import Avatar writes when it keeps a model's rig, and stop", "file");
     const QCommandLineOption uvSheetsOption("uv-sheets", "with --inspect: draw each material's UV triangles over its texture into PNGs here",
                                             "folder");
     const QCommandLineOption depthOption("depth", "with --dump: how deep (default 3)", "levels");
@@ -346,6 +351,7 @@ AutoRigApp::AutoRigApp(int argc, char* argv[]) : QCoreApplication(argc, argv) {
     parser.addOption(jointsOnlyOption);
     parser.addOption(dumpOption);
     parser.addOption(inspectOption);
+    parser.addOption(bakeOption);
     parser.addOption(uvSheetsOption);
     parser.addOption(depthOption);
     parser.addOption(childrenOption);
@@ -354,6 +360,20 @@ AutoRigApp::AutoRigApp(int argc, char* argv[]) : QCoreApplication(argc, argv) {
     parser.addOption(weightingOption);
     parser.addOption(sharpnessOption);
     parser.addOption(blendOption);
+    if (parser.parse(QCoreApplication::arguments()) && parser.isSet(bakeOption)) {
+        // read as Import Avatar reads it, with its own blend shapes
+        const QString path = parser.value(bakeOption);
+        HFMModel::Pointer model = readModel(path, true);
+        if (!model) {
+            fprintf(stderr, "could not read %s\n", qPrintable(path));
+            _returnCode = 2;
+            return;
+        }
+        QStringList lines, found;
+        autorig::bakeFst(*model, QFileInfo(path).suffix().toLower() == "vrm", lines, found);
+        fprintf(stdout, "# found: %s\n%s\n", qPrintable(found.join(", ")), qPrintable(lines.join("\n")));
+        return;
+    }
     if (parser.parse(QCoreApplication::arguments()) && parser.isSet(inspectOption)) {
         HFMModel::Pointer model = readModel(parser.value(inspectOption));
         if (!model) {

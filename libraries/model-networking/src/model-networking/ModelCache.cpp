@@ -168,6 +168,9 @@ void GeometryReader::run() {
             throw QString("empty geometry, possibly due to an unsupported model version");
         }
 
+        // the .fst's gains for the procedural face
+        FSTReader::applyBlendshapeGains(serializerMapping, *hfmModel);
+
         // Add scripts to hfmModel
         if (!serializerMapping.value(SCRIPT_FIELD).isNull()) {
             QVariantList scripts = serializerMapping.values(SCRIPT_FIELD);

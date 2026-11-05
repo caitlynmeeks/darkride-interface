@@ -7020,6 +7020,9 @@ void MyAvatar::useFlow(bool isActive, bool isCollidable, const QVariantMap& phys
                 if (settings.contains("lift")) {
                     physicsSettings._lift = settings["lift"].toFloat();
                 }
+                if (settings.contains("tipCollision")) {
+                    physicsSettings._tipCollision = settings["tipCollision"].toBool();
+                }
                 flow.setPhysicsSettingsForGroup(groupName, physicsSettings);
             }
         }
@@ -7162,6 +7165,7 @@ QVariantMap MyAvatar::getFlowData() {
             settingsObject.insert("stiffness", groupSettings._stiffness);
             settingsObject.insert("maxAngle", groupSettings._maxAngle);
             settingsObject.insert("lift", groupSettings._lift);
+            settingsObject.insert("tipCollision", groupSettings._tipCollision);
             settingsObject.insert("jointIndices", groupJointsMap[groupName]);
             physicsData.insert(groupName, settingsObject);
         }

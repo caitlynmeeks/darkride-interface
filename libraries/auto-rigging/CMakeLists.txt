@@ -1,6 +1,6 @@
 set(TARGET_NAME auto-rigging)
 setup_hifi_library()
-link_hifi_libraries(shared hfm graphics fbx)
+link_hifi_libraries(shared hfm graphics fbx animation)
 include_hifi_library_headers(gpu)
 include_hifi_library_headers(image)
 include_hifi_library_headers(networking)

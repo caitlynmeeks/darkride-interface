@@ -17,6 +17,10 @@
 
 #include <glm/gtx/transform.hpp>
 
+#include <GLMHelpers.h>
+#include <HumanoidJointMap.h>
+#include <HumanoidRotationOffsets.h>
+
 #include "ModelBakerLogging.h"
 
 QMap<QString, QString> getJointNameMapping(const hifi::VariantHash& mapping) {
@@ -60,6 +64,63 @@ QMap<QString, glm::quat> getJointRotationOffsets(const hifi::VariantHash& mappin
         }
     }
     return jointRotationOffsets;
+}
+
+// Whether the humanoid joints are worked out automatically (names and rotation offsets): for a model worn as an avatar
+// without an .fst (SkeletonModel asks for it), or one whose .fst says "autoHumanoid = true". An avatar worn with any
+// other .fst, a model entity and an animation are read as their files say.
+bool isAutoHumanoid(const hifi::VariantHash& mapping) {
+    static const QString AUTO_HUMANOID_FIELD = "autoHumanoid";
+    return mapping.value(AUTO_HUMANOID_FIELD).toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
+}
+
+// For a humanoid whose joints, even after the FST's jointMap, don't have all of Darkride's main names: Darkride's names
+// for joints worked out from its skeleton, by joint index, for the names it doesn't have yet
+QHash<int, QString> getHumanoidJointNames(const std::vector<hfm::Joint>& joints, const QMap<QString, QString>& jointNameMapping) {
+    QHash<int, QString> result;
+    QStringList jointNames;
+    for (const hfm::Joint& joint : joints) {
+        QString mappedName = jointNameMapping.key(joint.name);
+        jointNames << (mappedName.isEmpty() ? joint.name : mappedName);
+    }
+    if (hasMainHumanoidJoints(jointNames)) {
+        return result;
+    }
+    std::vector<HumanoidJointInfo> humanoidJoints;
+    for (const hfm::Joint& joint : joints) {
+        humanoidJoints.push_back({ joint.name, joint.parentIndex, joint.isSkeletonJoint, extractTranslation(joint.globalTransform) });
+    }
+    QHash<int, QString> humanoidNames = mapHumanoidJoints(humanoidJoints);
+    QStringList added;
+    for (auto itr = humanoidNames.begin(); itr != humanoidNames.end(); itr++) {
+        const QString& jointName = joints[itr.key()].name;
+        if (!jointNames.contains(itr.value()) && jointNameMapping.key(jointName).isEmpty()) {
+            result.insert(itr.key(), itr.value());
+            added << itr.value() + " = " + jointName;
+        }
+    }
+    if (!added.isEmpty()) {
+        added.sort();
+        qCDebug(model_baker) << "Joints named automatically:" << added.join(", ");
+    }
+    return result;
+}
+
+// The rotation offsets that give a humanoid's joints the axes animations expect (computeHumanoidRotationOffsets), from
+// the joints' default poses as the rig builds them (AnimSkeleton), by joint index
+QMap<int, glm::quat> getHumanoidRotationOffsets(const std::vector<hfm::Joint>& joints) {
+    std::vector<HumanoidRestJoint> restJoints;
+    std::vector<glm::mat4> absolute(joints.size());
+    restJoints.reserve(joints.size());
+    for (int i = 0; i < (int)joints.size(); i++) {
+        const hfm::Joint& joint = joints[i];
+        const glm::mat4 local = glm::translate(joint.translation) * joint.preTransform * glm::mat4_cast(joint.preRotation) *
+            glm::mat4_cast(joint.rotation) * glm::mat4_cast(joint.postRotation) * joint.postTransform;
+        const int parent = joint.parentIndex;
+        absolute[i] = (parent >= 0 && parent < i) ? absolute[parent] * local : local;
+        restJoints.push_back({ joint.name, parent, extractTranslation(absolute[i]), glmExtractRotation(absolute[i]) });
+    }
+    return computeHumanoidRotationOffsets(restJoints);
 }
 
 // "jointDefaultPose = <joint> = {"translation": [x, y, z], "rotation": [x, y, z, w], "scale": [x, y, z]}" sets a joint's
@@ -122,6 +183,25 @@ void applyJointDefaultPoses(const hifi::VariantHash& mapping, const std::vector<
     }
 }
 
+void turnFlowCollisionsToRigAxes(QVariantMap& collisions, const QHash<QString, int>& jointIndices,
+                                 const QMap<int, glm::quat>& jointRotationOffsets) {
+    for (auto itr = collisions.begin(); itr != collisions.end(); itr++) {
+        const int jointIndex = jointIndices.value(itr.key()) - 1;
+        if (!jointRotationOffsets.contains(jointIndex)) {
+            continue;
+        }
+        QVariantMap collision = itr.value().toMap();
+        QVariantMap offset = collision.value("offset").toMap();
+        const glm::vec3 turned = glm::inverse(jointRotationOffsets[jointIndex]) *
+            glm::vec3(offset.value("x").toFloat(), offset.value("y").toFloat(), offset.value("z").toFloat());
+        offset["x"] = turned.x;
+        offset["y"] = turned.y;
+        offset["z"] = turned.z;
+        collision["offset"] = offset;
+        itr.value() = collision;
+    }
+}
+
 void PrepareJointsTask::configure(const Config& config) {
     _passthrough = config.passthrough;
 }
@@ -143,6 +223,9 @@ void PrepareJointsTask::run(const baker::BakeContextPointer& context, const Inpu
 
         // Get joint renames
         QMap<QString, QString> jointNameMapping = getJointNameMapping(mapping);
+        const bool autoHumanoid = isAutoHumanoid(mapping);
+        const QHash<int, QString> humanoidJointNames =
+            autoHumanoid ? getHumanoidJointNames(jointsIn, jointNameMapping) : QHash<int, QString>();
         // Apply joint metadata from FST file mappings
         for (const hfm::Joint& jointIn : jointsIn) {
             jointsOut.push_back(jointIn);
@@ -155,6 +238,7 @@ void PrepareJointsTask::run(const baker::BakeContextPointer& context, const Inpu
                 if (jointNameMapping.contains(jointNameMapKey)) {
                     jointOut.name = jointNameMapKey;
                 }
+                jointOut.name = humanoidJointNames.value((int)jointsOut.size() - 1, jointOut.name);
             }
             jointNames.push_back(jointOut.name);
         }
@@ -186,8 +270,26 @@ void PrepareJointsTask::run(const baker::BakeContextPointer& context, const Inpu
                 QString jointNameMapKey = jointNameMapping.key(jointOut.name);
                 if (jointNameMapping.contains(jointNameMapKey)) {
                     jointOut.name = jointNameMapKey;
-                    jointNames[i] = jointNameMapKey;
                 }
+                jointOut.name = humanoidJointNames.value((int)i, jointOut.name);
+                jointNames[i] = jointOut.name;
+            }
+        }
+
+        // The automatic rotation offsets, when the .fst has none of its own, doesn't turn the model (whose joints' axes
+        // then aren't the way up it's shown) and doesn't retarget through humanoid frames (Humanoid.h), which takes care
+        // of the axes itself. They're the model's from here on, as an .fst's would be: the rig, agents' and other
+        // clients' rigs, the joint shapes and the node constraints all read them from it.
+        const bool modelTurned = mapping.value("rx").toFloat() != 0.0f || mapping.value("ry").toFloat() != 0.0f ||
+                                 mapping.value("rz").toFloat() != 0.0f;
+        const bool humanoidRetarget = mapping.value("retarget").toString().trimmed().compare("humanoid", Qt::CaseInsensitive) == 0;
+        if (autoHumanoid && offsets.isEmpty() && !modelTurned && !humanoidRetarget) {
+            const QMap<int, glm::quat> humanoidOffsets = getHumanoidRotationOffsets(jointsOut);
+            for (auto itr = humanoidOffsets.begin(); itr != humanoidOffsets.end(); itr++) {
+                jointRotationOffsets.insert(itr.key(), itr.value());
+            }
+            if (!humanoidOffsets.isEmpty()) {
+                qCDebug(model_baker) << "Joint axes made Mixamo's automatically for" << humanoidOffsets.size() << "joints";
             }
         }
 
