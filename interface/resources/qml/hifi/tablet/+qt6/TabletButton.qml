@@ -110,7 +110,7 @@ Item {
         if (src.match(/\bhttp/) || src.match(/\bfile:/)) {
             return src;
         } else {
-            return "../../../../" + src;
+            return "qrc:///" + src;
         }
     }
 

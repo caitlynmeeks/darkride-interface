@@ -1,7 +1,7 @@
 import QtQuick 2.3
 import Qt5Compat.GraphicalEffects   // Qt 6: QtGraphicalEffects lives in the Qt5Compat module (the Qt 5 file is beside this +qt6 folder)
 
-import ".."
+import "qrc:///qml/hifi/overlays"
 
 Overlay {
     id: root

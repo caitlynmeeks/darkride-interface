@@ -16,7 +16,7 @@ import QtQuick 2.5
 import Qt5Compat.GraphicalEffects   // Qt 6: QtGraphicalEffects lives in the Qt5Compat module (the Qt 5 file is beside this +qt6 folder)
 import TabletScriptingInterface 1.0
 
-import "../toolbars"
+import "qrc:///qml/hifi/toolbars"
 import stylesUit 1.0
 
 Item {
@@ -49,7 +49,7 @@ Item {
     property int textSize: 24;
     property int textSizeSmall: 18;
     property int stackShadowNarrowing: 5;
-    property string defaultThumbnail: Qt.resolvedUrl("../../../images/default-domain.gif");
+    property string defaultThumbnail: Qt.resolvedUrl("qrc:///images/default-domain.gif");
     property int shadowHeight: 10;
     property bool hovered: false
 
@@ -182,7 +182,7 @@ Item {
         id: infoRow;
         Image {
             id: icon;
-            source: isAnnouncement ? "../../../images/Announce-Blast.svg" : "../../../images/snap-icon.svg";
+            source: isAnnouncement ? "qrc:///images/Announce-Blast.svg" : "qrc:///images/snap-icon.svg";
             width: 40;
             height: 40;
             visible: ((action === 'snapshot') || isAnnouncement) && (messageHeight >= 40);
@@ -288,7 +288,7 @@ Item {
         
         visible: root.standaloneOptimized && isConcurrency
         fillMode: Image.PreserveAspectFit
-        source: "../../../icons/standalone-optimized.svg"
+        source: "qrc:///icons/standalone-optimized.svg"
     }
     ColorOverlay {
         anchors.fill: standaloneOptomizedBadge
@@ -300,7 +300,7 @@ Item {
     StateImage {
         id: actionIcon;
         visible: !isAnnouncement && has3DHTML;
-        imageURL: Qt.resolvedUrl("../../../images/info-icon-2-state.svg");
+        imageURL: Qt.resolvedUrl("qrc:///images/info-icon-2-state.svg");
         size: 30;
         buttonState: messageArea.containsMouse ? 1 : 0;
         anchors {

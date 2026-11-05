@@ -3,10 +3,10 @@ import Qt5Compat.GraphicalEffects   // Qt 6: QtGraphicalEffects lives in the Qt5
 import QtQml 2.2
 
 
-import ".."
+import "qrc:///qml/hifi/tablet"
 import stylesUit 1.0
-import "../../../controls"
-import "../../../desktop" as VrDesktop
+import "qrc:///qml/controls"
+import "qrc:///qml/desktop" as VrDesktop
 
 FocusScope {
     id: tabletMenu

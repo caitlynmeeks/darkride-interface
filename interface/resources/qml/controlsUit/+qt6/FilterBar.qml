@@ -12,9 +12,9 @@ import QtQuick 2.9
 import QtQuick.Controls 2.2
 import Qt5Compat.GraphicalEffects   // Qt 6: QtGraphicalEffects lives in the Qt5Compat module (the Qt 5 file is beside this +qt6 folder)
 
-import "../../stylesUit"
-import ".." as HifiControls
-import ".."
+import "qrc:///qml/stylesUit"
+import "qrc:///qml/controlsUit" as HifiControls
+import "qrc:///qml/controlsUit"
 
 Item {
     id: root;
