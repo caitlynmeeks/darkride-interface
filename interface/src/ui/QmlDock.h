@@ -15,7 +15,9 @@
 //  On Qt 6 the panel is drawn by a QQuickView in a window container instead: a QQuickWidget there makes Qt destroy and
 //  re-create the whole main window to draw it through Qt's RHI layer, taking the 3D view's window with it
 //  (team/rendering/QT6-R1-ENTRY.md, Amendment A). A QQuickView is a native window of its own beside the 3D view, as
-//  libraries/ui's DockWidget has always been, so the main window stays as it is on Qt 5.
+//  libraries/ui's DockWidget has always been, so the main window stays as it is on Qt 5. It runs on the basic render
+//  loop (the main thread, swap interval 0): QSG_RENDER_LOOP is process-wide, so any on-screen QQuickWindow added later
+//  inherits that loop too. Today there is none; the offscreen surfaces have no render loop.
 //
 //  Copyright 2026 Darkride.
 //
