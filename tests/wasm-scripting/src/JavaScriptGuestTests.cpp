@@ -10,6 +10,7 @@
 
 #include <thread>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
@@ -32,8 +33,14 @@ QString guestModulePath() {
     if (!fromEnvironment.isEmpty()) {
         return fromEnvironment;
     }
-    // this source file is tests/wasm-scripting/src/...; the module is built beside the tools
-    return QFileInfo(QString(__FILE__)).dir().absoluteFilePath("../../../tools/wasm-js/build/darkride-js.wasm");
+    // this source file is tests/wasm-scripting/src/...; a module built from source sits beside the tools
+    const QString built = QFileInfo(QString(__FILE__)).dir().absoluteFilePath("../../../tools/wasm-js/build/darkride-js.wasm");
+    if (QFileInfo::exists(built)) {
+        return built;
+    }
+    // else the pinned module the build copies for the servers (CopyJavaScriptGuest): this test runs from
+    // <build>/tests/wasm-scripting
+    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../../assignment-client/resources/wasm/darkride-js.wasm");
 }
 
 struct Guest {
