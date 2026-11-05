@@ -59,7 +59,8 @@
 #                                    or the signal that ended it, from launchd's record in the system log since <since>,
 #                                    "YYYY-mm-dd HH:MM:SS", or the last 2 minutes) and when its log last wrote; printed,
 #                                    and added to the end of <log>
-#   lock_take [purpose] [minutes] [--quiet]
+#   lock_take [purpose] [minutes] [--quiet]   (LOCK_FLAGS=--quiet or --front in the environment asks the same for every
+#                                             take of the run, client_start's included)
 #                                    waits for the machine lock and holds it until this runner exits (or lock_give):
 #                                    one test with windows on the GPU at a time. --quiet for timing runs (no builds).
 #                                    Without the lock script (another machine) it says so and goes on.
@@ -107,7 +108,9 @@ lock_take() {
         [ -n "${_lock_said:-}" ] || echo "no machine lock at $MACHINE_LOCK: going on without one"
         _lock_said=1; return 0
     fi
-    "$MACHINE_LOCK" take "$SESSION" "${1:-test run $(basename "$R")}" "${2:-30}" --pid "${LOCK_PID:-$$}" ${3:+"$3"}
+    # LOCK_FLAGS=--quiet (or --front) in the environment asks for a quiet machine: builds through machine-lock.sh build
+    # wait, and the take waits for running ones; empty = a plain take, as before (physics, 2026-11-04)
+    "$MACHINE_LOCK" take "$SESSION" "${1:-test run $(basename "$R")}" "${2:-30}" --pid "${LOCK_PID:-$$}" ${3:+"$3"} ${LOCK_FLAGS:-}
 }
 
 lock_give() {
