@@ -14,6 +14,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <QVariantGLM.h>
+#include <shared/WireStream.h>
 
 #include "avatar/AvatarManager.h"
 #include "CharacterController.h"
@@ -509,6 +510,7 @@ QVariantMap AvatarActionHold::getArguments() {
 QByteArray AvatarActionHold::serialize() const {
     QByteArray serializedActionArguments;
     QDataStream dataStream(&serializedActionArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     withReadLock([&]{
         dataStream << DYNAMIC_TYPE_HOLD;
@@ -532,6 +534,7 @@ QByteArray AvatarActionHold::serialize() const {
 
 void AvatarActionHold::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;
