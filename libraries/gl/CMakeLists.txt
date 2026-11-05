@@ -7,4 +7,8 @@ endif()
 setup_hifi_library(${GL_QT_MODULES})
 link_hifi_libraries(shared)
 target_opengl()
+if (APPLE AND QT_VERSION_MAJOR EQUAL 6)
+  # the Objective-C runtime, for the native calls to the view's NSOpenGLContext (ContextQt.cpp)
+  target_link_libraries(${TARGET_NAME} objc)
+endif()
 

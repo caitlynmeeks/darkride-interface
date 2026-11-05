@@ -88,6 +88,19 @@ bool Application::notify(QObject * object, QEvent * event) {
         // The main window's layout passes, its moves and resizes, and the drags of its panel splitters move or resize
         // the GL view: no frame is drawn to it meanwhile, nor just after (see gl::ViewChangeGuard). Build mode's
         // panels showing and hiding crashed in Apple's GL driver.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+        if (object == _window && event->type() == QEvent::WinIdChange) {
+            // Qt made the main window's native window again (a QQuickWidget dock joined it): the offscreen UI's proxy
+            // window is the new one (its render control let the old one go as it died)
+            bool handled = QApplication::notify(object, event);
+            if (_window->windowHandle()) {
+                if (auto offscreenUi = getOffscreenUI()) {
+                    offscreenUi->setProxyWindow(_window->windowHandle());
+                }
+            }
+            return handled;
+        }
+#endif
         if (object == _window) {
             bool changesView = false;
             switch (event->type()) {

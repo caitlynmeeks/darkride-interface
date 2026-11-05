@@ -97,6 +97,16 @@ SharedObject::~SharedObject() {
     destroy();
 
     // _renderTimer is created with `this` as the parent, so need no explicit destruction
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the render control owns the QRhi it made from the canvas's context (setGraphicsDevice) and destroys it
+    // in its destructor, making that context current (this thread holds the context again after the render
+    // thread's quit): so the render control goes first, while the canvas and its context are still there (run 13,
+    // 11-05: a makeCurrent on the freed context). Qt 5's render control touched no GL at destruction.
+    if (_renderControl) {
+        delete _renderControl;
+        _renderControl = nullptr;
+    }
+#endif
     // Destroy the event hand
     if (_renderObject) {
         delete _renderObject;

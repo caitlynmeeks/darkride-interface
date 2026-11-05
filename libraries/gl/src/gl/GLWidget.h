@@ -45,6 +45,13 @@ protected:
 #endif
     virtual bool event(QEvent* event) override;
     gl::Context* _context { nullptr };
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    // The view's window made again as an OpenGL surface (Qt 6 creates a widget's window as a raster one), at the
+    // context's creation and whenever Qt replaces the window (QWidget::setParent's recreate() for a texture-based
+    // widget in the main window); the guard round screen changes is connected here too.
+    void makeWindowAnOpenGLSurface();
+    bool _remakingWindow { false };
+#endif
 
 private:
     QPaintEngine* _paintEngine { nullptr };
