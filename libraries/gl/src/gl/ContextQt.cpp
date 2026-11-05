@@ -58,6 +58,19 @@ namespace {
 #endif
 
 using namespace gl;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+// [[NSAutoreleasePool alloc] init] and -drain through the runtime (this file is C++): what Qt's own pool does
+AutoreleasePool::AutoreleasePool() {
+    void* pool = ((void* (*)(void*, SEL))objc_msgSend)((void*)objc_getClass("NSAutoreleasePool"), sel_registerName("alloc"));
+    _pool = ((void* (*)(void*, SEL))objc_msgSend)(pool, sel_registerName("init"));
+}
+
+AutoreleasePool::~AutoreleasePool() {
+    if (_pool) {
+        ((void (*)(void*, SEL))objc_msgSend)(_pool, sel_registerName("drain"));
+    }
+}
+#endif
 
 void Context::destroyContext(QOpenGLContext* context) {
     context->deleteLater();
