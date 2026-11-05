@@ -106,7 +106,7 @@ public:
     void run() override;
     void stop(bool marshal = false) override;
     void waitTillDoneRunning() override;
-    void interruptRunningCall() override { stop(); }
+    void interruptRunningCall() override;
 
     // The entity-script contract, for an entities engine: a JavaScript entity script runs in the guest, a
     // .wasm one in an instance of its module (one per URL), reached through the module's entity_* exports.
@@ -225,7 +225,7 @@ private:
     ResourceStates* _resourceStates { nullptr };
     std::mutex _instancesMutex;  // guards the set of instances against requestStop from another thread, and the next two
     bool _scriptEndingBegun { false };     // stopAll has begun: a stop leaves the handlers to the deadline
-    bool _endingDeadlinePassed { false };  // waitTillDoneRunning's deadline went by: nothing more of the script runs
+    bool _endingDeadlinePassed { false };  // interruptRunningCall: nothing more of the script runs, its handlers included
     ModuleInstancePointer _main;
     QHash<QString, ModuleInstancePointer> _entityModules;              // .wasm entity scripts by URL
     QHash<EntityItemID, std::weak_ptr<ModuleInstance>> _entityHosts;  // which instance runs each entity's script
@@ -234,6 +234,7 @@ private:
     // is not running, which would start a runaway again and again)
     QHash<EntityItemID, QString> _stoppedByTimeLimit;
     std::atomic<int> _callDepth { 0 };
+    std::atomic<quint64> _firstStopTime { 0 };  // usecTimestampNow() at the first stop; the handlers' time runs from it
 
     struct Timer {
         QTimer* timer;

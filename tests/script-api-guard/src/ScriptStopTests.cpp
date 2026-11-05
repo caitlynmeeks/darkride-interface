@@ -210,3 +210,57 @@ void ScriptStopTests::testAnEndlessHandlerEndsAtTheDeadline() {
     QVERIFY2(elapsed >= 2500 && elapsed < 3450, qPrintable(QString("took %1 ms").arg(elapsed)));
     QVERIFY2(script.isDone(), qPrintable(script.report()));
 }
+
+// Scripts stopped together share that deadline: the app waits on one engine after another, and every script of an avatar
+// has an engine of its own, so the wait must not grow with how many handlers are stuck.
+void ScriptStopTests::testStuckHandlersShareOneDeadline() {
+    const QString source = R"(
+        Script.scriptEnding.connect(function () {
+            print("spinning");
+            while (true) {}
+        });
+        Script.stop();
+    )";
+    RunningScript first(source);
+    RunningScript second(source);
+    first.engine->runInThread();
+    second.engine->runInThread();
+    QTRY_VERIFY2_WITH_TIMEOUT(first.hasLine("spinning"), qPrintable(first.report()), SCRIPT_WAIT_MS);
+    QTRY_VERIFY2_WITH_TIMEOUT(second.hasLine("spinning"), qPrintable(second.report()), SCRIPT_WAIT_MS);
+    QElapsedTimer timer;
+    timer.start();
+    first.engine->waitTillDoneRunning();
+    second.engine->waitTillDoneRunning();
+    const qint64 elapsed = timer.elapsed();
+    QVERIFY2(elapsed < 4500, qPrintable(QString("took %1 ms").arg(elapsed)));
+    QVERIFY2(first.isDone(), qPrintable(first.report()));
+    QVERIFY2(second.isDone(), qPrintable(second.report()));
+}
+
+// The app's safety net for a world that was left: a handler that never ends is interrupted about a second after the
+// stop, not at a deadline, so the world's leftovers go and the visitor's own scripts start again. "spinning" is the
+// control: the handler did begin, and without the interrupt it would still be running.
+void ScriptStopTests::testAnInterruptEndsALeftWorldsHandler() {
+    RunningScript script(R"(
+        Script.scriptEnding.connect(function () {
+            print("spinning");
+            while (true) {}
+        });
+        Script.stop();
+    )");
+    const int world = ScriptCaller::newWorld();
+    script.engine->setWorldId(world);
+    script.onLine = [world](const QString& line) {
+        if (line == "spinning") {
+            ScriptCaller::retireWorld(world);
+        }
+    };
+    script.engine->runInThread();
+    QTRY_VERIFY2_WITH_TIMEOUT(script.hasLine("spinning"), qPrintable(script.report()), SCRIPT_WAIT_MS);
+    QVERIFY2(!script.isDone(), qPrintable(script.report()));
+    script.engine->interruptRunningCall();
+    QTest::qWaitFor([&script] { return script.isDone(); }, 1500);
+    const bool ended = script.isDone();
+    script.engine->waitTillDoneRunning();  // whatever happened: no thread is left spinning
+    QVERIFY2(ended, qPrintable(script.report()));
+}

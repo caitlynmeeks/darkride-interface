@@ -25,6 +25,8 @@ private slots:
     void testHandlersRunAfterAStopEndedACall();
     void testALeftWorldRunsNoHandlers();
     void testAnEndlessHandlerEndsAtTheDeadline();
+    void testStuckHandlersShareOneDeadline();
+    void testAnInterruptEndsALeftWorldsHandler();
 };
 
 #endif // hifi_ScriptStopTests_h

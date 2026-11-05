@@ -8,6 +8,7 @@
 
 #include "WasmScriptEngine.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include <QtCore/QCoreApplication>
@@ -170,7 +171,8 @@ WasmScriptEngine::WasmScriptEngine(Context context, const QString& scriptContent
         // script of the world on one thread, so a runaway there holds them all: it is interrupted and that entity
         // script alone is stopped (onCallTimeLimit). A client script or an agent runs on its own, and its runaway
         // holds only itself: the call is reported in the log once and goes on, as on QtScript (Caity's choice,
-        // 2026-10-24). stop() interrupts a call as before.
+        // 2026-10-24). stop() interrupts a call as before, up to the script's scriptEnding handlers; interruptRunningCall
+        // interrupts those too.
         if (_isEntitiesEngine) {
             _limits.callTimeout = scriptCallTimeLimit();
         } else {
@@ -773,6 +775,8 @@ void WasmScriptEngine::stopEntityScript(const EntityItemID& entityID, const QStr
 }
 
 void WasmScriptEngine::stop(bool marshal) {
+    quint64 notStoppedYet = 0;
+    _firstStopTime.compare_exchange_strong(notStoppedYet, usecTimestampNow());
     _isStopping = true;
     if (marshal) {
         QMetaObject::invokeMethod(this, "stop");
@@ -790,6 +794,13 @@ void WasmScriptEngine::stop(bool marshal) {
             forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
         }
     }
+}
+
+void WasmScriptEngine::interruptRunningCall() {
+    stop();
+    std::lock_guard<std::mutex> lock(_instancesMutex);
+    _endingDeadlinePassed = true;
+    forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
 }
 
 void WasmScriptEngine::waitTillDoneRunning() {
@@ -815,12 +826,11 @@ void WasmScriptEngine::waitTillDoneRunning() {
             }
             return true;
         };
-        if (!waitServingCalls(MAX_SCRIPT_ENDING_TIME_MS)) {
-            {
-                std::lock_guard<std::mutex> lock(_instancesMutex);
-                _endingDeadlinePassed = true;
-                forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
-            }
+        // counted from the first stop: scripts stopped together, as at a quit, reach the deadline together, so the wait
+        // on one after another adds nothing however many handlers are stuck
+        const int usedMs = int(std::min<quint64>((usecTimestampNow() - _firstStopTime) / USECS_PER_MSEC, MAX_SCRIPT_ENDING_TIME_MS));
+        if (!waitServingCalls(MAX_SCRIPT_ENDING_TIME_MS - usedMs)) {
+            interruptRunningCall();
             if (!waitServingCalls(MAX_SCRIPT_QUITTING_TIME_MS)) {
                 qCWarning(scriptengine) << "WebAssembly script engine did not stop, terminating its thread:" << getFilename();
                 workerThread->terminate();
