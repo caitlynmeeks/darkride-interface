@@ -1,5 +1,5 @@
 import QtQuick 2.7
-import "../../../js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1); a file selector page resolves from hifi/, not +webengine/
+import "qrc:///qml/js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1); a file selector page resolves from hifi/, not +webengine/
 import QtWebEngine   // Qt 6: versionless; this +qt6 twin of the Qt 5 file beside it is what Qt 6 loads (the qt6 file selector)
 
 Item {
