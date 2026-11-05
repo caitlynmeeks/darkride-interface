@@ -71,7 +71,7 @@ int GLWidget::getDeviceHeight() const {
 
 void GLWidget::createContext(QOpenGLContext* shareContext) {
     _context = new gl::Context();
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     makeWindowAnOpenGLSurface();
 #endif
     _context->setWindow(windowHandle());
@@ -101,10 +101,11 @@ void GLWidget::doneCurrent() {
     _context->doneCurrent();
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 void GLWidget::makeWindowAnOpenGLSurface() {
-    // Qt 6 creates a widget's native window as a raster surface, which QOpenGLContext::makeCurrent refuses (Qt 5
-    // created it GL-capable, so this view worked unchanged), and a surface type set after the creation is not enough:
+    // Qt 6 creates a widget's native window as a raster surface on every platform, which QOpenGLContext::makeCurrent
+    // refuses (Qt 5 created it GL-capable, so this view worked unchanged; the first Qt 6 launch on Windows failed the
+    // same way, 11-05), and a surface type set after the creation is not enough:
     // the Cocoa plugin set the view up for raster drawing, and AppKit traps in -[NSOpenGLContext update] on the
     // present thread (run 3, 11-04). So the window's native side is made again as an OpenGL surface, the way the
     // offscreen context's own window is made (gl::OffscreenContext::create); the QWindow object, and so every
@@ -128,7 +129,10 @@ void GLWidget::makeWindowAnOpenGLSurface() {
     // parameters changed) is a view change too: the guard runs the context's update for it. Per QWindow object (this
     // runs once per object: at the context's creation, and for each window Qt replaces), so no unique-connection
     // flag, which Qt refuses for a lambda anyway (run 12's warning).
+#if defined(Q_OS_MACOS)
+    // (macOS only: the context's update on a view change is the NSOpenGLContext's)
     connect(window, &QWindow::screenChanged, this, [](QScreen*) { gl::ViewChangeGuard guard(0); });
+#endif
 }
 
 #endif
