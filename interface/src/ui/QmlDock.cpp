@@ -21,6 +21,8 @@
 #else
 #include <QtQuickWidgets/QQuickWidget>
 #endif
+#include <QtCore/QSet>
+#include <QtGui/QKeyEvent>
 #include <QtWidgets/QAbstractButton>
 
 #include <gl/GLHelpers.h>
@@ -28,6 +30,35 @@
 
 #include "DockTitleBar.h"
 #include "InterfaceLogging.h"
+
+// The keys a panel's page took. The page sees every release as ever; what stops is the send onward, for a key whose press it
+// took, as that press never went on either. Only a fresh press counts: a repeat can belong to a key held before the page had the
+// keyboard, and the controls are waiting for that key's release. Each fresh press sets or clears its key, so a press that went
+// on always has its release go on too. A key stays taken through its repeats' releases (X11 sends them in pairs).
+class PageKeys {
+public:
+    void pressed(const QKeyEvent* event) {
+        if (event->isAutoRepeat()) {
+            return;
+        }
+        if (event->isAccepted()) {
+            _taken.insert(event->key());
+        } else {
+            _taken.remove(event->key());
+        }
+    }
+    bool isTakenRelease(const QKeyEvent* event) {
+        const bool taken = _taken.contains(event->key());
+        if (!event->isAutoRepeat()) {
+            _taken.remove(event->key());
+        }
+        return taken;
+    }
+    void clear() { _taken.clear(); }
+
+private:
+    QSet<int> _taken;
+};
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 // The panel's window on Qt 6. A window's keys don't climb to its container as a widget's do, so a key the page didn't
@@ -39,16 +70,53 @@ public:
 protected:
     void keyPressEvent(QKeyEvent* event) override {
         QQuickView::keyPressEvent(event);
+        _pageKeys.pressed(event);
         if (!event->isAccepted() && QCoreApplication::sendEvent(QCoreApplication::instance(), event)) {
             event->accept();
         }
     }
     void keyReleaseEvent(QKeyEvent* event) override {
         QQuickView::keyReleaseEvent(event);
+        if (_pageKeys.isTakenRelease(event)) {
+            event->accept();
+            return;
+        }
         if (!event->isAccepted() && QCoreApplication::sendEvent(QCoreApplication::instance(), event)) {
             event->accept();
         }
     }
+    void focusOutEvent(QFocusEvent* event) override {
+        QQuickView::focusOutEvent(event);
+        _pageKeys.clear();
+    }
+
+private:
+    PageKeys _pageKeys;
+};
+#else
+// The panel's widget on Qt 5: a key the page didn't take climbs to QmlDock::event by itself.
+class DockQuickWidget : public QQuickWidget {
+public:
+    DockQuickWidget(QQmlEngine* engine, QWidget* parent) : QQuickWidget(engine, parent) {}
+
+protected:
+    void keyPressEvent(QKeyEvent* event) override {
+        QQuickWidget::keyPressEvent(event);
+        _pageKeys.pressed(event);
+    }
+    void keyReleaseEvent(QKeyEvent* event) override {
+        QQuickWidget::keyReleaseEvent(event);
+        if (_pageKeys.isTakenRelease(event)) {
+            event->accept();
+        }
+    }
+    void focusOutEvent(QFocusEvent* event) override {
+        QQuickWidget::focusOutEvent(event);
+        _pageKeys.clear();
+    }
+
+private:
+    PageKeys _pageKeys;
 };
 #endif
 
@@ -106,7 +174,7 @@ void QmlDock::makeContent() {
     _view->setResizeMode(QQuickView::SizeRootObjectToView);
     _view->setColor(Qt::black);   // what shows before the page's first frame, instead of white
 #else
-    _view = new QQuickWidget(engine, this);
+    _view = new DockQuickWidget(engine, this);
     _view->setResizeMode(QQuickWidget::SizeRootObjectToView);
     _view->setMinimumSize(320, 240);
 #endif
