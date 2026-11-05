@@ -132,7 +132,15 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     //   With ignore: App will wait until you accept or dismiss the dialog and log "Normal exit".
     //   Without ignore: App will close immediately, and nothing will log about quitting or exit.
     event->ignore();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // On Qt 6 macOS quit() goes through AppKit's terminate:, and Qt's answer to that closes every window: this handler
+    // calling quit() again is a nested terminate, which AppKit ends with exit() at once, so exec() never returns, the
+    // shutdown never runs and static destructors race the present thread (rendering, 11-05). Ending the event loop
+    // is what quit() was on Qt 5.
+    QCoreApplication::exit(0);
+#else
     qApp->quit();
+#endif
 }
 
 void MainWindow::moveEvent(QMoveEvent* event) {
