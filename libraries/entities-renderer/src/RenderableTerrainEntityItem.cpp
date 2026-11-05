@@ -105,6 +105,8 @@ float levelOfDetail = terrain::LodSettings().detail;
 // TIVOLI_TERRAIN_DEBUG in the environment: the log gets what is drawn each time it changes, and each chunk item's
 // first draw, for a bug hunt (the holes of 2026-10-18).
 const bool terrainDebug = qEnvironmentVariableIsSet("TIVOLI_TERRAIN_DEBUG");
+// the level of detail's own lines (entry 24's measure): one per cut shown, one per drawn-set update with buffers built
+const bool lodDiag = qEnvironmentVariableIsSet("TIVOLI_TERRAIN_LOD_DIAG");
 
 QString describeKey(const terrain::ChunkKey& key) {
     return QString("level %1 at %2 %3 %4").arg(key.level).arg(key.coords.x).arg(key.coords.y).arg(key.coords.z);
@@ -461,7 +463,6 @@ bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWor
     }
     // One line per cut shown, when asked for (TIVOLI_TERRAIN_LOD_DIAG=1): how long after its choice it came, in ms
     // and frames, and what it brings to the GPU (the vertex buffer is de-indexed: a TerrainVertex per index).
-    static const bool lodDiag = qEnvironmentVariableIsSet("TIVOLI_TERRAIN_LOD_DIAG");
     const terrain::LevelOfDetail::CutShown& cut = _levelOfDetail.getCutShown();
     if (lodDiag && cut.serial != _cutShownLogged) {
         _cutShownLogged = cut.serial;
@@ -1344,6 +1345,19 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
     const glm::mat4 worldToTerrain = glm::inverse(model.getMatrix());
     const TerrainLayerSet::Pointer layerSet = _layerSet;
 
+    // the section's own time and the buffers it builds on this thread, for the level of detail's diag line
+    const auto drawnStart = std::chrono::steady_clock::now();
+    int buffersBuilt = 0;
+    double buildMs = 0.0;
+    uint64_t buildBytes = 0;
+    auto buildVertexBuffer = [&](const terrain::ChunkMesh& mesh) {
+        const auto start = std::chrono::steady_clock::now();
+        gpu::BufferPointer buffer = TerrainChunkPayload::makeVertexBuffer(mesh);
+        buildMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        ++buffersBuilt;
+        buildBytes += buffer->getSize();
+        return buffer;
+    };
     std::vector<RenderableTerrainEntityItem::DrawnChunk> drawn;
     entity->getDrawnChunks(drawn);
     std::set<terrain::ChunkKey> drawnKeys;
@@ -1374,7 +1388,7 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         auto found = _chunkItems.find(chunk.key);
         if (found == _chunkItems.end()) {
             auto payload = std::make_shared<TerrainChunkPayload>();
-            payload->setBuffers(TerrainChunkPayload::makeVertexBuffer(*chunk.mesh), TerrainChunkPayload::getVertexCount(*chunk.mesh));
+            payload->setBuffers(buildVertexBuffer(*chunk.mesh), TerrainChunkPayload::getVertexCount(*chunk.mesh));
             payload->setPlacement(placement);
             payload->setChunk(chunk.key);
             payload->setKey(key);
@@ -1405,7 +1419,7 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         found->second.meshVersion = chunk.version;
         ++itemsUpdated;
         // The buffers are built here, on the main thread, and handed over: the update runs later on the render thread.
-        gpu::BufferPointer vertices = meshChanged ? TerrainChunkPayload::makeVertexBuffer(*chunk.mesh) : nullptr;
+        gpu::BufferPointer vertices = meshChanged ? buildVertexBuffer(*chunk.mesh) : nullptr;
         const uint32_t vertexCount = TerrainChunkPayload::getVertexCount(*chunk.mesh);
         if (terrainDebug && meshChanged) {
             qCDebug(entitiesrenderer) << "Terrain" << entity->getID() << "item" << found->second.id << "of" << describeKey(chunk.key)
@@ -1426,6 +1440,14 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         });
     }
     handOverSubItems();
+    if (lodDiag && (buffersBuilt || itemsMade || itemsRemoved || itemsUpdated)) {
+        // what this frame's drawn-set update cost on this thread (entry 24: the buffer build is the main-thread part
+        // of a cut shown; the bytes are what the backend uploads on their first draw)
+        qCDebug(entitiesrenderer) << "Terrain LOD drawn" << drawnVersion << ":" << buffersBuilt << "buffers built in"
+                                  << buildMs << "ms," << (qulonglong)buildBytes << "bytes;" << itemsMade << "made," << itemsUpdated
+                                  << "updated," << itemsRemoved << "removed; section"
+                                  << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drawnStart).count() << "ms";
+    }
     if (terrainDebug && (itemsMade || itemsRemoved || itemsUpdated)) {
         qCDebug(entitiesrenderer) << "Terrain" << entity->getID() << "drawn version" << drawnVersion << ":" << drawn.size() << "meshes to draw,"
                                   << _chunkItems.size() << "items;" << itemsMade << "made," << itemsRemoved << "removed (" << qPrintable(removedKeys.join(", "))
