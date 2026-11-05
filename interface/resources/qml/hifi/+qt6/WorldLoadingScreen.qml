@@ -268,7 +268,7 @@ Item {
                         enabled: root.shown && buttons.opacity > 0.5
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: Window.pressLoadingScreenButton(modelData.name)
+                        onClicked: WindowScriptingInterface.pressLoadingScreenButton(modelData.name)
                     }
                 }
             }
@@ -277,7 +277,7 @@ Item {
 
     // Window.setLoadingScreen() from scripts/system/worldLoading.js: a field left out keeps its last value
     Connections {
-        target: Window
+        target: WindowScriptingInterface
         function onLoadingScreenChanged(state) {
             if (state.world !== undefined) {
                 root.world = state.world || "";

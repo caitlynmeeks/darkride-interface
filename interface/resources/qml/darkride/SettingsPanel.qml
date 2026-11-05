@@ -242,7 +242,7 @@ Page {
                 label: "Choose Folder…"
                 onClicked: {
                     general.choosingFolder = true;
-                    Window.browseDirAsync("Choose a folder for snapshots", general.snapshotsFolder);
+                    WindowScriptingInterface.browseDirAsync("Choose a folder for snapshots", general.snapshotsFolder);
                 }
             }
             ListRow {
@@ -262,7 +262,7 @@ Page {
             }
             // the folder chooser's answer, when this page asked (Snap asks it too)
             Connections {
-                target: Window
+                target: WindowScriptingInterface
                 function onBrowseDirChanged(directory) {
                     if (general.choosingFolder) {
                         general.choosingFolder = false;
@@ -1129,7 +1129,7 @@ Page {
     }
 
     Connections {
-        target: Window
+        target: WindowScriptingInterface
         function onBrowseChanged(filename) {
             if (appearance.awaitingSkin) {
                 appearance.awaitingSkin = false;
@@ -1195,7 +1195,7 @@ Page {
                 label: "Load Skin…"
                 onClicked: {
                     appearance.awaitingSkin = true;
-                    Window.browseAsync("Load a Skin", "", "Skins (*.zip *.json)");
+                    WindowScriptingInterface.browseAsync("Load a Skin", "", "Skins (*.zip *.json)");
                 }
             }
             ListRow {
@@ -1240,7 +1240,7 @@ Page {
                 label: "Load Theme…"
                 onClicked: {
                     appearance.awaitingFile = true;
-                    Window.browseAsync("Load a Theme", "", "Themes (*.json)");
+                    WindowScriptingInterface.browseAsync("Load a Theme", "", "Themes (*.json)");
                 }
             }
         }
