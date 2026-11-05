@@ -22,6 +22,8 @@
 <@else@>
     <$declareEvalSkyboxGlobalColor(supportScattering, _SCRIBE_NULL)$>
 <@endif@>
+<@include ToonLight.slh@>
+<$declareEvalToonGlobalColor(supportScattering)$>
 
 <@if HIFI_USE_SHADOW@>
     <@include Shadow.slh@>
@@ -49,6 +51,12 @@ void main(void) {
 
     if (frag.mode == FRAG_MODE_UNLIT || frag.mode == FRAG_MODE_LIGHTMAPPED) {
         discard;
+    } else if (frag.mode == FRAG_MODE_TOON) {
+        // MToon's default GI equalization: the G-buffer has no room for the material's
+        const float TOON_GI_EQUALIZATION = 0.9;
+        _fragColor = vec4(evalToonGlobalColor(getViewInverse(), shadowAttenuation, frag.obscurance, frag.position.xyz,
+                                              frag.normal, frag.albedo, frag.toonShadeColor, frag.toonShadingShift,
+                                              frag.toonShadingToony, TOON_GI_EQUALIZATION), 1.0);
     } else {
         vec4 midNormalCurvature = vec4(0);
         vec4 lowNormalCurvature = vec4(0);
