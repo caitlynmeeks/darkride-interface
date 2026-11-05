@@ -161,6 +161,11 @@ int main(int argc, const char* argv[]) {
         // 20-line QtWebEngineQuick app with this call worked (11-05 runs 15-23). The share context Qt makes at start
         // is the 3.2 core one main sets as the default format, and initializeGL takes an existing global share
         // context as it did when QtWebEngineWidgets made one.
+#ifndef Q_OS_MACOS
+        // Qt's share context takes the default format of this moment. macOS set it above; elsewhere it was only set in
+        // openWindow(), after the application object, which would leave Qt's context on Qt's own default, not core
+        QSurfaceFormat::setDefaultFormat(getDefaultOpenGLSurfaceFormat());
+#endif
         QtWebEngineQuick::initialize();
 #endif
         Application app(argcExtended, const_cast<char**>(argvExtended.data()), startupTime, runningMarkerExisted);
