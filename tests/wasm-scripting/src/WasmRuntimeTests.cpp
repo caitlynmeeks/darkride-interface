@@ -258,6 +258,28 @@ void WasmRuntimeTests::testCooperativeStop() {
     QVERIFY2(error.contains("stopped"), qPrintable(error));
 }
 
+// A stop taken back: a module that stops by itself can be called again, and one that a trap would stop stays stopped.
+void WasmRuntimeTests::testResumeAfterStop() {
+    auto runtime = makeRuntime();
+    WasmInstance::Limits limits;
+    limits.callTimeout = std::chrono::milliseconds(0);
+    auto cooperative = makeCooperativeInstance(runtime, limits);
+    QVERIFY(cooperative);
+    cooperative->requestStop();
+    cooperative->resumeAfterStop();
+    QVERIFY(!cooperative->isStopRequested());
+
+    auto trapped = makeInstance(runtime, R"((module (func (export "quick"))))", limits);
+    QVERIFY(trapped);
+    trapped->requestStop();
+    trapped->resumeAfterStop();
+    QVERIFY(trapped->isStopRequested());
+    std::vector<WasmValue> results;
+    QString error;
+    QVERIFY(!trapped->call("quick", {}, results, error));
+    QVERIFY2(error.contains("stopped"), qPrintable(error));
+}
+
 // A call that runs past its time limit is told to stop when it next asks; the instance stays usable.
 void WasmRuntimeTests::testCooperativeTimeLimit() {
     auto runtime = makeRuntime();

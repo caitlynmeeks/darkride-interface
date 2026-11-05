@@ -30,6 +30,7 @@
 
 #include <atomic>
 #include <memory>
+#include <functional>
 #include <mutex>
 
 #include <QtCore/QByteArray>
@@ -186,6 +187,8 @@ private:
     bool startMain();
     void stopInstance(const ModuleInstancePointer& instance);
     void stopAll();
+    /// For every module's instance; the caller holds _instancesMutex.
+    void forEachInstance(const std::function<void(WasmInstance&)>& action);
     void loop();
     void onModuleFailure(const ModuleInstancePointer& instance, const QString& entry, const QString& error);
     /// A call into the JavaScript guest ended at the time limit (HostInterface::TimeLimitHandler): the entity script
@@ -220,7 +223,9 @@ private:
     WebSocketFactory* _sockets { nullptr };
     AudioEffectOptionsFactory* _audioEffectOptions { nullptr };
     ResourceStates* _resourceStates { nullptr };
-    std::mutex _instancesMutex;  // guards the set of instances against requestStop from another thread
+    std::mutex _instancesMutex;  // guards the set of instances against requestStop from another thread, and the next two
+    bool _scriptEndingBegun { false };     // stopAll has begun: a stop leaves the handlers to the deadline
+    bool _endingDeadlinePassed { false };  // waitTillDoneRunning's deadline went by: nothing more of the script runs
     ModuleInstancePointer _main;
     QHash<QString, ModuleInstancePointer> _entityModules;              // .wasm entity scripts by URL
     QHash<EntityItemID, std::weak_ptr<ModuleInstance>> _entityHosts;  // which instance runs each entity's script

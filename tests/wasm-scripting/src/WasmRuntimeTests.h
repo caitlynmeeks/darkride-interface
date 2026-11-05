@@ -24,6 +24,7 @@ private slots:
     void testInfiniteLoopIsInterrupted();
     void testRequestStop();
     void testCooperativeStop();
+    void testResumeAfterStop();
     void testCooperativeTimeLimit();
     void testCallWarningGoesOn();
     void testTimeLimitCountsModuleTimeOnly();

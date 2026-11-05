@@ -158,6 +158,9 @@ public:
     void requestStop();
     /// Whether requestStop() was called.
     bool isStopRequested() const;
+    /// Takes requestStop() back once the call it ended is over, so the module can be called again. Only a module that
+    /// stops by itself (cooperative interruption) comes out of that call whole: one stopped by a trap stays stopped.
+    void resumeAfterStop();
     /// Whether the running call should stop now: a stop was requested, or the call has run past its time limit.
     /// A module compiled for cooperative interruption asks this often (the host interface's "interrupted" import);
     /// it is also where such a module's profile is sampled.

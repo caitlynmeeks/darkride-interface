@@ -651,6 +651,12 @@ bool WasmInstance::isStopRequested() const {
     return _impl->stopRequested.load();
 }
 
+void WasmInstance::resumeAfterStop() {
+    if (_module->interruption() == WasmRuntime::Interruption::Cooperative) {
+        _impl->stopRequested = false;
+    }
+}
+
 bool WasmInstance::interruptRequested() {
     if (_impl->profiler) {
         _impl->sample(_module->runtime()->settings().epochTick);
