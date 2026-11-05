@@ -55,6 +55,11 @@ protected:
     ContextAwareProfile(QQmlContext* parent);
     ~ContextAwareProfile();
 
+#if !defined(Q_OS_ANDROID)
+    // Puts the profile on its storage: on disk, under that name
+    void useStorage(const QString& storageName);
+#endif
+
 private:
     typedef QSet<ContextAwareProfile*> ContextAwareProfileSet;
     typedef QHash<QQmlContext*, ContextAwareProfileSet> ContextMap;

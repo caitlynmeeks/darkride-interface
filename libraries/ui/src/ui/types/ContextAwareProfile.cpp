@@ -18,6 +18,7 @@
 #include <QtQml/QQmlContext>
 
 #include <shared/QtHelpers.h>
+#include <PathUtils.h>
 #include <SharedUtil.h>
 
 static const QString RESTRICTED_FLAG_PROPERTY = "RestrictFileAccess";
@@ -57,6 +58,21 @@ ContextAwareProfile::~ContextAwareProfile() {
         }
     }
 }
+
+#if !defined(Q_OS_ANDROID)
+void ContextAwareProfile::useStorage(const QString& storageName) {
+    setStorageName(storageName);
+    setOffTheRecord(false);
+
+    // A walled-off client (TIVOLI_APP_DATA_DIR) keeps its web storage in its own folder, away from the user's. Its
+    // cache too: Qt puts that in the system's cache folder otherwise. As RadioSkinPicker::walledStoragePath does.
+    if (!qEnvironmentVariableIsEmpty("TIVOLI_APP_DATA_DIR")) {
+        const QString folder = PathUtils::getAppDataPath() + "QtWebEngine/" + storageName;
+        setPersistentStoragePath(folder);
+        setCachePath(folder);
+    }
+}
+#endif
 
 void ContextAwareProfile::restrictContext(QQmlContext* context, bool restrict) {
 
