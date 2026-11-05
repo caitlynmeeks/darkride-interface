@@ -21,6 +21,7 @@ private slots:
     void testAHoverLeavesTheMoveToTheApp();
     void testADragOnTheViewLeavesTheMoveToTheApp();
     void testAnItemHoldingTheMouseKeepsTheMove();
+    void testTheNextClickEndsAHoldWhoseReleaseWentMissing();
 };
 
 #endif // hifi_OffscreenSurfaceTests_h

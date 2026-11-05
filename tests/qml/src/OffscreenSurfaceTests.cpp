@@ -30,6 +30,8 @@ class ViewSurface : public hifi::qml::OffscreenSurface {
 public:
     ViewSurface() { getWindow()->contentItem()->setSize(SURFACE_SIZE); }
 
+    void putTheCursorAt(const QPointF& position) { _position = position; }
+
     // true: the move stopped in the QML, and neither the view nor the app got it
     bool moveOverTheView(Qt::MouseButtons held) {
         _position += QPointF(3.0, 2.0);
@@ -98,15 +100,17 @@ void OffscreenSurfaceTests::testAHoverLeavesTheMoveToTheApp() {
     QCOMPARE(area.hovers, 2);
 }
 
-// Mouse look: the right button is held on the 3D view, and nothing in the QML took the press.
+// Mouse look holds the right button on the 3D view and Alt orbit the left, and nothing in the QML took the press.
 void OffscreenSurfaceTests::testADragOnTheViewLeavesTheMoveToTheApp() {
-    ViewSurface surface;
-    HoverArea area(surface.getWindow());
-    QVERIFY(!surface.sendToTheQml(QEvent::MouseButtonPress, Qt::RightButton, Qt::RightButton));
-    QVERIFY(!surface.moveOverTheView(Qt::RightButton));
-    QVERIFY(!surface.moveOverTheView(Qt::RightButton));
-    QVERIFY(!surface.sendToTheQml(QEvent::MouseButtonRelease, Qt::RightButton, Qt::NoButton));
-    QCOMPARE(area.hovers, 2);
+    for (Qt::MouseButton button : { Qt::RightButton, Qt::LeftButton }) {
+        ViewSurface surface;
+        HoverArea area(surface.getWindow());
+        QVERIFY(!surface.sendToTheQml(QEvent::MouseButtonPress, button, button));
+        QVERIFY(!surface.moveOverTheView(button));
+        QVERIFY(!surface.moveOverTheView(button));
+        QVERIFY(!surface.sendToTheQml(QEvent::MouseButtonRelease, button, Qt::NoButton));
+        QCOMPARE(area.hovers, 2);
+    }
 }
 
 // A drag begun on a panel stays the panel's until the button is released; then moves are the app's again.
@@ -119,6 +123,20 @@ void OffscreenSurfaceTests::testAnItemHoldingTheMouseKeepsTheMove() {
     QVERIFY(surface.sendToTheQml(QEvent::MouseButtonRelease, Qt::LeftButton, Qt::NoButton));
     QVERIFY(!surface.moveOverTheView(Qt::NoButton));
     QCOMPARE(area.moves, 1);
+}
+
+// A release can go missing, the press's item then holding the mouse with no button down. The next click's release ends
+// that, wherever it lands: Qt Quick lets no hold outlast a release of the last button.
+void OffscreenSurfaceTests::testTheNextClickEndsAHoldWhoseReleaseWentMissing() {
+    ViewSurface surface;
+    DragArea panel(surface.getWindow());
+    panel.setSize(QSizeF(100.0, 100.0));
+    QVERIFY(surface.sendToTheQml(QEvent::MouseButtonPress, Qt::LeftButton, Qt::LeftButton));
+    QVERIFY(surface.moveOverTheView(Qt::NoButton));
+    surface.putTheCursorAt(QPointF(150.0, 150.0));   // on the view, away from the panel
+    surface.sendToTheQml(QEvent::MouseButtonPress, Qt::RightButton, Qt::RightButton);
+    surface.sendToTheQml(QEvent::MouseButtonRelease, Qt::RightButton, Qt::NoButton);
+    QVERIFY(!surface.moveOverTheView(Qt::NoButton));
 }
 
 // Qt's platform without a screen: a test on the shared Mac opens nothing and takes no focus.
