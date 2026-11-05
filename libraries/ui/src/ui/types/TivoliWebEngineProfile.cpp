@@ -13,20 +13,36 @@
 
 #include <set>
 #include <mutex>
+#include <QtCore/QCoreApplication>
+#include <QtCore/QThread>
 #include <QtQml/QQmlContext>
+#include <QtQml/QQmlEngine>
 
 #include "RequestFilters.h"
 
 #if !defined(Q_OS_ANDROID)
 
+#if SHARED_WEB_PROFILES
 static const QString QML_WEB_ENGINE_STORAGE_NAME = "qmlWebEngine";
+static const QString QML_WEB_ENGINE_RESTRICTED_STORAGE_NAME = "qmlWebEngineRestricted";
+#else
+static const QString QML_WEB_ENGINE_STORAGE_NAME = "qmlWebEngine";
+#endif
 
 static std::set<TivoliWebEngineProfile*> TivoliWebEngineProfile_instances;
 static std::mutex TivoliWebEngineProfile_mutex;
 
+#if SHARED_WEB_PROFILES
+TivoliWebEngineProfile::TivoliWebEngineProfile(const QString& storageName, bool restricted) : Parent(restricted)
+#else
 TivoliWebEngineProfile::TivoliWebEngineProfile(QQmlContext* parent) : Parent(parent)
+#endif
 {
+#if SHARED_WEB_PROFILES
+    useStorage(storageName);
+#else
     useStorage(QML_WEB_ENGINE_STORAGE_NAME);
+#endif
     RequestFilters::disableServiceWorkers(this);
 
     // we use the HFWebEngineRequestInterceptor to make sure that web requests are authenticated for the interface user
@@ -46,7 +62,19 @@ void TivoliWebEngineProfile::RequestInterceptor::interceptRequest(QWebEngineUrlR
 }
 
 void TivoliWebEngineProfile::registerWithContext(QQmlContext* context) {
+#if SHARED_WEB_PROFILES
+    Q_ASSERT(QThread::currentThread() == qApp->thread());   // one object per folder: never two made at once
+    static TivoliWebEngineProfile* shared[2] { nullptr, nullptr };   // by the file-access flag
+    const bool restricted = isContextRestricted(context);
+    TivoliWebEngineProfile*& profile = shared[restricted];
+    if (!profile) {
+        profile = new TivoliWebEngineProfile(restricted ? QML_WEB_ENGINE_RESTRICTED_STORAGE_NAME : QML_WEB_ENGINE_STORAGE_NAME, restricted);
+        QQmlEngine::setObjectOwnership(profile, QQmlEngine::CppOwnership);
+    }
+    context->setContextProperty("TivoliWebEngineProfile", profile);
+#else
     context->setContextProperty("TivoliWebEngineProfile", new TivoliWebEngineProfile(context));
+#endif
 }
 
 void TivoliWebEngineProfile::clearCache() {

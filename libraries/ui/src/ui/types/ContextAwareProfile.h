@@ -36,6 +36,11 @@ using RequestInterceptorParent = QObject;
 
 class QQmlContext;
 
+// Qt 6's Chromium can't run two browser contexts on one data folder: their Local and Session Storage fight over LevelDB's
+// locks for the whole session, and at quit the thread pool never drains. So on Qt 6 a class has one object per setting,
+// each on a folder of its own, shared by every QML context with that setting; Qt 5 makes one object per QML context.
+#define SHARED_WEB_PROFILES (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+
 class ContextAwareProfile : public ContextAwareProfileParent {
     Q_OBJECT
 public:
@@ -52,7 +57,16 @@ protected:
         ContextAwareProfile* _profile;
     };
 
+#if SHARED_WEB_PROFILES
+    // No parent, never deleted: views in any context use the object, and a parent context's death re-ran their profile
+    // bindings into dying views. WebEngineContext::destroy deletes what's left at quit. The flag never changes.
+    explicit ContextAwareProfile(bool restricted);
+
+    // The file-access flag set on a context or on one of its parents
+    static bool isContextRestricted(QQmlContext* context);
+#else
     ContextAwareProfile(QQmlContext* parent);
+#endif
     ~ContextAwareProfile();
 
 #if !defined(Q_OS_ANDROID)
@@ -61,14 +75,17 @@ protected:
 #endif
 
 private:
+    std::atomic<bool> _isRestricted{ false };
+
+#if !SHARED_WEB_PROFILES
     typedef QSet<ContextAwareProfile*> ContextAwareProfileSet;
     typedef QHash<QQmlContext*, ContextAwareProfileSet> ContextMap;
 
     QQmlContext* _context{ nullptr };
-    std::atomic<bool> _isRestricted{ false };
 
     static QReadWriteLock _contextMapProtect;
     static ContextMap _contextMap;
+#endif
 };
 
 #endif // hifi_FileTypeProfile_h

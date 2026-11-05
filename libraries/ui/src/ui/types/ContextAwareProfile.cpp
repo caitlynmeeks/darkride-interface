@@ -21,8 +21,25 @@
 #include <PathUtils.h>
 #include <SharedUtil.h>
 
+#if SHARED_WEB_PROFILES && !defined(Q_OS_ANDROID)
+#include "FileTypeProfile.h"
+#include "TivoliWebEngineProfile.h"
+#endif
+
 static const QString RESTRICTED_FLAG_PROPERTY = "RestrictFileAccess";
 
+#if SHARED_WEB_PROFILES
+ContextAwareProfile::ContextAwareProfile(bool restricted) : _isRestricted(restricted) {
+}
+
+ContextAwareProfile::~ContextAwareProfile() {
+}
+
+bool ContextAwareProfile::isContextRestricted(QQmlContext* context) {
+    // no flag means unrestricted: see the Qt 5 isRestrictedGetProperty below
+    return context->contextProperty(RESTRICTED_FLAG_PROPERTY).toBool();
+}
+#else
 QReadWriteLock ContextAwareProfile::_contextMapProtect;
 ContextAwareProfile::ContextMap ContextAwareProfile::_contextMap;
 
@@ -58,6 +75,7 @@ ContextAwareProfile::~ContextAwareProfile() {
         }
     }
 }
+#endif
 
 #if !defined(Q_OS_ANDROID)
 void ContextAwareProfile::useStorage(const QString& storageName) {
@@ -82,6 +100,15 @@ void ContextAwareProfile::restrictContext(QQmlContext* context, bool restrict) {
     // set the QML property
     context->setContextProperty(RESTRICTED_FLAG_PROPERTY, restrict);
 
+#if SHARED_WEB_PROFILES
+    // The context takes the objects for this setting. Before anything in it has bound them, always: setContextProperty
+    // re-runs every view's profile: binding, and a live view rebuilds its page on a new profile. The desktop surface, the
+    // one context that had objects already, is restricted as its root context is made (Application::initializeUi).
+#if !defined(Q_OS_ANDROID)
+    FileTypeProfile::registerWithContext(context);
+    TivoliWebEngineProfile::registerWithContext(context);
+#endif
+#else
     // broadcast the new value to any registered ContextAwareProfile objects
     QReadLocker guard(&_contextMapProtect);
     ContextMap::const_iterator setLookup = _contextMap.find(context);
@@ -92,9 +119,13 @@ void ContextAwareProfile::restrictContext(QQmlContext* context, bool restrict) {
             (*profileIterator)->_isRestricted.store(restrict);
         }
     }
+#endif
 }
 
 bool ContextAwareProfile::isRestrictedGetProperty() {
+#if SHARED_WEB_PROFILES
+    return _isRestricted.load();
+#else
     if (QThread::currentThread() != thread()) {
         bool restrictedResult = false;
         BLOCKING_INVOKE_METHOD(this, "isRestrictedGetProperty", Q_RETURN_ARG(bool, restrictedResult));
@@ -112,6 +143,7 @@ bool ContextAwareProfile::isRestrictedGetProperty() {
 
     // Tivoli: local files are necessary
     return false; 
+#endif
 }
 
 bool ContextAwareProfile::isRestricted() {
