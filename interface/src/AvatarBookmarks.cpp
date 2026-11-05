@@ -243,7 +243,7 @@ void AvatarBookmarks::loadBookmark(const QString& bookmarkName) {
 
 void AvatarBookmarks::readFromFile() {
     // migrate old avatarbookmarks.json, used to be in 'local' folder on windows
-    QString oldConfigPath = QStandardPaths::writableLocation(QStandardPaths::DataLocation) + "/" + AVATARBOOKMARKS_FILENAME;
+    QString oldConfigPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/" + AVATARBOOKMARKS_FILENAME;
     QFile oldConfig(oldConfigPath);
 
     // I imagine that in a year from now, this code for migrating (as well as the two lines above)
