@@ -115,7 +115,7 @@ Item {
                     sourceSize.width: 36 * micBar.scale
                     sourceSize.height: 36 * micBar.scale
                     source: micBar.mode === "muted" || micBar.mode === "waiting"
-                        ? "../../../../icons/bar/audio-muted.svg" : "../../../../icons/bar/audio.svg"
+                        ? "qrc:///icons/bar/audio-muted.svg" : "qrc:///icons/bar/audio.svg"
                 }
                 ColorOverlay {
                     anchors.fill: parent
