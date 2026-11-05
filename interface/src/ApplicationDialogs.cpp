@@ -217,7 +217,11 @@ bool Application::askToLoadScript(const QString& scriptFilenameOrURL) {
 bool Application::askToWearAvatarAttachmentUrl(const QString& url) {
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
     QNetworkRequest networkRequest = QNetworkRequest(url);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // what FollowRedirectsAttribute meant
+#else
     networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+#endif
     networkRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
     QNetworkReply* reply = networkAccessManager.get(networkRequest);
     int requestNumber = ++_avatarAttachmentRequest;
