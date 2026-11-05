@@ -62,7 +62,6 @@ ContextAwareProfile::~ContextAwareProfile() {
 #if !defined(Q_OS_ANDROID)
 void ContextAwareProfile::useStorage(const QString& storageName) {
     setStorageName(storageName);
-    setOffTheRecord(false);
 
     // A walled-off client (TIVOLI_APP_DATA_DIR) keeps its web storage in its own folder, away from the user's. Its
     // cache too: Qt puts that in the system's cache folder otherwise. As RadioSkinPicker::walledStoragePath does.
@@ -71,6 +70,10 @@ void ContextAwareProfile::useStorage(const QString& storageName) {
         setPersistentStoragePath(folder);
         setCachePath(folder);
     }
+
+    // Last: going on the record opens the preferences file at the data path of that moment (ProfileAdapter::
+    // setOffTheRecord, setupPrefService), so a walled client's path has to be in place first.
+    setOffTheRecord(false);
 }
 #endif
 
