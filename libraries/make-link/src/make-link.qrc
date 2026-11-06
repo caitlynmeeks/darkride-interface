@@ -1,0 +1,6 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/make-link">
+        <file alias="TOOLS.json">../resources/TOOLS.json</file>
+    </qresource>
+</RCC>

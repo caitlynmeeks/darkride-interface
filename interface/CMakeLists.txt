@@ -215,6 +215,16 @@ if (BUILD_TOOLS AND NPM_EXECUTABLE)
 endif()
 
 add_dependencies(${TARGET_NAME} resources)
+
+# Make's helper for the builder's Claude Code (tools/darkride-mcp), beside the program: Contents/MacOS/darkride-mcp in
+# the signed app, the one place Make's MCP line names (security A5)
+if (NOT ANDROID)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/tools/darkride-mcp" "${CMAKE_BINARY_DIR}/tools/darkride-mcp")
+  add_dependencies(${TARGET_NAME} darkride-mcp)
+  add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:darkride-mcp>" "$<TARGET_FILE_DIR:${TARGET_NAME}>/")
+endif ()
+
 # the resource bundle reaches the app only through the POST_BUILD copy below, which runs when the target relinks: relink
 # when the bundle changes, so a QML-only change reaches the app in an incremental build too (editor-ui, 11-04)
 set_property(TARGET ${TARGET_NAME} APPEND PROPERTY LINK_DEPENDS ${RESOURCES_RCC})
