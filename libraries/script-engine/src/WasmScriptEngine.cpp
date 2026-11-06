@@ -287,6 +287,21 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
     }
 }
 
+void WasmScriptEngine::registerAppObject(const QString& name, QObject* object) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, name, object] { registerAppObject(name, object); });
+        return;
+    }
+    if (!object) {
+        return;
+    }
+    // before the instance is made: the member gate (makeInstance) reads the list once, as it is made
+    _appClasses.insert(object->metaObject());
+    if (_objects->global(name) == ObjectTable::NULL_HANDLE) {
+        _objects->registerGlobal(name, object);
+    }
+}
+
 void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& value) {
     if (QThread::currentThread() != thread()) {
         QMetaObject::invokeMethod(this, [this, name, value] { registerGlobalValue(name, value); });
@@ -474,6 +489,28 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
         gate.allowsAfterWorldLeft = &ScriptApiPolicy::allowsAfterWorldLeft;
+        if (!_appClasses.isEmpty()) {
+            // the app's own objects for this engine (registerAppObject): exactly their classes, all members
+            const QSet<const QMetaObject*> own = _appClasses;
+            gate.allowsClass = [own](const QMetaObject* meta) {
+                return own.contains(meta) || ScriptApiPolicy::allowsClass(meta);
+            };
+            gate.deniesMethod = [own](const QMetaObject* meta, const QByteArray& name) {
+                return !own.contains(meta) && ScriptApiPolicy::deniesMethod(meta, name);
+            };
+            gate.deniesPropertyWrite = [own](const QMetaObject* meta, const QByteArray& name) {
+                return !own.contains(meta) && ScriptApiPolicy::deniesPropertyWrite(meta, name);
+            };
+            gate.deniesPropertyRead = [own](const QMetaObject* meta, const QByteArray& name) {
+                return !own.contains(meta) && ScriptApiPolicy::deniesPropertyRead(meta, name);
+            };
+            gate.deniesSignal = [own](const QMetaObject* meta, const QByteArray& name) {
+                return !own.contains(meta) && ScriptApiPolicy::deniesSignal(meta, name);
+            };
+            gate.checksDelivery = [own](const QMetaObject* meta, const QByteArray& name) {
+                return !own.contains(meta) && ScriptApiPolicy::checksDelivery(meta, name);
+            };
+        }
         instance->host->setMemberGate(std::move(gate));
     }
     instance->host->setLogger([this](int level, const QString& text) {

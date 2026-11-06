@@ -221,6 +221,11 @@ public:
     /// registers a global object by name (the host's, not a script's: a script could replace a global every script
     /// of a shared engine relies on; the thread hop inside needs no meta-method)
     virtual void registerGlobalObject(const QString& name, QObject* object) = 0;
+    /// One of the app's own objects for this engine alone, before it runs: in an engine under a world's rules it is
+    /// not held to the script API policy (ScriptApiPolicy), and its own class's members are all reachable, so the app
+    /// can talk to a script of its own that runs under those rules (Make's building tools). Only the app's code can
+    /// call this, never a script.
+    virtual void registerAppObject(const QString& name, QObject* object) { registerGlobalObject(name, object); }
     /// The application says so where it registers the Test API (a --testScript run): Script.dumpApi may then write
     /// to any path. Not a script's to call.
     void setTestApiRegistered() { _testApiOn = true; }
