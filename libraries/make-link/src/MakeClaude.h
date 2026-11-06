@@ -47,6 +47,9 @@ public:
 
     /// The builder's installed Claude Code: the usual places it installs to. Empty when there is none.
     static QString findClaude();
+    /// `text` with anything shaped like an Anthropic key (sk-ant-...) hidden, before it's shown or logged (security
+    /// should-fix 5): an error from Claude Code could print the key it was started with.
+    static QString redact(const QString& text);
     /// The arguments it is started with (for the dock to show and the tests to check): never the key.
     static QStringList arguments(const Settings& settings);
 

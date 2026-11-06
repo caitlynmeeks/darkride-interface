@@ -66,9 +66,16 @@ public:
     /// fetches, or a script that talks to the web), for the person to allow first; empty when it reaches no one new.
     static QStringList webAddresses(const QString& name, const QJsonObject& inputs);
 
-    /// The result with the world's own text (the tool's world_content fields: names, text, userData, scripts, prints)
-    /// cut to a short length; `labelled` is true when it holds any, so the text sent with it says whose it is.
-    QJsonObject keepWorldContentShort(const QString& name, const QJsonObject& result, bool& labelled) const;
+    /// A world tool's result (a tool with world_content: scene, get, log, edit, watch) with every string in it cut
+    /// (security C8): the world_content fields to their own lengths (a name, a line, a script), every other string
+    /// (materialData, textures, a URL ...) to 2,000 characters. `labelled` is true for every world tool's result, so
+    /// the text sent with it says whose it is. When the whole result is still over 200 KB, every string is cut to
+    /// 2,000 and, if that isn't enough, `tooBig` says so and the result is empty: the call gets an error, not the text.
+    /// Any other tool's result (the app's own words: the guide, the API, an id) comes back as it is.
+    QJsonObject keepWorldContentShort(const QString& name, const QJsonObject& result, bool& labelled,
+                                      QString& tooBig) const;
+    /// The most a world tool's result may be, as compact JSON (security C8).
+    static const int MAX_WORLD_RESULT_BYTES;
     /// The line that goes before a result holding the world's own text.
     static QString worldContentLabel();
 

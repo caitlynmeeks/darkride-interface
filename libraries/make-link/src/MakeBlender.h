@@ -62,6 +62,12 @@ public:
     static const qint64 MAX_GLB_BYTES;
     static const int TIME_LIMIT_MS;
     static const qint64 MEMORY_LIMIT_BYTES;
+    /// Blender's threads (its --threads): a make's CPU time can then be capped close to its time limit.
+    static const int THREADS;
+    /// The kernel's cap on Blender's CPU time, in seconds (RLIMIT_CPU, set in the child before exec): it holds when the
+    /// app is gone (crashed or force-quit mid-make) and its own timers can't stop Blender. THREADS x the time limit,
+    /// and a little more, so a make the app would let finish never meets it.
+    static const int CPU_LIMIT_S;
     /// The oldest Blender the fixed scripts are written for.
     static const int MINIMUM_MAJOR;
     static const int MINIMUM_MINOR;
@@ -79,6 +85,11 @@ public:
     void setBlender(const QString& app) { _blender = app; }
     /// A make's time limit (TIME_LIMIT_MS unless set, for tests).
     void setTimeLimit(int milliseconds) { _timeLimitMs = milliseconds; }
+    /// The kernel's CPU cap (CPU_LIMIT_S unless set, for tests).
+    void setCpuLimit(int seconds) { _cpuLimitS = seconds; }
+    /// The running make's process id, and its watcher's (0 when none), for tests.
+    qint64 processId() const { return _process ? _process->processId() : 0; }
+    qint64 watcherId() const { return _watcher ? _watcher->processId() : 0; }
     QString blender() const { return _blender; }
     bool isBusy() const { return _process != nullptr; }
 
@@ -106,17 +117,21 @@ private:
     void checkMemory();
     void finish(Made made);
     void kill();
+    bool startWatcher(qint64 pid);
+    void endWatcher();
 
     QString _folder;
     QString _blender;
     QString _job;
     QPointer<QProcess> _process;
+    QPointer<QProcess> _watcher;
     QTimer* _limit { nullptr };
     QTimer* _memory { nullptr };
     qint64 _started { 0 };
     QString _stopReason;
     QString _stopCode;
     int _timeLimitMs { TIME_LIMIT_MS };
+    int _cpuLimitS { CPU_LIMIT_S };
     QByteArray _log;
     std::function<void(const Made&)> _done;
     QStringList _models;

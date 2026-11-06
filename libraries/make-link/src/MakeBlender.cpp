@@ -34,6 +34,7 @@
 #include <libproc.h>
 #include <signal.h>
 #include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 Q_DECLARE_LOGGING_CATEGORY(makelink)
@@ -42,12 +43,16 @@ const qint64 MakeBlender::MAX_GLB_BYTES = 64 * 1024 * 1024;
 // under two minutes in all with the views: a longer tool call moves to Claude Code's background
 const int MakeBlender::TIME_LIMIT_MS = 100 * 1000;
 const qint64 MakeBlender::MEMORY_LIMIT_BYTES = 4LL * 1024 * 1024 * 1024;
+const int MakeBlender::THREADS = 4;
+const int MakeBlender::CPU_LIMIT_S = (MakeBlender::TIME_LIMIT_MS / 1000) * MakeBlender::THREADS + 20;
 const int MakeBlender::MINIMUM_MAJOR = 5;
 const int MakeBlender::MINIMUM_MINOR = 2;
 
 namespace {
 
 const int MEMORY_CHECK_MS = 250;
+// between the CPU cap's warning (SIGXCPU, which Blender's script could ignore) and the kernel's kill (SIGKILL)
+const int CPU_LIMIT_GRACE_S = 5;
 const int MAX_LOG_BYTES = 256 * 1024;
 const int MAX_REPORT_BYTES = 1024 * 1024;
 const int MAX_VIEW_BYTES = 16 * 1024 * 1024;
@@ -123,6 +128,53 @@ QString logForClaude(const QByteArray& log, const QString& job) {
     }
     return kept.join('\n');
 }
+
+
+// Blender's process, its CPU time capped by the kernel before it starts (security should-fix 4): the cap is set in the
+// child between fork and exec, so it holds for Blender whatever happens to the app. Only async-signal-safe calls here.
+// The script inside can lower the cap, never raise it (the hard limit needs root).
+void capCpuInChild(int seconds) {
+#ifdef Q_OS_MAC
+    struct rlimit now;
+    if (getrlimit(RLIMIT_CPU, &now) != 0) {
+        _exit(126);
+    }
+    rlim_t hard = static_cast<rlim_t>(seconds + CPU_LIMIT_GRACE_S);
+    if (now.rlim_max != RLIM_INFINITY && now.rlim_max < hard) {
+        hard = now.rlim_max;
+    }
+    rlim_t soft = static_cast<rlim_t>(seconds);
+    if (soft > hard) {
+        soft = hard;
+    }
+    const struct rlimit capped { soft, hard };
+    if (setrlimit(RLIMIT_CPU, &capped) != 0) {
+        _exit(126);  // never start Blender without its cap
+    }
+#else
+    Q_UNUSED(seconds);
+#endif
+}
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+class CappedProcess : public QProcess {
+public:
+    CappedProcess(int cpuSeconds, QObject* parent) : QProcess(parent) {
+        setChildProcessModifier([cpuSeconds] { capCpuInChild(cpuSeconds); });
+    }
+};
+#else
+class CappedProcess : public QProcess {
+public:
+    CappedProcess(int cpuSeconds, QObject* parent) : QProcess(parent), _cpuSeconds(cpuSeconds) {}
+
+protected:
+    void setupChildProcess() override { capCpuInChild(_cpuSeconds); }
+
+private:
+    const int _cpuSeconds;
+};
+#endif
 
 }  // namespace
 
@@ -266,7 +318,7 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     environment.insert("PYTHONDONTWRITEBYTECODE", "1");
     environment.insert("PYTHONNOUSERSITE", "1");
 
-    _process = new QProcess(this);
+    _process = new CappedProcess(_cpuLimitS, this);
     _process->setProcessEnvironment(environment);
     _process->setWorkingDirectory(realWork);
     _process->setProcessChannelMode(QProcess::MergedChannels);
@@ -304,7 +356,8 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         "-D", "FIXED=" + realFixed,
         "-D", "WORK=" + realWork,
         _blender + "/Contents/MacOS/Blender",
-        "--background", "--factory-startup", "--disable-autoexec", "-noaudio", "--python-exit-code", "3",
+        "--background", "--factory-startup", "--disable-autoexec", "-noaudio", "--threads", QString::number(THREADS),
+        "--python-exit-code", "3",
         "--python", realFixed + "/prelude.py",
         "--python", realWork + "/job.py",
         "--python", realFixed + "/finish.py",
@@ -312,9 +365,50 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     };
     _started = QDateTime::currentMSecsSinceEpoch();
     _process->start("/usr/bin/sandbox-exec", arguments);
+    const qint64 pid = _process->processId();
+    if (pid > 0 && !startWatcher(pid)) {
+        _stopCode = MakeError::NOT_AVAILABLE_HERE;
+        _stopReason = "Make couldn't start the watcher that ends Blender if Darkride closes, so Blender was stopped";
+        kill();
+    }
     _limit->start(_timeLimitMs);
     _memory->start(MEMORY_CHECK_MS);
     qCInfo(makelink) << "Blender started for a make";
+}
+
+// A watcher outside the box (security should-fix 4): it waits on a pipe from the app. When the app is gone (crashed,
+// force-quit, killed), the pipe closes, its read ends with nothing, and it kills Blender if that process is still
+// Blender (or still the sandbox-exec about to become it). When a make ends the app writes "end" first and it just exits.
+// The CPU cap alone isn't enough on macOS: the kernel only sends SIGXCPU there, never SIGKILL at the hard limit, and a
+// script can ignore SIGXCPU. Blender can't reach the watcher: the box lets it signal only itself.
+bool MakeBlender::startWatcher(qint64 pid) {
+    static const QString WATCH =
+        "if read -r line; then exit 0; fi; "
+        "case \"$(/bin/ps -p \"$1\" -o comm= 2>/dev/null)\" in "
+        "*/Contents/MacOS/Blender|/usr/bin/sandbox-exec) /bin/kill -KILL \"$1\" 2>/dev/null;; esac";
+    QProcessEnvironment environment;
+    environment.insert("PATH", "/usr/bin:/bin");
+    _watcher = new QProcess(this);
+    _watcher->setProcessEnvironment(environment);
+    _watcher->setStandardOutputFile(QProcess::nullDevice());
+    _watcher->setStandardErrorFile(QProcess::nullDevice());
+    _watcher->start("/bin/sh", { "-c", WATCH, "darkride-make-watch", QString::number(pid) });
+    return _watcher->waitForStarted(2000);
+}
+
+void MakeBlender::endWatcher() {
+    QProcess* watcher = _watcher;
+    _watcher = nullptr;
+    if (!watcher) {
+        return;
+    }
+    if (watcher->state() == QProcess::NotRunning) {
+        watcher->deleteLater();
+        return;
+    }
+    connect(watcher, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), watcher, &QObject::deleteLater);
+    watcher->write("end\n");
+    watcher->closeWriteChannel();
 }
 
 void MakeBlender::checkMemory() {
@@ -357,6 +451,7 @@ void MakeBlender::finished(int exitCode, bool crashed) {
     _log.append(_process->readAll());
     _process->deleteLater();
     _process = nullptr;
+    endWatcher();
     for (QTimer* timer : { _limit, _memory }) {
         if (timer) {
             timer->stop();

@@ -28,6 +28,8 @@ private slots:
     void testScriptErrorComesBack();
     void testTheBoxHolds();
     void testRunawayIsStopped();
+    void testCpuCapInTheBox();
+    void testBlenderEndsWithTheApp();
     void testOneMakeAtATime();
     void testTextureNamesChecked();
 };

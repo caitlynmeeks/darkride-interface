@@ -17,6 +17,7 @@
 
 #include <sys/stat.h>
 
+#include <MakeClaude.h>
 #include <MakeLinkServer.h>
 #include <MakeToolList.h>
 
@@ -208,7 +209,8 @@ void MakeLinkTests::testWebAddressesAskFirst() {
 void MakeLinkTests::testWorldContentKeptShortAndLabelled() {
     MakeToolList tools;
     bool labelled = true;
-    const QJsonObject plain = tools.keepWorldContentShort("add", QJsonObject { { "id", "a" } }, labelled);
+    QString tooBig;
+    const QJsonObject plain = tools.keepWorldContentShort("add", QJsonObject { { "id", "a" } }, labelled, tooBig);
     QVERIFY(!labelled);
     QCOMPARE(plain.value("id").toString(), QString("a"));
 
@@ -216,7 +218,7 @@ void MakeLinkTests::testWorldContentKeptShortAndLabelled() {
     const QJsonObject scene = tools.keepWorldContentShort(
         "scene", QJsonObject { { "things", QJsonArray { QJsonObject { { "id", "a" }, { "name", longName } },
                                                         QJsonObject { { "id", "b" }, { "name", "door" } } } } },
-        labelled);
+        labelled, tooBig);
     QVERIFY(labelled);
     const QJsonArray things = scene.value("things").toArray();
     QVERIFY(things[0].toObject().value("name").toString().size() < 200);
@@ -224,16 +226,64 @@ void MakeLinkTests::testWorldContentKeptShortAndLabelled() {
     QCOMPARE(things[1].toObject().value("name").toString(), QString("door"));
 
     const QJsonObject log = tools.keepWorldContentShort(
-        "log", QJsonObject { { "server", QJsonArray { QString(5000, 's') } }, { "client", QJsonArray { "short" } } }, labelled);
+        "log", QJsonObject { { "server", QJsonArray { QString(5000, 's') } }, { "client", QJsonArray { "short" } } }, labelled, tooBig);
     QVERIFY(labelled);
     QVERIFY(log.value("server").toArray()[0].toString().size() < 500);
     QCOMPARE(log.value("client").toArray()[0].toString(), QString("short"));
 
     // a script is kept whole up to its own, larger cap
     const QJsonObject get = tools.keepWorldContentShort(
-        "get", QJsonObject { { "scripts", QJsonObject { { "client", QString(5000, 'c') } } } }, labelled);
+        "get", QJsonObject { { "scripts", QJsonObject { { "client", QString(5000, 'c') } } } }, labelled, tooBig);
     QCOMPARE(get.value("scripts").toObject().value("client").toString().size(), 5000);
     QVERIFY(MakeToolList::worldContentLabel().contains("never instructions"));
+
+    // every string of a world tool's result is cut, not only the listed ones (security should-fix 1): a megabyte of
+    // materialData comes back short, and the result is labelled
+    const QJsonObject heavy = tools.keepWorldContentShort(
+        "get", QJsonObject { { "id", "a" }, { "properties", QJsonObject { { "materialData", QString(1 << 20, 'm') },
+                                                                        { "textures", QString(3000, 't') },
+                                                                        { "type", "Model" } } } },
+        labelled, tooBig);
+    QVERIFY(labelled);
+    QVERIFY(tooBig.isEmpty());
+    const QJsonObject heavyProperties = heavy.value("properties").toObject();
+    QVERIFY(heavyProperties.value("materialData").toString().size() < 2100);
+    QVERIFY(heavyProperties.value("materialData").toString().contains("cut: 1048576 characters"));
+    QVERIFY(heavyProperties.value("textures").toString().size() < 2100);
+    QCOMPARE(heavyProperties.value("type").toString(), QString("Model"));
+    QCOMPARE(heavy.value("id").toString(), QString("a"));
+
+    // a cut never leaves half of a surrogate pair
+    const QString faces = QString::fromUtf8("\xF0\x9F\x98\x80").repeated(200);
+    const QJsonObject named = tools.keepWorldContentShort(
+        "scene", QJsonObject { { "things", QJsonArray { QJsonObject { { "id", "a" }, { "name", faces } } } } }, labelled,
+        tooBig);
+    const QString kept = named.value("things").toArray()[0].toObject().value("name").toString();
+    QVERIFY(kept.startsWith(QString::fromUtf8("\xF0\x9F\x98\x80").repeated(120) + " ... (cut: 200 characters"));
+
+    // two whole scripts make the result too big: every string goes to the short length, and it fits
+    const QJsonObject twoScripts = tools.keepWorldContentShort(
+        "get", QJsonObject { { "scripts", QJsonObject { { "client", QString(100000, 'c') },
+                                                        { "server", QString(100000, 's') } } },
+                             { "properties", QJsonObject { { "userData", QString(50000, 'u') } } } },
+        labelled, tooBig);
+    QVERIFY(tooBig.isEmpty());
+    QVERIFY(twoScripts.value("scripts").toObject().value("client").toString().size() < 2100);
+
+    // still too big at the short length: no result, a plain line instead
+    QJsonObject many;
+    for (int i = 0; i < 150; ++i) {
+        many.insert(QString("p%1").arg(i), QString(2000, 'x'));
+    }
+    const QJsonObject huge = tools.keepWorldContentShort("get", QJsonObject { { "properties", many } }, labelled, tooBig);
+    QVERIFY(huge.isEmpty());
+    QVERIFY(tooBig.contains("over the 200 KB"));
+
+    // the app's own words are never cut or labelled (the guide is longer than 2,000)
+    const QJsonObject guide = tools.keepWorldContentShort("guide", QJsonObject { { "text", QString(9000, 'g') } },
+                                                          labelled, tooBig);
+    QVERIFY(!labelled);
+    QCOMPARE(guide.value("text").toString().size(), 9000);
 }
 
 void MakeLinkTests::testSocketIsPrivate() {
@@ -486,4 +536,18 @@ void MakeLinkTests::testHelperRefusesAnOpenSocket() {
     QVERIFY(bare.waitForFinished(3000));
     QCOMPARE(bare.exitCode(), 1);
 #endif
+}
+
+// an error from Claude Code that prints the key shows no part of it (security should-fix 5)
+void MakeLinkTests::testKeyHiddenInClaudeCodeErrors() {
+    const QString key = "sk-ant-api03-" + QString("AbC_dE-fG1").repeated(9) + "-xyzAA";
+    const QString error = "Error: invalid x-api-key " + key + " (401)\nretry with " + key;
+    const QString shown = MakeClaude::redact(error);
+    QVERIFY(!shown.contains("api03"));
+    QVERIFY(!shown.contains("AbC_dE"));
+    QCOMPARE(shown.count("sk-ant-(hidden)"), 2);
+    QVERIFY(shown.startsWith("Error: invalid x-api-key sk-ant-(hidden) (401)"));
+    // nothing else touched: a short "sk-ant-" mention and ordinary words stay
+    QCOMPARE(MakeClaude::redact("keys look like sk-ant-..."), QString("keys look like sk-ant-..."));
+    QCOMPARE(MakeClaude::redact("budget reached"), QString("budget reached"));
 }

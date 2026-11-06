@@ -34,6 +34,7 @@
 #include <DependencyManager.h>
 
 #include <MakeBlender.h>
+#include <MakeClaude.h>
 #include <MakeLinkServer.h>
 
 class ScriptEngine;
@@ -86,14 +87,18 @@ public:
     /// Why it's Failed, or what's missing (Blender), in plain words.
     QString reason() const { return _reason; }
 
-    /// The Make folder: the project folder Claude Code runs in.
+    /// The Make folder: the saved scripts, models, pictures and Blender's jobs, and Claude Code's project folder.
     QString folder() const { return _folder; }
+    /// Claude Code's project folder, where it runs: only the two files below, rewritten at every Connect.
+    QString projectFolder() const;
     /// What Connect writes there, for the dock to show first (security A5): the MCP line and the settings.
     QString mcpConfigText() const;
     QString settingsText() const;
-    /// The line the builder pastes into Terminal (the Terminal route): Claude Code in the Make folder with only
-    /// Darkride's MCP server and no built-in tools.
+    /// The line the builder pastes into Terminal (the Terminal route; PowerShell on Windows): Claude Code in its project
+    /// folder with only Darkride's MCP server, Make's settings and no built-in tools.
     QString startLine() const;
+    /// The key route's Claude Code settings: its folder, MCP line and settings file.
+    MakeClaude::Settings claudeSettings() const;
 
     /// The person's Connect (after the dock's approve-once): writes the Make folder, starts the building tools'
     /// engine and listens. False with reason() when it can't.
@@ -115,6 +120,15 @@ public:
     /// The model Claude is (claude-opus-5-5), when the route knows it; null in made_by otherwise.
     void setModel(const QString& model) { _model = model; }
 
+    /// The key route: Claude Code started by the app, with the kept key, in the project folder (after connectLink).
+    /// False with `why` when there's no Claude Code or no key. Its words and its end come through claude()'s signals.
+    bool startClaude(QString& why);
+    MakeClaude* claude() { return &_claude; }
+    /// The key route's Send (the dock's own text box, real input): a new request, the person's words and the pictures
+    /// they dropped, by the ids of the dock's clean copies (<Make folder>/pictures/<id>.png or .jpg; never a path or
+    /// bytes from the dock). The request's number, or 0 when Claude Code isn't running.
+    int send(const QString& text, const QStringList& pictureIds);
+
 signals:
     void stateChanged();
     /// What Claude is doing now, in plain words ("adding “Awning”").
@@ -125,6 +139,9 @@ signals:
     void made(int request, const QVariantMap& card);
     /// Claude's reply tool: plain words for the dock.
     void reply(int request, const QString& text);
+    /// The key route: what a request has cost so far, in dollars (Claude Code's running total less what it was when the
+    /// request began), at the end of each of its turns.
+    void requestCost(int request, double usd);
 
 private:
     void setState(State state, const QString& reason = QString());
@@ -148,6 +165,10 @@ private:
 
     MakeLinkServer _server;
     MakeBlender* _blender { nullptr };
+    MakeClaude _claude;
+    int _claudeRequest { 0 };
+    double _claudeTotal { 0.0 };        // Claude Code's running total (total_cost_usd)
+    double _costAtRequestStart { 0.0 };
     MakeToolsBridge _bridge;
     ScriptEnginePointer _engine;
     int _world { 0 };

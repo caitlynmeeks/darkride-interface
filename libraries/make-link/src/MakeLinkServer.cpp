@@ -371,7 +371,11 @@ QJsonObject MakeLinkServer::toolResult(const QString& tool, const Result& result
         };
     }
     bool labelled = false;
-    const QJsonObject value = _tools.keepWorldContentShort(tool, result.value, labelled);
+    QString tooBig;
+    const QJsonObject value = _tools.keepWorldContentShort(tool, result.value, labelled, tooBig);
+    if (!tooBig.isEmpty()) {
+        return toolResult(tool, Result::error(MakeError::BAD_INPUT, tooBig));
+    }
     QString text = QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact));
     if (labelled) {
         text = MakeToolList::worldContentLabel() + "\n" + text;

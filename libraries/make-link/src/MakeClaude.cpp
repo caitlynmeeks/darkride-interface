@@ -16,6 +16,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QProcess>
+#include <QtCore/QRegularExpression>
 
 #include "MakeKey.h"
 
@@ -24,6 +25,12 @@ Q_DECLARE_LOGGING_CATEGORY(makelink)
 namespace {
 const int MAX_LINE_BYTES = 8 * 1024 * 1024;
 const int MAX_ERROR_BYTES = 16 * 1024;
+}
+
+QString MakeClaude::redact(const QString& text) {
+    static const QRegularExpression KEY("sk-ant-[A-Za-z0-9_-]{10,}");
+    QString hidden = text;
+    return hidden.replace(KEY, "sk-ant-(hidden)");
 }
 
 QString MakeClaude::findClaude() {
@@ -105,7 +112,8 @@ bool MakeClaude::startWithKey(const Settings& settings, const QByteArray& key, Q
     });
     connect(_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, [this](int code, QProcess::ExitStatus) {
         const bool asked = _ending;
-        const QString errors = QString::fromUtf8(_errors).trimmed();
+        // hidden before it's cut, so no part of a key is left at the cut's edge
+        const QString errors = redact(QString::fromUtf8(_errors)).trimmed();
         if (_process) {
             _process->deleteLater();
             _process = nullptr;
@@ -191,6 +199,6 @@ void MakeClaude::handle(const QByteArray& line) {
         }
     } else if (type == "result") {
         emit turnEnded(event.value("total_cost_usd").toDouble(), event.value("is_error").toBool(),
-                       event.value("result").toString().left(4000));
+                       redact(event.value("result").toString()).left(4000));
     }
 }

@@ -9,19 +9,58 @@
 
 #include "MakeBlenderTests.h"
 
+#include <cerrno>
+#include <cstdio>
+#include <signal.h>
+
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
+#include <QtCore/QProcess>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QtEndian>
+#include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
 #include <QtNetwork/QTcpServer>
 
 #include <MakeBlender.h>
 #include <MakeToolList.h>
 
-QTEST_MAIN(MakeBlenderTests)
-
 namespace {
+
+// this test program, started again with this set, plays the app for testBlenderEndsWithTheApp: it starts a runaway
+// make, says its Blender's and watcher's process ids, and waits to be killed
+const char* PLAY_THE_APP = "MAKE_BLENDER_TESTS_PLAY_THE_APP";
+
+int playTheApp(int argc, char** argv) {
+    QCoreApplication app(argc, argv);
+    MakeBlender blender(qEnvironmentVariable(PLAY_THE_APP));
+    QString why;
+    blender.setBlender(MakeBlender::findBlender(why));
+    if (blender.blender().isEmpty()) {
+        return 2;
+    }
+    // only the watcher can end this one: the app's own limits are far off
+    blender.setTimeLimit(10 * 60 * 1000);
+    blender.setCpuLimit(10 * 60);
+    blender.make("while True:\n    pass\n", "object", {}, [](const MakeBlender::Made&) { QCoreApplication::exit(3); });
+    std::printf("BLENDER_PID %lld WATCHER_PID %lld\n", static_cast<long long>(blender.processId()),
+                static_cast<long long>(blender.watcherId()));
+    std::fflush(stdout);
+    return app.exec();
+}
+
+bool processGone(qint64 pid, int waitMs) {
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < waitMs) {
+        if (::kill(static_cast<pid_t>(pid), 0) != 0 && errno == ESRCH) {
+            return true;
+        }
+        QTest::qWait(100);
+    }
+    return false;
+}
 
 QByteArray glb(const QJsonObject& json, const QByteArray& bin = QByteArray(4, '\0'), quint32 magic = 0x46546C67,
                int lengthOff = 0) {
@@ -288,6 +327,60 @@ void MakeBlenderTests::testRunawayIsStopped() {
     QVERIFY(QDir(dir.filePath("jobs")).entryList(QDir::Dirs | QDir::NoDotAndDotDot).isEmpty());
 }
 
+// the kernel's CPU cap and the thread cap are on Blender inside the box (security should-fix 4)
+void MakeBlenderTests::testCpuCapInTheBox() {
+    QTemporaryDir dir;
+    MakeBlender blender(dir.path());
+    if (!haveBlender(blender)) {
+        QSKIP("no Blender here");
+    }
+    const QString script = QString(CUBE) +
+        "import resource\nsoft, hard = resource.getrlimit(resource.RLIMIT_CPU)\nprint('CPULIMIT', soft, hard)\n"
+        "print('THREADS', bpy.context.scene.render.threads)\n";
+    const MakeBlender::Made made = makeAndWait(blender, script);
+    QVERIFY2(made.ok(), qPrintable(made.message + "\n" + made.log));
+    QVERIFY2(made.log.contains(QString("CPULIMIT %1 %2").arg(MakeBlender::CPU_LIMIT_S).arg(MakeBlender::CPU_LIMIT_S + 5)),
+             qPrintable(made.log));
+    QVERIFY2(made.log.contains(QString("THREADS %1").arg(MakeBlender::THREADS)), qPrintable(made.log));
+    QVERIFY(MakeBlender::CPU_LIMIT_S >= (MakeBlender::TIME_LIMIT_MS / 1000) * MakeBlender::THREADS);
+}
+
+// the app killed mid-make (kill -9): Blender ends by itself, through the watcher, and the watcher ends too
+void MakeBlenderTests::testBlenderEndsWithTheApp() {
+    QTemporaryDir dir;
+    MakeBlender probe(dir.path());
+    if (!haveBlender(probe)) {
+        QSKIP("no Blender here");
+    }
+    QProcess app;
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(PLAY_THE_APP, dir.path());
+    app.setProcessEnvironment(environment);
+    app.start(QCoreApplication::applicationFilePath(), QStringList());
+    QVERIFY(app.waitForStarted(5000));
+    QByteArray said;
+    QElapsedTimer timer;
+    timer.start();
+    while (!said.contains('\n') && timer.elapsed() < 15000) {
+        app.waitForReadyRead(200);
+        said.append(app.readAllStandardOutput());
+    }
+    const QRegularExpression IDS("BLENDER_PID (\\d+) WATCHER_PID (\\d+)");
+    const QRegularExpressionMatch ids = IDS.match(QString::fromLatin1(said));
+    QVERIFY2(ids.hasMatch(), said.constData());
+    const qint64 blenderPid = ids.captured(1).toLongLong();
+    const qint64 watcherPid = ids.captured(2).toLongLong();
+    QVERIFY(blenderPid > 0 && watcherPid > 0);
+    QTest::qWait(1500);
+    QVERIFY2(::kill(static_cast<pid_t>(blenderPid), 0) == 0, "Blender should be running its runaway script");
+    QVERIFY2(::kill(static_cast<pid_t>(watcherPid), 0) == 0, "the watcher should be waiting");
+
+    QCOMPARE(::kill(static_cast<pid_t>(app.processId()), SIGKILL), 0);
+    QVERIFY(app.waitForFinished(5000));
+    QVERIFY2(processGone(blenderPid, 5000), "Blender ran on after the app was killed");
+    QVERIFY2(processGone(watcherPid, 5000), "the watcher ran on after the app was killed");
+}
+
 void MakeBlenderTests::testOneMakeAtATime() {
     QTemporaryDir dir;
     MakeBlender blender(dir.path());
@@ -328,4 +421,14 @@ void MakeBlenderTests::testTextureNamesChecked() {
     const MakeBlender::Made made = makeAndWait(blender, script, 60000, { { clean, "awning.png" } });
     QVERIFY2(made.ok(), qPrintable(made.message + "\n" + made.log));
     QVERIFY(made.log.contains("TEXTURE True"));
+}
+
+int main(int argc, char** argv) {
+    if (qEnvironmentVariableIsSet(PLAY_THE_APP)) {
+        return playTheApp(argc, argv);
+    }
+    QGuiApplication app(argc, argv);
+    MakeBlenderTests tests;
+    QTEST_SET_MAIN_SOURCE_PATH
+    return QTest::qExec(&tests, argc, argv);
 }

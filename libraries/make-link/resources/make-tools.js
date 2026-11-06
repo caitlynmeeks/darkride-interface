@@ -82,6 +82,14 @@
         return thing;
     }
 
+    // who may change this thing's scripts, by the entity server's rule (a visitor's edit keeps its scripts out): the
+    // thing unlocked, and a world editor (canAdjustLocks) or someone who may make lasting things. The same rule as
+    // editor-ui's EntityScriptRights::mayChangeScriptsOf, so Make and the Code panel show a server script to the same
+    // people (security should-fix 3); only-temporary rights don't count.
+    function mayEditScripts(p) {
+        return !p.locked && (Entities.canAdjustLocks() || Entities.canRez() || Entities.canRezCertified());
+    }
+
     // a script's text: inline code as it is, a script in the world's own files fetched; one from the web is named only
     function scriptText(value, done) {
         if (!value) { return done(null); }
@@ -115,7 +123,7 @@
             var keys = BASE.concat(BY_TYPE[t.type] || [], a.props || []).filter(function (k) {
                 return k !== "script" && k !== "serverScripts";
             });
-            var p = Entities.getEntityProperties(a.id, keys.concat(["script", "serverScripts"])), properties = {};
+            var p = Entities.getEntityProperties(a.id, keys.concat(["script", "serverScripts", "locked"])), properties = {};
             keys.forEach(function (k) {
                 var v = p[k];
                 if (v === undefined || v === "" || (k === "parentID" && isNull(v))) { return; }
@@ -123,6 +131,11 @@
                 else { properties[k] = v; }
             });
             scriptText(p.script, function (client) {
+                if (p.serverScripts && !mayEditScripts(p)) {
+                    // it has one: say so, never its text or its address
+                    return done({ id: a.id, properties: properties, mine: !!made[a.id], scripts: { client: client,
+                        server: "(a server script, shown only to people who can edit this thing)" } });
+                }
                 scriptText(p.serverScripts, function (server) {
                     done({ id: a.id, properties: properties, scripts: { client: client, server: server }, mine: !!made[a.id] });
                 });

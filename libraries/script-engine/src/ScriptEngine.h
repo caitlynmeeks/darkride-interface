@@ -158,6 +158,10 @@ public:
     /// goes by its own world, held one way (entityScriptsMayBeLocal); any other engine by the world the client is in
     /// now.
     bool worldIsLocal() const;
+    /// The app's say, before the engine runs: its scripts are judged as in a world served from elsewhere, whatever world
+    /// the client is in (no file:, no address of this machine or its network). For an engine of the app's own that does
+    /// what a request steers (Make's building tools; security). Never a script's to call.
+    void holdToNetworkWorldRules() { _heldToNetworkWorld = true; }
     /// An entity script's address as its rights go: which files here include and require may reach, and the origin
     /// the network rule judges its requests by. On a client whose world isn't local, no entity script is local,
     /// whatever its own address (a file here, one of the app's own scripts, an address on this machine or its
@@ -222,9 +226,10 @@ public:
     /// of a shared engine relies on; the thread hop inside needs no meta-method)
     virtual void registerGlobalObject(const QString& name, QObject* object) = 0;
     /// One of the app's own objects for this engine alone, before it runs: in an engine under a world's rules it is
-    /// not held to the script API policy (ScriptApiPolicy), and its own class's members are all reachable, so the app
-    /// can talk to a script of its own that runs under those rules (Make's building tools). Only the app's code can
-    /// call this, never a script.
+    /// not held to the script API policy (ScriptApiPolicy), so the app can talk to a script of its own that runs under
+    /// those rules (Make's building tools). Only its class's own members are reachable (none of QObject's, none that
+    /// returns a pointer); it goes in after every other global, and a name the API or JavaScript already uses is
+    /// refused; once the engine has started, nothing more goes in. Only the app's code can call this, never a script.
     virtual void registerAppObject(const QString& name, QObject* object) { registerGlobalObject(name, object); }
     /// The application says so where it registers the Test API (a --testScript run): Script.dumpApi may then write
     /// to any path. Not a script's to call.
@@ -729,6 +734,7 @@ protected:
     mutable QReadWriteLock _entityScriptsLock { QReadWriteLock::Recursive };
     QHash<EntityItemID, EntityScriptDetails> _entityScripts;
     mutable std::atomic<bool> _servedNonLocalWorld { false };   // entityScriptsMayBeLocal's one-way answer
+    std::atomic<bool> _heldToNetworkWorld { false };   // holdToNetworkWorldRules
 
     bool _isThreaded { false };
     qint64 _lastUpdate;

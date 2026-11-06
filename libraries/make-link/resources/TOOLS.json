@@ -498,6 +498,9 @@
         ]
       },
       "creates": true,
+      "asks_first_when": [
+        "the world isn't the account's own"
+      ],
       "errors": [
         "refused",
         "bad_input"
@@ -1138,6 +1141,9 @@
         ]
       },
       "creates": true,
+      "asks_first_when": [
+        "the world isn't the account's own"
+      ],
       "errors": [
         "refused",
         "not_found",

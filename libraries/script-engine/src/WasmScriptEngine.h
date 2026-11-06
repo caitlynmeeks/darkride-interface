@@ -34,6 +34,8 @@
 
 #include <QtCore/QByteArray>
 #include <QtCore/QHash>
+#include <QtCore/QPair>
+#include <QtCore/QPointer>
 #include <QtCore/QSet>
 #include <QtCore/QVariantMap>
 
@@ -218,6 +220,8 @@ private:
     std::unique_ptr<ObjectTable> _objects;
     QVariantMap _globalValues;  // registerGlobalValue's
     QSet<const QMetaObject*> _appClasses;  // registerAppObject's: past the script API policy
+    QList<QPair<QString, QPointer<QObject>>> _appObjects;  // registerAppObject's, put in after every other global
+    void installAppObjects();
     SignalRelay* _relay { nullptr };  // a child, so it moves to the engine's thread with it
     HttpRequestFactory* _http { nullptr };
     WebSocketFactory* _sockets { nullptr };

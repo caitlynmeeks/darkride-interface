@@ -15,8 +15,10 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
+#include <QtCore/QRandomGenerator>
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSize>
@@ -50,6 +52,12 @@ const int MAX_SOCKET_PATH = 100;  // a socket's path holds 104 bytes on macOS
 const int NEW_REQUEST_AFTER_MS = 45 * 1000;
 // one request removes this many things before the person is asked
 const int REMOVES_BEFORE_ASKING = 5;
+// Claude Code's project folder, inside the Make folder: only the app's two files in it
+const QString PROJECT_FOLDER = "claude-code";
+// the pictures one Send carries (the dock's clean copies), and the most each may be (the API takes 5 MB)
+const int MAX_PICTURES_SENT = 6;
+const qint64 MAX_PICTURE_SENT_BYTES = 5 * 1024 * 1024;
+const int ASK_NAME_LENGTH = 60;  // a thing's name (the world's words) in an ask
 const int ASK_WAIT_MS = 100 * 1000;
 const int MAX_LOG_LINES = 500;
 const int LOG_LINES_GIVEN = 120;
@@ -169,8 +177,20 @@ MakeLink::MakeLink() {
         _sinceCall.restart();
     });
 
+    // the key route's cost per request: Claude Code's total is for its whole run
+    connect(&_claude, &MakeClaude::started, this, [this](const QString& model) {
+        _claudeTotal = 0.0;
+        _costAtRequestStart = 0.0;
+        setModel(model);
+    });
+    connect(&_claude, &MakeClaude::turnEnded, this, [this](double total, bool, const QString&) {
+        _claudeTotal = total;
+        emit requestCost(_claudeRequest, std::max(0.0, total - _costAtRequestStart));
+    });
+
     // a new world: the tools start again in it (Undo starts again too)
     connect(&DependencyManager::get<NodeList>()->getDomainHandler(), &DomainHandler::domainURLChanged, this, [this] {
+        _askedOutsideFor = 0;  // a world not the person's own asks again there
         if (_engine) {
             stopToolsEngine();
             startToolsEngine();
@@ -226,38 +246,117 @@ QString MakeLink::settingsText() const {
     for (const QString& tool : DENIED_TOOLS) {
         deny.append(tool);
     }
+    // Claude Code's settings for Make (security's Make-folder must): Darkride's tools only, every built-in denied, any
+    // ask turned into a no (dontAsk) so nothing waits on a prompt nobody sees, no bypass mode, and no hooks from any
+    // settings file (a hook runs a shell command even with no tools)
     const QJsonObject settings { { "permissions", QJsonObject {
-        { "allow", QJsonArray { "mcp__darkride" } },
+        { "allow", QJsonArray { "mcp__darkride__*" } },
         { "deny", deny },
         { "defaultMode", "dontAsk" },
         { "disableBypassPermissionsMode", "disable" } } },
+        { "disableAllHooks", true },
         { "enableAllProjectMcpServers", false } };
     return QString::fromUtf8(QJsonDocument(settings).toJson(QJsonDocument::Indented));
 }
 
-QString MakeLink::startLine() const {
-    return QString("cd \"%1\" && claude --strict-mcp-config --mcp-config .darkride-mcp.json --tools \"\"").arg(_folder);
+QString MakeLink::projectFolder() const {
+    return QDir(_folder).absoluteFilePath(PROJECT_FOLDER);
 }
 
+QString MakeLink::startLine() const {
+    // the same limits as the key route (security, the Terminal route's condition): only our MCP server, no built-in
+    // tools, our settings given on the line as well as in the folder
+#ifdef Q_OS_WIN
+    // PowerShell: a single-quoted path takes '' for a quote; --tools= passes the empty list on every PowerShell
+    QString folder = QDir::toNativeSeparators(projectFolder());
+    folder.replace("'", "''");
+    return QString("Set-Location -LiteralPath '%1'; claude --strict-mcp-config --mcp-config .darkride-mcp.json "
+                   "--settings .claude\\settings.json --tools=")
+        .arg(folder);
+#else
+    QString folder = projectFolder();
+    folder.replace("'", "'\\''");
+    return QString("cd '%1' && claude --strict-mcp-config --mcp-config .darkride-mcp.json --settings .claude/settings.json "
+                   "--tools \"\"")
+        .arg(folder);
+#endif
+}
+
+MakeClaude::Settings MakeLink::claudeSettings() const {
+    MakeClaude::Settings settings;
+    settings.folder = projectFolder();
+    settings.mcpConfig = QDir(settings.folder).absoluteFilePath(".darkride-mcp.json");
+    settings.settingsFile = QDir(settings.folder).absoluteFilePath(".claude/settings.json");
+    return settings;
+}
+
+namespace {
+
+// a file written fresh: never through a link someone left in its place, never into an older file
+bool writeFresh(const QString& path, const QByteArray& text) {
+    if (QFileInfo(path).isSymLink() || QFileInfo::exists(path)) {
+        if (!QFile::remove(path)) {
+            return false;
+        }
+    }
+    QFile out(path);
+    return out.open(QIODevice::WriteOnly | QIODevice::NewOnly) && out.write(text) == text.size();
+}
+
+// a folder of the app's own: a real folder, not a link to somewhere else
+bool realFolder(const QString& path) {
+    const QFileInfo info(path);
+    if (info.isSymLink() && !QFile::remove(path)) {
+        return false;
+    }
+    return QDir().mkpath(path) && !QFileInfo(path).isSymLink();
+}
+
+}  // namespace
+
 bool MakeLink::writeFolder(QString& error) {
-    if (!QDir().mkpath(_folder + "/.claude") || !QDir().mkpath(_folder + "/scripts")) {
+    // Claude Code's project folder holds only what the app writes here, rewritten at every Connect (security's
+    // Make-folder must): its MCP line and its settings. No CLAUDE.md, no other settings file, no hooks, commands, agents
+    // or skills: anything else found is removed. Scripts, models, pictures and Blender's jobs live beside it, outside.
+    const QString project = projectFolder();
+    if (!realFolder(_folder) || !realFolder(project) || !realFolder(project + "/.claude") ||
+        !realFolder(_folder + "/scripts")) {
         error = "can't make the Make folder";
         return false;
     }
-    const QString guideLine =
-        "# Building in Darkride\n\nYou're connected to the person's Darkride app through the darkride tools, in the world "
-        "they have open. Read the darkride guide tool once before you build. You have no other tools here.\n";
-    const QList<QPair<QString, QString>> files {
-        { ".darkride-mcp.json", mcpConfigText() },
-        { ".claude/settings.json", settingsText() },
-        { "CLAUDE.md", guideLine },
-    };
-    for (const auto& file : files) {
-        QFile out(QDir(_folder).absoluteFilePath(file.first));
-        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(file.second.toUtf8()) < 0) {
-            error = "can't write " + file.first + " in the Make folder";
-            return false;
+    auto clear = [](const QString& folder, const QStringList& keep) {
+        QDir dir(folder);
+        const auto entries = dir.entryInfoList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot);
+        for (const QFileInfo& entry : entries) {
+            if (keep.contains(entry.fileName())) {
+                continue;
+            }
+            qCInfo(makelog) << "the Make folder: removed what the app didn't write," << entry.fileName();
+            if (entry.isDir() && !entry.isSymLink()) {
+                QDir(entry.absoluteFilePath()).removeRecursively();
+            } else {
+                QFile::remove(entry.absoluteFilePath());
+            }
         }
+    };
+    clear(project, { ".claude", ".darkride-mcp.json" });
+    clear(project + "/.claude", { "settings.json" });
+    // what Claude Code reads from a parent folder too: none of it in the Make folder
+    for (const QString& name : { "CLAUDE.md", "CLAUDE.local.md", ".claude", ".mcp.json", ".darkride-mcp.json" }) {
+        const QFileInfo entry(QDir(_folder).absoluteFilePath(name));
+        if (entry.exists() || entry.isSymLink()) {
+            qCInfo(makelog) << "the Make folder: removed" << name;
+            if (entry.isDir() && !entry.isSymLink()) {
+                QDir(entry.absoluteFilePath()).removeRecursively();
+            } else {
+                QFile::remove(entry.absoluteFilePath());
+            }
+        }
+    }
+    if (!writeFresh(project + "/.darkride-mcp.json", mcpConfigText().toUtf8()) ||
+        !writeFresh(project + "/.claude/settings.json", settingsText().toUtf8())) {
+        error = "can't write Claude Code's settings in the Make folder";
+        return false;
     }
     return true;
 }
@@ -296,6 +395,7 @@ bool MakeLink::connectLink() {
 }
 
 void MakeLink::disconnectLink() {
+    _claude.end();
     _server.stop();
     _server.close();
     _blender->cancel();
@@ -312,6 +412,40 @@ void MakeLink::disconnectLink() {
     }
     _asks.clear();
     setState(State::Off);
+}
+
+bool MakeLink::startClaude(QString& why) {
+    if (_state != State::Listening && _state != State::Connected) {
+        why = "Make isn't connected";
+        return false;
+    }
+    return _claude.start(claudeSettings(), why);
+}
+
+int MakeLink::send(const QString& text, const QStringList& pictureIds) {
+    if (!_claude.isRunning()) {
+        return 0;
+    }
+    static const QRegularExpression PLAIN_ID("^[A-Za-z0-9_-]{1,40}$");
+    QVector<MakeClaude::Image> images;
+    for (const QString& id : pictureIds) {
+        if (images.size() >= MAX_PICTURES_SENT || !PLAIN_ID.match(id).hasMatch()) {
+            continue;
+        }
+        for (const QString& kind : { QString("png"), QString("jpg") }) {
+            QFile picture(QDir(_folder).absoluteFilePath("pictures/" + id + "." + kind));
+            if (!QFileInfo(picture.fileName()).isSymLink() && picture.size() <= MAX_PICTURE_SENT_BYTES &&
+                picture.open(QIODevice::ReadOnly)) {
+                images.append({ kind == "png" ? QString("image/png") : QString("image/jpeg"), picture.readAll() });
+                break;
+            }
+        }
+    }
+    const int request = newRequest();
+    _claudeRequest = request;
+    _costAtRequestStart = _claudeTotal;
+    _claude.send(text, images);
+    return request;
 }
 
 void MakeLink::stop() {
@@ -363,6 +497,8 @@ void MakeLink::startToolsEngine() {
     _world = ScriptCaller::newWorld();
     _engine = scriptEngineFactory(ScriptEngine::CLIENT_SCRIPT, QString::fromUtf8(source.readAll()), "about:Make");
     _engine->setWorldId(_world);
+    // and a network world's rules, even in a world served from this machine or its network (security)
+    _engine->holdToNetworkWorldRules();
     auto scriptEngines = DependencyManager::get<ScriptEngines>();
     scriptEngines->releaseWhenFinished(_engine);
     scriptEngines->runScriptInitializers(_engine);
@@ -438,7 +574,11 @@ void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
                     const std::function<void(bool, const QString&)>& proceed) {
     QStringList why;
     QString exactly;
-    const QString thing = _names.value(inputs.value("id").toString());
+    // a name the world gave it, kept short in the ask
+    QString thing = _names.value(inputs.value("id").toString()).simplified();
+    if (thing.size() > ASK_NAME_LENGTH) {
+        thing = thing.left(ASK_NAME_LENGTH - 1) + "…";
+    }
     const QString named = thing.isEmpty() ? QString("a thing") : "“" + thing + "”";
     const QStringList addresses = MakeToolList::webAddresses(tool, inputs);
     if (!addresses.isEmpty()) {
@@ -447,21 +587,32 @@ void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
         exactly = addresses.join("\n");
     }
     if (tool == "remove" && _removesThisRequest >= REMOVES_BEFORE_ASKING) {
-        why.append(QString("remove more than %1 things in one request (now %2)").arg(REMOVES_BEFORE_ASKING).arg(named));
+        why.append(QString("remove more than %1 things in one request (the next: %2)").arg(REMOVES_BEFORE_ASKING).arg(named));
     }
-    const bool changes = tool == "edit" || tool == "remove" || tool == "set_script";
-    if (changes && !DependencyManager::get<NodeList>()->getThisNodeCanReplaceContent() && _askedOutsideFor != _request) {
-        why.append("change things in a world you don't own");
+    // every tool that puts something into the world or changes it asks once a request in a world that isn't the
+    // person's own (security B10): add and upload_model as well as edit, remove and set_script
+    const bool changes = tool == "add" || tool == "edit" || tool == "remove" || tool == "set_script" ||
+                         tool == "upload_model";
+    const bool outside = changes && !DependencyManager::get<NodeList>()->getThisNodeCanReplaceContent() &&
+                         _askedOutsideFor != _request;
+    if (outside) {
+        why.append("build or change things in a world you don't own");
     }
     if (why.isEmpty()) {
         proceed(true, QString());
         return;
     }
     const int request = _request;
+    const int world = _world;
     ask("Claude wants to " + why.join(", and ") + ".", exactly.isEmpty() ? tool + " " + named : exactly,
-        [this, request, proceed](bool allowed) {
-            if (allowed) {
-                _askedOutsideFor = request;  // once a request
+        [this, request, world, outside, proceed](bool allowed) {
+            if (world != _world) {
+                // asked in one world, answered in another: the yes was for the first
+                proceed(false, "the person went to another world while being asked; look again (scene) before building");
+                return;
+            }
+            if (allowed && outside) {
+                _askedOutsideFor = request;  // once a request, in this world
             }
             proceed(allowed, allowed ? QString() : QString("the person said no; don't try another way, ask them"));
         });
@@ -553,7 +704,9 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     const QString header = QString("// made with Claude in Darkride's Make, %1, for %2\n")
                                .arg(QDateTime::currentDateTime().toString(Qt::ISODate), by.value("name").toString());
     const QByteArray text = (source.startsWith("// made with Claude") ? source : header + source).toUtf8();
-    const QString name = plainName(_names.value(id), 40) + "-" + side + "-" + QString::number(QDateTime::currentMSecsSinceEpoch());
+    // a name the app makes (security's Make-folder must): never the world's name for the thing or Claude's words
+    const QString name = side + "-" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd-HHmmss-zzz") + "-" +
+                         QString::number(QRandomGenerator::global()->bounded(0x10000), 16).rightJustified(4, '0');
     const QString copy = QDir(_folder).absoluteFilePath("scripts/" + name + ".js");
     QFile file(copy);
     if (!file.open(QIODevice::WriteOnly) || file.write(text) != text.size()) {
