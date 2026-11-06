@@ -13,6 +13,8 @@
 #include <chrono>
 #include <set>
 
+#include <QThreadPool>
+
 using namespace terrain;
 
 namespace {
@@ -429,7 +431,7 @@ void LodCut::balance(KeySet& nodes, KeySet& split) const {
     }
 }
 
-void LodCut::update(const VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings) {
+void LodCut::update(const GridView& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings) {
     if (grid.isEmpty()) {
         clear();
         return;
@@ -493,7 +495,7 @@ ChunkKey LodCut::nodeCovering(const glm::ivec3& fine) const {
 
 // --- LevelOfDetail ----------------------------------------------------------------------------------------------
 
-LevelOfDetail::LevelOfDetail(QThreadPool* pool) : _mesher(pool) {
+LevelOfDetail::LevelOfDetail(QThreadPool* pool) : _mesher(pool), _pool(pool ? pool : AsyncMesher::defaultPool()) {
 }
 
 void LevelOfDetail::setSettings(const LodSettings& settings) {
@@ -612,23 +614,61 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         }
     }
 
-    // the cut wanted: chosen again when the camera has moved a couple of voxels or the grid's chunks changed
+    // this frame's snapshot of the grid, taken once, for the choice and for the sends
+    std::shared_ptr<const GridView> view;
+    auto snapshot = [&]() {
+        if (!view) {
+            view = std::make_shared<const GridView>(grid.snapshot());
+        }
+        return view;
+    };
+
+    // The cut's choice is back from the pool: adopted here (the swap alone; the choice itself, 3-5 ms over ~2,000
+    // nodes, ran on the pool so that a re-choice no longer costs this thread a frame at the display's rate).
+    if (_choiceJob && _choiceJob->done.load(std::memory_order_acquire)) {
+        mark = clock();
+        _cut = std::move(*_choiceJob->cut);
+        _choiceJob.reset();
+        frameCost.choiceMs = msSince(mark);
+        frameCost.chose = true;
+        _requestsDirty = true;
+        if (_choiceQueued) {
+            _choiceQueued = false;
+            _cutWanted = true;
+        }
+    }
+
+    // the cut wanted: chosen again when the camera has moved a couple of voxels or the grid's chunks changed, as a
+    // job on the pool from this frame's snapshot; one job at a time, a re-choice asked while one is out runs at
+    // its return, with the camera then. The cut's own bookkeeping (where it was chosen, when) is set when the job
+    // starts: the latency a cut is shown with counts from the moment its choice was asked.
     const float voxel = (voxelMetres.x + voxelMetres.y + voxelMetres.z) / 3.0f;
     const bool moved = glm::length((camera - _cutCamera) * voxelMetres) > 2.0f * voxel;
     if (_cutWanted || moved || grid.getStructureVersion() != _cutStructure || voxelMetres != _cutVoxelMetres ||
             grid.getVoxelCount() != _cutVoxelCount) {
-        mark = clock();
-        _cut.update(grid, camera, voxelMetres, _settings);
-        frameCost.choiceMs = msSince(mark);
-        frameCost.chose = true;
-        _cutChosenAt = std::chrono::steady_clock::now();
-        _cutChosenFrame = _frame;
-        _cutWanted = false;
-        _cutCamera = camera;
-        _cutVoxelMetres = voxelMetres;
-        _cutStructure = grid.getStructureVersion();
-        _cutVoxelCount = grid.getVoxelCount();
-        _requestsDirty = true;
+        if (_choiceJob) {
+            _choiceQueued = true;
+        } else {
+            auto job = std::make_shared<ChoiceJob>();
+            job->view = snapshot();
+            job->camera = camera;
+            job->voxelMetres = voxelMetres;
+            job->settings = _settings;
+            _choiceJob = job;
+            _cutChosenAt = std::chrono::steady_clock::now();
+            _cutChosenFrame = _frame;
+            _cutWanted = false;
+            _cutCamera = camera;
+            _cutVoxelMetres = voxelMetres;
+            _cutStructure = grid.getStructureVersion();
+            _cutVoxelCount = grid.getVoxelCount();
+            // ahead of the sampling jobs (1) and the grid's chunks (0): the nodes are chosen before they are sampled
+            _pool->start([job] {
+                job->cut = std::make_unique<LodCut>();
+                job->cut->update(*job->view, job->camera, job->voxelMetres, job->settings);
+                job->done.store(true, std::memory_order_release);
+            }, 2);
+        }
     }
     const std::vector<LodCut::Node>& wanted = _cut.getNodes();
 
@@ -669,7 +709,6 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         // grid for every node sent this frame.)
         const float budget = getFrameBudgetMs();
         const auto start = std::chrono::steady_clock::now();
-        std::shared_ptr<const GridView> view;
         for (size_t i = 0; i < order.size(); ++i) {
             const auto before = std::chrono::steady_clock::now();
             const float spent = std::chrono::duration<float, std::milli>(before - start).count();
@@ -884,7 +923,7 @@ void LevelOfDetail::evict() {
 }
 
 bool LevelOfDetail::isSettled() const {
-    if (!_jobs.empty() || _cutWanted || _requestsDirty || _shown != _cut.getNodes()) {
+    if (!_jobs.empty() || _choiceJob || _cutWanted || _requestsDirty || _shown != _cut.getNodes()) {
         return false;
     }
     for (const LodCut::Node& node : _shown) {
@@ -903,6 +942,8 @@ void LevelOfDetail::gridReplaced() {
     for (auto& pair : _entries) {
         pair.second.stale = true;
     }
+    _choiceJob.reset();   // a choice out on the old grid finishes on its own and is dropped
+    _choiceQueued = false;
     _cutWanted = true;
     _requestsDirty = true;
 }
@@ -916,6 +957,8 @@ void LevelOfDetail::clear() {
     _drawn.clear();
     ++_drawnVersion;
     _cut.clear();
+    _choiceJob.reset();
+    _choiceQueued = false;
     _cutWanted = true;
     _requestsDirty = true;
 }

@@ -29,6 +29,7 @@
 #define hifi_terrain_LevelOfDetail_h
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <map>
@@ -120,8 +121,9 @@ public:
     };
 
     // Chooses the nodes for a camera at a point of the grid's voxel space, a voxel being voxelMetres along each axis;
-    // the nodes split last time stay split within the hysteresis.
-    void update(const VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings);
+    // the nodes split last time stay split within the hysteresis. Reads the grid only: on the editing thread, or on
+    // any thread from a snapshot (VoxelGrid::snapshot), which is how LevelOfDetail runs it, on the pool.
+    void update(const GridView& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings);
     void clear();
 
     // In key order.
@@ -142,7 +144,7 @@ private:
     void balance(KeySet& nodes, KeySet& split) const;
 
     // what update() works with
-    const VoxelGrid* _grid { nullptr };
+    const GridView* _grid { nullptr };
     glm::vec3 _camera { 0.0f };
     glm::vec3 _voxelMetres { 1.0f };
     LodSettings _settings;
@@ -155,9 +157,10 @@ private:
 };
 
 // The meshes a terrain draws: the grid's own chunks' near the camera, meshes of coarser nodes made here further
-// away, kept up to date as the camera moves and the grid is edited. Lives on the editing thread; the sampling and
-// the meshing of a node run on the pool, from a snapshot of the grid taken when the node is sent (a node's samples
-// are the grid as it was then; an edit after that marks the node stale and it is sent again, as before). A new
+// away, kept up to date as the camera moves and the grid is edited. Lives on the editing thread; the choice of the
+// cut, and the sampling and the meshing of a node, run on the pool from a snapshot of the grid taken that frame (the
+// cut is adopted when its job is back, a frame or two later; a node's samples are the grid as it was when it was
+// sent, and an edit after that marks the node stale and it is sent again, as before). A new
 // cut is shown only once every node of it has its mesh, so the ground never shows a crack
 // or a hole while the camera moves (meshes of nodes edited meanwhile are swapped in one by one, as the grid's own
 // chunks' are). The first cut, and the first after the grid is cleared, is shown node by node as the meshes come.
@@ -176,7 +179,8 @@ public:
     const LodSettings& getSettings() const { return _settings; }
 
     // Once a frame on the editing thread, after the grid's own chunks' meshes have been brought up to date: takes
-    // the grid's changes, chooses the cut for the camera (a point of the grid's voxel space, voxels of voxelMetres),
+    // the grid's changes, has the cut chosen for the camera (a point of the grid's voxel space, voxels of voxelMetres;
+    // a job on the pool, adopted here when it is back),
     // collects the meshes the pool has finished, sends out the nodes whose meshes are missing or out of date
     // (nearest first, within the settings' time budget, each sampled and meshed on the pool from one snapshot of
     // the grid) and shows the cut wanted once it is ready.
@@ -298,6 +302,19 @@ private:
 
     LodSettings _settings;
     LodCut _cut;
+    // The cut's choice as a job on the pool: what it works from, the cut it chose, and whether it is back. One job at
+    // a time; a re-choice asked while one is out runs at its return, with the camera then.
+    struct ChoiceJob {
+        std::shared_ptr<const GridView> view;
+        glm::vec3 camera { 0.0f };
+        glm::vec3 voxelMetres { 1.0f };
+        LodSettings settings;
+        std::unique_ptr<LodCut> cut;
+        std::atomic<bool> done { false };
+    };
+    std::shared_ptr<ChoiceJob> _choiceJob;
+    bool _choiceQueued { false };
+    QThreadPool* _pool { nullptr };
     std::vector<LodCut::Node> _shown;
     std::vector<Drawn> _drawn;
     uint64_t _drawnVersion { 0 };
