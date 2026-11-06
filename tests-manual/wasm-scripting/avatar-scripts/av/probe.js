@@ -66,9 +66,17 @@
     var plain = 0, app = 0;
     function onMessage(channel, message, sender, localOnly) {
         if (channel === "avatar-probe") { plain++; } else if (channel === "io.darkride.avatar-probe") { app++; }
+        if (channel === "avatar-probe-spin") {
+            // the mid-call driver (avatar-scripts-midcall.js): a call that runs this long, for a stop to find running
+            say("spinning " + message + " ms");
+            var started = Date.now();
+            while (Date.now() - started < Number(message)) {}
+            say("spin ended after " + (Date.now() - started) + " ms");
+        }
     }
     try {
         Messages.messageReceived.connect(onMessage);
+        Messages.subscribe("avatar-probe-spin");
         Messages.subscribe("avatar-probe");
         Messages.subscribe("io.darkride.avatar-probe");
         Messages.sendLocalMessage("avatar-probe", "hello");

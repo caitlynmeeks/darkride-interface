@@ -6,6 +6,9 @@
 # world is left before its script is stopped, so what the script's scriptEnding handler then tries is refused.
 #   tests-manual/wasm-scripting/avatar-scripts.sh [timeout seconds, 90]
 # CLIENT_APP=<another Darkride.app> runs that build instead (a build before the rule shows the FAIL lines).
+# MIDCALL=1 runs the mid-call check instead (avatar-scripts-midcall.js): the avatar's script stopped while inside a
+# call, by taking the avatar off (ends at once), by a plain stop during a long call (ends at the 3 s deadline) and
+# during a short one (finishes); exits 0 when all three PASS and only the short call's spin ended.
 # Prints the AVATAR-SCRIPT lines and the two counts; exits 0 when the avatar's RESULT says PASS, the avatar stayed
 # the probe, three outside script lines were refused and none ran, and taking it off stopped its script with its late call
 # refused. The log: results/avatar-scripts/client.log.
@@ -16,17 +19,28 @@ set -e
 D=$(cd "$(dirname "$0")" && pwd)
 SECONDS_MAX=${1:-90}
 LOG="$D/results/avatar-scripts/client.log"
+DRIVER=avatar-scripts.js
+[ -n "$MIDCALL" ] && DRIVER=avatar-scripts-midcall.js
 mkdir -p "$D/results/avatar-scripts"
 sed -e '/^script = /d' -e 's/^name = probe/name = plain/' "$D/avatar-scripts/av/probe.fst" > "$D/avatar-scripts/av/plain.fst"
 python3 -m http.server 43110 --bind 127.0.0.1 --directory "$D/avatar-scripts" > "$D/results/avatar-scripts.server.txt" 2>&1 &
 SERVER=$!
 sleep 1
 "$D/run-client.sh" avatar-scripts "$SECONDS_MAX" \
-    --url "file://$D/world.json" --testScript "$D/avatar-scripts.js" --testResultsLocation "$D/results/avatar-scripts" \
+    --url "file://$D/world.json" --testScript "$D/$DRIVER" --testResultsLocation "$D/results/avatar-scripts" \
     | tee "$D/results/avatar-scripts.run.txt" || true
 kill $SERVER 2>/dev/null || true
 rm -f "$D/avatar-scripts/av/plain.fst"
 grep -o "AVATAR-SCRIPT .*" "$LOG" || echo "no AVATAR-SCRIPT lines"
+if [ -n "$MIDCALL" ]; then
+    SPUN=$(grep -c "AVATAR-SCRIPT spin ended" "$LOG" || true)
+    echo "spins ended: $SPUN (expect 1, the short one's)"
+    grep -o "the call running at the stop of .*" "$LOG" || true
+    grep -q "AVATAR-SCRIPT DRIVER takeoff-stopped after [0-9]* ms PASS" "$LOG" \
+        && grep -q "AVATAR-SCRIPT DRIVER plain-stop-stopped after [0-9]* ms PASS" "$LOG" \
+        && grep -q "AVATAR-SCRIPT DRIVER quick-stop-stopped after [0-9]* ms PASS" "$LOG" && [ "$SPUN" = 1 ]
+    exit $?
+fi
 REFUSED=$(grep -c "is outside the avatar's own folder" "$LOG" || true)
 RAN=$(grep -c "ELSEWHERE RAN" "$LOG" || true)
 FETCHED=$(grep -c "elsewhere" "$D/results/avatar-scripts.server.txt" || true)
