@@ -437,6 +437,7 @@ private:
     std::map<glm::ivec2, gpu::TexturePointer, terrain::IVec2Less> _topTiles;
 
     ResourceRequest* _request { nullptr };
+    uint64_t _fetchSerial { 0 };   // counts the fetches; a finished handler acts only for the fetch it was made for
     QString _requestURL;
     uint32_t _requestVersion { 0 };
     int _fetchFailures { 0 };   // of the file asked for now, in a row

@@ -13,6 +13,7 @@
 
 #include <gpu/Batch.h>
 #include <QJsonDocument>
+#include <QtCore/QScopedPointer>
 #include <QJsonObject>
 #include <QUrl>
 #include <ResourceManager.h>
@@ -602,13 +603,17 @@ void ZoneEntityRenderer::fetchProbeVolume(const QString& url) {
         qCWarning(entitiesrenderer) << "Probe volume" << url << "cannot be fetched: no request for that kind of URL";
         return;
     }
-    connect(_probeVolumeRequest, &ResourceRequest::finished, this, [this, url] {
-        ResourceRequest* request = _probeVolumeRequest;
-        _probeVolumeRequest = nullptr;
-        if (!request) {
-            return;
+    // this fetch's own number and request: the handler answers to both
+    const uint64_t serial = ++_probeVolumeFetchSerial;
+    ResourceRequest* request = _probeVolumeRequest;
+    connect(_probeVolumeRequest, &ResourceRequest::finished, this, [this, request, serial, url] {
+        if (_probeVolumeRequest != request || _probeVolumeFetchSerial != serial) {
+            return;   // not the current fetch: nothing of it is touched
         }
-        request->deleteLater();
+        _probeVolumeRequest = nullptr;
+        // the request lives on the Resource Manager's thread: it is deleted only after the last read below, on every
+        // way out of this handler
+        QScopedPointer<ResourceRequest, QScopedPointerDeleteLater> holder(request);
         if (url != _probeVolumeURL) {
             return;
         }

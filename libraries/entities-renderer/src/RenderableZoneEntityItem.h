@@ -172,6 +172,7 @@ private:
     QString _probeVolumeURL;
     float _probeVolumeIntensity { 1.0f };
     ResourceRequest* _probeVolumeRequest { nullptr };
+    uint64_t _probeVolumeFetchSerial { 0 };   // counts the fetches; a finished handler acts only for the fetch it was made for
     gpu::TexturePointer _probeVolumeTexture;
     glm::vec3 _probeVolumeOrigin { 0.0f };
     glm::vec3 _probeVolumeSpacing { 1.0f };
