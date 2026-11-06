@@ -299,7 +299,7 @@ public:
     /**jsdoc
      * Starts running another script in Interface, if it isn't already running. The script is not automatically loaded next
      * time Interface starts.
-     * <p class="availableIn"><strong>Supported Script Types:</strong> Interface Scripts &bull; Avatar Scripts</p>
+     * <p class="availableIn"><strong>Supported Script Types:</strong> Interface Scripts</p>
      * <p>See also, {@link ScriptDiscoveryService.loadScript}.</p>
      * @function Script.load
      * @param {string} filename - The URL of the script to load. This can be relative to the current script's URL.
