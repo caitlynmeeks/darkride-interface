@@ -242,7 +242,9 @@ int InboundAudioStream::parseStreamProperties(PacketType type, const QByteArray&
             return packetAfterSeqNum.size();
         }
         memcpy(&numSilentSamples, packetAfterSeqNum.constData(), sizeof(quint16));
-        numAudioSamples = numSilentSamples;
+        // senders count the silence in samples of all channels, the stream in frames: read as frames, a stereo mix's
+        // silence counted twice, overfilled the buffer, which was cut back and ran dry (the clicks after a join)
+        numAudioSamples = numSilentSamples / _numChannels;
         return sizeof(quint16);
     } else {
         // mixed audio packets do not have any info between the seq num and the audio data.
