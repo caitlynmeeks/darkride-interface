@@ -107,34 +107,38 @@ void CodeNearby::refresh() {
     const bool mayEdit = entities->canRez() || entities->canRezTmp();
     const glm::vec3 center = avatar->getWorldPosition();
 
-    // one read of the tree: what's in the sphere, and each one's scripts
-    QVector<Row> rows;
+    // the tree's read lock only for what's in the sphere (the entity packet thread's edits, a vehicle's too, wait on
+    // it: physics, 11-06); each entity's own fields after it, under the entity's own lock
+    QVector<EntityItemPointer> inSphere;
     tree->withReadLock([&] {
         QVector<QUuid> found;
         const unsigned int filter = PickFilter::getBitMask(PickFilter::FlagBit::DOMAIN_ENTITIES) |
             PickFilter::getBitMask(PickFilter::FlagBit::AVATAR_ENTITIES);
         tree->evalEntitiesInSphere(center, RADIUS_M, PickFilter(filter), found);
+        inSphere.reserve(found.size());
         for (const QUuid& id : found) {
-            EntityItemPointer entity = tree->findEntityByEntityItemID(id);
-            if (!entity) {
-                continue;
-            }
-            const QString script = entity->getScript();
-            const QString server = entity->getServerScripts();
-            if (script.trimmed().isEmpty() && server.trimmed().isEmpty()) {
-                continue;
-            }
-            const float distance = glm::distance(center, entity->getWorldPosition());
-            const QString name = entity->getName();
-            if (!script.trimmed().isEmpty()) {
-                rows.append({ id, "script", fileOf(script), name, distance, QString() });
-            }
-            // a world's editors only: a server script isn't listed to anyone who can't change its entity
-            if (!server.trimmed().isEmpty() && mayEdit && !entity->getLocked()) {
-                rows.append({ id, "serverScripts", fileOf(server), name, distance, QString() });
+            if (EntityItemPointer entity = tree->findEntityByEntityItemID(id)) {
+                inSphere.append(entity);
             }
         }
     });
+    QVector<Row> rows;
+    for (const EntityItemPointer& entity : inSphere) {
+        const QString script = entity->getScript();
+        const QString server = entity->getServerScripts();
+        if (script.trimmed().isEmpty() && server.trimmed().isEmpty()) {
+            continue;
+        }
+        const float distance = glm::distance(center, entity->getWorldPosition());
+        const QString name = entity->getName();
+        if (!script.trimmed().isEmpty()) {
+            rows.append({ entity->getEntityItemID(), "script", fileOf(script), name, distance, QString() });
+        }
+        // a world's editors only: a server script isn't listed to anyone who can't change its entity
+        if (!server.trimmed().isEmpty() && mayEdit && !entity->getLocked()) {
+            rows.append({ entity->getEntityItemID(), "serverScripts", fileOf(server), name, distance, QString() });
+        }
+    }
     std::stable_sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.distance < b.distance; });
     if (rows.size() > MAX_ROWS) {
         rows.resize(MAX_ROWS);
