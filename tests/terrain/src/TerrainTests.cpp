@@ -1685,7 +1685,15 @@ void TerrainTests::levelOfDetailShowsANewCutOnceItsMeshesAreIn() {
 
     // The camera at the far corner: the cut drawn stays until every node of the new one has its mesh.
     camera = glm::vec3(236.0f, 20.0f, 236.0f);
-    lod.update(grid, camera, metres, gridChunkReady);
+    {   // the cut's choice is a job on the pool, adopted at a later update (entry 24, step 3c): update until it is
+        const std::vector<ChunkKey> was = cutKeys();
+        QElapsedTimer choice;
+        choice.start();
+        while (choice.elapsed() < 5000 && cutKeys() == was) {
+            lod.update(grid, camera, metres, gridChunkReady);
+            QThread::msleep(1);
+        }
+    }
     QVERIFY(cutKeys() != before);
     QVERIFY(drawnKeys() == before);
     QVERIFY(settle());
@@ -2799,7 +2807,15 @@ void TerrainTests::levelOfDetailAsksAgainForAStalledNodeAndThenShowsWithoutIt() 
 
     // the camera at the far corner: the new cut has the grid's own chunks near it, and one of them never gets its mesh
     camera = glm::vec3(236.0f, 20.0f, 236.0f);
-    update();
+    {   // the cut's choice is a job on the pool, adopted at a later update (entry 24, step 3c): update until it is
+        const std::vector<ChunkKey> was = cutKeys();
+        QElapsedTimer choice;
+        choice.start();
+        while (choice.elapsed() < 5000 && cutKeys() == was) {
+            lod.update(grid, camera, metres, gridChunkReady);
+            QThread::msleep(1);
+        }
+    }
     for (const LodCut::Node& node : lod.getCut().getNodes()) {
         if (node.isGridChunk && node.key.level == 0) {
             refused = node.key;
