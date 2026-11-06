@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <functional>
 
-#include <QtConcurrent/QtConcurrentRun>
+#include <QtCore/QThreadPool>
 #include <QtCore/QDateTime>
 #include <QtCore/QPointer>
 #include <QtCore/QUrl>
@@ -103,7 +103,8 @@ void CodeNearby::setActive(bool active) {
 }
 
 // a second's check on the main thread; the scan itself only when the avatar has moved 5 m (at most every 5 s) or 10 s
-// have passed, and off the main thread (performance, 11-06: in Port Amarelle the 50 m sphere holds thousands)
+// have passed, and off the main thread on Qt's thread pool (performance, 11-06: in Port Amarelle the 50 m sphere holds
+// thousands)
 void CodeNearby::tick() {
     if (!_active || _scanning) {
         return;
@@ -127,7 +128,7 @@ void CodeNearby::tick() {
     _scannedFrom = center;
     const int generation = _generation;
     QPointer<CodeNearby> self(this);
-    QtConcurrent::run([self, tree, center, mayEdit, generation] {
+    QThreadPool::globalInstance()->start([self, tree, center, mayEdit, generation] {
         QVector<Row> rows = scan(tree, center, mayEdit);
         QMetaObject::invokeMethod(qApp, [self, rows, generation] {
             if (self) {

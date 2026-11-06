@@ -17,6 +17,10 @@
 //  files back to its path with the asset server's own upload rights, then reloaded for everyone as the Inspector's
 //  Reload does. A script on the web is read only.
 //
+//  It lives on the main thread and emits only there (the panel's QML connects to it, and on Qt 6 a QML connection to an
+//  object of another thread is fatal): everything from other threads reaches it queued, and MakeDock calls it on the
+//  main thread only.
+//
 //  Copyright 2026 Darkride.
 //
 //  Distributed under the MIT License.

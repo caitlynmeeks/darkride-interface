@@ -16,7 +16,7 @@
 #include <QtCore/QRegularExpression>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
-#include <QtWidgets/QUndoStack>
+#include <QUndoStack>   // QtWidgets in Qt 5, QtGui in Qt 6
 
 #include <AssetClient.h>
 #include <AssetUpload.h>
