@@ -35,6 +35,7 @@
     }
     // the probe spins for spinMs; after 500 ms into it, stop() stops it; says how long it took to go, and whether in range
     function stopMidCall(name, spinMs, stop, lowMs, highMs, then) {
+        say(name + ": spin " + spinMs + " ms sent");  // avatar-scripts.sh reads each case from here to the next
         Messages.sendLocalMessage("avatar-probe-spin", String(spinMs));
         Script.setTimeout(function () {
             say(name + ": stopping it mid-call");
