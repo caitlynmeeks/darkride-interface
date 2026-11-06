@@ -49,6 +49,9 @@
 #include <QtWidgets/QTreeView>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#include <QtQuickWidgets/QQuickWidget>
+#endif
 
 #include <OffscreenUi.h>
 
@@ -858,10 +861,41 @@ void Editor::focusViewport() {
     }
 }
 
+namespace {
+    // a field on the desktop surface has the keyboard (chat, a dialog, a URL box)
+    bool surfaceHasTextFocus() {
+        if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
+            if (auto window = offscreenUi->getWindow()) {
+                if (auto item = window->activeFocusItem()) {
+                    return item->inherits("QQuickTextInput") || item->inherits("QQuickTextEdit")
+                        || item->inherits("QQuickWebEngineView");
+                }
+            }
+        }
+        return false;
+    }
+
+    // a field in a panel has the keyboard: a panel's view isn't on the desktop surface. Asked as the input method asks, so
+    // a web page's field counts as a QML one does, and a button or a page with no field in use doesn't
+    bool panelHasTextFocus() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        QObject* focus = QGuiApplication::focusObject();   // a panel's view is a window of its own
+#else
+        auto view = qobject_cast<QQuickWidget*>(QApplication::focusWidget());
+        QObject* focus = view ? view->quickWindow()->activeFocusItem() : nullptr;
+#endif
+        auto item = qobject_cast<QQuickItem*>(focus);
+        return item && item->inputMethodQuery(Qt::ImEnabled).toBool();
+    }
+}
+
 void Editor::takeFocusUnlessTyping() {
     QWidget* focus = QApplication::focusWidget();
     if (focus && (qobject_cast<QLineEdit*>(focus) || qobject_cast<QAbstractSpinBox*>(focus) ||
                   qobject_cast<QTextEdit*>(focus) || qobject_cast<QPlainTextEdit*>(focus))) {
+        return;
+    }
+    if (panelHasTextFocus()) {
         return;
     }
     focusViewport();
@@ -4592,15 +4626,7 @@ bool Editor::handleWheel(QWheelEvent* event) {
 }
 
 bool Editor::qmlHasTextFocus() const {
-    if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
-        if (auto window = offscreenUi->getWindow()) {
-            if (auto item = window->activeFocusItem()) {
-                return item->inherits("QQuickTextInput") || item->inherits("QQuickTextEdit")
-                    || item->inherits("QQuickWebEngineView");
-            }
-        }
-    }
-    return false;
+    return surfaceHasTextFocus() || panelHasTextFocus();
 }
 
 bool Editor::handleKeyPress(QKeyEvent* event) {
@@ -4700,7 +4726,8 @@ bool Editor::handleKeyRelease(QKeyEvent* event) {
     if (!_active) {
         return false;
     }
-    if (qmlHasTextFocus() && !_vertexSnap) {
+    // not a panel's field: a key held for the camera has to let go, whichever field has the keyboard by then
+    if (surfaceHasTextFocus() && !_vertexSnap) {
         return false;
     }
     if (event->key() == Qt::Key_V && !event->isAutoRepeat()) {
