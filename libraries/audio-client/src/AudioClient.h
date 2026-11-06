@@ -101,6 +101,11 @@ public:
     public:
         AudioOutputIODevice(LocalInjectorsStream& localInjectorsStream, MixedProcessedAudioStream& receivedAudioStream,
                 AudioClient* audio) :
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            // a child of the audio client, so it moves to the audio thread with it: Qt 6's sink reads this device on the
+            // device's own thread, and from any other thread each read is a queued call that can outlive the sink
+            QIODevice(audio),
+#endif
             _localInjectorsStream(localInjectorsStream), _receivedAudioStream(receivedAudioStream),
             _audio(audio), _unfulfilledReads(0) {}
 
