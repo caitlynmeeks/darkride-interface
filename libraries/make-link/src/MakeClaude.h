@@ -72,8 +72,9 @@ signals:
     void started(const QString& model);
     /// Claude's words as they come.
     void textDelta(const QString& text);
-    /// A turn is over: what it cost in all so far (total_cost_usd), whether it ended in an error, and its last words.
-    void turnEnded(double totalCostUsd, bool error, const QString& result);
+    /// A turn is over: what it cost in all so far (total_cost_usd), whether it ended in an error, its last words, and
+    /// the result's kind ("success", "error_max_budget_usd" when the run's cap is reached, ...).
+    void turnEnded(double totalCostUsd, bool error, const QString& result, const QString& subtype);
     /// It has ended (by itself, or by end()), with a plain reason when it wasn't asked to.
     void ended(const QString& why);
 

@@ -84,11 +84,14 @@ public:
     MakeLink();
     ~MakeLink() override;
 
-    enum class State { Off, Listening, Connected, Failed };
+    /// Limit: the key route's run has spent its cap (limitUsd()); the person's Connect goes on with a fresh run.
+    enum class State { Off, Listening, Connected, Failed, Limit };
     State state() const { return _state; }
     QString stateName() const;
-    /// Why it's Failed, or what's missing (Blender), in plain words.
+    /// Why it's Failed, or what's missing (Blender), or the Limit line, in plain words.
     QString reason() const { return _reason; }
+    /// The key route's cap for one Connect, in dollars (Claude Code's --max-budget-usd holds for its whole run).
+    double limitUsd() const { return claudeSettings().maxBudgetUsd; }
 
     /// The Make folder: the saved scripts, models, pictures and Blender's jobs, and Claude Code's project folder.
     QString folder() const { return _folder; }
@@ -104,7 +107,8 @@ public:
     MakeClaude::Settings claudeSettings() const;
 
     /// The person's Connect (after the dock's approve-once): writes the Make folder, starts the building tools'
-    /// engine and listens. False with reason() when it can't.
+    /// engine and listens. False with reason() when it can't. From Limit: the folder written fresh, listening again,
+    /// so startClaude() starts a fresh run.
     bool connectLink();
     /// The person's Disconnect, and quitting: closes Claude Code's connection and the socket, stops a running make and
     /// the tools' engine.

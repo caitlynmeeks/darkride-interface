@@ -594,5 +594,6 @@ void MakeLinkTests::testClaudeStartedOncePerRun() {
     QCOMPARE(started.first().first().toString(), QString("kit-model"));
     QCOMPARE(turns.at(0).at(0).toDouble(), 1.5);
     QCOMPARE(turns.at(1).at(0).toDouble(), 2.5);
+    QCOMPARE(turns.at(0).at(3).toString(), QString("success"));  // the result's kind: MakeLink's limit is told by it
     claude.end();
 }

@@ -9,6 +9,8 @@
 
 #include "MakeLink.h"
 
+#include <cmath>
+
 #include <QtCore/QBuffer>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
@@ -168,7 +170,8 @@ MakeLink::MakeLink() {
                            const std::function<void(bool, const QString&)>& proceed) { gate(tool, inputs, proceed); });
     setHandlers();
     connect(&_server, &MakeLinkServer::connectedChanged, this, [this](bool connected) {
-        if (_state == State::Off) {
+        // at the limit, the ended run's helper leaving doesn't hide the limit line
+        if (_state == State::Off || (_state == State::Limit && !connected)) {
             return;
         }
         setState(connected ? State::Connected : State::Listening);
@@ -193,9 +196,17 @@ MakeLink::MakeLink() {
         _costAtRequestStart = 0.0;
         setModel(model);
     });
-    connect(&_claude, &MakeClaude::turnEnded, this, [this](double total, bool, const QString&) {
+    connect(&_claude, &MakeClaude::turnEnded, this, [this](double total, bool, const QString&, const QString& subtype) {
         _claudeTotal = total;
         emit requestCost(_claudeRequest, std::max(0.0, total - _costAtRequestStart));
+        // the run's cap: every later message in this run would be refused at once, so the run ends here and the
+        // person's Connect goes on with a fresh one (the cap holds per Connect)
+        if (subtype == "error_max_budget_usd") {
+            const double usd = limitUsd();
+            _claude.end();
+            setState(State::Limit, QString("Make has used its $%1 limit for this session. Press Connect to go on.")
+                                       .arg(QString::number(usd, 'f', usd == std::floor(usd) ? 0 : 2)));
+        }
     });
 
     // a new world: the tools start again in it (Undo starts again too)
@@ -219,6 +230,7 @@ QString MakeLink::stateName() const {
         case State::Listening: return "listening";
         case State::Connected: return "connected";
         case State::Failed: return "failed";
+        case State::Limit: return "limit";
     }
     return "off";
 }
@@ -385,6 +397,16 @@ bool MakeLink::connectLink() {
         return true;
     }
     QString error;
+    if (_state == State::Limit) {
+        // still listening, the tools' engine still up: Claude Code's two files written fresh, as at every Connect
+        if (!writeFolder(error)) {
+            setState(State::Failed, error);
+            return false;
+        }
+        newRequest();
+        setState(_server.isConnected() ? State::Connected : State::Listening);
+        return true;
+    }
     if (!writeFolder(error) || !_server.listen(socketFolder(), error)) {
         setState(State::Failed, error);
         return false;

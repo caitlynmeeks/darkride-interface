@@ -207,6 +207,6 @@ void MakeClaude::handle(const QByteArray& line) {
         }
     } else if (type == "result") {
         emit turnEnded(event.value("total_cost_usd").toDouble(), event.value("is_error").toBool(),
-                       redact(event.value("result").toString()).left(4000));
+                       redact(event.value("result").toString()).left(4000), event.value("subtype").toString().left(64));
     }
 }
