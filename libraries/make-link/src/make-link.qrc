@@ -2,5 +2,11 @@
 <RCC version="1.0">
     <qresource prefix="/make-link">
         <file alias="TOOLS.json">../resources/TOOLS.json</file>
+        <file alias="guide.md">../resources/guide.md</file>
+        <file alias="make-tools.js">../resources/make-tools.js</file>
+        <file alias="blender/box.sb">../resources/blender/box.sb</file>
+        <file alias="blender/prelude.py">../resources/blender/prelude.py</file>
+        <file alias="blender/finish.py">../resources/blender/finish.py</file>
+        <file alias="blender/views.py">../resources/blender/views.py</file>
     </qresource>
 </RCC>

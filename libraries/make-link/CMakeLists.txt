@@ -8,4 +8,9 @@
 #
 
 set(TARGET_NAME make-link)
-setup_hifi_library(Network)
+setup_hifi_library(Network Gui)
+
+if (APPLE)
+  # MakeKey: the builder's key in the login keychain; MakeBlender: the memory check (libproc is in libSystem)
+  target_link_libraries(${TARGET_NAME} "-framework Security" "-framework CoreFoundation")
+endif ()

@@ -4,7 +4,7 @@ macro (setup_testcase_dependencies)
   package_libraries_for_deployment()
 endmacro ()
 
-setup_hifi_testcase(Network)
+setup_hifi_testcase(Network Gui)
 
 if (TARGET darkride-mcp AND TARGET make-link-MakeLinkTests)
   add_dependencies(make-link-MakeLinkTests darkride-mcp)
