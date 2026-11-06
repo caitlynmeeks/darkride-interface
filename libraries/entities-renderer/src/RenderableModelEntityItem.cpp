@@ -1103,6 +1103,10 @@ void ModelEntityRenderer::onRemoveFromSceneTyped(const TypedEntityPointer& entit
     if (entityTreeRenderer) {
         entityTreeRenderer->undeferModelMesh(entity->getID());
     }
+    // it leaves the index of tags; back in the scene, it works its tags out again
+    TaggedMaterials::removeModel(entity->getID());
+    _taggedMaterialsModel.reset();
+    _tags.clear();
     // a group's card counts its models again
     updateImpostorAncestor(entity);
 }
@@ -1333,6 +1337,7 @@ void ModelEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& sce
     });
 
     applyLightmap(entity);
+    applyTaggedMaterials(entity);
 
     ModelPointer model;
     withReadLock([&] { model = _model; });
@@ -1788,6 +1793,83 @@ void ModelEntityRenderer::removeMaterial(graphics::MaterialPointer material, con
 // entity at the default priority keeps its say on everything but the lightmap
 static const quint16 LIGHTMAP_LAYER_PRIORITY = 1;
 static const std::string LIGHTMAP_LAYER_PARTS = "all";
+
+void ModelEntityRenderer::applyTaggedMaterials(const TypedEntityPointer& entity) {
+    ModelPointer model;
+    withReadLock([&] { model = _model; });
+    // the tags of its objects come with the model
+    if (!model || !model->isLoaded()) {
+        return;
+    }
+
+    // its tags, worked out again when its model or its userData has changed. An animated model comes here every
+    // frame: the userData is the entity's own string, shared with the copy kept here until the entity is given a new
+    // one, so the same buffer tells it is unchanged without comparing the text
+    const NetworkModel::Pointer& networkModel = model->getNetworkModel();
+    QString userData = entity->getUserData();
+    bool modelChanged = _taggedMaterialsModel.lock() != networkModel;
+    bool tagsChanged = false;
+    if (modelChanged || userData.constData() != _taggedMaterialsUserData.constData()) {
+        bool userDataChanged = userData != _taggedMaterialsUserData;
+        _taggedMaterialsModel = networkModel;
+        _taggedMaterialsUserData = userData;
+        if (modelChanged || userDataChanged) {
+            // a tag true in the extras of any of its objects, unless the userData names it, which then decides, so one
+            // model can be opted in or out without a new export
+            QSet<QString> tags;
+            for (const auto& joint : model->getHFMModel().joints) {
+                for (auto it = joint.extras.cbegin(); it != joint.extras.cend(); ++it) {
+                    if (it.value().toBool()) {
+                        tags.insert(it.key());
+                    }
+                }
+            }
+            QVariantMap userDataTags = QJsonDocument::fromJson(userData.toUtf8()).object().toVariantMap();
+            for (auto it = userDataTags.cbegin(); it != userDataTags.cend(); ++it) {
+                if (it.value().toBool()) {
+                    tags.insert(it.key());
+                } else {
+                    tags.remove(it.key());
+                }
+            }
+            if (tags != _tags) {
+                _tags = tags;
+                TaggedMaterials::setModelTags(entity->getID(), _tags);
+                tagsChanged = true;
+            }
+        }
+    }
+
+    // the materials, looked up again when its tags or the tagged materials have changed; most models carry no tag
+    uint32_t version = TaggedMaterials::getVersion();
+    if (!tagsChanged && version == _taggedMaterialsVersion) {
+        return;
+    }
+    _taggedMaterialsVersion = version;
+    if (_tags.isEmpty() && _appliedTaggedMaterials.empty()) {
+        return;
+    }
+    auto taggedMaterials = TaggedMaterials::getMaterialsFor(_tags);
+
+    // those that changed or no longer apply go, then the ones that apply and are not on yet
+    for (auto it = _appliedTaggedMaterials.begin(); it != _appliedTaggedMaterials.end();) {
+        auto now = taggedMaterials.find(it->first);
+        bool keep = now != taggedMaterials.end() && now->second.layer.material == it->second.layer.material &&
+                    now->second.layer.priority == it->second.layer.priority && now->second.parts == it->second.parts;
+        if (keep) {
+            ++it;
+        } else {
+            removeMaterial(it->second.layer.material, it->second.parts);
+            it = _appliedTaggedMaterials.erase(it);
+        }
+    }
+    for (const auto& entry : taggedMaterials) {
+        if (_appliedTaggedMaterials.find(entry.first) == _appliedTaggedMaterials.end()) {
+            addMaterial(entry.second.layer, entry.second.parts);
+            _appliedTaggedMaterials.emplace(entry.first, entry.second);
+        }
+    }
+}
 
 void ModelEntityRenderer::applyLightmap(const TypedEntityPointer& entity) {
     QString userData = entity->getUserData();
