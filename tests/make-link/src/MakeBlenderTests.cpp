@@ -12,6 +12,10 @@
 #include <cerrno>
 #include <cstdio>
 #include <signal.h>
+#include <unistd.h>
+#ifdef Q_OS_MAC
+#include <libproc.h>
+#endif
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -28,6 +32,12 @@
 
 namespace {
 
+#ifdef DARKRIDE_MAKE_WATCH_PATH
+const QString WATCH_PROGRAM = DARKRIDE_MAKE_WATCH_PATH;
+#else
+const QString WATCH_PROGRAM;
+#endif
+
 // this test program, started again with this set, plays the app for testBlenderEndsWithTheApp: it starts a runaway
 // make, says its Blender's and watcher's process ids, and waits to be killed
 const char* PLAY_THE_APP = "MAKE_BLENDER_TESTS_PLAY_THE_APP";
@@ -37,6 +47,7 @@ int playTheApp(int argc, char** argv) {
     MakeBlender blender(qEnvironmentVariable(PLAY_THE_APP));
     QString why;
     blender.setBlender(MakeBlender::findBlender(why));
+    blender.setWatcher(WATCH_PROGRAM);
     if (blender.blender().isEmpty()) {
         return 2;
     }
@@ -117,11 +128,61 @@ const char* CUBE = "import bpy\nbpy.ops.mesh.primitive_cube_add(size=1)\nprint('
 bool haveBlender(MakeBlender& blender) {
     QString why;
     const QString app = MakeBlender::findBlender(why);
-    if (app.isEmpty()) {
+    if (app.isEmpty() || WATCH_PROGRAM.isEmpty()) {
         return false;
     }
     blender.setBlender(app);
+    blender.setWatcher(WATCH_PROGRAM);
     return true;
+}
+
+qint64 parentOf(qint64 pid) {
+#ifdef Q_OS_MAC
+    proc_bsdinfo info;
+    if (proc_pidinfo(static_cast<pid_t>(pid), PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)) {
+        return info.pbi_ppid;
+    }
+#endif
+    return 0;
+}
+
+// the watcher run straight, with a plain sandbox line (no Blender): what it said, its exit, how long it took
+struct Watched {
+    int exit { -1 };
+    bool crashed { false };
+    QByteArray said;
+    qint64 ms { 0 };
+};
+
+const char* OPEN_BOX = "(version 1)(allow default)";
+
+Watched watch(const QStringList& arguments, std::function<void(QProcess&)> during = nullptr, int waitMs = 20000) {
+    Watched watched;
+    QProcess process;
+    process.setProcessChannelMode(QProcess::MergedChannels);
+    QElapsedTimer timer;
+    timer.start();
+    process.start(WATCH_PROGRAM, arguments);
+    if (!process.waitForStarted(5000)) {
+        return watched;
+    }
+    if (during) {
+        during(process);
+    }
+    process.waitForFinished(waitMs);
+    watched.ms = timer.elapsed();
+    watched.said = process.readAll();
+    watched.crashed = process.exitStatus() == QProcess::CrashExit;
+    watched.exit = process.state() == QProcess::NotRunning ? process.exitCode() : -2;
+    if (process.state() != QProcess::NotRunning) {
+        process.kill();
+        process.waitForFinished(2000);
+    }
+    return watched;
+}
+
+QStringList boxLine(const QString& pidFile, const QStringList& line, int cap = 60) {
+    return QStringList { QString::number(cap), pidFile, "--", "/usr/bin/sandbox-exec", "-p", OPEN_BOX } + line;
 }
 
 }  // namespace
@@ -421,6 +482,145 @@ void MakeBlenderTests::testTextureNamesChecked() {
     const MakeBlender::Made made = makeAndWait(blender, script, 60000, { { clean, "awning.png" } });
     QVERIFY2(made.ok(), qPrintable(made.message + "\n" + made.log));
     QVERIFY(made.log.contains("TEXTURE True"));
+}
+
+// the watcher by itself, with a plain box line and no Blender: what it passes on, what ends its child, what it refuses
+void MakeBlenderTests::testWatcherPassesTheExitOn() {
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    QTemporaryDir dir;
+    // Blender's exit code comes back; its standard input is /dev/null; it has only 0, 1 and 2 of this side's files
+    Watched watched = watch(boxLine(dir.filePath("a.pid"), { "/bin/sh", "-c",
+        "read line; echo READ=$?; for fd in 3 4 5 6 7 8 9 10 11 12; do if [ -e /dev/fd/$fd ]; then echo OPEN=$fd; fi; "
+        "done; exit 7" }), [](QProcess& process) { process.write("not for the child\n"); });
+    QCOMPARE(watched.exit, 7);
+    QVERIFY2(watched.said.contains("READ=1"), watched.said.constData());
+    // the shell's own [ -e ] test may open one; nothing of ours may be there
+    QVERIFY2(watched.said.count("OPEN=") <= 1, watched.said.constData());
+    // the pid file: the child's id, made new
+    QFile pid(dir.filePath("a.pid"));
+    QVERIFY(pid.open(QIODevice::ReadOnly));
+    QVERIFY(pid.readAll().trimmed().toLongLong() > 1);
+    QCOMPARE(int(pid.permissions() & (QFileDevice::ReadGroup | QFileDevice::ReadOther)), 0);
+
+    watched = watch(boxLine(dir.filePath("b.pid"), { "/usr/bin/true" }));
+    QCOMPARE(watched.exit, 0);
+}
+
+void MakeBlenderTests::testWatcherEndsItsChild() {
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    QTemporaryDir dir;
+    const QStringList sleeper { "/bin/sleep", "60" };
+    // "stop" on standard input
+    Watched watched = watch(boxLine(dir.filePath("stop.pid"), sleeper), [](QProcess& process) {
+        QTest::qWait(500);
+        process.write("stop\n");
+    });
+    QCOMPARE(watched.exit, 128 + SIGKILL);
+    QVERIFY(watched.ms < 5000);
+    // standard input ends (the app gone)
+    watched = watch(boxLine(dir.filePath("eof.pid"), sleeper), [](QProcess& process) {
+        QTest::qWait(500);
+        process.closeWriteChannel();
+    });
+    QCOMPARE(watched.exit, 128 + SIGKILL);
+    QVERIFY(watched.ms < 5000);
+    // its wall-clock cap
+    watched = watch(boxLine(dir.filePath("cap.pid"), sleeper, 2));
+    QCOMPARE(watched.exit, 128 + SIGKILL);
+    QVERIFY2(watched.ms >= 1900 && watched.ms < 6000, qPrintable(QString::number(watched.ms)));
+    // asked to end: the child first
+    qint64 child = 0;
+    const QString termPid = dir.filePath("term.pid");
+    watched = watch(boxLine(termPid, sleeper), [&](QProcess& process) {
+        QTest::qWait(500);
+        QFile file(termPid);
+        if (file.open(QIODevice::ReadOnly)) {
+            child = file.readAll().trimmed().toLongLong();
+        }
+        ::kill(static_cast<pid_t>(process.processId()), SIGTERM);
+    });
+    QCOMPARE(watched.exit, 128 + SIGKILL);
+    QVERIFY(child > 1);
+    QVERIFY(processGone(child, 2000));
+    // a child that ignores SIGTERM and SIGXCPU still ends (SIGKILL; exec, so no grandchild is left behind)
+    watched = watch(boxLine(dir.filePath("trap.pid"), { "/bin/sh", "-c", "trap '' TERM XCPU HUP INT; exec /bin/sleep 60" }),
+                    [](QProcess& process) {
+                        QTest::qWait(500);
+                        process.write("stop\n");
+                    });
+    QCOMPARE(watched.exit, 128 + SIGKILL);
+    QVERIFY(watched.ms < 5000);
+}
+
+void MakeBlenderTests::testWatcherRefuses() {
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    QTemporaryDir dir;
+    const QString marker = dir.filePath("ran");
+    const QStringList touch { "/usr/bin/touch", marker };
+    // only the box's program
+    Watched watched = watch({ "60", dir.filePath("p1.pid"), "--", "/bin/sh", "-c", "touch '" + marker + "'" });
+    QCOMPARE(watched.exit, 125);
+    // a cap that isn't a number of seconds from 1 to 3600, a relative pid file, no "--"
+    for (const QStringList& bad : { QStringList { "0", dir.filePath("p2.pid"), "--", "/usr/bin/sandbox-exec" },
+                                    QStringList { "3601", dir.filePath("p3.pid"), "--", "/usr/bin/sandbox-exec" },
+                                    QStringList { "5s", dir.filePath("p4.pid"), "--", "/usr/bin/sandbox-exec" },
+                                    QStringList { "60", "p5.pid", "--", "/usr/bin/sandbox-exec" },
+                                    QStringList { "60", dir.filePath("p6.pid"), "/usr/bin/sandbox-exec" } }) {
+        watched = watch(bad + QStringList { "-p", OPEN_BOX } + touch);
+        QCOMPARE(watched.exit, 125);
+    }
+    // a pid file that is there already, or a link: refused, and the child never starts
+    QFile there(dir.filePath("there.pid"));
+    QVERIFY(there.open(QIODevice::WriteOnly));
+    there.close();
+    watched = watch(boxLine(dir.filePath("there.pid"), touch));
+    QCOMPARE(watched.exit, 125);
+    QVERIFY(QFile::link(dir.filePath("elsewhere"), dir.filePath("link.pid")));
+    watched = watch(boxLine(dir.filePath("link.pid"), touch));
+    QCOMPARE(watched.exit, 125);
+    QVERIFY(!QFile::exists(dir.filePath("elsewhere")));
+    QTest::qWait(300);
+    QVERIFY(!QFile::exists(marker));
+}
+
+// in a make, Blender is the watcher's child, its id written outside the folder the box may write
+void MakeBlenderTests::testWatcherIsBlendersParent() {
+    QTemporaryDir dir;
+    MakeBlender blender(dir.path());
+    if (!haveBlender(blender)) {
+        QSKIP("no Blender here");
+    }
+    MakeBlender::Made made;
+    bool done = false;
+    blender.make("while True:\n    pass\n", "object", {}, [&](const MakeBlender::Made& result) {
+        made = result;
+        done = true;
+    });
+    QElapsedTimer timer;
+    timer.start();
+    qint64 pid = 0;
+    while (pid == 0 && timer.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        pid = blender.processId();
+    }
+    QVERIFY(pid > 1);
+    QVERIFY(pid != blender.watcherId());
+    QCOMPARE(parentOf(pid), blender.watcherId());
+    QCOMPARE(parentOf(blender.watcherId()), static_cast<qint64>(getpid()));
+    const QStringList jobs = QDir(dir.filePath("jobs")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QCOMPARE(jobs.size(), 1);
+    QVERIFY(QFile::exists(dir.filePath("jobs/" + jobs.first() + "/blender.pid")));
+    QVERIFY(!QFile::exists(dir.filePath("jobs/" + jobs.first() + "/work/blender.pid")));
+    blender.cancel();
+    QVERIFY(done);
+    QCOMPARE(made.code, MakeError::REFUSED);
+    QVERIFY(processGone(pid, 3000));
 }
 
 int main(int argc, char** argv) {

@@ -10,3 +10,8 @@ if (TARGET darkride-mcp AND TARGET make-link-MakeLinkTests)
   add_dependencies(make-link-MakeLinkTests darkride-mcp)
   target_compile_definitions(make-link-MakeLinkTests PRIVATE DARKRIDE_MCP_PATH="$<TARGET_FILE:darkride-mcp>")
 endif()
+
+if (TARGET darkride-make-watch AND TARGET make-link-MakeBlenderTests)
+  add_dependencies(make-link-MakeBlenderTests darkride-make-watch)
+  target_compile_definitions(make-link-MakeBlenderTests PRIVATE DARKRIDE_MAKE_WATCH_PATH="$<TARGET_FILE:darkride-make-watch>")
+endif()

@@ -6,7 +6,8 @@
 //  Blender in an OS sandbox (security D): `--background --factory-startup --disable-autoexec`, under sandbox-exec
 //  with a profile that denies everything but Blender itself, our fixed scripts (read only), one fresh scratch folder and
 //  the GPU. No network, no home folder, no other program's services. Its environment is built from nothing (no key,
-//  nothing of the app's), and it is killed at its time and memory limits. macOS only: elsewhere it isn't available.
+//  nothing of the app's), and it is killed at its time and memory limits. Its parent is darkride-make-watch, beside
+//  the app's program, which kills it when the app stops it or is gone. macOS only: elsewhere it isn't available.
 //
 //  What comes back is treated as untrusted, because the script runs in the same Python as our export and could change
 //  it: the .glb is size-capped and its structure checked (glTF 2.0 binary, everything inside it, no outside address),
@@ -64,9 +65,10 @@ public:
     static const qint64 MEMORY_LIMIT_BYTES;
     /// Blender's threads (its --threads): a make's CPU time can then be capped close to its time limit.
     static const int THREADS;
-    /// The kernel's cap on Blender's CPU time, in seconds (RLIMIT_CPU, set in the child before exec): it holds when the
-    /// app is gone (crashed or force-quit mid-make) and its own timers can't stop Blender. THREADS x the time limit,
-    /// and a little more, so a make the app would let finish never meets it.
+    /// The kernel's cap on Blender's CPU time, in seconds (RLIMIT_CPU, set in the child before exec, so Blender's
+    /// parent and Blender have it). THREADS x the time limit, and a little more, so a make the app would let finish
+    /// never meets it. It is also the watcher's wall-clock cap. On macOS the kernel only warns at it (SIGXCPU), so the
+    /// watcher is what ends Blender when the app can't.
     static const int CPU_LIMIT_S;
     /// The oldest Blender the fixed scripts are written for.
     static const int MINIMUM_MAJOR;
@@ -81,15 +83,19 @@ public:
     static QString findBlender(QString& why, const QString& app = QString());
     /// The app's version as its Info.plist says ("5.2.2"); empty when it has none.
     static QString blenderVersion(const QString& app);
+    /// Blender's parent, darkride-make-watch, beside the app's program.
+    static QString defaultWatcher();
 
     void setBlender(const QString& app) { _blender = app; }
+    /// The watcher program (defaultWatcher() unless set, for tests).
+    void setWatcher(const QString& program) { _watch = program; }
     /// A make's time limit (TIME_LIMIT_MS unless set, for tests).
     void setTimeLimit(int milliseconds) { _timeLimitMs = milliseconds; }
     /// The kernel's CPU cap (CPU_LIMIT_S unless set, for tests).
     void setCpuLimit(int seconds) { _cpuLimitS = seconds; }
-    /// The running make's process id, and its watcher's (0 when none), for tests.
-    qint64 processId() const { return _process ? _process->processId() : 0; }
-    qint64 watcherId() const { return _watcher ? _watcher->processId() : 0; }
+    /// The running make's Blender process id (as its watcher wrote it), and its watcher's (0 when none), for tests.
+    qint64 processId() { return blenderPid(); }
+    qint64 watcherId() const { return _process ? _process->processId() : 0; }
     QString blender() const { return _blender; }
     bool isBusy() const { return _process != nullptr; }
 
@@ -117,14 +123,15 @@ private:
     void checkMemory();
     void finish(Made made);
     void kill();
-    bool startWatcher(qint64 pid);
-    void endWatcher();
+    qint64 blenderPid();
 
     QString _folder;
     QString _blender;
+    QString _watch;
     QString _job;
+    // the watcher, Blender's parent: the app's only child for a make, and the only process it signals
     QPointer<QProcess> _process;
-    QPointer<QProcess> _watcher;
+    qint64 _blenderPid { 0 };
     QTimer* _limit { nullptr };
     QTimer* _memory { nullptr };
     qint64 _started { 0 };

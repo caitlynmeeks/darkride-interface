@@ -10,6 +10,7 @@
 #include "MakeBlender.h"
 
 #include <QtCore/QBuffer>
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
@@ -51,6 +52,11 @@ const int MakeBlender::MINIMUM_MINOR = 2;
 namespace {
 
 const int MEMORY_CHECK_MS = 250;
+// how long Stop waits for the watcher to end Blender and itself
+const int STOP_WAIT_MS = 3000;
+// the watcher's own exit when it can't start Blender
+const int WATCHER_CANT_START = 125;
+const char* WATCHER = "darkride-make-watch";
 // between the CPU cap's warning (SIGXCPU, which Blender's script could ignore) and the kernel's kill (SIGKILL)
 const int CPU_LIMIT_GRACE_S = 5;
 const int MAX_LOG_BYTES = 256 * 1024;
@@ -130,8 +136,8 @@ QString logForClaude(const QByteArray& log, const QString& job) {
 }
 
 
-// Blender's process, its CPU time capped by the kernel before it starts (security should-fix 4): the cap is set in the
-// child between fork and exec, so it holds for Blender whatever happens to the app. Only async-signal-safe calls here.
+// Blender's parent (the watcher), its CPU time capped by the kernel before it starts (security should-fix 4): the cap is
+// set in the child between fork and exec and Blender inherits it from the watcher. Only async-signal-safe calls here.
 // The script inside can lower the cap, never raise it (the hard limit needs root).
 void capCpuInChild(int seconds) {
 #ifdef Q_OS_MAC
@@ -195,6 +201,10 @@ QString MakeBlender::blenderVersion(const QString& app) {
     return VERSION.match(QString::fromUtf8(plist.readAll())).captured(1);
 }
 
+QString MakeBlender::defaultWatcher() {
+    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(WATCHER);
+}
+
 QString MakeBlender::findBlender(QString& why, const QString& app) {
 #ifndef Q_OS_MAC
     Q_UNUSED(app);
@@ -250,6 +260,13 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         done(made);
         return;
     }
+    const QString watch = _watch.isEmpty() ? defaultWatcher() : _watch;
+    if (!QFileInfo(watch).isExecutable()) {
+        made.code = MakeError::NOT_AVAILABLE_HERE;
+        made.message = "Make's Blender watcher is missing from the app, so Blender can't be started safely";
+        done(made);
+        return;
+    }
     // a fresh scratch folder for this make; the fixed scripts beside it, which the sandbox lets Blender only read
     const QString id = QUuid::createUuid().toString(QUuid::Id128).left(12);
     const QString job = QDir(_folder).absoluteFilePath("jobs/" + id);
@@ -302,6 +319,7 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     const QString realFixed = realPath(fixed);
     const QString realWork = realPath(work);
     _job = realPath(job);
+    _blenderPid = 0;
     _done = std::move(done);
     _log.clear();
     _stopReason.clear();
@@ -318,11 +336,12 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     environment.insert("PYTHONDONTWRITEBYTECODE", "1");
     environment.insert("PYTHONNOUSERSITE", "1");
 
+    // the watcher, Blender's parent: its standard input is a pipe from here (a line stops Blender, its end means the
+    // app is gone); Blender gets /dev/null, and the watcher's output, where its log is read
     _process = new CappedProcess(_cpuLimitS, this);
     _process->setProcessEnvironment(environment);
     _process->setWorkingDirectory(realWork);
     _process->setProcessChannelMode(QProcess::MergedChannels);
-    _process->setStandardInputFile(QProcess::nullDevice());
     connect(_process, &QProcess::readyRead, this, [this] {
         if (_process) {
             _log.append(_process->readAll());
@@ -350,7 +369,9 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     _memory = new QTimer(this);
     connect(_memory, &QTimer::timeout, this, &MakeBlender::checkMemory);
 
+    const int watchCap = qBound(1, qMax(_cpuLimitS, _timeLimitMs / 1000 + 20), 3600);
     const QStringList arguments {
+        QString::number(watchCap), _job + "/blender.pid", "--", "/usr/bin/sandbox-exec",
         "-f", realFixed + "/box.sb",
         "-D", "BLENDER_APP=" + _blender,
         "-D", "FIXED=" + realFixed,
@@ -364,51 +385,40 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         "--python", realFixed + "/views.py",
     };
     _started = QDateTime::currentMSecsSinceEpoch();
-    _process->start("/usr/bin/sandbox-exec", arguments);
-    const qint64 pid = _process->processId();
-    if (pid > 0 && !startWatcher(pid)) {
-        _stopCode = MakeError::NOT_AVAILABLE_HERE;
-        _stopReason = "Make couldn't start the watcher that ends Blender if Darkride closes, so Blender was stopped";
-        kill();
-    }
+    _process->start(watch, arguments);
     _limit->start(_timeLimitMs);
     _memory->start(MEMORY_CHECK_MS);
     qCInfo(makelink) << "Blender started for a make";
 }
 
-// A watcher outside the box (security should-fix 4): it waits on a pipe from the app. When the app is gone (crashed,
-// force-quit, killed), the pipe closes, its read ends with nothing, and it kills Blender if that process is still
-// Blender (or still the sandbox-exec about to become it). When a make ends the app writes "end" first and it just exits.
-// The CPU cap alone isn't enough on macOS: the kernel only sends SIGXCPU there, never SIGKILL at the hard limit, and a
-// script can ignore SIGXCPU. Blender can't reach the watcher: the box lets it signal only itself.
-bool MakeBlender::startWatcher(qint64 pid) {
-    static const QString WATCH =
-        "if read -r line; then exit 0; fi; "
-        "case \"$(/bin/ps -p \"$1\" -o comm= 2>/dev/null)\" in "
-        "*/Contents/MacOS/Blender|/usr/bin/sandbox-exec) /bin/kill -KILL \"$1\" 2>/dev/null;; esac";
-    QProcessEnvironment environment;
-    environment.insert("PATH", "/usr/bin:/bin");
-    _watcher = new QProcess(this);
-    _watcher->setProcessEnvironment(environment);
-    _watcher->setStandardOutputFile(QProcess::nullDevice());
-    _watcher->setStandardErrorFile(QProcess::nullDevice());
-    _watcher->start("/bin/sh", { "-c", WATCH, "darkride-make-watch", QString::number(pid) });
-    return _watcher->waitForStarted(2000);
-}
-
-void MakeBlender::endWatcher() {
-    QProcess* watcher = _watcher;
-    _watcher = nullptr;
-    if (!watcher) {
-        return;
+// Blender's id as the watcher wrote it, outside the folder the box may write, and only while Blender is the watcher's
+// child: read for the memory check (and the tests), never to signal
+qint64 MakeBlender::blenderPid() {
+#ifdef Q_OS_MAC
+    if (!_process || _job.isEmpty()) {
+        return 0;
     }
-    if (watcher->state() == QProcess::NotRunning) {
-        watcher->deleteLater();
-        return;
+    if (_blenderPid == 0) {
+        QFile file(_job + "/blender.pid");
+        if (QFileInfo(file.fileName()).isSymLink() || !file.open(QIODevice::ReadOnly)) {
+            return 0;
+        }
+        bool number = false;
+        const qint64 pid = QString::fromLatin1(file.read(32)).trimmed().toLongLong(&number);
+        if (!number || pid <= 1) {
+            return 0;
+        }
+        _blenderPid = pid;
     }
-    connect(watcher, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), watcher, &QObject::deleteLater);
-    watcher->write("end\n");
-    watcher->closeWriteChannel();
+    proc_bsdinfo info;
+    if (proc_pidinfo(static_cast<pid_t>(_blenderPid), PROC_PIDTBSDINFO, 0, &info, sizeof(info)) != sizeof(info) ||
+        static_cast<qint64>(info.pbi_ppid) != _process->processId()) {
+        return 0;
+    }
+    return _blenderPid;
+#else
+    return 0;
+#endif
 }
 
 void MakeBlender::checkMemory() {
@@ -417,7 +427,7 @@ void MakeBlender::checkMemory() {
         return;
     }
     rusage_info_v2 usage;
-    const pid_t pid = static_cast<pid_t>(_process->processId());
+    const pid_t pid = static_cast<pid_t>(blenderPid());
     if (pid > 0 && proc_pid_rusage(pid, RUSAGE_INFO_V2, reinterpret_cast<rusage_info_t*>(&usage)) == 0 &&
         static_cast<qint64>(usage.ri_phys_footprint) > MEMORY_LIMIT_BYTES) {
         _stopCode = MakeError::BAD_INPUT;
@@ -428,10 +438,12 @@ void MakeBlender::checkMemory() {
 #endif
 }
 
+// through the watcher: a line on its standard input, then its end; it kills Blender (the sandbox lets Blender start no
+// other program, so the one process is all there is), reaps it and exits
 void MakeBlender::kill() {
     if (_process && _process->state() != QProcess::NotRunning) {
-        // the sandbox lets Blender start no other program, so the one process is all there is
-        _process->kill();
+        _process->write("stop\n");
+        _process->closeWriteChannel();
     }
 }
 
@@ -440,7 +452,14 @@ void MakeBlender::cancel() {
         _stopCode = MakeError::REFUSED;
         _stopReason = "the make was stopped";
         kill();
-        _process->waitForFinished(2000);
+        if (_process && !_process->waitForFinished(STOP_WAIT_MS) && _process) {
+            // the watcher has had its stop and its input's end; the last resort is the app's own child, the watcher
+            qCWarning(makelink) << "Blender's watcher didn't end; killing it";
+            _process->kill();
+            if (_process) {
+                _process->waitForFinished(1000);
+            }
+        }
     }
 }
 
@@ -451,7 +470,7 @@ void MakeBlender::finished(int exitCode, bool crashed) {
     _log.append(_process->readAll());
     _process->deleteLater();
     _process = nullptr;
-    endWatcher();
+    _blenderPid = 0;
     for (QTimer* timer : { _limit, _memory }) {
         if (timer) {
             timer->stop();
@@ -468,9 +487,14 @@ void MakeBlender::finished(int exitCode, bool crashed) {
     if (!_stopCode.isEmpty()) {
         made.code = _stopCode;
         made.message = _stopReason;
-    } else if (crashed || exitCode != 0 || !QFileInfo::exists(out + "/model.glb")) {
+    } else if (exitCode == WATCHER_CANT_START) {
+        made.code = MakeError::NOT_AVAILABLE_HERE;
+        made.message = "Make couldn't start Blender with its watcher";
+    } else if (crashed || exitCode > 128 || exitCode != 0 || !QFileInfo::exists(out + "/model.glb")) {
+        // the watcher says 128 + the signal when Blender was ended by one
         made.code = MakeError::BAD_INPUT;
-        made.message = crashed ? QString("Blender stopped unexpectedly") : QString("the script failed in Blender");
+        made.message = (crashed || exitCode > 128) ? QString("Blender stopped unexpectedly")
+                                                    : QString("the script failed in Blender");
     } else {
         QFile glb(out + "/model.glb");
         QByteArray bytes;
