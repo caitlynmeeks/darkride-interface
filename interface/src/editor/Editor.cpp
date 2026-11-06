@@ -95,6 +95,7 @@
 #include "PropertySpec.h"
 #include "ui/AssetsPanel.h"
 #include "ui/CodeEditor.h"   // interface/src/ui: the Code panel
+#include <EntityScriptRights.h>
 #include "ui/PanelTheme.h"
 #include "ui/Popup.h"
 #include "ui/HierarchyPanel.h"
@@ -4419,9 +4420,10 @@ void Editor::addScriptActions(QMenu& menu) {
     menu.addAction("Edit Script", this, [ids] {
         DependencyManager::get<CodeEditor>()->open(ids.first(), "script");
     })->setEnabled(one);
+    // a world's server scripts are its editors' only (Caity, 22:25 11-06), by the entity server's own rule
     menu.addAction("Edit Server Script", this, [ids] {
         DependencyManager::get<CodeEditor>()->open(ids.first(), "serverScripts");
-    })->setEnabled(one && !_readOnly);
+    })->setEnabled(one && entity_script_rights::mayChangeScriptsOf(EditorUndo::isLocked(ids.first())));
 }
 
 void Editor::showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos) {

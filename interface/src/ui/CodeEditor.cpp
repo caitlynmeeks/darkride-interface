@@ -21,6 +21,7 @@
 #include <AssetClient.h>
 #include <AssetUpload.h>
 #include <EntityItemProperties.h>
+#include <EntityScriptRights.h>
 #include <EntityScriptingInterface.h>
 #include <MappingRequest.h>
 #include <NodeList.h>
@@ -122,6 +123,8 @@ CodeEditor::CodeEditor() {
     connect(nodeList.data(), &LimitedNodeList::canRezChanged, this, &CodeEditor::updateRights);
     connect(nodeList.data(), &LimitedNodeList::canRezTmpChanged, this, &CodeEditor::updateRights);
     connect(nodeList.data(), &LimitedNodeList::canWriteAssetsChanged, this, &CodeEditor::updateRights);
+    connect(nodeList.data(), &LimitedNodeList::canRezCertifiedChanged, this, &CodeEditor::updateRights);
+    connect(nodeList.data(), &LimitedNodeList::isAllowedEditorChanged, this, &CodeEditor::updateRights);
 }
 
 CodeEditor::~CodeEditor() {
@@ -271,19 +274,20 @@ void CodeEditor::updateRights() {
     bool canSave = false;
     QString reason;
     if (hasDocument()) {
-        auto entities = DependencyManager::get<EntityScriptingInterface>();
         auto nodeList = DependencyManager::get<NodeList>();
         QString value;
         QString name;
         bool locked = false;
         const bool there = readEntity(value, name, locked);
-        const bool mayEdit = there && !locked && (entities->canRez() || entities->canRezTmp());
+        // the entity server's own rule (EntityScriptRights.h): someone who may only make temporary entities has
+        // their script changes kept from everyone else
+        const bool mayEdit = there && entity_script_rights::mayChangeScriptsOf(locked);
         if (!there) {
             reason = "This thing isn't in the world any more.";
         } else if (_place == Place::Web) {
             reason = "On the web: read only here.";
-        } else if (!(entities->canRez() || entities->canRezTmp())) {
-            reason = "You can't change things in this world.";
+        } else if (!entity_script_rights::mayChangeScripts()) {
+            reason = "Only this world's builders can change its scripts.";
         } else if (locked) {
             reason = "Locked: unlock it in the Inspector to change its script.";
         } else if (_place == Place::WorldFiles && !nodeList->getThisNodeCanWriteAssets()) {

@@ -18,6 +18,7 @@
 #include <QtCore/QPointer>
 #include <QtCore/QUrl>
 
+#include <EntityScriptRights.h>
 #include <EntityScriptingInterface.h>
 #include <EntityTree.h>
 #include <EntityTreeRenderer.h>
@@ -120,8 +121,7 @@ void CodeNearby::tick() {
     if (_scannedAt != 0 && since < MAX_WAIT_MS && !(moved && since >= MIN_WAIT_MS)) {
         return;
     }
-    auto entities = DependencyManager::get<EntityScriptingInterface>();
-    const bool mayEdit = entities->canRez() || entities->canRezTmp();
+    const bool mayEdit = entity_script_rights::mayChangeScripts();   // the entity server's rule; unlocked too, per row
     _scanning = true;
     _scannedAt = now;
     _scannedFrom = center;
