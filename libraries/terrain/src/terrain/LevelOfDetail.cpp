@@ -495,7 +495,7 @@ ChunkKey LodCut::nodeCovering(const glm::ivec3& fine) const {
 
 // --- LevelOfDetail ----------------------------------------------------------------------------------------------
 
-LevelOfDetail::LevelOfDetail(QThreadPool* pool) : _mesher(pool), _pool(pool ? pool : AsyncMesher::defaultPool()) {
+LevelOfDetail::LevelOfDetail(QThreadPool* pool) : _pool(pool ? pool : AsyncMesher::defaultPool()), _mesher(pool) {
 }
 
 void LevelOfDetail::setSettings(const LodSettings& settings) {
