@@ -35,7 +35,15 @@ public:
         ChunkKey key;
         ChunkMesh mesh;      // empty when no surface crosses the chunk
         uint64_t tag { 0 };  // submitSampler()'s tag; 0 for the grid's chunks
+        // What the finisher made from the mesh on the pool (setFinisher), if one is set and the mesh is not empty:
+        // the caller's own type, kept with the mesh (a drawing's vertex buffer, say). Null otherwise.
+        std::shared_ptr<void> attachment;
     };
+    // A function run on the pool right after a mesh is made, on that thread, with the mesh: what it returns travels
+    // with the mesh as Result::attachment. For a caller that wants work done beside the meshing rather than on its
+    // own thread when the mesh comes back. Set before the first submit; jobs already out finish without it.
+    using Finisher = std::function<std::shared_ptr<void>(const ChunkMesh&)>;
+    void setFinisher(const Finisher& finisher);
 
     // The pool to run on; by default one of this library's own, so meshing neither waits behind nor holds up the
     // application's other background work.
@@ -73,6 +81,7 @@ public:
 private:
     struct Shared;   // the queue the jobs write to; it outlives the mesher while a job still holds it
     std::shared_ptr<Shared> _shared;
+    std::shared_ptr<const Finisher> _finisher;   // shared with the jobs out: a job runs the finisher it was given
     ChunkKeySet _inFlight;
     uint32_t _generation { 0 };
     QThreadPool* _pool;

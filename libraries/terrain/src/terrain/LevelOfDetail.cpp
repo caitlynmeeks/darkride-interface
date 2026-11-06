@@ -547,7 +547,8 @@ void LevelOfDetail::send(const EntryKey& entryKey, Entry& entry, const VoxelGrid
 }
 
 bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres,
-                           const std::function<bool(const ChunkKey&)>& gridChunkReady) {
+                           const std::function<bool(const ChunkKey&)>& gridChunkReady,
+                           const std::function<bool(const std::shared_ptr<void>&)>& nodeReady) {
     ++_frame;
     if (grid.isEmpty()) {
         if (_shown.empty() && _entries.empty() && _cut.isEmpty()) {
@@ -584,6 +585,7 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         Entry& entry = found->second;
         entry.inFlight = false;
         entry.mesh = std::move(result.mesh);
+        entry.attachment = std::move(result.attachment);
         entry.hasMesh = true;
         entry.version = ++_nextVersion;
         _requestsDirty = true;
@@ -744,7 +746,8 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
                     ready = gridChunkReady(node.key);
                 } else {
                     auto found = _entries.find(EntryKey { node.key, node.context.getSignature() });
-                    ready = found != _entries.end() && found->second.hasMesh;
+                    ready = found != _entries.end() && found->second.hasMesh &&
+                            (found->second.mesh.isEmpty() || !nodeReady || nodeReady(found->second.attachment));
                 }
                 if (!ready) {
                     stalled = &node;
@@ -885,6 +888,7 @@ void LevelOfDetail::rebuildDrawn() {
             if (found != _entries.end() && found->second.hasMesh) {
                 drawn.mesh = found->second.mesh.isEmpty() ? nullptr : &found->second.mesh;
                 drawn.version = found->second.version;
+                drawn.attachment = found->second.attachment;
             }
         }
         _drawn.push_back(drawn);

@@ -171,6 +171,7 @@ public:
         bool isGridChunk { false };          // draw the grid's own mesh of the chunk at the key (the terrain keeps those)
         const ChunkMesh* mesh { nullptr };   // otherwise this one: null while the node has none yet, or no surface
         uint64_t version { 0 };              // changes whenever the mesh does
+        std::shared_ptr<void> attachment;    // what the mesh finisher made with the mesh (AsyncMesher::Finisher), if any
     };
 
     explicit LevelOfDetail(QThreadPool* pool = nullptr);
@@ -186,8 +187,15 @@ public:
     // the grid) and shows the cut wanted once it is ready.
     // gridChunkReady(key) says whether the terrain's own mesh of the grid's chunk at the key is there to draw (or
     // known to be empty). Returns whether what is drawn changed.
+    // nodeReady(attachment), when given, says whether a node of the level of detail's own that has its mesh is
+    // ready to be drawn (its finisher's attachment usable: a vertex buffer uploaded, say); a node without one, or
+    // with an empty mesh, is ready as before. A node not ready holds a new cut back as a missing mesh does.
     bool update(VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres,
-                const std::function<bool(const ChunkKey&)>& gridChunkReady);
+                const std::function<bool(const ChunkKey&)>& gridChunkReady,
+                const std::function<bool(const std::shared_ptr<void>&)>& nodeReady = nullptr);
+    // Run on the pool with every mesh made here, its result kept with the mesh (Entry, Drawn::attachment): see
+    // AsyncMesher::setFinisher. Set before the first update.
+    void setMeshFinisher(const AsyncMesher::Finisher& finisher) { _mesher.setFinisher(finisher); }
 
     // What to draw, a node of the cut shown each, in key order.
     const std::vector<Drawn>& getDrawn() const { return _drawn; }
@@ -275,6 +283,7 @@ private:
     struct Entry {
         NodeContext context;
         ChunkMesh mesh;
+        std::shared_ptr<void> attachment;   // the finisher's, with the mesh
         bool hasMesh { false };    // a mesh has come back (it may be empty: no surface)
         bool stale { false };      // the grid changed under it since it was sampled
         bool inFlight { false };
