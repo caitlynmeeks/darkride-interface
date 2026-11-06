@@ -32,6 +32,7 @@
 #include <memory>
 #include <functional>
 #include <mutex>
+#include <vector>
 
 #include <QtCore/QByteArray>
 #include <QtCore/QHash>
@@ -187,6 +188,8 @@ private:
     bool startMain();
     void stopInstance(const ModuleInstancePointer& instance);
     int endingTimeLeftMs() const;  // of the scripts' ending deadline, counted from the first stop
+    void stopInstances();          // stop()'s part for the modules; the caller holds _instancesMutex
+    void handOver(const ModuleInstancePointer& instance);  // off the starting list; the caller holds _instancesMutex
     void stopAll();
     /// For every module's instance; the caller holds _instancesMutex.
     void forEachInstance(const std::function<void(WasmInstance&)>& action);
@@ -224,10 +227,12 @@ private:
     WebSocketFactory* _sockets { nullptr };
     AudioEffectOptionsFactory* _audioEffectOptions { nullptr };
     ResourceStates* _resourceStates { nullptr };
-    std::mutex _instancesMutex;  // guards the set of instances against requestStop from another thread, and the next two
+    std::mutex _instancesMutex;  // guards the set of instances against requestStop from another thread, and the next three
     bool _scriptEndingBegun { false };     // stopAll has begun: a stop leaves the handlers to the deadline
     bool _endingDeadlinePassed { false };  // interruptRunningCall: nothing more of the script runs, its handlers included
     bool _stopLetCallFinish { false };     // stop() found a call running and let it finish, to its deadline
+    bool _startEndedByStop { false };      // a stop ended a module while it started (makeInstance)
+    std::vector<ModuleInstancePointer> _starting;  // the instances makeInstance is starting, until handed over
     ModuleInstancePointer _main;
     QHash<QString, ModuleInstancePointer> _entityModules;              // .wasm entity scripts by URL
     QHash<EntityItemID, std::weak_ptr<ModuleInstance>> _entityHosts;  // which instance runs each entity's script

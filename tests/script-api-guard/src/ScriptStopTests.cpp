@@ -331,3 +331,52 @@ void ScriptStopTests::testARunawaySignalHandlerEndsAfterTwoSeconds() {
     QVERIFY2(elapsed >= 1800 && elapsed < 2900, qPrintable(QString("ended %1 ms after the stop").arg(elapsed)));
     QVERIFY2(script.hasLine("handler ran"), qPrintable(script.report()));
 }
+
+namespace {
+
+// a script whose top level never ends, stopped from another thread there (and its world left first, when it has one);
+// how long after the stop it was done, or -1
+qint64 stopATopLevelSpin(int world) {
+    RunningScript script(R"(
+        print("stop here");
+        while (true) {}
+    )");
+    if (world != 0) {
+        script.engine->setWorldId(world);
+    }
+    QElapsedTimer sinceStop;
+    std::atomic<bool> stopped { false };
+    script.onLine = [&script, &sinceStop, &stopped, world](const QString& line) {
+        if (line == "stop here") {
+            if (world != 0) {
+                ScriptCaller::retireWorld(world);
+            }
+            sinceStop.start();
+            stopped = true;
+            stopFromAnotherThread(script.engine.data());
+        }
+    };
+    script.engine->runInThread();
+    if (!QTest::qWaitFor([&stopped] { return stopped.load(); }, SCRIPT_WAIT_MS)) {
+        return -1;
+    }
+    const bool done = QTest::qWaitFor([&script] { return script.isDone(); }, 6000);
+    const qint64 elapsed = sinceStop.elapsed();
+    script.engine->waitTillDoneRunning();
+    return done ? elapsed : -1;
+}
+
+} // namespace
+
+// The script's top level runs before the script is its engine's main module: a stop reaches it there too, and a
+// runaway there ends 2 s on, as anywhere else.
+void ScriptStopTests::testATopLevelSpinEndsAfterTwoSeconds() {
+    const qint64 elapsed = stopATopLevelSpin(0);
+    QVERIFY2(elapsed >= 1800 && elapsed < 2900, qPrintable(QString("ended %1 ms after the stop").arg(elapsed)));
+}
+
+// The same for a world that was left: at once.
+void ScriptStopTests::testATopLevelSpinOfALeftWorldEndsAtOnce() {
+    const qint64 elapsed = stopATopLevelSpin(ScriptCaller::newWorld());
+    QVERIFY2(elapsed >= 0 && elapsed < 1000, qPrintable(QString("ended %1 ms after the stop").arg(elapsed)));
+}

@@ -29,6 +29,8 @@ private slots:
     void testAnInterruptEndsALeftWorldsHandler();
     void testASignalHandlersCallFinishes();
     void testARunawaySignalHandlerEndsAfterTwoSeconds();
+    void testATopLevelSpinEndsAfterTwoSeconds();
+    void testATopLevelSpinOfALeftWorldEndsAtOnce();
 };
 
 /// A signal for a script to connect to: a call that reaches it through a connected signal, as Messages and Controller
