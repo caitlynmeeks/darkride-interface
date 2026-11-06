@@ -8,6 +8,7 @@
 
 #include "RenderableTerrainEntityItem.h"
 
+#include <algorithm>
 #include <atomic>
 
 #include <cfloat>
@@ -27,6 +28,7 @@
 #include <DependencyManager.h>
 #include <EntityTree.h>
 #include <GeometryUtil.h>
+#include <GLMHelpers.h>
 #include <PathUtils.h>
 #include <ResourceManager.h>
 #include <ResourceRequest.h>
@@ -54,9 +56,12 @@ using namespace render::entities;
 
 namespace {
 
+// 20 bytes. The position stays a float: the meshes of neighbouring nodes meet exactly because both place a shared
+// vertex at the same point (SurfaceNets.h), which a position quantized in each node's own voxel would break where
+// levels meet. The normal is a 10-10-10-2 signed normalized integer (as the models' are), read as before.
 struct TerrainVertex {
     glm::vec3 position;
-    glm::vec3 normal;
+    uint32_t normal;      // glm_packSnorm3x10_1x2
     uint32_t materials;   // the triangle's three materials in the low bytes, this corner (0-2) in the high byte;
                           // read as the colour attribute, a byte per channel
 };
@@ -105,6 +110,8 @@ float levelOfDetail = terrain::LodSettings().detail;
 // TIVOLI_TERRAIN_DEBUG in the environment: the log gets what is drawn each time it changes, and each chunk item's
 // first draw, for a bug hunt (the holes of 2026-10-18).
 const bool terrainDebug = qEnvironmentVariableIsSet("TIVOLI_TERRAIN_DEBUG");
+// the level of detail's own lines (entry 24's measure): one per cut shown, one per drawn-set update with buffers built
+const bool lodDiag = qEnvironmentVariableIsSet("TIVOLI_TERRAIN_LOD_DIAG");
 
 QString describeKey(const terrain::ChunkKey& key) {
     return QString("level %1 at %2 %3 %4").arg(key.level).arg(key.coords.x).arg(key.coords.y).arg(key.coords.z);
@@ -186,7 +193,7 @@ void initTerrainPipelines() {
         CUSTOM_PIPELINE_NUMBER = ShapePipeline::registerCustomShapePipelineFactory(terrainPipelineFactory);
         _vertexFormat = std::make_shared<gpu::Stream::Format>();
         _vertexFormat->setAttribute(gpu::Stream::POSITION, 0, gpu::Element(gpu::VEC3, gpu::FLOAT, gpu::XYZ), offsetof(TerrainVertex, position));
-        _vertexFormat->setAttribute(gpu::Stream::NORMAL, 0, gpu::Element(gpu::VEC3, gpu::FLOAT, gpu::XYZ), offsetof(TerrainVertex, normal));
+        _vertexFormat->setAttribute(gpu::Stream::NORMAL, 0, gpu::Element(gpu::VEC4, gpu::NINT2_10_10_10, gpu::XYZW), offsetof(TerrainVertex, normal));
         _vertexFormat->setAttribute(gpu::Stream::COLOR, 0, gpu::Element(gpu::VEC4, gpu::NUINT8, gpu::RGBA), offsetof(TerrainVertex, materials));
         _unpaintedTile = makeTileTexture(1, std::vector<uint8_t>(4, 0), "terrain unpainted");
         _noTopTile = makeTopTileTexture(1, std::vector<float>(2, terrain::NO_GROUND_HEIGHT), "terrain no top surface");
@@ -206,7 +213,23 @@ EntityItemPointer RenderableTerrainEntityItem::factory(const EntityItemID& entit
     return entity;
 }
 
-RenderableTerrainEntityItem::RenderableTerrainEntityItem(const EntityItemID& entityItemID) : TerrainEntityItem(entityItemID) {
+RenderableTerrainEntityItem::RenderableTerrainEntityItem(const EntityItemID& entityItemID) : TerrainEntityItem(entityItemID),
+    _madeBuffers(std::make_shared<TerrainMadeBuffers>()) {
+    // the level of detail counts what each cut shown brings only when the line that reports it is asked for
+    _levelOfDetail.setCutShownCounting(qEnvironmentVariableIsSet("TIVOLI_TERRAIN_LOD_DIAG"));
+    // every mesh made on the pool, the grid's chunks' and the level of detail's, comes with its vertex buffer made
+    // there too (entry 24 step 3a); the buffers are queued here for the backend as they come (step 3b)
+    std::shared_ptr<TerrainMadeBuffers> made = _madeBuffers;
+    terrain::AsyncMesher::Finisher finisher = [made](const terrain::ChunkMesh& mesh) -> std::shared_ptr<void> {
+        TerrainMeshBuffer::Pointer buffer = TerrainMeshBuffer::make(mesh);
+        if (buffer) {
+            std::lock_guard<std::mutex> lock(made->mutex);
+            made->made.push_back(buffer);
+        }
+        return buffer;
+    };
+    _mesher.setFinisher(finisher);
+    _levelOfDetail.setMeshFinisher(finisher);
 }
 
 int RenderableTerrainEntityItem::paintTexelsPerVoxel(float voxelMetres, const glm::ivec2& voxelFootprint) {
@@ -354,6 +377,7 @@ void RenderableTerrainEntityItem::replaceGrid(terrain::VoxelGrid grid, terrain::
 bool RenderableTerrainEntityItem::updateMeshes() {
     bool changed = false;
     std::vector<terrain::AsyncMesher::Result> results = _mesher.collect();
+    takeMadeBuffers();   // before the meshes they belong to are taken: a buffer is queued no later than its mesh
     if (!results.empty()) {
         ++_meshVersion;
         for (terrain::AsyncMesher::Result& result : results) {
@@ -363,6 +387,7 @@ bool RenderableTerrainEntityItem::updateMeshes() {
             }
             ChunkMeshEntry& entry = _chunkMeshes[result.key];
             entry.mesh = std::move(result.mesh);
+            entry.buffer = std::static_pointer_cast<TerrainMeshBuffer>(result.attachment);
             entry.version = _meshVersion;
         }
         changed = true;
@@ -402,11 +427,46 @@ bool RenderableTerrainEntityItem::updateMeshes() {
     return changed;
 }
 
+// The level of detail's sampling runs on this thread, in the frame: it may take this share of a frame, the frame
+// measured as the median of the last periods between updates (the display's interval at a steady rate: long frames
+// and the catch-ups after them fall either side of it), never less than the floor so the queue drains. At 72 Hz the
+// share is the settings' own 4 ms and nothing changes; at 120 and 144 Hz a cut spreads over frames where one frame
+// could not hold it (2.5 and 2.1 ms). The periods are taken once enough are in.
+static const float LOD_SAMPLE_SHARE_OF_FRAME = 0.3f;
+static const float LOD_SAMPLE_BUDGET_FLOOR_MS = 1.0f;
+// The vertex buffers a new cut brings are given to the backend before the cut is shown (entry 24 step 3b), as one
+// post a frame of the wanted backlog, whole, up to this many bytes (step 3d; the first buffer due always goes). The
+// uploads land in the present thread's execute stage, and at 144 Hz in Port Amarelle that stage sits at its slow
+// line already (half a refresh, 3.45 ms, against ~3.3 ms of its own), so what the governor's climb-back counts is
+// the NUMBER of frames that upload, not their size: a cruise cut (3-8 MB) goes in one post, as main's first-draw
+// upload did (step 3b's 2 MB pieces made it two or three slow executes a cut, and the lap of 11-06 19:13 never
+// climbed back from 72); the boarding cut after a teleport (~48 MB) in 6 frames and the arrival's first cut (100-150
+// MB) in 13-19, where the view has changed whole. The max is ~1.6-5.6 ms at the 0.2-0.7 ms per MB estimated so far
+// (the execute column of the 3d legs measures it); 16 MB would slip five presents at 144 and drop the governor at
+// every teleport (performance, 11-06). The arrival is the exception: for its first seconds the present thread
+// carries the world's own first draws (executes of 30-90 ms, where the governor's drop is decided: three presents
+// over two refreshes in a second), so the share stays small until the terrain has been drawn for a while, and the
+// first cut comes node by node over a second or so, as the models come; a teleport later gets the whole share.
+static const size_t LOD_UPLOAD_BYTES_MAX = 8 * 1024 * 1024;
+static const size_t LOD_UPLOAD_BYTES_ARRIVAL = 2 * 1024 * 1024;
+static const float LOD_UPLOAD_ARRIVAL_SECONDS = 10.0f;
+
 bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWorld) {
     terrain::LodSettings settings = _levelOfDetail.getSettings();
     if (settings.detail != levelOfDetail) {
         settings.detail = levelOfDetail;
         _levelOfDetail.setSettings(settings);
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (_lastLodUpdate != std::chrono::steady_clock::time_point()) {
+        _framePeriodsMs[_framePeriodCount++ % _framePeriodsMs.size()] = std::chrono::duration<float, std::milli>(now - _lastLodUpdate).count();
+    }
+    _lastLodUpdate = now;
+    if (_framePeriodCount >= _framePeriodsMs.size()) {
+        std::array<float, 16> periods = _framePeriodsMs;
+        std::sort(periods.begin(), periods.end());
+        const float framePeriodMs = periods[periods.size() / 2];
+        _levelOfDetail.setFrameBudgetMs(std::max(LOD_SAMPLE_BUDGET_FLOOR_MS, LOD_SAMPLE_SHARE_OF_FRAME * framePeriodMs));
     }
     const glm::vec3 camera(worldToVoxelMatrix() * glm::vec4(cameraWorld, 1.0f));
     // a chunk of the grid is drawn with its own mesh once that is there, or known to have no surface
@@ -415,16 +475,43 @@ bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWor
         bool dirty { false };
         bool inFlight { false };
     } refused;   // the state of the last chunk refused: the one holding a new cut back, if any
+    takeMadeBuffers();   // the level of detail's buffers, before its meshes are collected below
+    // a buffer is ready to draw once a batch has referenced it (resident), or when it was made without one; one
+    // found not resident is wanted (entry 24 step 3d): it goes to the backend ahead of what nothing waits for
+    ++_wantSerial;
+    auto bufferReady = [this](const TerrainMeshBuffer::Pointer& buffer) {
+        if (!buffer || buffer->resident) {
+            return true;
+        }
+        wantBuffer(buffer);
+        return false;
+    };
     const bool changed = _levelOfDetail.update(_grid, camera, getVoxelScale(), [&](const terrain::ChunkKey& key) {
-        const bool mesh = _chunkMeshes.count(key) > 0;
+        auto found = _chunkMeshes.find(key);
+        const bool mesh = found != _chunkMeshes.end();
         const bool dirty = _grid.getDirtyChunks().count(key) > 0;
         const bool inFlight = _mesher.isInFlight(key);
         if (!mesh && (dirty || inFlight)) {
             refused = Refused { mesh, dirty, inFlight };
             return false;
         }
-        return true;
+        return !mesh || bufferReady(found->second.buffer);
+    }, [&](const std::shared_ptr<void>& attachment) {
+        return bufferReady(std::static_pointer_cast<TerrainMeshBuffer>(attachment));
     });
+    // what is drawn and still waits for its buffer (a new item of the first cut, or of a cut forced through a stall)
+    // is wanted this update too; with the pending cut's marks above, every mark carries this update's serial, and the
+    // marks of a cut abandoned by a later choice expire with it (entry 24 step 3d)
+    for (const terrain::LevelOfDetail::Drawn& node : _levelOfDetail.getDrawn()) {
+        if (node.isGridChunk) {
+            auto found = _chunkMeshes.find(node.key);
+            if (found != _chunkMeshes.end()) {
+                wantBuffer(found->second.buffer);
+            }
+        } else {
+            wantBuffer(std::static_pointer_cast<TerrainMeshBuffer>(node.attachment));
+        }
+    }
     // A node of a new cut that has had no mesh for seconds (terrain::LodSettings::stallNudgeMs, stallForceMs) is
     // asked for again, then shown without: say so, with the state that held it, so a stuck cut can be read off the log.
     const terrain::LevelOfDetail::Stall& stall = _levelOfDetail.getStall();
@@ -437,6 +524,29 @@ bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWor
             << (stall.forced ? "shows a new cut without a node that has had no mesh for" : "asks again for the mesh of a node that has had none for")
             << (int)stall.ms << "ms: level" << stall.key.level << "at" << stall.key.coords.x << stall.key.coords.y << stall.key.coords.z
             << qPrintable(state);
+    }
+    // One line per cut shown, when asked for (TIVOLI_TERRAIN_LOD_DIAG=1): how long after its choice it came, in ms
+    // and frames, and what it brings to the GPU (the vertex buffer is de-indexed: a TerrainVertex per index).
+    const terrain::LevelOfDetail::CutShown& cut = _levelOfDetail.getCutShown();
+    if (lodDiag && cut.serial != _cutShownLogged) {
+        _cutShownLogged = cut.serial;
+        qCDebug(entitiesrenderer) << "Terrain LOD cut" << cut.serial << "shown" << cut.msSinceChosen << "ms /" << cut.framesSinceChosen
+            << "frames after its choice:" << cut.nodes << "nodes," << cut.newMeshes << "new meshes,"
+            << (qulonglong)(cut.newIndices * sizeof(TerrainVertex)) << "bytes to upload; sample budget"
+            << _levelOfDetail.getFrameBudgetMs() << "ms";
+    }
+    // One line per re-choice of the cut, once the next has come: the re-choice frame's own cost by part and the
+    // costliest frame from it to the next re-choice (the level of detail keeps them while the line is asked for).
+    const terrain::LevelOfDetail::ReChoice& reChoice = _levelOfDetail.getReChoiceDone();
+    if (lodDiag && reChoice.serial != _reChoiceLogged) {
+        _reChoiceLogged = reChoice.serial;
+        const terrain::LevelOfDetail::FrameCost& own = reChoice.own;
+        const terrain::LevelOfDetail::FrameCost& worst = reChoice.worst;
+        qCDebug(entitiesrenderer) << "Terrain LOD re-choice" << reChoice.serial << ":" << reChoice.nodes << "nodes; own frame choice"
+            << own.choiceMs << "requests" << own.requestsMs << "(" << own.requests << ") sends" << own.sendsMs << "(" << own.sent
+            << ") collect" << own.collectMs << "(" << own.results << ") drawn" << own.drawnMs << "=" << own.totalMs()
+            << "ms; worst frame +" << (qlonglong)(worst.frame - own.frame) << ": collect" << worst.collectMs << "(" << worst.results
+            << ") drawn" << worst.drawnMs << "=" << worst.totalMs() << "ms";
     }
     return changed;
 }
@@ -477,11 +587,102 @@ void RenderableTerrainEntityItem::getDrawnChunks(std::vector<DrawnChunk>& drawn)
         if (node.isGridChunk) {
             auto found = _chunkMeshes.find(node.key);
             if (found != _chunkMeshes.end()) {
-                drawn.push_back({ node.key, &found->second.mesh, found->second.version * 2 });
+                drawn.push_back({ node.key, &found->second.mesh, found->second.version * 2, found->second.buffer });
             }
         } else if (node.mesh) {
-            drawn.push_back({ node.key, node.mesh, node.version * 2 + 1 });
+            drawn.push_back({ node.key, node.mesh, node.version * 2 + 1, std::static_pointer_cast<TerrainMeshBuffer>(node.attachment) });
         }
+    }
+}
+
+void RenderableTerrainEntityItem::takeMadeBuffers() {
+    std::vector<TerrainMeshBuffer::Pointer> made;
+    {
+        std::lock_guard<std::mutex> lock(_madeBuffers->mutex);
+        made.swap(_madeBuffers->made);
+    }
+    for (TerrainMeshBuffer::Pointer& buffer : made) {
+        buffer->uploadSerial = ++_nextUploadSerial;
+        _uploads.push_back(std::move(buffer));
+    }
+}
+
+void RenderableTerrainEntityItem::wantBuffer(const TerrainMeshBuffer::Pointer& buffer) {
+    if (buffer && !buffer->resident) {
+        buffer->wanted = _wantSerial;
+    }
+}
+
+// A buffer the backend has (resident) leaves the queue, and so does a dead one: its mesh is gone (the level of
+// detail evicted the entry or replaced its mesh, or the grid's chunk was meshed again), so the queue's reference is
+// the last. Anywhere in the queue, not only at its head: what nobody waits for sits behind nothing.
+void RenderableTerrainEntityItem::pruneUploads() {
+    _uploads.erase(std::remove_if(_uploads.begin(), _uploads.end(), [](const TerrainMeshBuffer::Pointer& buffer) {
+        return !buffer || buffer->resident || buffer.use_count() == 1;
+    }), _uploads.end());
+}
+
+void RenderableTerrainEntityItem::getUploadsDue(size_t maxShare, std::vector<TerrainMeshBuffer::Pointer>& due, uint64_t& serial) {
+    due.clear();
+    serial = 0;
+    pruneUploads();
+    // the wanted backlog: what a cut or a drawn item waited for in the latest update and the backend has not got yet
+    _uploadsWanted = 0;
+    _uploadsWantedBytes = 0;
+    for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
+        if (buffer->wanted == _wantSerial) {
+            ++_uploadsWanted;
+            _uploadsWantedBytes += buffer->buffer->getSize();
+        }
+    }
+    // the post on its way: the same buffers again, until the renderer says the backend has them
+    if (_postOut) {
+        for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
+            if (buffer->posted == _postOut) {
+                due.push_back(buffer);
+            }
+        }
+        serial = _postOut;
+        return;
+    }
+    // a new post: the wanted buffers in queue order, the backlog whole up to the share (the first always)
+    const size_t share = maxShare;
+    size_t bytes = 0;
+    for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
+        if (buffer->wanted != _wantSerial) {
+            continue;
+        }
+        const size_t size = buffer->buffer->getSize();
+        if (!due.empty() && bytes + size > share) {
+            break;
+        }
+        due.push_back(buffer);
+        bytes += size;
+    }
+    if (!due.empty()) {
+        serial = ++_nextPostSerial;
+        for (const TerrainMeshBuffer::Pointer& buffer : due) {
+            buffer->posted = serial;
+        }
+        _postOut = serial;
+    }
+}
+
+void RenderableTerrainEntityItem::uploadsFed(uint64_t serial) {
+    if (!_postOut || serial < _postOut) {
+        return;
+    }
+    bool any = false;
+    for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
+        if (buffer->posted == _postOut) {
+            buffer->resident = true;
+            any = true;
+        }
+    }
+    _postOut = 0;
+    pruneUploads();
+    if (any) {
+        ++_meshVersion;   // what may be drawn changed: a chunk item waits for its buffer to be resident
     }
 }
 
@@ -980,11 +1181,21 @@ gpu::BufferPointer TerrainChunkPayload::makeVertexBuffer(const terrain::ChunkMes
             const uint32_t index = mesh.indices[i + corner];
             TerrainVertex& vertex = vertices[i + corner];
             vertex.position = mesh.positions[index];
-            vertex.normal = mesh.normals[index];
+            vertex.normal = glm_packSnorm3x10_1x2(glm::vec4(mesh.normals[index], 0.0f));
             vertex.materials = materials | (corner << 24);
         }
     }
     return std::make_shared<gpu::Buffer>(vertices.size() * sizeof(TerrainVertex), (const gpu::Byte*)vertices.data());
+}
+
+TerrainMeshBuffer::Pointer TerrainMeshBuffer::make(const terrain::ChunkMesh& mesh) {
+    if (mesh.isEmpty()) {
+        return nullptr;
+    }
+    auto made = std::make_shared<TerrainMeshBuffer>();
+    made->buffer = TerrainChunkPayload::makeVertexBuffer(mesh);
+    made->vertexCount = TerrainChunkPayload::getVertexCount(mesh);
+    return made;
 }
 
 void TerrainChunkPayload::setBuffers(const gpu::BufferPointer& vertices, uint32_t vertexCount) {
@@ -1076,6 +1287,21 @@ void TerrainChunkPayload::render(RenderArgs* args) {
     batch.draw(gpu::TRIANGLES, _vertexCount, 0);
 }
 
+void TerrainUploadPayload::render(RenderArgs* args) {
+    if (_buffers.empty() || !args || !args->_batch) {
+        return;
+    }
+    // referenced, not drawn: the backend uploads every buffer a batch holds as the batch executes (the transfer
+    // pass), and a chunk item that draws the buffer later finds it there
+    gpu::Batch& batch = *args->_batch;
+    for (const gpu::BufferPointer& buffer : _buffers) {
+        batch.setInputBuffer(0, buffer, 0, sizeof(TerrainVertex));
+    }
+    uint64_t fed = _fed->load(std::memory_order_relaxed);
+    while (fed < _serial && !_fed->compare_exchange_weak(fed, _serial, std::memory_order_release, std::memory_order_relaxed)) {
+    }
+}
+
 namespace render {
 template <> const ItemKey payloadGetKey(const TerrainChunkPayload::Pointer& payload) {
     return payload ? payload->getKey() : ItemKey::Builder::opaqueShape().build();
@@ -1087,6 +1313,20 @@ template <> const ShapeKey shapeGetShapeKey(const TerrainChunkPayload::Pointer& 
     return payload ? payload->getShapeKey() : ShapeKey::Builder::invalid();
 }
 template <> void payloadRender(const TerrainChunkPayload::Pointer& payload, RenderArgs* args) {
+    if (payload) {
+        payload->render(args);
+    }
+}
+template <> const ItemKey payloadGetKey(const TerrainUploadPayload::Pointer& payload) {
+    return payload ? payload->getKey() : ItemKey::Builder::opaqueShape().build();
+}
+template <> const Item::Bound payloadGetBound(const TerrainUploadPayload::Pointer& payload) {
+    return payload ? payload->getBound() : Item::Bound();
+}
+template <> const ShapeKey shapeGetShapeKey(const TerrainUploadPayload::Pointer& payload) {
+    return ShapeKey::Builder().withOwnPipeline();   // it binds no pipeline and draws nothing: its render() runs as it is
+}
+template <> void payloadRender(const TerrainUploadPayload::Pointer& payload, RenderArgs* args) {
     if (payload) {
         payload->render(args);
     }
@@ -1144,6 +1384,10 @@ void TerrainEntityRenderer::removeFromScene(const ScenePointer& scene, Transacti
         transaction.removeItem(pair.second.id);
     }
     _chunkItems.clear();
+    if (_uploadItem != Item::INVALID_ITEM_ID) {
+        transaction.removeItem(_uploadItem);
+        _uploadItem = Item::INVALID_ITEM_ID;
+    }
     {
         std::lock_guard<std::mutex> lock(_subItemsMutex);
         _pendingSubItems.clear();
@@ -1179,6 +1423,43 @@ bool TerrainEntityRenderer::needsRenderUpdateFromTypedEntity(const TypedEntityPo
         return true;
     }
     return false;
+}
+
+void TerrainEntityRenderer::postUploads(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) {
+    std::vector<TerrainMeshBuffer::Pointer> due;
+    uint64_t serial = 0;
+    const bool arriving = _firstDrawn == std::chrono::steady_clock::time_point() ||
+        std::chrono::duration<float>(std::chrono::steady_clock::now() - _firstDrawn).count() < LOD_UPLOAD_ARRIVAL_SECONDS;
+    entity->getUploadsDue(arriving ? LOD_UPLOAD_BYTES_ARRIVAL : LOD_UPLOAD_BYTES_MAX, due, serial);
+    if (serial == _uploadsPosted) {
+        return;   // the same share as last time (not through yet), or nothing due
+    }
+    _uploadsPosted = serial;
+    std::vector<gpu::BufferPointer> buffers;
+    buffers.reserve(due.size());
+    for (const TerrainMeshBuffer::Pointer& buffer : due) {
+        buffers.push_back(buffer->buffer);
+    }
+    ItemKey::Builder keyBuilder = ItemKey::Builder::opaqueShape().withTagBits(getTagMask()).withLayer(getHifiRenderLayer()).withShadowCaster();
+    if (!_visible) {
+        keyBuilder.withInvisible();
+    }
+    const ItemKey key = keyBuilder.build();
+    const Item::Bound bound = getBound();
+    if (_uploadItem == Item::INVALID_ITEM_ID) {
+        auto payload = std::make_shared<TerrainUploadPayload>(_uploadsFed);
+        payload->setBuffers(std::move(buffers), serial);
+        payload->setKey(key);
+        payload->setBound(bound);
+        _uploadItem = scene->allocateID();
+        transaction.resetItem(_uploadItem, std::make_shared<Payload<TerrainUploadPayload>>(payload));
+        return;
+    }
+    transaction.updateItem<TerrainUploadPayload>(_uploadItem, [buffers, serial, key, bound](TerrainUploadPayload& payload) {
+        payload.setBuffers(buffers, serial);
+        payload.setKey(key);
+        payload.setBound(bound);
+    });
 }
 
 void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) {
@@ -1297,6 +1578,11 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
     const ItemKey key = chunkKey();
     const bool placementChanged = model != _lastTransform || dimensions != _lastDimensions || voxelScale != _lastVoxelScale;
     const bool keyChanged = key != _lastChunkKey || wireframe != _lastWireframe;
+    // The vertex buffers on their way to the backend (entry 24 step 3b), every frame: what the upload item's batch
+    // has referenced is resident now (which may change the drawn version, so this comes before it is read), and the
+    // next share of the queue goes to the item.
+    entity->uploadsFed(_uploadsFed->load(std::memory_order_acquire));
+    postUploads(scene, transaction, entity);
     const uint64_t drawnVersion = entity->getDrawnVersion();
     if (_drawnOnce && drawnVersion == _drawnVersion && !placementChanged && !keyChanged && !layersChanged && lostTiles.empty() &&
             !allTilesLost && lostTopTiles.empty() && !allTopTilesLost) {
@@ -1312,6 +1598,32 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
     const glm::mat4 worldToTerrain = glm::inverse(model.getMatrix());
     const TerrainLayerSet::Pointer layerSet = _layerSet;
 
+    // the section's own time and the buffers it takes ready or, failing one, builds on this thread, for the level
+    // of detail's diag line (a mesh made on the pool comes with its buffer, entry 24 step 3a: built here should read 0)
+    const auto drawnStart = std::chrono::steady_clock::now();
+    int buffersTaken = 0;
+    int buffersBuilt = 0;
+    int itemsWaiting = 0;   // new items not made yet: their buffer is still on its way to the backend
+    double buildMs = 0.0;
+    uint64_t buildBytes = 0;
+    auto buildVertexBuffer = [&](const terrain::ChunkMesh& mesh) {
+        const auto start = std::chrono::steady_clock::now();
+        gpu::BufferPointer buffer = TerrainChunkPayload::makeVertexBuffer(mesh);
+        buildMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        ++buffersBuilt;
+        buildBytes += buffer->getSize();
+        return buffer;
+    };
+    // the chunk's buffer, ready from the pool, or built here when the mesh came without one
+    auto takeVertexBuffer = [&](const RenderableTerrainEntityItem::DrawnChunk& chunk, uint32_t& vertexCount) {
+        if (chunk.buffer) {
+            ++buffersTaken;
+            vertexCount = chunk.buffer->vertexCount;
+            return chunk.buffer->buffer;
+        }
+        vertexCount = TerrainChunkPayload::getVertexCount(*chunk.mesh);
+        return buildVertexBuffer(*chunk.mesh);
+    };
     std::vector<RenderableTerrainEntityItem::DrawnChunk> drawn;
     entity->getDrawnChunks(drawn);
     std::set<terrain::ChunkKey> drawnKeys;
@@ -1341,8 +1653,17 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         const gpu::TexturePointer topTile = topTileFor(top, chunk.key);
         auto found = _chunkItems.find(chunk.key);
         if (found == _chunkItems.end()) {
+            // A new item waits for its buffer to be resident (step 3b: the first cut, and a cut forced through a
+            // stall, come node by node as the uploads land; a cut shown in the usual way has every buffer resident
+            // already). An item that exists takes a new mesh at once: a chunk under the brush must not blink.
+            if (chunk.buffer && !chunk.buffer->resident) {
+                ++itemsWaiting;   // marked wanted by the entity's update (the drawn set's pass), not here
+                continue;
+            }
+            uint32_t vertexCount = 0;
+            const gpu::BufferPointer vertices = takeVertexBuffer(chunk, vertexCount);
             auto payload = std::make_shared<TerrainChunkPayload>();
-            payload->setBuffers(TerrainChunkPayload::makeVertexBuffer(*chunk.mesh), TerrainChunkPayload::getVertexCount(*chunk.mesh));
+            payload->setBuffers(vertices, vertexCount);
             payload->setPlacement(placement);
             payload->setChunk(chunk.key);
             payload->setKey(key);
@@ -1372,9 +1693,10 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         }
         found->second.meshVersion = chunk.version;
         ++itemsUpdated;
-        // The buffers are built here, on the main thread, and handed over: the update runs later on the render thread.
-        gpu::BufferPointer vertices = meshChanged ? TerrainChunkPayload::makeVertexBuffer(*chunk.mesh) : nullptr;
-        const uint32_t vertexCount = TerrainChunkPayload::getVertexCount(*chunk.mesh);
+        // The buffer comes ready from the pool with the mesh (or is built here, failing one) and is handed over: the
+        // update runs later on the render thread.
+        uint32_t vertexCount = TerrainChunkPayload::getVertexCount(*chunk.mesh);
+        gpu::BufferPointer vertices = meshChanged ? takeVertexBuffer(chunk, vertexCount) : nullptr;
         if (terrainDebug && meshChanged) {
             qCDebug(entitiesrenderer) << "Terrain" << entity->getID() << "item" << found->second.id << "of" << describeKey(chunk.key)
                                       << "gets a new mesh of" << vertexCount / 3 << "triangles, mesh version" << chunk.version;
@@ -1394,6 +1716,20 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         });
     }
     handOverSubItems();
+    if (itemsMade && _firstDrawn == std::chrono::steady_clock::time_point()) {
+        _firstDrawn = std::chrono::steady_clock::now();   // the arrival's clock for the upload share
+    }
+    if (lodDiag && (buffersTaken || buffersBuilt || itemsMade || itemsRemoved || itemsUpdated || itemsWaiting)) {
+        // what this frame's drawn-set update cost on this thread (entry 24: before step 3a the buffer build was the
+        // main-thread part of a cut shown; now the buffers come ready and "built" should read 0; "waiting" are new
+        // items whose buffer is still on its way to the backend, step 3b)
+        qCDebug(entitiesrenderer) << "Terrain LOD drawn" << drawnVersion << ":" << buffersTaken << "buffers taken ready," << buffersBuilt
+                                  << "built here in" << buildMs << "ms," << (qulonglong)buildBytes << "bytes;" << itemsMade << "made,"
+                                  << itemsUpdated << "updated," << itemsRemoved << "removed," << itemsWaiting << "waiting; uploads pending"
+                                  << (qulonglong)entity->getUploadsWanted() << "wanted (" << (qulonglong)entity->getUploadsWantedBytes() << "bytes ),"
+                                  << (qulonglong)(entity->getUploadsPending() - entity->getUploadsWanted()) << "unwanted; section"
+                                  << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drawnStart).count() << "ms";
+    }
     if (terrainDebug && (itemsMade || itemsRemoved || itemsUpdated)) {
         qCDebug(entitiesrenderer) << "Terrain" << entity->getID() << "drawn version" << drawnVersion << ":" << drawn.size() << "meshes to draw,"
                                   << _chunkItems.size() << "items;" << itemsMade << "made," << itemsRemoved << "removed (" << qPrintable(removedKeys.join(", "))
