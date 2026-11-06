@@ -1002,6 +1002,15 @@ QUuid EntityScriptingInterface::editEntity(const QUuid& id, const EntityItemProp
     synchronizeEditedGrabProperties(properties, previousUserdata);
     properties.setLastEditedBy(sessionID);
 
+    // A userData edit can change the query cube (a Material entity applied by tag has the whole domain's). The entity
+    // server files an entity by the cube its edit gives, before it applies the edit: without the new cube the entity
+    // stays in the element of its old one, judged by that element's size and sent only to those nearby
+    const bool userDataEdit = entity && properties.userDataChanged();
+    AACube queryAACubeBefore;
+    if (userDataEdit) {
+        queryAACubeBefore = entity->getQueryAACube();
+    }
+
     // done reading and modifying properties --> start write
     bool updatedEntity = false;
     _entityTree->withWriteLock([&] { updatedEntity = _entityTree->updateEntity(entityID, properties); });
@@ -1041,6 +1050,8 @@ QUuid EntityScriptingInterface::editEntity(const QUuid& id, const EntityItemProp
                         }
                     }
                 });
+            } else if (userDataEdit && entity->getQueryAACube() != queryAACubeBefore) {
+                properties.setQueryAACube(entity->getQueryAACube());
             }
         }
     });
