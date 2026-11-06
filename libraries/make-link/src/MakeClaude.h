@@ -68,7 +68,7 @@ public:
     void end();
 
 signals:
-    /// Claude Code is ready: the model it runs.
+    /// Claude Code is ready: the model it runs. Once for each run (Claude Code says init again before every request).
     void started(const QString& model);
     /// Claude's words as they come.
     void textDelta(const QString& text);
@@ -85,6 +85,7 @@ private:
     QByteArray _buffer;
     QByteArray _errors;
     bool _ending { false };
+    bool _started { false };
 };
 
 #endif // hifi_MakeClaude_h

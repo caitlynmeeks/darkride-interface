@@ -45,8 +45,10 @@ QString MakeClaude::findClaude() {
 }
 
 QStringList MakeClaude::arguments(const Settings& settings) {
+    // --bare: the key given here is the only sign-in it uses (never a login from the keychain), and no hooks, CLAUDE.md
+    // or memory from anywhere; --settings and --mcp-config still apply (scripting's route kit, 11-06)
     QStringList arguments {
-        "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+        "-p", "--bare", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
         "--include-partial-messages",
         "--strict-mcp-config", "--mcp-config", settings.mcpConfig,
         "--setting-sources", "project", "--settings", settings.settingsFile,
@@ -103,6 +105,7 @@ bool MakeClaude::startWithKey(const Settings& settings, const QByteArray& key, Q
     _buffer.clear();
     _errors.clear();
     _ending = false;
+    _started = false;
     connect(_process, &QProcess::readyReadStandardOutput, this, &MakeClaude::readOutput);
     connect(_process, &QProcess::readyReadStandardError, this, [this] {
         if (_process) {
@@ -191,7 +194,12 @@ void MakeClaude::handle(const QByteArray& line) {
     const QJsonObject event = QJsonDocument::fromJson(line).object();
     const QString type = event.value("type").toString();
     if (type == "system" && event.value("subtype").toString() == "init") {
-        emit started(event.value("model").toString());
+        // its init comes again before every request: the first is the start, so a request's cost counts from its own
+        // start, not from zero
+        if (!_started) {
+            _started = true;
+            emit started(event.value("model").toString());
+        }
     } else if (type == "stream_event") {
         const QJsonObject delta = event.value("event").toObject().value("delta").toObject();
         if (delta.value("type").toString() == "text_delta") {

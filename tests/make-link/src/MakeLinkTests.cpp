@@ -13,6 +13,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QProcess>
 #include <QtCore/QTemporaryDir>
+#include <QtTest/QSignalSpy>
 #include <QtNetwork/QLocalSocket>
 
 #include <sys/stat.h>
@@ -550,4 +551,48 @@ void MakeLinkTests::testKeyHiddenInClaudeCodeErrors() {
     // nothing else touched: a short "sk-ant-" mention and ordinary words stay
     QCOMPARE(MakeClaude::redact("keys look like sk-ant-..."), QString("keys look like sk-ant-..."));
     QCOMPARE(MakeClaude::redact("budget reached"), QString("budget reached"));
+}
+
+// Claude Code says init before every request: the app hears "started" once a run, so each request's cost counts from
+// its own start; and the key route's line is --bare with its cap, never the key
+void MakeLinkTests::testClaudeStartedOncePerRun() {
+    QTemporaryDir dir;
+    const QString program = dir.filePath("claude");
+    QFile script(program);
+    QVERIFY(script.open(QIODevice::WriteOnly));
+    script.write("#!/bin/sh\n"
+                 "n=0\n"
+                 "while IFS= read -r line; do\n"
+                 "  n=$((n+1))\n"
+                 "  echo '{\"type\":\"system\",\"subtype\":\"init\",\"model\":\"kit-model\"}'\n"
+                 "  echo \"{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"total_cost_usd\\\":$n.5,"
+                 "\\\"is_error\\\":false,\\\"result\\\":\\\"ok\\\"}\"\n"
+                 "done\n");
+    script.close();
+    QVERIFY(QFile::setPermissions(program, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+
+    MakeClaude::Settings settings;
+    settings.folder = dir.path();
+    settings.mcpConfig = dir.filePath(".darkride-mcp.json");
+    settings.settingsFile = dir.filePath(".claude/settings.json");
+    settings.program = program;
+    const QStringList arguments = MakeClaude::arguments(settings);
+    QVERIFY(arguments.contains("--bare"));
+    QVERIFY(arguments.contains("--max-budget-usd"));
+    QVERIFY(!arguments.join(' ').contains("sk-ant"));
+
+    MakeClaude claude;
+    QSignalSpy started(&claude, &MakeClaude::started);
+    QSignalSpy turns(&claude, &MakeClaude::turnEnded);
+    QString why;
+    QVERIFY2(claude.startWithKey(settings, "sk-ant-api03-test-not-a-key", why), qPrintable(why));
+    claude.send("one");
+    QVERIFY(turns.wait(5000));
+    claude.send("two");
+    QVERIFY(turns.size() >= 2 || turns.wait(5000));
+    QCOMPARE(started.size(), 1);
+    QCOMPARE(started.first().first().toString(), QString("kit-model"));
+    QCOMPARE(turns.at(0).at(0).toDouble(), 1.5);
+    QCOMPARE(turns.at(1).at(0).toDouble(), 2.5);
+    claude.end();
 }

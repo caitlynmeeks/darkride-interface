@@ -35,6 +35,7 @@ private slots:
     void testHelperCarriesMcp();
     void testHelperRefusesAnOpenSocket();
     void testKeyHiddenInClaudeCodeErrors();
+    void testClaudeStartedOncePerRun();
 };
 
 #endif // hifi_MakeLinkTests_h
