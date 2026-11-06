@@ -101,12 +101,22 @@ public:
     public:
         AudioOutputIODevice(LocalInjectorsStream& localInjectorsStream, MixedProcessedAudioStream& receivedAudioStream,
                 AudioClient* audio) :
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            // a child of the audio client, so it moves to the audio thread with it: Qt 6's sink reads this device on the
+            // device's own thread, and from any other thread each read is a queued call that can outlive the sink
+            QIODevice(audio),
+#endif
             _localInjectorsStream(localInjectorsStream), _receivedAudioStream(receivedAudioStream),
             _audio(audio), _unfulfilledReads(0) {}
 
         void start() { open(QIODevice::ReadOnly | QIODevice::Unbuffered); }
         qint64 readData(char* data, qint64 maxSize) override;
         qint64 writeData(const char* data, qint64 maxSize) override { return 0; }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Qt 6's sink reads no more than the device says it has, and with the default answer of 0 it never reads. The mix
+        // can always make more (silence, if nothing is playing), so this mustn't be what limits a read: readData does
+        qint64 bytesAvailable() const override { return std::numeric_limits<int>::max(); }
+#endif
         int getRecentUnfulfilledReads() { int unfulfilledReads = _unfulfilledReads; _unfulfilledReads = 0; return unfulfilledReads; }
     private:
         LocalInjectorsStream& _localInjectorsStream;
