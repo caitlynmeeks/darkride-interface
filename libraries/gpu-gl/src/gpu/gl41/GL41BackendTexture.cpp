@@ -70,7 +70,10 @@ GLTexture* GL41Backend::syncGPUObject(const TexturePointer& texturePointer) {
                 break;
 
             case TextureUsageType::STRICT_RESOURCE:
-                qCDebug(gpugllogging) << "Strict texture";
+                // named and sized, as the GL45 line is (entry 29 step 1): a strict texture is uploaded whole, here, on the
+                // thread that executes the batch that first draws it
+                qCDebug(gpugllogging) << "Strict texture" << texture.source().c_str() << texture.getWidth() << "x" << texture.getHeight()
+                                      << (qulonglong)texture.getStoredSize() << "bytes";
                 object = new GL41StrictResourceTexture(shared_from_this(), texture);
                 break;
 

@@ -6,6 +6,7 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 #include "GLBackend.h"
+#include <chrono>
 #include "GLShader.h"
 #include <gl/GLShaders.h>
 
@@ -92,6 +93,9 @@ GLShader* GLBackend::compileBackendProgram(const Shader& program, const Shader::
     if (!program.isProgram()) {
         return nullptr;
     }
+    // the compile's cost by program, for the log (entry 29 step 1): on the Mac, which has no program binary formats, every
+    // program compiles from source the first time a batch binds it, on the thread that executes the batch
+    const auto compileStart = std::chrono::steady_clock::now();
 
     GLShader::ShaderObjects programObjects;
     program.incrementCompilationAttempt();
@@ -176,6 +180,8 @@ GLShader* GLBackend::compileBackendProgram(const Shader& program, const Shader::
     program.setCompilationLogs(compilationLogs);
 
     // So far so good, the program versions have all been created successfully
+    qCDebug(gpugllogging) << "GLBackend::compileBackendProgram:" << program.getSource().name.c_str() << "in"
+                          << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - compileStart).count() << "ms";
     GLShader* object = new GLShader(this->shared_from_this());
     object->_shaderObjects = programObjects;
     return object;
