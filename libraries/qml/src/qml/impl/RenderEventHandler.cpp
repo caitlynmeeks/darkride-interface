@@ -16,6 +16,7 @@
 #include <QtCore/QString>
 #include <QtQuick/QQuickWindow>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QOffscreenSurface>   // the canvas's surface, handed over as a QSurface
 #include <QtQuick/QQuickOpenGLUtils>
 #include <QtQuick/QQuickRenderControl>
 #include <mutex>

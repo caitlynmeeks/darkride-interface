@@ -14,8 +14,8 @@
 #include <QtQuick/QQuickGraphicsDevice>
 #include <QtQuick/QQuickRenderTarget>
 #include <QtQuick/QSGRendererInterface>
-#include <QtGui/rhi/qrhi.h>
-#include <QtGui/rhi/qrhi_platform.h>
+#include <rhi/qrhi.h>            // Gui's private include set (Qt::GuiPrivate, libraries/qml/CMakeLists.txt)
+#include <rhi/qrhi_platform.h>
 #include <mutex>
 #endif
 #include <QtQuick/QQuickItem>
