@@ -498,6 +498,19 @@ bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWor
     }, [&](const std::shared_ptr<void>& attachment) {
         return bufferReady(std::static_pointer_cast<TerrainMeshBuffer>(attachment));
     });
+    // what is drawn and still waits for its buffer (a new item of the first cut, or of a cut forced through a stall)
+    // is wanted this update too; with the pending cut's marks above, every mark carries this update's serial, and the
+    // marks of a cut abandoned by a later choice expire with it (entry 24 step 3d)
+    for (const terrain::LevelOfDetail::Drawn& node : _levelOfDetail.getDrawn()) {
+        if (node.isGridChunk) {
+            auto found = _chunkMeshes.find(node.key);
+            if (found != _chunkMeshes.end()) {
+                wantBuffer(found->second.buffer);
+            }
+        } else {
+            wantBuffer(std::static_pointer_cast<TerrainMeshBuffer>(node.attachment));
+        }
+    }
     // A node of a new cut that has had no mesh for seconds (terrain::LodSettings::stallNudgeMs, stallForceMs) is
     // asked for again, then shown without: say so, with the state that held it, so a stuck cut can be read off the log.
     const terrain::LevelOfDetail::Stall& stall = _levelOfDetail.getStall();
@@ -612,11 +625,11 @@ void RenderableTerrainEntityItem::getUploadsDue(size_t maxShare, std::vector<Ter
     due.clear();
     serial = 0;
     pruneUploads();
-    // the wanted backlog: what a cut or a drawn item waits for and the backend has not got yet
+    // the wanted backlog: what a cut or a drawn item waited for in the latest update and the backend has not got yet
     _uploadsWanted = 0;
     _uploadsWantedBytes = 0;
     for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
-        if (buffer->wanted) {
+        if (buffer->wanted == _wantSerial) {
             ++_uploadsWanted;
             _uploadsWantedBytes += buffer->buffer->getSize();
         }
@@ -635,7 +648,7 @@ void RenderableTerrainEntityItem::getUploadsDue(size_t maxShare, std::vector<Ter
     const size_t share = maxShare;
     size_t bytes = 0;
     for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
-        if (!buffer->wanted) {
+        if (buffer->wanted != _wantSerial) {
             continue;
         }
         const size_t size = buffer->buffer->getSize();
@@ -1643,8 +1656,7 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
             // stall, come node by node as the uploads land; a cut shown in the usual way has every buffer resident
             // already). An item that exists takes a new mesh at once: a chunk under the brush must not blink.
             if (chunk.buffer && !chunk.buffer->resident) {
-                entity->wantBuffer(chunk.buffer);
-                ++itemsWaiting;
+                ++itemsWaiting;   // marked wanted by the entity's update (the drawn set's pass), not here
                 continue;
             }
             uint32_t vertexCount = 0;

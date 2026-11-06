@@ -67,8 +67,10 @@ struct TerrainMeshBuffer {
     gpu::BufferPointer buffer;
     uint32_t vertexCount { 0 };
     uint64_t uploadSerial { 0 };   // its place in the upload queue (the editing thread's), 0 until it is in it
-    // Entry 24 step 3d: only a buffer something waits for is sent. wanted: a cut's readiness check or the drawn-set
-    // update found it not resident (the editing thread's mark); posted: the upload post carrying it, 0 until one does.
+    // Entry 24 step 3d: only a buffer something waits for is sent. wanted: the serial of the terrain's last update
+    // whose readiness pass (a pending cut's nodes) or drawn set (an item still waiting) found it not resident; it
+    // counts only while it equals the terrain's current serial, so the marks of an abandoned cut expire with the next
+    // update (the editing thread's). posted: the upload post carrying it, 0 until one does.
     uint64_t wanted { 0 };
     uint64_t posted { 0 };
     bool resident { false };       // a batch has referenced it (the editing thread's view of it)
@@ -171,8 +173,9 @@ public:
     // Changes whenever getDrawnChunks() may give something else.
     uint64_t getDrawnVersion() const { return _levelOfDetail.getDrawnVersion() + _meshVersion; }
     // The vertex buffers made beside the meshes on the pool, queued in the order they came (entry 24 steps 3b and
-    // 3d). Only a buffer something waits for is sent (wantBuffer: a cut's readiness checks and the drawn-set update's
-    // new items mark them): getUploadsDue gives the wanted ones in queue order, the backlog whole up to a share of
+    // 3d). Only a buffer something waits for is sent (wantBuffer, in updateLevelOfDetail: the pending cut's readiness
+    // checks and the drawn set's items still waiting mark them, and the marks expire with the next update, so an
+    // abandoned cut sends nothing): getUploadsDue gives the wanted ones in queue order, the backlog whole up to a share of
     // bytes (the first always), as one post for the renderer to reference from a batch; the same post again until it
     // says the post has gone through (uploadsFed, with the post's serial), which
     // marks those resident, lets a cut waiting on them show, and changes the drawn version. A buffer nobody waits for
@@ -256,7 +259,7 @@ private:
     uint64_t _nextUploadSerial { 0 };
     uint64_t _nextPostSerial { 0 };
     uint64_t _postOut { 0 };            // the post referenced by the upload item and not yet fed; 0 when none
-    uint64_t _wantSerial { 0 };         // one per level-of-detail update: the mark a wanted buffer carries
+    uint64_t _wantSerial { 1 };         // one per level-of-detail update: the mark a wanted buffer carries (0 = none)
     void takeMadeBuffers();
     void pruneUploads();                // the resident and the dead leave the queue
     uint64_t _meshVersion { 0 };
