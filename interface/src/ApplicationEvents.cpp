@@ -39,6 +39,9 @@
 #include <controllers/InputRecorder.h>
 #include <MainWindow.h>
 #include <OffscreenUi.h>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include "InterfaceLogging.h"   // the WinIdChange line below
+#endif
 #include <plugins/PluginManager.h>
 #include <ScriptEngines.h>
 #include <display-plugins/CompositorHelper.h>
