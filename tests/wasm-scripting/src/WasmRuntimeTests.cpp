@@ -13,6 +13,7 @@
 
 #include <QtCore/QElapsedTimer>
 
+#include <ScriptCaller.h>
 #include <WasmRuntime.h>
 
 QTEST_GUILESS_MAIN(WasmRuntimeTests)
@@ -278,6 +279,166 @@ void WasmRuntimeTests::testResumeAfterStop() {
     QString error;
     QVERIFY(!trapped->call("quick", {}, results, error));
     QVERIFY2(error.contains("stopped"), qPrintable(error));
+}
+
+namespace {
+
+// "run" asks the host, which calls back into the module's "alloc" for the answer's place, as the host does to return a
+// value; "forever" runs until stopped.
+const QString ASKING_MODULE = R"((module
+  (import "host" "ask" (func $ask (result i32)))
+  (memory (export "memory") 1)
+  (func (export "alloc") (param $size i32) (result i32)
+    i32.const 1024)
+  (func (export "run") (result i32)
+    call $ask)
+  (func (export "add") (param i32 i32) (result i32)
+    local.get 0
+    local.get 1
+    i32.add)
+  (func (export "forever")
+    (loop br 0))))";
+
+std::chrono::steady_clock::time_point after(int milliseconds) {
+    return std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds);
+}
+
+} // namespace
+
+// A stop that lets the running call finish: the call goes on (its call back into the module too, as a host function
+// returning a value makes), returns what it returns, and only then is the next call refused.
+void WasmRuntimeTests::testStopAfterLetsCallFinish() {
+    auto runtime = makeRuntime();
+    QString error;
+    auto module = runtime->compileText(ASKING_MODULE, error);
+    QVERIFY2(module, qPrintable(error));
+    WasmInstance instance(module, WasmInstance::Limits());
+    std::atomic<bool> inside { false };
+    std::atomic<bool> stopAsked { false };
+    QString innerError;
+    instance.defineHostFunction("host", "ask", { {}, { WasmType::I32 } },
+        [&](WasmInstance& self, const std::vector<WasmValue>&, std::vector<WasmValue>& results) -> QString {
+            inside = true;
+            while (!stopAsked) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));  // a few epoch ticks into the stop
+            std::vector<WasmValue> out;
+            if (!self.call("alloc", { int32_t(4) }, out, innerError)) {
+                return "alloc failed: " + innerError;
+            }
+            results.push_back(out[0]);
+            return QString();
+        });
+    QVERIFY2(instance.instantiate(error), qPrintable(error));
+    WasmInstance* raw = &instance;
+    std::thread stopper([&] {
+        while (!inside) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        raw->requestStopAfter(after(3000), 0);
+        stopAsked = true;
+    });
+    std::vector<WasmValue> results;
+    const bool finished = instance.call("run", {}, results, error);
+    stopper.join();
+    QVERIFY2(finished, qPrintable(error + " / " + innerError));
+    QCOMPARE(std::get<int32_t>(results[0]), int32_t(1024));
+    QVERIFY(!instance.isStopRequested());  // the deadline is not here yet
+    QVERIFY(!instance.call("add", { int32_t(1), int32_t(2) }, results, error));
+    QVERIFY2(error.contains("stopped"), qPrintable(error));
+}
+
+// A runaway the stop found running is ended at the deadline, not at once, a module with deadline checks and one that
+// asks alike.
+void WasmRuntimeTests::testStopAfterEndsRunawayAtDeadline() {
+    auto runtime = makeRuntime();
+    WasmInstance::Limits limits;
+    limits.callTimeout = std::chrono::milliseconds(0);
+    auto epoch = makeInstance(runtime, R"((module (func (export "forever") (loop br 0))))", limits);
+    QVERIFY(epoch);
+    auto cooperative = makeCooperativeInstance(runtime, limits);
+    QVERIFY(cooperative);
+    for (WasmInstance* raw : { epoch.get(), cooperative.get() }) {
+        const bool asks = raw == cooperative.get();
+        std::thread stopper([raw] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            raw->requestStopAfter(after(150), 0);
+        });
+        std::vector<WasmValue> results;
+        QString error;
+        QElapsedTimer timer;
+        timer.start();
+        const bool returned = raw->call(asks ? "until_told" : "forever", {}, results, error);
+        const qint64 elapsed = timer.elapsed();
+        stopper.join();
+        QVERIFY2(elapsed >= 170 && elapsed < 700, qPrintable(QString("took %1 ms").arg(elapsed)));
+        if (asks) {
+            QVERIFY2(returned, qPrintable(error));
+            const QString reason = raw->takeInterruptionReason();
+            QVERIFY2(reason.contains("stopped"), qPrintable(reason));
+        } else {
+            QVERIFY(!returned);
+            QVERIFY2(error.contains("stopped"), qPrintable(error));
+        }
+        QVERIFY(raw->isStopRequested());
+    }
+}
+
+// A world left while its call has until the deadline: the call ends at once.
+void WasmRuntimeTests::testStopAfterEndsAtOnceWhenWorldLeft() {
+    auto runtime = makeRuntime();
+    WasmInstance::Limits limits;
+    limits.callTimeout = std::chrono::milliseconds(0);
+    auto epoch = makeInstance(runtime, R"((module (func (export "forever") (loop br 0))))", limits);
+    QVERIFY(epoch);
+    auto cooperative = makeCooperativeInstance(runtime, limits);
+    QVERIFY(cooperative);
+    for (WasmInstance* raw : { epoch.get(), cooperative.get() }) {
+        const bool asks = raw == cooperative.get();
+        const int world = ScriptCaller::newWorld();
+        std::thread stopper([raw, world] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            raw->requestStopAfter(after(10000), world);
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            ScriptCaller::retireWorld(world);
+        });
+        std::vector<WasmValue> results;
+        QString error;
+        QElapsedTimer timer;
+        timer.start();
+        raw->call(asks ? "until_told" : "forever", {}, results, error);
+        const qint64 elapsed = timer.elapsed();
+        stopper.join();
+        QVERIFY2(elapsed >= 55 && elapsed < 500, qPrintable(QString("took %1 ms").arg(elapsed)));
+        QVERIFY(raw->isStopRequested());
+    }
+}
+
+// No new call begins once a stop waits for the running one, at once; once the stop is taken back (the script's ending
+// handlers' turn) calls are let in again until the deadline.
+void WasmRuntimeTests::testStopAfterRefusesNewCall() {
+    auto runtime = makeRuntime();
+    auto instance = makeInstance(runtime, ADD_MODULE);
+    QVERIFY(instance);
+    instance->requestStopAfter(after(10000), 0);
+    std::vector<WasmValue> results;
+    QString error;
+    QElapsedTimer timer;
+    timer.start();
+    QVERIFY(!instance->call("add", { int32_t(1), int32_t(2) }, results, error));
+    QVERIFY2(timer.elapsed() < 50, qPrintable(QString("took %1 ms").arg(timer.elapsed())));
+    QVERIFY2(error.contains("stopped"), qPrintable(error));
+    instance->resumeAfterStop();
+    QVERIFY2(instance->call("add", { int32_t(1), int32_t(2) }, results, error), qPrintable(error));
+    QCOMPARE(std::get<int32_t>(results[0]), int32_t(3));
+
+    auto due = makeInstance(runtime, ADD_MODULE);
+    QVERIFY(due);
+    due->requestStopAfter(after(-1), 0);  // a deadline passed: nothing is let in, taken back or not
+    due->resumeAfterStop();
+    QVERIFY(due->isStopRequested());
+    QVERIFY(!due->call("add", { int32_t(1), int32_t(2) }, results, error));
 }
 
 // A call that runs past its time limit is told to stop when it next asks; the instance stays usable.

@@ -661,6 +661,15 @@ void WasmScriptEngine::stopAll() {
         // and not for a world that was left, which gets nothing more done
         std::lock_guard<std::mutex> lock(_instancesMutex);
         _scriptEndingBegun = true;
+        if (_stopLetCallFinish) {
+            // the call the stop found running: finished, or ended at the deadline (or by its world left)
+            bool ended = false;
+            forEachInstance([&ended](WasmInstance& instance) { ended = ended || instance.isStopRequested(); });
+            qCDebug(scriptengine).nospace() << "the call running at the stop of " << getFilename()
+                                            << (ended ? " was ended at the deadline or by its world left, "
+                                                      : " finished within the deadline, ")
+                                            << MAX_SCRIPT_ENDING_TIME_MS - endingTimeLeftMs() << " ms after the stop";
+        }
         if (!_endingDeadlinePassed && !worldWasLeft()) {
             forEachInstance([](WasmInstance& instance) { instance.resumeAfterStop(); });
         }
@@ -787,13 +796,27 @@ void WasmScriptEngine::stop(bool marshal) {
         emit runningStateChanged();
     }
     if (QThread::currentThread() != thread() && _callDepth > 0) {
-        // a module is inside a call: make it return now rather than at its own pace. Not its scriptEnding handlers,
-        // which have until the deadline in waitTillDoneRunning
+        // a module is inside a call. A world that was left gets nothing more done: the call ends now, its scriptEnding
+        // handlers' too. Otherwise the call may finish what it is doing, to the deadline its handlers have too, counted
+        // from the first stop; no new call begins, and the world left meanwhile ends it at once. The handlers have until
+        // that deadline in waitTillDoneRunning
         std::lock_guard<std::mutex> lock(_instancesMutex);
-        if (!_scriptEndingBegun) {
+        if (worldWasLeft()) {
             forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
+        } else if (!_scriptEndingBegun) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(endingTimeLeftMs());
+            const int world = getWorldId();
+            forEachInstance([deadline, world](WasmInstance& instance) { instance.requestStopAfter(deadline, world); });
+            _stopLetCallFinish = true;
         }
     }
+}
+
+int WasmScriptEngine::endingTimeLeftMs() const {
+    const quint64 now = usecTimestampNow();
+    const quint64 first = _firstStopTime;
+    const quint64 usedMs = now > first ? (now - first) / USECS_PER_MSEC : 0;
+    return MAX_SCRIPT_ENDING_TIME_MS - int(std::min<quint64>(usedMs, MAX_SCRIPT_ENDING_TIME_MS));
 }
 
 void WasmScriptEngine::interruptRunningCall() {
@@ -828,8 +851,7 @@ void WasmScriptEngine::waitTillDoneRunning() {
         };
         // counted from the first stop: scripts stopped together, as at a quit, reach the deadline together, so the wait
         // on one after another adds nothing however many handlers are stuck
-        const int usedMs = int(std::min<quint64>((usecTimestampNow() - _firstStopTime) / USECS_PER_MSEC, MAX_SCRIPT_ENDING_TIME_MS));
-        if (!waitServingCalls(MAX_SCRIPT_ENDING_TIME_MS - usedMs)) {
+        if (!waitServingCalls(endingTimeLeftMs())) {
             interruptRunningCall();
             if (!waitServingCalls(MAX_SCRIPT_QUITTING_TIME_MS)) {
                 qCWarning(scriptengine) << "WebAssembly script engine did not stop, terminating its thread:" << getFilename();

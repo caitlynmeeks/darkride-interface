@@ -25,6 +25,10 @@ private slots:
     void testRequestStop();
     void testCooperativeStop();
     void testResumeAfterStop();
+    void testStopAfterLetsCallFinish();
+    void testStopAfterEndsRunawayAtDeadline();
+    void testStopAfterEndsAtOnceWhenWorldLeft();
+    void testStopAfterRefusesNewCall();
     void testCooperativeTimeLimit();
     void testCallWarningGoesOn();
     void testTimeLimitCountsModuleTimeOnly();
