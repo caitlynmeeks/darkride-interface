@@ -49,6 +49,7 @@ scriptable::ScriptableMaterial& scriptable::ScriptableMaterial::operator=(const 
         lightmapParams = material.lightmapParams;
         scatteringMap = material.scatteringMap;
         cullFaceMode = material.cullFaceMode;
+        doubleSidedNormals = material.doubleSidedNormals;
     } else if (model.toStdString() == graphics::Material::HIFI_SHADER_SIMPLE) {
         procedural = material.procedural;
     }
@@ -144,6 +145,7 @@ scriptable::ScriptableMaterial::ScriptableMaterial(const graphics::MaterialPoint
             }
 
             cullFaceMode = QString(graphics::MaterialKey::getCullFaceModeName(material->getCullFaceMode()).c_str());
+            doubleSidedNormals = material->isKeepBackFaceNormal() ? "keep" : "flip";
         } else if (model.toStdString() == graphics::Material::HIFI_SHADER_SIMPLE) {
             procedural = material->getProceduralString();
         }

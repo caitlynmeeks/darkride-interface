@@ -393,15 +393,16 @@ void RenderPipelines::updateMultiMaterial(graphics::MultiMaterial& multiMaterial
     static std::once_flag once;
     std::call_once(once, [] {
         for (int i = 0; i < graphics::Material::NUM_TOTAL_FLAGS; i++) {
-            // The opacity mask/map are derived from the albedo map, and how the roughness and occlusion maps
-            // are read comes with those maps
+            // The opacity mask/map are derived from the albedo map, how the roughness and occlusion maps
+            // are read comes with those maps, and the back faces' normal with the cull face mode
             // FIXME: OPACITY_MAP_MODE_BIT is supposed to support fallthrough
             if (i != graphics::MaterialKey::OPACITY_MASK_MAP_BIT &&
                     i != graphics::MaterialKey::OPACITY_TRANSLUCENT_MAP_BIT &&
                     i != graphics::MaterialKey::OPACITY_MAP_MODE_BIT &&
                     i != graphics::MaterialKey::ROUGHNESS_FROM_SMOOTHNESS_BIT &&
                     i != graphics::MaterialKey::OCCLUSION_TEXCOORD0_BIT &&
-                    i != graphics::MaterialKey::LIGHTMAP_FULL_BIT) {
+                    i != graphics::MaterialKey::LIGHTMAP_FULL_BIT &&
+                    i != graphics::MaterialKey::KEEP_BACK_FACE_NORMAL_BIT) {
                 allFlags.insert(i);
             }
         }
@@ -680,6 +681,7 @@ void RenderPipelines::updateMultiMaterial(graphics::MultiMaterial& multiMaterial
                 case graphics::Material::CULL_FACE_MODE:
                     if (!fallthrough) {
                         multiMaterial.setCullFaceMode(material->getCullFaceMode());
+                        schemaKey.setKeepBackFaceNormal(materialKey.isKeepBackFaceNormal());
                         wasSet = true;
                     }
                     break;

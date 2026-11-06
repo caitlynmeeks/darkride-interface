@@ -455,6 +455,10 @@ namespace scriptable {
      *     </ul>
      *     If <code>"fallthrough"</code> then it falls through to the material below.
      *     <code>"hifi_pbr"</code> model only.
+     * @property {string} [doubleSidedNormals="flip"] - How the back faces of a double-sided surface are lit:
+     *     <code>"flip"</code> turns the normal round to face the viewer, <code>"keep"</code> lights them with the normal as
+     *     it is. Goes with <code>cullFaceMode</code>: not given when that falls through.
+     *     <code>"hifi_pbr"</code> model only.
      * @property {Mat4|string} [texCoordTransform0] - The transform to use for all of the maps apart from
      *     <code>occlusionMap</code> and <code>lightMap</code>.
      *     If <code>"fallthrough"</code> then it falls through to the material below.
@@ -628,6 +632,10 @@ namespace scriptable {
                 obj.setProperty("cullFaceMode", FALLTHROUGH);
             } else if (!material.cullFaceMode.isEmpty()) {
                 obj.setProperty("cullFaceMode", material.cullFaceMode);
+                // it goes with the cull face mode, falling through with it, so a copy into a Material entity keeps it
+                if (!material.doubleSidedNormals.isEmpty()) {
+                    obj.setProperty("doubleSidedNormals", material.doubleSidedNormals);
+                }
             }
         } else if (material.model.toStdString() == graphics::Material::HIFI_SHADER_SIMPLE) {
             obj.setProperty("procedural", material.procedural);
