@@ -433,13 +433,22 @@ bool RenderableTerrainEntityItem::updateMeshes() {
 // could not hold it (2.5 and 2.1 ms). The periods are taken once enough are in.
 static const float LOD_SAMPLE_SHARE_OF_FRAME = 0.3f;
 static const float LOD_SAMPLE_BUDGET_FLOOR_MS = 1.0f;
-// The vertex buffers a new cut brings are given to the backend over the frames before the cut is shown (entry 24
-// step 3b), this many bytes a frame (the first buffer due always goes): the uploads land in the present thread's
-// execute stage, which in a heavy world at 144 Hz has little room (5-6.6 ms of a 6.9 ms frame measured in Port
-// Amarelle), so the share is sized to keep that stage under its slow line (0.3-0.7 ms per MB measured there); the
-// price is latency (a 40 MB boarding cut spreads over ~20 frames, the old cut drawn meanwhile). The execute column
-// of the diag legs sets the final value.
-static const size_t LOD_UPLOAD_BYTES_PER_FRAME = 2 * 1024 * 1024;
+// The vertex buffers a new cut brings are given to the backend before the cut is shown (entry 24 step 3b), as one
+// post a frame of the wanted backlog, whole, up to this many bytes (step 3d; the first buffer due always goes). The
+// uploads land in the present thread's execute stage, and at 144 Hz in Port Amarelle that stage sits at its slow
+// line already (half a refresh, 3.45 ms, against ~3.3 ms of its own), so what the governor's climb-back counts is
+// the NUMBER of frames that upload, not their size: a cruise cut (3-8 MB) goes in one post, as main's first-draw
+// upload did (step 3b's 2 MB pieces made it two or three slow executes a cut, and the lap of 11-06 19:13 never
+// climbed back from 72); the boarding cut after a teleport (~48 MB) in 6 frames and the arrival's first cut (100-150
+// MB) in 13-19, where the view has changed whole. The max is ~1.6-5.6 ms at the 0.2-0.7 ms per MB estimated so far
+// (the execute column of the 3d legs measures it); 16 MB would slip five presents at 144 and drop the governor at
+// every teleport (performance, 11-06). The arrival is the exception: for its first seconds the present thread
+// carries the world's own first draws (executes of 30-90 ms, where the governor's drop is decided: three presents
+// over two refreshes in a second), so the share stays small until the terrain has been drawn for a while, and the
+// first cut comes node by node over a second or so, as the models come; a teleport later gets the whole share.
+static const size_t LOD_UPLOAD_BYTES_MAX = 8 * 1024 * 1024;
+static const size_t LOD_UPLOAD_BYTES_ARRIVAL = 2 * 1024 * 1024;
+static const float LOD_UPLOAD_ARRIVAL_SECONDS = 10.0f;
 
 bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWorld) {
     terrain::LodSettings settings = _levelOfDetail.getSettings();
@@ -466,8 +475,16 @@ bool RenderableTerrainEntityItem::updateLevelOfDetail(const glm::vec3& cameraWor
         bool inFlight { false };
     } refused;   // the state of the last chunk refused: the one holding a new cut back, if any
     takeMadeBuffers();   // the level of detail's buffers, before its meshes are collected below
-    // a buffer is ready to draw once a batch has referenced it (resident), or when it was made without one
-    auto bufferReady = [](const TerrainMeshBuffer::Pointer& buffer) { return !buffer || buffer->resident; };
+    // a buffer is ready to draw once a batch has referenced it (resident), or when it was made without one; one
+    // found not resident is wanted (entry 24 step 3d): it goes to the backend ahead of what nothing waits for
+    ++_wantSerial;
+    auto bufferReady = [this](const TerrainMeshBuffer::Pointer& buffer) {
+        if (!buffer || buffer->resident) {
+            return true;
+        }
+        wantBuffer(buffer);
+        return false;
+    };
     const bool changed = _levelOfDetail.update(_grid, camera, getVoxelScale(), [&](const terrain::ChunkKey& key) {
         auto found = _chunkMeshes.find(key);
         const bool mesh = found != _chunkMeshes.end();
@@ -572,44 +589,84 @@ void RenderableTerrainEntityItem::takeMadeBuffers() {
     }
     for (TerrainMeshBuffer::Pointer& buffer : made) {
         buffer->uploadSerial = ++_nextUploadSerial;
-        _uploadsBytes += buffer->buffer->getSize();
         _uploads.push_back(std::move(buffer));
     }
 }
 
-void RenderableTerrainEntityItem::getUploadsDue(size_t byteShare, std::vector<TerrainMeshBuffer::Pointer>& due, uint64_t& serial) {
+void RenderableTerrainEntityItem::wantBuffer(const TerrainMeshBuffer::Pointer& buffer) {
+    if (buffer && !buffer->resident) {
+        buffer->wanted = _wantSerial;
+    }
+}
+
+// A buffer the backend has (resident) leaves the queue, and so does a dead one: its mesh is gone (the level of
+// detail evicted the entry or replaced its mesh, or the grid's chunk was meshed again), so the queue's reference is
+// the last. Anywhere in the queue, not only at its head: what nobody waits for sits behind nothing.
+void RenderableTerrainEntityItem::pruneUploads() {
+    _uploads.erase(std::remove_if(_uploads.begin(), _uploads.end(), [](const TerrainMeshBuffer::Pointer& buffer) {
+        return !buffer || buffer->resident || buffer.use_count() == 1;
+    }), _uploads.end());
+}
+
+void RenderableTerrainEntityItem::getUploadsDue(size_t maxShare, std::vector<TerrainMeshBuffer::Pointer>& due, uint64_t& serial) {
     due.clear();
     serial = 0;
+    pruneUploads();
+    // the wanted backlog: what a cut or a drawn item waits for and the backend has not got yet
+    _uploadsWanted = 0;
+    _uploadsWantedBytes = 0;
+    for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
+        if (buffer->wanted) {
+            ++_uploadsWanted;
+            _uploadsWantedBytes += buffer->buffer->getSize();
+        }
+    }
+    // the post on its way: the same buffers again, until the renderer says the backend has them
+    if (_postOut) {
+        for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
+            if (buffer->posted == _postOut) {
+                due.push_back(buffer);
+            }
+        }
+        serial = _postOut;
+        return;
+    }
+    // a new post: the wanted buffers in queue order, the backlog whole up to the share (the first always)
+    const size_t share = maxShare;
     size_t bytes = 0;
     for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
-        // the queue's own reference is the last: the mesh is gone, and so is the use of sending it
-        if (buffer.use_count() == 1) {
+        if (!buffer->wanted) {
             continue;
         }
         const size_t size = buffer->buffer->getSize();
-        if (!due.empty() && bytes + size > byteShare) {
+        if (!due.empty() && bytes + size > share) {
             break;
         }
         due.push_back(buffer);
-        serial = buffer->uploadSerial;
         bytes += size;
     }
-    // a dead buffer behind a live one leaves the queue with it in uploadsFed; a dead head leaves now
-    while (!_uploads.empty() && _uploads.front().use_count() == 1) {
-        _uploadsBytes -= _uploads.front()->buffer->getSize();
-        _uploads.pop_front();
+    if (!due.empty()) {
+        serial = ++_nextPostSerial;
+        for (const TerrainMeshBuffer::Pointer& buffer : due) {
+            buffer->posted = serial;
+        }
+        _postOut = serial;
     }
 }
 
 void RenderableTerrainEntityItem::uploadsFed(uint64_t serial) {
-    bool any = false;
-    while (!_uploads.empty() && _uploads.front()->uploadSerial <= serial) {
-        TerrainMeshBuffer::Pointer& buffer = _uploads.front();
-        buffer->resident = true;
-        _uploadsBytes -= buffer->buffer->getSize();
-        _uploads.pop_front();
-        any = true;
+    if (!_postOut || serial < _postOut) {
+        return;
     }
+    bool any = false;
+    for (const TerrainMeshBuffer::Pointer& buffer : _uploads) {
+        if (buffer->posted == _postOut) {
+            buffer->resident = true;
+            any = true;
+        }
+    }
+    _postOut = 0;
+    pruneUploads();
     if (any) {
         ++_meshVersion;   // what may be drawn changed: a chunk item waits for its buffer to be resident
     }
@@ -1357,7 +1414,9 @@ bool TerrainEntityRenderer::needsRenderUpdateFromTypedEntity(const TypedEntityPo
 void TerrainEntityRenderer::postUploads(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) {
     std::vector<TerrainMeshBuffer::Pointer> due;
     uint64_t serial = 0;
-    entity->getUploadsDue(LOD_UPLOAD_BYTES_PER_FRAME, due, serial);
+    const bool arriving = _firstDrawn == std::chrono::steady_clock::time_point() ||
+        std::chrono::duration<float>(std::chrono::steady_clock::now() - _firstDrawn).count() < LOD_UPLOAD_ARRIVAL_SECONDS;
+    entity->getUploadsDue(arriving ? LOD_UPLOAD_BYTES_ARRIVAL : LOD_UPLOAD_BYTES_MAX, due, serial);
     if (serial == _uploadsPosted) {
         return;   // the same share as last time (not through yet), or nothing due
     }
@@ -1584,6 +1643,7 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
             // stall, come node by node as the uploads land; a cut shown in the usual way has every buffer resident
             // already). An item that exists takes a new mesh at once: a chunk under the brush must not blink.
             if (chunk.buffer && !chunk.buffer->resident) {
+                entity->wantBuffer(chunk.buffer);
                 ++itemsWaiting;
                 continue;
             }
@@ -1643,6 +1703,9 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         });
     }
     handOverSubItems();
+    if (itemsMade && _firstDrawn == std::chrono::steady_clock::time_point()) {
+        _firstDrawn = std::chrono::steady_clock::now();   // the arrival's clock for the upload share
+    }
     if (lodDiag && (buffersTaken || buffersBuilt || itemsMade || itemsRemoved || itemsUpdated || itemsWaiting)) {
         // what this frame's drawn-set update cost on this thread (entry 24: before step 3a the buffer build was the
         // main-thread part of a cut shown; now the buffers come ready and "built" should read 0; "waiting" are new
@@ -1650,7 +1713,8 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
         qCDebug(entitiesrenderer) << "Terrain LOD drawn" << drawnVersion << ":" << buffersTaken << "buffers taken ready," << buffersBuilt
                                   << "built here in" << buildMs << "ms," << (qulonglong)buildBytes << "bytes;" << itemsMade << "made,"
                                   << itemsUpdated << "updated," << itemsRemoved << "removed," << itemsWaiting << "waiting; uploads pending"
-                                  << (qulonglong)entity->getUploadsPending() << "(" << (qulonglong)entity->getUploadsPendingBytes() << "bytes ); section"
+                                  << (qulonglong)entity->getUploadsWanted() << "wanted (" << (qulonglong)entity->getUploadsWantedBytes() << "bytes ),"
+                                  << (qulonglong)(entity->getUploadsPending() - entity->getUploadsWanted()) << "unwanted; section"
                                   << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drawnStart).count() << "ms";
     }
     if (terrainDebug && (itemsMade || itemsRemoved || itemsUpdated)) {

@@ -736,7 +736,9 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
     mark = clock();
 
     // the wanted cut is shown once every node of it has its mesh (at once when nothing is shown yet), or once a
-    // node without one has held it back for the settings' force time
+    // node without one has held it back for the settings' force time. Every node is checked, not only up to the
+    // first one not ready: the caller's nodeReady marks what it must send to its backend ahead of the rest (entry 24
+    // step 3d); the first stalled node in key order is the one the stall tracks, as before.
     if (_shown != wanted) {
         const LodCut::Node* stalled = nullptr;
         if (!_shown.empty()) {
@@ -749,9 +751,8 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
                     ready = found != _entries.end() && found->second.hasMesh &&
                             (found->second.mesh.isEmpty() || !nodeReady || nodeReady(found->second.attachment));
                 }
-                if (!ready) {
+                if (!ready && !stalled) {
                     stalled = &node;
-                    break;
                 }
             }
         }
