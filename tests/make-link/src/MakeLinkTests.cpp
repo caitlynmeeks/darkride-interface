@@ -262,11 +262,14 @@ void MakeLinkTests::testWorldContentKeptShortAndLabelled() {
     const QString kept = named.value("things").toArray()[0].toObject().value("name").toString();
     QVERIFY(kept.startsWith(QString::fromUtf8("\xF0\x9F\x98\x80").repeated(120) + " ... (cut: 200 characters"));
 
-    // two whole scripts make the result too big: every string goes to the short length, and it fits
+    // two scripts at their cap and three long texts make the result too big (over 200 KB after the first cut): every
+    // string goes to the short length, and it fits
     const QJsonObject twoScripts = tools.keepWorldContentShort(
         "get", QJsonObject { { "scripts", QJsonObject { { "client", QString(100000, 'c') },
                                                         { "server", QString(100000, 's') } } },
-                             { "properties", QJsonObject { { "userData", QString(50000, 'u') } } } },
+                             { "properties", QJsonObject { { "userData", QString(50000, 'u') },
+                                                           { "description", QString(50000, 'd') },
+                                                           { "text", QString(50000, 't') } } } },
         labelled, tooBig);
     QVERIFY(tooBig.isEmpty());
     QVERIFY(twoScripts.value("scripts").toObject().value("client").toString().size() < 2100);
