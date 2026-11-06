@@ -27,6 +27,16 @@ private slots:
     void testAnEndlessHandlerEndsAtTheDeadline();
     void testStuckHandlersShareOneDeadline();
     void testAnInterruptEndsALeftWorldsHandler();
+    void testASignalHandlersCallFinishes();
+    void testARunawaySignalHandlerEndsAfterTwoSeconds();
+};
+
+/// A signal for a script to connect to: a call that reaches it through a connected signal, as Messages and Controller
+/// events do, not through one of the engine's own calls.
+class StopTestPoker : public QObject {
+    Q_OBJECT
+signals:
+    void poked();
 };
 
 #endif // hifi_ScriptStopTests_h

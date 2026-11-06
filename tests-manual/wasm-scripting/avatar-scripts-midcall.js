@@ -4,9 +4,9 @@
 //
 //  The driver of avatar-scripts.sh's mid-call check (MIDCALL=1): stops the stand-in avatar's script (probe.js) while
 //  it is inside a call (a message makes it spin), three ways, and says how long the script took to stop:
-//    1. the avatar taken off: its world is left, so the call ends at once (the plain avatar's load and well under the
-//       3 s a deadline would take: under 2.5 s);
-//    2. a plain stop during an 8 s call: the call may finish to the scripts' ending deadline, 3 s, and is ended there;
+//    1. the avatar taken off: its world is left, so the call ends at once (the plain avatar's load, and under the 2 s
+//       a stopped call may take: under 1.5 s);
+//    2. a plain stop during an 8 s call: the call may finish for 2 s, and is ended there;
 //    3. a plain stop during a 1 s call: the call finishes ("spin ended" once, from this one alone).
 //  The avatar is worn again before 2 and 3 (after the plain one, as wearing the same one again loads nothing). Prints
 //  AVATAR-SCRIPT DRIVER lines and stops the client.
@@ -70,11 +70,11 @@
     }
     Script.setTimeout(function () {
         wear(function () {
-            stopMidCall("takeoff", 8000, function () { MyAvatar.useFullAvatarURL(PLAIN_URL, "plain"); }, 0, 2500, function () {
+            stopMidCall("takeoff", 8000, function () { MyAvatar.useFullAvatarURL(PLAIN_URL, "plain"); }, 0, 1500, function () {
                 wear(function () {
-                    stopMidCall("plain-stop", 8000, plainStop, 2000, 4500, function () {
+                    stopMidCall("plain-stop", 8000, plainStop, 1500, 3500, function () {
                         wear(function () {
-                            stopMidCall("quick-stop", 1000, plainStop, 300, 2000, function () {
+                            stopMidCall("quick-stop", 1000, plainStop, 300, 1500, function () {
                                 say("done");
                                 Script.stop();
                             });

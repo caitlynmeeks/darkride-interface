@@ -93,7 +93,8 @@
     Script.scriptEnding.connect(function () {
         try { Controller.keyPressEvent.disconnect(onKey); } catch (e) {}
         try { Messages.messageReceived.disconnect(onMessage); } catch (e) {}
-        // taken off, this avatar's world is left before its scripts are stopped: this is refused. (Not so at a quit.)
+        // taken off, this avatar's world is left before its scripts are stopped, and this does not run; on a plain stop
+        // (avatar-scripts-midcall.js) it does, and its entity is made
         var late = null;
         try {
             late = Entities.addEntity({ type: "Box", name: "avatar-script late", position: { x: 0, y: 0, z: 0 },

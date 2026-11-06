@@ -3,15 +3,15 @@
 # this kit's own web server on localtest.me:43110) is worn in one walled serverless client. Its script next to the
 # .fst runs under a world's rules (probe.js prints the checks); its three script lines that point outside the avatar's
 # folder are refused and never run. Then it is taken off (plain.fst, the same avatar without script lines, made here): its
-# world is left before its script is stopped, so what the script's scriptEnding handler then tries is refused.
+# world is left before its script is stopped, so the script's scriptEnding handler does not run.
 #   tests-manual/wasm-scripting/avatar-scripts.sh [timeout seconds, 90]
 # CLIENT_APP=<another Darkride.app> runs that build instead (a build before the rule shows the FAIL lines).
 # MIDCALL=1 runs the mid-call check instead (avatar-scripts-midcall.js): the avatar's script stopped while inside a
-# call, by taking the avatar off (ends at once), by a plain stop during a long call (ends at the 3 s deadline) and
+# call, by taking the avatar off (ends at once), by a plain stop during a long call (ends 2 s after the stop) and
 # during a short one (finishes); exits 0 when all three PASS and only the short call's spin ended.
 # Prints the AVATAR-SCRIPT lines and the two counts; exits 0 when the avatar's RESULT says PASS, the avatar stayed
-# the probe, three outside script lines were refused and none ran, and taking it off stopped its script with its late call
-# refused. The log: results/avatar-scripts/client.log.
+# the probe, three outside script lines were refused and none ran, and taking it off stopped its script without its
+# scriptEnding handler running. The log: results/avatar-scripts/client.log.
 #
 # Copyright 2026 Darkride.
 # Distributed under the MIT License.
@@ -61,9 +61,9 @@ REFUSED=$(grep -c "is outside the avatar's own folder" "$LOG" || true)
 RAN=$(grep -c "ELSEWHERE RAN" "$LOG" || true)
 FETCHED=$(grep -c "elsewhere" "$D/results/avatar-scripts.server.txt" || true)
 echo "script lines outside the avatar's folder: refused $REFUSED (expect 3), ran $RAN (expect 0), asked of the server $FETCHED (expect 0)"
-LEFT=$(grep -c "addEntity: a script of a world that was left" "$LOG" || true)
-echo "taken off: late calls refused as a world left $LEFT (expect 1)"
+ENDINGS=$(grep -c "AVATAR-SCRIPT ending" "$LOG" || true)
+echo "taken off: scriptEnding handlers run $ENDINGS (expect 0: the world was left first)"
 grep -q "AVATAR-SCRIPT RESULT PASS" "$LOG" && grep -q "AVATAR-SCRIPT DRIVER avatar-unchanged PASS" "$LOG" \
     && grep -q "AVATAR-SCRIPT DRIVER avatar-off PASS" "$LOG" && grep -q "AVATAR-SCRIPT DRIVER script-stopped PASS" "$LOG" \
-    && grep -q "late entity refused" "$LOG" && [ "$LEFT" = 1 ] \
+    && [ "$ENDINGS" = 0 ] \
     && [ "$REFUSED" = 3 ] && [ "$RAN" = 0 ] && [ "$FETCHED" = 0 ]

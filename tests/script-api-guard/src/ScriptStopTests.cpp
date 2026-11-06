@@ -135,8 +135,8 @@ void ScriptStopTests::testAStopLeavesRunningHandlersAlone() {
     QVERIFY2(script.errors().isEmpty(), qPrintable(script.report()));
 }
 
-// A stop that finds the script inside a call ends that call, a runaway's too. That was for the call: the handlers
-// still run. Reloading scripts stops them this way, while they run as usual.
+// A stop that finds the script inside a call lets it finish for 2 s and ends a runaway there. That was for the call:
+// the handlers still run. Reloading scripts stops them this way, while they run as usual.
 void ScriptStopTests::testHandlersRunAfterAStopEndedACall() {
     RunningScript script(R"(
         Script.scriptEnding.connect(function () {
@@ -263,4 +263,71 @@ void ScriptStopTests::testAnInterruptEndsALeftWorldsHandler() {
     const bool ended = script.isDone();
     script.engine->waitTillDoneRunning();  // whatever happened: no thread is left spinning
     QVERIFY2(ended, qPrintable(script.report()));
+}
+
+// A call that came through a connected signal, which the engine's own calls don't count: a stop finds it all the same,
+// and the call finishes what it is doing; then the handlers run.
+void ScriptStopTests::testASignalHandlersCallFinishes() {
+    StopTestPoker poker;
+    RunningScript script(R"(
+        Script.scriptEnding.connect(function () {
+            print("handler ran");
+        });
+        Poker.poked.connect(function () {
+            print("stop here");
+            var started = Date.now();
+            while (Date.now() - started < 500) {}
+            print("finished");
+        });
+        print("ready");
+    )");
+    script.engine->registerGlobalObject("Poker", &poker);
+    script.onLine = [&script](const QString& line) {
+        if (line == "stop here") {
+            stopFromAnotherThread(script.engine.data());
+        }
+    };
+    script.engine->runInThread();
+    QTRY_VERIFY2_WITH_TIMEOUT(script.hasLine("ready"), qPrintable(script.report()), SCRIPT_WAIT_MS);
+    emit poker.poked();
+    QTRY_VERIFY2_WITH_TIMEOUT(script.isDone(), qPrintable(script.report()), SCRIPT_WAIT_MS);
+    script.engine->waitTillDoneRunning();
+    QVERIFY2(script.hasLine("finished"), qPrintable(script.report()));
+    QVERIFY2(script.hasLine("handler ran"), qPrintable(script.report()));
+    QVERIFY2(script.errors().isEmpty(), qPrintable(script.report()));
+}
+
+// A runaway in a connected signal's handler: the stop ends it 2 s on (not never, as when the stop could not see it),
+// and the handlers run.
+void ScriptStopTests::testARunawaySignalHandlerEndsAfterTwoSeconds() {
+    StopTestPoker poker;
+    RunningScript script(R"(
+        Script.scriptEnding.connect(function () {
+            print("handler ran");
+        });
+        Poker.poked.connect(function () {
+            print("stop here");
+            while (true) {}
+        });
+        print("ready");
+    )");
+    script.engine->registerGlobalObject("Poker", &poker);
+    QElapsedTimer sinceStop;
+    std::atomic<bool> stopped { false };
+    script.onLine = [&script, &sinceStop, &stopped](const QString& line) {
+        if (line == "stop here") {
+            sinceStop.start();
+            stopped = true;
+            stopFromAnotherThread(script.engine.data());
+        }
+    };
+    script.engine->runInThread();
+    QTRY_VERIFY2_WITH_TIMEOUT(script.hasLine("ready"), qPrintable(script.report()), SCRIPT_WAIT_MS);
+    emit poker.poked();
+    QTRY_VERIFY2_WITH_TIMEOUT(stopped.load(), qPrintable(script.report()), SCRIPT_WAIT_MS);
+    QTRY_VERIFY2_WITH_TIMEOUT(script.isDone(), qPrintable(script.report()), 6000);
+    const qint64 elapsed = sinceStop.elapsed();
+    script.engine->waitTillDoneRunning();
+    QVERIFY2(elapsed >= 1800 && elapsed < 2900, qPrintable(QString("ended %1 ms after the stop").arg(elapsed)));
+    QVERIFY2(script.hasLine("handler ran"), qPrintable(script.report()));
 }

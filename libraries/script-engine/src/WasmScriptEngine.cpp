@@ -61,6 +61,7 @@ const QString JS_SUFFIX = QStringLiteral("js");
 const int MIN_TIMEOUT_FOR_COARSE_TIMER = 200;  // below this a Qt timer is made precise, as the QtScript engine does
 const int MAX_SCRIPT_QUITTING_TIME_MS = 500;
 const int MAX_SCRIPT_ENDING_TIME_MS = 3000;  // for the scriptEnding handlers, before the modules are interrupted
+const int MAX_STOPPED_CALL_TIME_MS = 2000;   // of that, for a call a stop found running to finish; the handlers have the rest
 const int DEFAULT_SCRIPT_CALL_LIMIT_MS = 5000;  // a call into a JavaScript script, of the script's own time
 
 // A call into a JavaScript script may run this long of the script's own time (what it spends in host functions,
@@ -666,8 +667,8 @@ void WasmScriptEngine::stopAll() {
             bool ended = false;
             forEachInstance([&ended](WasmInstance& instance) { ended = ended || instance.isStopRequested(); });
             qCDebug(scriptengine).nospace() << "the call running at the stop of " << getFilename()
-                                            << (ended ? " was ended at the deadline or by its world left, "
-                                                      : " finished within the deadline, ")
+                                            << (ended ? " was ended at its deadline or by its world left, "
+                                                      : " finished within its deadline, ")
                                             << MAX_SCRIPT_ENDING_TIME_MS - endingTimeLeftMs() << " ms after the stop";
         }
         if (!_endingDeadlinePassed && !worldWasLeft()) {
@@ -795,19 +796,25 @@ void WasmScriptEngine::stop(bool marshal) {
         _isFinished = true;
         emit runningStateChanged();
     }
-    if (QThread::currentThread() != thread() && _callDepth > 0) {
-        // a module is inside a call. A world that was left gets nothing more done: the call ends now, its scriptEnding
-        // handlers' too. Otherwise the call may finish what it is doing, to the deadline its handlers have too, counted
-        // from the first stop; no new call begins, and the world left meanwhile ends it at once. The handlers have until
-        // that deadline in waitTillDoneRunning
+    if (QThread::currentThread() != thread()) {
+        // every module, inside a call or not: one may begin at any moment, and a call through a signal's handler is
+        // not one the engine counts. A world that was left gets nothing more done: its call ends now, and its
+        // scriptEnding handlers run no more. Otherwise a call running now may finish what it is doing, for
+        // MAX_STOPPED_CALL_TIME_MS from the first stop, and no new call begins; the world left meanwhile ends it at
+        // once. stopAll lets the handlers in, which then have until the deadline in waitTillDoneRunning
         std::lock_guard<std::mutex> lock(_instancesMutex);
         if (worldWasLeft()) {
             forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
         } else if (!_scriptEndingBegun) {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(endingTimeLeftMs());
+            const int leftMs = std::max(0, endingTimeLeftMs() - (MAX_SCRIPT_ENDING_TIME_MS - MAX_STOPPED_CALL_TIME_MS));
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(leftMs);
             const int world = getWorldId();
-            forEachInstance([deadline, world](WasmInstance& instance) { instance.requestStopAfter(deadline, world); });
-            _stopLetCallFinish = true;
+            bool inCall = _callDepth > 0;
+            forEachInstance([deadline, world, &inCall](WasmInstance& instance) {
+                instance.requestStopAfter(deadline, world);
+                inCall = inCall || instance.isInCall();
+            });
+            _stopLetCallFinish = _stopLetCallFinish || inCall;  // for stopAll's line: a call was running at the stop
         }
     }
 }

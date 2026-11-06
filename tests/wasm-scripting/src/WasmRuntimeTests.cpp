@@ -332,16 +332,21 @@ void WasmRuntimeTests::testStopAfterLetsCallFinish() {
         });
     QVERIFY2(instance.instantiate(error), qPrintable(error));
     WasmInstance* raw = &instance;
+    std::atomic<bool> seenInCall { false };
     std::thread stopper([&] {
         while (!inside) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+        seenInCall = raw->isInCall();  // seen from another thread, inside a host function of the call
         raw->requestStopAfter(after(3000), 0);
         stopAsked = true;
     });
+    QVERIFY(!instance.isInCall());
     std::vector<WasmValue> results;
     const bool finished = instance.call("run", {}, results, error);
     stopper.join();
+    QVERIFY(seenInCall.load());
+    QVERIFY(!instance.isInCall());
     QVERIFY2(finished, qPrintable(error + " / " + innerError));
     QCOMPARE(std::get<int32_t>(results[0]), int32_t(1024));
     QVERIFY(!instance.isStopRequested());  // the deadline is not here yet
@@ -382,6 +387,10 @@ void WasmRuntimeTests::testStopAfterEndsRunawayAtDeadline() {
             QVERIFY2(error.contains("stopped"), qPrintable(error));
         }
         QVERIFY(raw->isStopRequested());
+        // taken back for the script's ending handlers: a module that stopped by itself came out whole and is let in
+        // again; one stopped by a trap stays stopped
+        raw->resumeAfterStop();
+        QCOMPARE(raw->isStopRequested(), !asks);
     }
 }
 

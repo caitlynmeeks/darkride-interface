@@ -227,7 +227,7 @@ private:
     std::mutex _instancesMutex;  // guards the set of instances against requestStop from another thread, and the next two
     bool _scriptEndingBegun { false };     // stopAll has begun: a stop leaves the handlers to the deadline
     bool _endingDeadlinePassed { false };  // interruptRunningCall: nothing more of the script runs, its handlers included
-    bool _stopLetCallFinish { false };     // stop() found a call running and let it finish, to the deadline
+    bool _stopLetCallFinish { false };     // stop() found a call running and let it finish, to its deadline
     ModuleInstancePointer _main;
     QHash<QString, ModuleInstancePointer> _entityModules;              // .wasm entity scripts by URL
     QHash<EntityItemID, std::weak_ptr<ModuleInstance>> _entityHosts;  // which instance runs each entity's script

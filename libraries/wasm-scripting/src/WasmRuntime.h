@@ -159,13 +159,17 @@ public:
     /// From any thread: the running call may finish, until `deadline` or until the world `world` is left
     /// (ScriptCaller::retireWorld; 0 for none), whichever comes first; then it stops as with requestStop(). A call
     /// it makes into the module meanwhile (a value returned to it, a callback) goes on as usual; a new outermost
-    /// call is refused at once. A second call keeps the earlier deadline.
+    /// call is refused at once. A second call keeps the earlier deadline. The world, once left, stops the module
+    /// from then on, also after resumeAfterStop().
     void requestStopAfter(std::chrono::steady_clock::time_point deadline, int world);
+    /// From any thread: whether a call into the module is running (any outermost call, however it was made).
+    bool isInCall() const;
     /// Whether the module must stop now: requestStop() was called, or requestStopAfter()'s deadline or world came.
     bool isStopRequested() const;
     /// Takes requestStop() back once the call it ended is over, so the module can be called again. Only a module that
     /// stops by itself (cooperative interruption) comes out of that call whole: one stopped by a trap stays stopped.
-    /// Outermost calls are let in again after requestStopAfter(), under the same deadline.
+    /// After requestStopAfter(), outermost calls are let in again, and its deadline is taken back for a module that
+    /// came out of the call whole (one that stops by itself, or one whose call finished in time).
     void resumeAfterStop();
     /// Whether the running call should stop now: a stop was requested, or the call has run past its time limit.
     /// A module compiled for cooperative interruption asks this often (the host interface's "interrupted" import);

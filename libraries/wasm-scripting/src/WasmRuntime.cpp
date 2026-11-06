@@ -268,6 +268,7 @@ struct WasmInstance::Impl {
     std::atomic<int64_t> stopDeadline { 0 };
     std::atomic<int> stopWorld { 0 };
     std::atomic<bool> closed { false };
+    std::atomic<bool> inCall { false };  // callDepth > 0, for other threads
     std::chrono::steady_clock::time_point callStarted;
     std::chrono::milliseconds callTimeout { 0 };
     int callDepth { 0 };
@@ -372,7 +373,11 @@ struct WasmInstance::Impl {
             return true;
         }
         const int64_t deadline = stopDeadline.load();
-        return deadline != 0 && (steadyNow() >= deadline || ScriptCaller::isRetired(stopWorld.load()));
+        if (deadline != 0 && steadyNow() >= deadline) {
+            return true;
+        }
+        const int world = stopWorld.load();
+        return world != 0 && ScriptCaller::isRetired(world);
     }
 
     // Why the running call must stop now, or nothing.
@@ -621,12 +626,16 @@ bool WasmInstance::call(const QString& name, const std::vector<WasmValue>& args,
         in[i] = toVal(args[i]);
     }
     _impl->beginCall();
-    ++_impl->callDepth;
+    if (_impl->callDepth++ == 0) {
+        _impl->inCall.store(true, std::memory_order_release);
+    }
     _impl->enterGuest();
     wasm_trap_t* trap = nullptr;
     auto result = wasmtime_func_call(_impl->context, &function, in, args.size(), out, resultCount, &trap);
     _impl->leaveGuest();
-    --_impl->callDepth;
+    if (--_impl->callDepth == 0) {
+        _impl->inCall.store(false, std::memory_order_release);
+    }
     if (result) {
         error = takeErrorText(result);
         return false;
@@ -677,13 +686,24 @@ void WasmInstance::requestStopAfter(std::chrono::steady_clock::time_point deadli
     _impl->stopDeadline.compare_exchange_strong(none, at);
 }
 
+bool WasmInstance::isInCall() const {
+    return _impl->inCall.load(std::memory_order_acquire);
+}
+
 bool WasmInstance::isStopRequested() const {
     return _impl->stopDue();
 }
 
 void WasmInstance::resumeAfterStop() {
     _impl->closed = false;
-    if (_module->interruption() == WasmRuntime::Interruption::Cooperative) {
+    // the deadline was for the call the stop found running: a module out of that call whole is not held to it (one
+    // stopped by a trap at the deadline stays stopped)
+    const bool cooperative = _module->interruption() == WasmRuntime::Interruption::Cooperative;
+    const int64_t deadline = _impl->stopDeadline.load();
+    if (cooperative || (deadline != 0 && Impl::steadyNow() < deadline)) {
+        _impl->stopDeadline = 0;
+    }
+    if (cooperative) {
         _impl->stopRequested = false;
     }
 }
