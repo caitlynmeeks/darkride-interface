@@ -139,6 +139,13 @@ void TrackSimulation::adoptState(Train& train, const TrackEntityItem& track, con
                                  const glm::vec3& trackPosition, const glm::quat& toTrack, quint64 stepTime, uint32_t step) {
     float shown;
     if (train.running) {
+        // The follower is brought to this substep first (the frame's own one or two, which drive() would run next), so
+        // what this client shows is read at the same time the server's state is caught up to: the residual is then
+        // the two timelines' true offset, never the frame's own travel. Booked as a residual, that travel held the
+        // car one substep at every adoption and closed at CLOSE_RATE after (entry 25).
+        if (step > train.lastStep) {
+            advance(train, glm::min(step - train.lastStep, (uint32_t)MAX_CATCHUP_STEPS), false);
+        }
         shown = train.follower.state().s + train.residual;
     } else {
         glm::vec3 carOnTrack = toTrack * (car->getWorldPosition() - trackPosition);
