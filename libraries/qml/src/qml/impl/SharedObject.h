@@ -21,6 +21,10 @@ class QTimer;
 class QQuickWindow;
 class QQuickItem;
 class QOpenGLContext;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+class QSurface;
+class QRhi;
+#endif
 class QQmlEngine;
 class QQmlContext;
 
@@ -72,7 +76,12 @@ private:
     bool preRender(bool sceneGraphSync);
     void shutdownRendering(const QSize& size);
     // Called by the render event handler, from the render thread
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // fallbackSurface: the canvas's own offscreen surface, the render interface's fallback (entry 23, Amendment A)
+    void initializeRenderControl(QOpenGLContext* context, QSurface* fallbackSurface);
+#else
     void initializeRenderControl(QOpenGLContext* context);
+#endif
     void releaseTextureAndFence();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     void setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& size);   // Qt's target round the texture
@@ -105,6 +114,9 @@ private:
 
     QWindow* _proxyWindow { nullptr };
     RenderControl* _renderControl { nullptr };
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QRhi* _rhi { nullptr };   // the render interface the window draws through, made on the canvas's context and surface, ours to delete after the render control
+#endif
     RenderEventHandler* _renderObject { nullptr };
 
     QTimer* _renderTimer { nullptr };
