@@ -175,6 +175,11 @@ public:
     // view held still, half the display's rate, back to full on the next input or move. Application::update gives the
     // camera each frame: a camera that moves without input (a ride, a vehicle) counts as activity.
     void noteCameraTransform(const glm::mat4& eyeToWorld);
+    // A world's arrival (the domain handler's connectedToDomain): for GOVERNOR_ARRIVAL_GRACE_SECONDS after it the cadence
+    // governor counts and shows a second's slipped presents but does not drop on them (entry 28): the loading seconds
+    // are not the world's cadence. A new domain stamps again.
+    void noteArrival();
+    bool inArrivalGrace() const;
     static const int RESTING_RATE = 998;
 
     static std::string refreshRateProfileToString(RefreshRateProfile refreshRateProfile);
@@ -206,6 +211,7 @@ private:
     bool governable(int displayRate) const;
     QString _governorStatus { "full rate" };
     int64_t _governorChangeNs { 0 };      // when the target last changed, on std::chrono::steady_clock: a second that began before it (or within the presents' settling after it) carries no verdict
+    int64_t _arrivalNs { 0 };            // when the client last connected to a domain (steady clock); 0 = never
     std::function<CadenceSample()> _cadenceSource;
     std::shared_ptr<QTimer> _governorTimer { std::make_shared<QTimer>() };
     bool _halfRate { false };

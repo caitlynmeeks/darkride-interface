@@ -168,6 +168,10 @@ static const int INACTIVE_TIMER_LIMIT = 3000;
 // at 72 passed a tenth, returned, and were 4-6 misses a second at 144, a drop again). A maximum would let one
 // texture upload a second hold the half rate for ever; this is a tail the full rate could carry.
 static const int GOVERNOR_DROP_MISSES = 3;
+// the seconds after a world's arrival (the domain connect) in which slipped presents are counted and shown but not
+// dropped on: a world's loading second slips 3-5 presents on every build, and a heavy world then never earns the
+// climb-back, so without this no ride there ever runs at the display's rate (entry 28)
+static const int GOVERNOR_ARRIVAL_GRACE_SECONDS = 10;
 static const int GOVERNOR_HOLD_MIN_SECONDS = 5;
 static const int GOVERNOR_HOLD_MAX_SECONDS = 60;
 static const int GOVERNOR_PROBE_SECONDS = 30;
@@ -270,6 +274,14 @@ void RefreshRateManager::updateRideExemption() {
     }
 }
 
+void RefreshRateManager::noteArrival() {
+    _arrivalNs = steadyNowNs();
+}
+
+bool RefreshRateManager::inArrivalGrace() const {
+    return _arrivalNs > 0 && steadyNowNs() - _arrivalNs < (int64_t)GOVERNOR_ARRIVAL_GRACE_SECONDS * 1000000000LL;
+}
+
 void RefreshRateManager::governorTick() {
     if (_refreshRateRegime == RefreshRateRegime::UNFOCUS) {
         const bool kept = _rideKeepsFullRate;
@@ -328,7 +340,7 @@ void RefreshRateManager::governorTick() {
         if (_governorCleanSeconds >= GOVERNOR_FORGIVE_SECONDS) {
             _governorHoldSeconds = GOVERNOR_HOLD_MIN_SECONDS;
         }
-        if (misses >= GOVERNOR_DROP_MISSES) {
+        if (misses >= GOVERNOR_DROP_MISSES && !inArrivalGrace()) {   // arriving: counted and shown, never acted on
             const bool returnFailed = _governorProbeSecondsLeft > 0;
             if (returnFailed) {
                 _governorHoldSeconds = std::min(_governorHoldSeconds * 2, GOVERNOR_HOLD_MAX_SECONDS);
@@ -399,7 +411,8 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
         << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms; fit "
         << _governorFitSeconds << " of " << _governorHoldSeconds << " s"
         << (sample.startedAtNs < _governorChangeNs + GOVERNOR_SETTLE_NS ? ", mixed (no verdict)" : "")
-        << (_governorProbeSecondsLeft > 0 ? ", probe" : "");
+        << (_governorProbeSecondsLeft > 0 ? ", probe" : "")
+        << (inArrivalGrace() ? "; arriving" : "");
 }
 
 void RefreshRateManager::resetInactiveTimer(bool deliberate) {

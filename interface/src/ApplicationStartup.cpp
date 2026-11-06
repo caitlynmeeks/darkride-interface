@@ -640,6 +640,7 @@ void Application::connectServices() {
     connect(&_domainSession, &DomainSession::interstitialModeChanged, this, &Application::interstitialModeChanged);   // relayed: the Window scripting interface connects to Application in the essentials stage, before the session exists
     connect(&domainHandler, &DomainHandler::connectedToDomain, &_display, &Display::updateWindowTitle);
     connect(&domainHandler, &DomainHandler::connectedToDomain, this, [] { StartupProfiler::instant("connected to a domain"); });
+    connect(&domainHandler, &DomainHandler::connectedToDomain, this, [this] { getRefreshRateManager().noteArrival(); });   // the governor's arrival grace (entry 28)
     connect(&domainHandler, &DomainHandler::disconnectedFromDomain, &_display, &Display::updateWindowTitle);
     connect(&domainHandler, &DomainHandler::disconnectedFromDomain, this, [this]() {
         auto entityScriptingInterface = DependencyManager::get<EntityScriptingInterface>();
