@@ -40,6 +40,7 @@
 #include <DependencyManager.h>
 
 class CallbackTarget;
+class CodeNearby;
 
 class CodeEditor : public QObject, public Dependency {
     Q_OBJECT
@@ -66,6 +67,7 @@ class CodeEditor : public QObject, public Dependency {
     Q_PROPERTY(QString errorText READ errorText NOTIFY statusChanged)
     Q_PROPERTY(bool claudeWriting READ isClaudeWriting NOTIFY claudeChanged)
     Q_PROPERTY(bool showingChange READ isShowingChange NOTIFY claudeChanged)
+    Q_PROPERTY(QObject* nearby READ nearby CONSTANT)
 
 public:
     CodeEditor();
@@ -124,6 +126,10 @@ public:
     Q_INVOKABLE void giveBackKeyboard();
     // the panel open or closed: the status is asked for only while it's open
     Q_INVOKABLE void setPanelOpen(bool open);
+    // Code near you (ui/CodeNearby.h), and whether it's unfolded: it looks at the world only while the panel is open
+    // and it's unfolded
+    QObject* nearby() const;
+    Q_INVOKABLE void setNearbyShown(bool shown);
     // the page made and ready for the panel's calls, or gone
     Q_INVOKABLE void setPageReady(bool ready) { _pageReady = ready; }
     bool isPageReady() const { return _pageReady; }
@@ -205,6 +211,8 @@ private:
     int _generation { 0 };     // a new document: answers about the one before are dropped
 
     bool _panelOpen { false };
+    bool _nearbyShown { false };
+    CodeNearby* _nearby { nullptr };
     bool _pageReady { false };
     bool _claudeWriting { false };
     bool _showingChange { false };

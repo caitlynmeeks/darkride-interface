@@ -406,7 +406,8 @@ public slots:
 
     /**jsdoc
      * The Code panel's document as the panel shows it: <code>hasDocument, pageReady, fileName, kind, where, canSave,
-     * readOnlyReason, problem, saving, savedText, note, status, statusState, errorLine, errorText</code>.
+     * readOnlyReason, problem, saving, savedText, note, status, statusState, errorLine, errorText, claudeWriting,
+     * showingChange, nearby</code> (Code near you's row count).
      * @function Test.codePanel
      * @returns {object} The panel's state.
      */

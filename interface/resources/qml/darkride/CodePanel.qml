@@ -53,6 +53,7 @@ Rectangle {
     }
     Component.onCompleted: {
         if (hasEditor) {
+            CodeEditor.setNearbyShown(nearbyUnfolded);
             CodeEditor.setPanelOpen(panelOpen);
         }
     }
@@ -398,14 +399,146 @@ Rectangle {
         }
     }
 
+    // ---- Code near you: every script within 50 m, nearest first; unfolded while nothing is open ----
+
+    property bool nearbyUnfolded: true
+    onNearbyUnfoldedChanged: {
+        if (hasEditor) {
+            CodeEditor.setNearbyShown(nearbyUnfolded);
+        }
+    }
+    Connections {
+        target: root.hasEditor ? CodeEditor : null
+        function onDocumentChanged() {
+            if (CodeEditor.hasDocument) {
+                root.nearbyUnfolded = false;   // the editor gets the room
+            }
+        }
+    }
+    Column {
+        id: nearbySection
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: bar.visible ? bar.bottom : parent.top
+        anchors.leftMargin: Theme.gap
+        anchors.rightMargin: Theme.gap
+        anchors.topMargin: 8 * Theme.unit
+        spacing: 4 * Theme.unit
+        visible: root.hasEditor
+
+        Item {
+            width: parent.width
+            height: 20 * Theme.unit
+            Text {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: (root.nearbyUnfolded ? "\u25be " : "\u25b8 ") + "Code near you" +
+                    (root.hasEditor && CodeEditor.nearby.count > 0 ? "  (" + CodeEditor.nearby.count + ")" : "")
+                textFormat: Text.PlainText
+                color: Theme.secondaryText
+                font.pixelSize: Theme.sectionSize
+                font.bold: true
+            }
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.nearbyUnfolded = !root.nearbyUnfolded
+            }
+        }
+        Field {
+            id: nearbyFilter
+            width: parent.width
+            height: Theme.controlHeight
+            visible: root.nearbyUnfolded
+            placeholderText: "Filter by file or name"
+            maximumLength: 80
+            // Return is the field's: not on to the app, where it opens Chat
+            Keys.onReturnPressed: event.accepted = true
+            Keys.onEnterPressed: event.accepted = true
+        }
+        Rectangle {
+            width: parent.width
+            height: visible ? Math.min(nearbyList.contentHeight, 6 * 30 * Theme.unit) + 2 : 0
+            visible: root.nearbyUnfolded && root.hasEditor && CodeEditor.nearby.count > 0
+            radius: 7 * Theme.unit
+            color: Theme.fill
+            clip: true
+            ListView {
+                id: nearbyList
+                anchors.fill: parent
+                anchors.margins: 1
+                model: root.hasEditor ? CodeEditor.nearby : null
+                boundsBehavior: Flickable.StopAtBounds
+                delegate: Rectangle {
+                    readonly property string filter: nearbyFilter.text.trim().toLowerCase()
+                    readonly property bool matches: filter === "" || model.file.toLowerCase().indexOf(filter) >= 0 ||
+                        model.name.toLowerCase().indexOf(filter) >= 0
+                    width: ListView.view.width
+                    height: matches ? 30 * Theme.unit : 0
+                    visible: matches
+                    color: rowMouse.pressed ? Theme.cardPressed : rowMouse.containsMouse ? Theme.card : "transparent"
+                    Rectangle {
+                        id: rowDot
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8 * Theme.unit
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 7 * Theme.unit
+                        height: width
+                        radius: width / 2
+                        color: model.state === "running" ? Theme.on
+                            : model.state === "error" ? Theme.destructive : Theme.tertiaryText
+                    }
+                    Text {
+                        anchors.left: rowDot.right
+                        anchors.leftMargin: 8 * Theme.unit
+                        anchors.right: rowDistance.left
+                        anchors.rightMargin: 8 * Theme.unit
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: model.file + "  \u00b7  " + model.kind + (model.name !== "" ? "  \u00b7  " + model.name : "")
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        color: Theme.text
+                        font.pixelSize: Theme.controlTextSize
+                    }
+                    Text {
+                        id: rowDistance
+                        anchors.right: parent.right
+                        anchors.rightMargin: 8 * Theme.unit
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: model.distance
+                        textFormat: Text.PlainText
+                        color: Theme.secondaryText
+                        font.pixelSize: Theme.detailSize
+                    }
+                    MouseArea {
+                        id: rowMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: CodeEditor.open(model.entity, model.which)
+                    }
+                }
+            }
+        }
+        Text {
+            width: parent.width
+            visible: root.nearbyUnfolded && root.hasEditor && CodeEditor.nearby.count === 0
+            text: "No scripts within 50 m."
+            textFormat: Text.PlainText
+            color: Theme.tertiaryText
+            font.pixelSize: Theme.detailSize
+        }
+    }
+
     // ---- nothing open, or it couldn't open ----
 
     Text {
-        anchors.centerIn: parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: nearbySection.bottom
+        anchors.topMargin: 40 * Theme.unit
         width: parent.width - 2 * Theme.pageMargin
         visible: !root.showPage
         text: !root.hasEditor ? ""
-            : !CodeEditor.hasDocument ? "Open a script from the Inspector: press Edit beside its Script, or double-click it."
+            : !CodeEditor.hasDocument ? "Open a script from Code near you, from the Inspector (Edit beside its Script), " +
+                "or from the Entities list (Edit Script)."
             : CodeEditor.problem
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
@@ -420,7 +553,7 @@ Rectangle {
         id: loader
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: bar.bottom
+        anchors.top: nearbySection.bottom
         anchors.bottom: parent.bottom
         anchors.topMargin: 8 * Theme.unit
         active: root.showPage

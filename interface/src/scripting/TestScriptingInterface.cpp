@@ -994,6 +994,8 @@ QVariantMap TestScriptingInterface::codePanel() {
         { "readOnlyReason", code->readOnlyReason() }, { "problem", code->problem() }, { "saving", code->isSaving() },
         { "savedText", code->savedText() }, { "note", code->note() }, { "status", code->status() },
         { "statusState", code->statusState() }, { "errorLine", code->errorLine() }, { "errorText", code->errorText() },
+        { "claudeWriting", code->isClaudeWriting() }, { "showingChange", code->isShowingChange() },
+        { "nearby", code->nearby()->property("count") },
     };
 }
 

@@ -10,6 +10,8 @@
 
 #include "CodeEditor.h"
 
+#include <functional>
+
 #include <QtCore/QDateTime>
 #include <QtCore/QRegularExpression>
 #include <QtGui/QClipboard>
@@ -25,6 +27,7 @@
 #include <ScriptCallback.h>
 
 #include "Application.h"
+#include "CodeNearby.h"
 #include "InterfaceLogging.h"
 #include "Panels.h"
 #include "editor/Editor.h"
@@ -104,6 +107,7 @@ QString clockText() {
 }
 
 CodeEditor::CodeEditor() {
+    _nearby = new CodeNearby(this);
     _poll.setInterval(POLL_MS);
     connect(&_poll, &QTimer::timeout, this, &CodeEditor::askStatus);
     _target = std::make_shared<AnswerTarget>([this](int32_t callback, const QVariantList& arguments) {
@@ -459,8 +463,18 @@ void CodeEditor::giveBackKeyboard() {
     }
 }
 
+QObject* CodeEditor::nearby() const {
+    return _nearby;
+}
+
+void CodeEditor::setNearbyShown(bool shown) {
+    _nearbyShown = shown;
+    _nearby->setActive(_panelOpen && _nearbyShown);
+}
+
 void CodeEditor::setPanelOpen(bool open) {
     _panelOpen = open;
+    _nearby->setActive(_panelOpen && _nearbyShown);
     if (open && hasDocument()) {
         _poll.start();
         askStatus();
