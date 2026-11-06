@@ -188,6 +188,7 @@ bool CodeEditor::open(const QUuid& entityId, const QString& which) {
     const QString trimmed = value.trimmed();
     if (which == SERVER_SCRIPTS && !_canSave) {
         // the world's editors only (Caity, 22:25 11-06): nothing of it is read, not even its address
+        _value.clear();
         _fileName = _entityName.isEmpty() ? "Server script" : _entityName;
         _problem = "Only people who can change this thing can read its server script.";
     } else if (!isAddress(trimmed)) {
@@ -276,7 +277,7 @@ void CodeEditor::updateRights() {
         if (!there) {
             reason = "This thing isn't in the world any more.";
         } else if (_place == Place::Web) {
-            reason = "On the web: save a copy to change it.";
+            reason = "On the web: read only here.";
         } else if (!(entities->canRez() || entities->canRezTmp())) {
             reason = "You can't change things in this world.";
         } else if (locked) {
