@@ -82,13 +82,9 @@
         return thing;
     }
 
-    // who may change this thing's scripts, by the entity server's rule (a visitor's edit keeps its scripts out): the
-    // thing unlocked, and a world editor (canAdjustLocks) or someone who may make lasting things. The same rule as
-    // editor-ui's EntityScriptRights::mayChangeScriptsOf, so Make and the Code panel show a server script to the same
-    // people (security should-fix 3); only-temporary rights don't count.
-    function mayEditScripts(p) {
-        return !p.locked && (Entities.canAdjustLocks() || Entities.canRez() || Entities.canRezCertified());
-    }
+    // who may change (and so read) this thing's server script: editor-ui's one rule (EntityScriptRights, the entity
+    // server's), through the app's object, so Make and the Code panel agree (security should-fix 3)
+    function mayEditScripts(p) { return MakeTools.mayChangeScriptsOf(!!p.locked); }
 
     // a script's text: inline code as it is, a script in the world's own files fetched; one from the web is named only
     function scriptText(value, done) {

@@ -25,9 +25,15 @@
 #include <QtCore/QTimer>
 #include <QtGui/QImage>
 
+#ifndef Q_OS_WIN
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include <AccountManager.h>
 #include <AssetClient.h>
 #include <AssetUpload.h>
+#include <EntityScriptRights.h>
 #include <EntityScriptServerLogClient.h>
 #include <EntityScriptingInterface.h>
 #include <GLMHelpers.h>
@@ -125,6 +131,10 @@ void MakeToolsBridge::done(int id, bool ok, const QString& json) {
             answer(ok, QJsonDocument::fromJson(json.toUtf8()).object());
         }
     }, Qt::QueuedConnection);
+}
+
+bool MakeToolsBridge::mayChangeScriptsOf(bool locked) const {
+    return entity_script_rights::mayChangeScriptsOf(locked);
 }
 
 void MakeToolsBridge::ready() {
@@ -264,21 +274,20 @@ QString MakeLink::projectFolder() const {
 }
 
 QString MakeLink::startLine() const {
-    // the same limits as the key route (security, the Terminal route's condition): only our MCP server, no built-in
-    // tools, our settings given on the line as well as in the folder
+    // the same limits as the key route (security, the Terminal route's condition): --restricted keeps the person's own
+    // user, project and local settings files out (their allows and hooks), and Make's settings still apply; only our MCP
+    // server; no built-in tools. One line, absolute single-quoted paths ("Application Support" has a space).
+    const MakeClaude::Settings files = claudeSettings();
 #ifdef Q_OS_WIN
-    // PowerShell: a single-quoted path takes '' for a quote; --tools= passes the empty list on every PowerShell
-    QString folder = QDir::toNativeSeparators(projectFolder());
-    folder.replace("'", "''");
-    return QString("Set-Location -LiteralPath '%1'; claude --strict-mcp-config --mcp-config .darkride-mcp.json "
-                   "--settings .claude\\settings.json --tools=")
-        .arg(folder);
+    // PowerShell: a single-quoted string takes '' for a quote; --tools= passes the empty list on every PowerShell
+    auto quoted = [](QString path) { return "'" + QDir::toNativeSeparators(path).replace("'", "''") + "'"; };
+    return QString("Set-Location -LiteralPath %1; claude --restricted --strict-mcp-config --mcp-config %2 --settings %3 "
+                   "--tools=")
+        .arg(quoted(files.folder), quoted(files.mcpConfig), quoted(files.settingsFile));
 #else
-    QString folder = projectFolder();
-    folder.replace("'", "'\\''");
-    return QString("cd '%1' && claude --strict-mcp-config --mcp-config .darkride-mcp.json --settings .claude/settings.json "
-                   "--tools \"\"")
-        .arg(folder);
+    auto quoted = [](QString path) { return "'" + path.replace("'", "'\\''") + "'"; };
+    return QString("cd %1 && claude --restricted --strict-mcp-config --mcp-config %2 --settings %3 --tools \"\"")
+        .arg(quoted(files.folder), quoted(files.mcpConfig), quoted(files.settingsFile));
 #endif
 }
 
@@ -299,8 +308,18 @@ bool writeFresh(const QString& path, const QByteArray& text) {
             return false;
         }
     }
+#ifdef Q_OS_WIN
     QFile out(path);
     return out.open(QIODevice::WriteOnly | QIODevice::NewOnly) && out.write(text) == text.size();
+#else
+    // made new here, never through a link planted between the remove and this (O_EXCL, O_NOFOLLOW), this user's only
+    const int fd = ::open(QFile::encodeName(path).constData(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        return false;
+    }
+    const ssize_t written = ::write(fd, text.constData(), static_cast<size_t>(text.size()));
+    return ::close(fd) == 0 && written == text.size();
+#endif
 }
 
 // a folder of the app's own: a real folder, not a link to somewhere else

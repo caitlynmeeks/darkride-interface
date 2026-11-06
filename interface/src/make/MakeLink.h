@@ -58,6 +58,9 @@ public:
     Q_INVOKABLE void done(int id, bool ok, const QString& json);
     /// The engine has connected to command and takes calls.
     Q_INVOKABLE void ready();
+    /// Whether this person may change (and so read) a thing's scripts: editor-ui's one rule, the entity server's
+    /// (EntityScriptRights), so Make and the Code panel agree.
+    Q_INVOKABLE bool mayChangeScriptsOf(bool locked) const;
 
 signals:
     void command(int id, const QString& tool, const QString& inputs, int request);
