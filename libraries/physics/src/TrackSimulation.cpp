@@ -168,12 +168,23 @@ void TrackSimulation::adoptState(Train& train, const TrackEntityItem& track, con
 
     quint64 stateTime = received.time;
     int steps = 0;
+    float remainder = 0.0f;
     if (stepTime > stateTime) {
         quint64 behind = stepTime - stateTime;
-        steps = (int)glm::min((quint64)MAX_CATCHUP_STEPS, (behind + SUBSTEP_USECS / 2) / SUBSTEP_USECS);
+        steps = (int)glm::min((quint64)MAX_CATCHUP_STEPS, behind / SUBSTEP_USECS);
+        // The state's time sits anywhere between this client's substeps: the whole substeps first, then the part of
+        // one left over, so the state lands at this substep's time itself, not up to half a substep either side of
+        // it (rounded, that half read as a residual of one substep at some adoptions; entry 25, part 2). A state
+        // older than the cap is run the cap's substeps and no further, as before.
+        if (steps < MAX_CATCHUP_STEPS) {
+            remainder = (float)(behind - (quint64)steps * SUBSTEP_USECS) / (float)USECS_PER_SECOND;
+        }
     }
     for (int i = 0; i < steps; ++i) {
         train.follower.advance(train.curve, train.schedule, PHYSICS_ENGINE_FIXED_SUBSTEP);
+    }
+    if (remainder > 0.0f) {
+        train.follower.advance(train.curve, train.schedule, remainder);
     }
 
     float residual = wrap(train, shown - train.follower.state().s);
