@@ -396,6 +396,46 @@ public slots:
     Q_INVOKABLE bool saveDockPicture(const QString& objectName, const QString& path);
 
     /**jsdoc
+     * Opens an entity's script in the Code panel, as its Edit button in the Inspector does (Qt 6 builds only).
+     * @function Test.openInCode
+     * @param {Uuid} id - The entity.
+     * @param {string} which - <code>"script"</code> or <code>"serverScripts"</code>.
+     * @returns {boolean} Whether it opened.
+     */
+    Q_INVOKABLE bool openInCode(const QUuid& id, const QString& which);
+
+    /**jsdoc
+     * The Code panel's document as the panel shows it: <code>hasDocument, pageReady, fileName, kind, where, canSave,
+     * readOnlyReason, problem, saving, savedText, note, status, statusState, errorLine, errorText</code>.
+     * @function Test.codePanel
+     * @returns {object} The panel's state.
+     */
+    Q_INVOKABLE QVariantMap codePanel();
+
+    /**jsdoc
+     * Runs JavaScript in the Code panel's page, as a test probe (the page's own content security policy applies to
+     * what it does); its result comes later from Test.codePageAnswer.
+     * @function Test.codePageRun
+     * @param {string} source - The JavaScript.
+     * @returns {number} The run's number; 0 when the page isn't there.
+     */
+    Q_INVOKABLE int codePageRun(const QString& source);
+
+    /**jsdoc
+     * A Test.codePageRun's result, as JSON text, once the page has answered.
+     * @function Test.codePageAnswer
+     * @param {number} run - The run's number.
+     * @returns {string|null} The result as JSON, or <code>null</code> until it has come.
+     */
+    Q_INVOKABLE QVariant codePageAnswer(int run);
+
+    /**jsdoc
+     * Presses the Code panel's Save, as the person's click does.
+     * @function Test.codeSave
+     */
+    Q_INVOKABLE void codeSave();
+
+    /**jsdoc
      * Shows a count on the bar's Chat button's badge (ui/ChatButton.h), as chat's unread count would, until chat's
      * next count.
      * @function Test.setChatBadge

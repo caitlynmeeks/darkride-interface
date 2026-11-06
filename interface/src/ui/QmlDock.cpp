@@ -154,6 +154,10 @@ void QmlDock::setVisible(bool visible) {
     QDockWidget::setVisible(visible);
 }
 
+void QmlDock::setContextObject(const QString& name, QObject* object) {
+    _contextObjects.append({ name, object });
+}
+
 void QmlDock::makeContent() {
     if (_view) {
         return;
@@ -180,6 +184,9 @@ void QmlDock::makeContent() {
 #endif
     // the names the overlay panels find are the desktop's: the panel is made in a context under it
     auto context = new QQmlContext(desktop, _view);
+    for (const auto& named : _contextObjects) {
+        context->setContextProperty(named.first, named.second.data());
+    }
     auto component = new QQmlComponent(engine, _source, QQmlComponent::PreferSynchronous, _view);
     QObject* object = component->isReady() ? component->create(context) : nullptr;
     if (!object) {

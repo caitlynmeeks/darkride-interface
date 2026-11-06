@@ -46,6 +46,7 @@ class ContextAwareProfile : public ContextAwareProfileParent {
 #if !defined(Q_OS_ANDROID)
     // here so that it's in every surface's context, as this class's objects are, on any Qt
     Q_PROPERTY(QObject* radioProfile READ radioProfile CONSTANT)
+    Q_PROPERTY(QObject* codeProfile READ codeProfile CONSTANT)
 #endif
 public:
     static void restrictContext(QQmlContext* context, bool restrict = true);
@@ -60,6 +61,8 @@ public:
 #if !defined(Q_OS_ANDROID)
     // The Radio panel's web profile
     static QObject* radioProfile();
+    // The Code panel's web profile (Make v1): its own folder, no interceptor, so no token on any request it could make
+    static QObject* codeProfile();
 #endif
 protected:
 

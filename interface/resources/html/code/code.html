@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!--
+  code.html
+  html/code
+
+  The Code panel's page (Make v1, team/editor-ui/CODE-EDITOR-PLAN.md): Monaco, the editor inside VS Code, from the
+  app's own files at qrc:///html/code/, on its own web profile with file and remote access off (qml/darkride/
+  CodePanel.qml). The policy below allows scripts, workers, styles and fonts from the app's own files only: no eval,
+  no network, no frames, no forms (security, team/security/reviews/make-v1-editor-page.md). The page has no bridge
+  object: the panel calls darkrideCode's fixed functions with JSON arguments and takes its events (code.js).
+
+  Copyright 2026 Darkride.
+
+  Distributed under the MIT License.
+  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Code</title>
+<link rel="stylesheet" href="monaco/editor.css">
+<link rel="stylesheet" href="code.css">
+</head>
+<body>
+<div id="editor"></div>
+<div id="diff" hidden></div>
+<div id="error" hidden></div>
+<div id="status"><span id="position"></span><span id="language"></span><span id="lines"></span><span id="saved"></span></div>
+<script src="monaco/editor.js"></script>
+<script src="code.js"></script>
+</body>
+</html>

@@ -30,6 +30,7 @@
 #include <ScriptCallback.h>
 
 #include "../../InterfaceLogging.h"
+#include "../../ui/CodeEditor.h"
 #include "../PropertySpec.h"
 
 namespace {
@@ -89,7 +90,21 @@ ScriptEditor::ScriptEditor(const PropertySpec& spec, QWidget* parent) : Property
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
     _url = new TextEditor(spec, this);
-    layout->addWidget(_url);
+    // the link, and Edit beside it: the script in the Code panel (Make v1; Qt 6 only, ui/CodeEditor.h)
+    auto linkRow = new QHBoxLayout();
+    linkRow->setContentsMargins(0, 0, 0, 0);
+    linkRow->setSpacing(6);
+    linkRow->addWidget(_url, 1);
+    _edit = new QPushButton("Edit", this);
+    _edit->setToolTip(server() ? "Opens this server script in the Code panel" : "Opens this script in the Code panel");
+    _edit->setVisible(false);
+    linkRow->addWidget(_edit, 0, Qt::AlignTop);
+    layout->addLayout(linkRow);
+    connect(_edit, &QPushButton::clicked, this, [this] {
+        if (_ids.size() == 1) {
+            DependencyManager::get<CodeEditor>()->open(_ids.first(), _spec.key);
+        }
+    });
     connect(_url, &PropertyEditor::editBegan, this, &PropertyEditor::editBegan);
     connect(_url, &PropertyEditor::liveValue, this, &PropertyEditor::liveValue);
     connect(_url, &PropertyEditor::committed, this, &PropertyEditor::committed);
@@ -162,7 +177,14 @@ void ScriptEditor::setValue(const QVariant& value, bool mixed) {
         showStatus();
     }
     _statusRow->setVisible(_hasLink);
+    _mixed = mixed;
+    showEdit();
     updatePolling();
+}
+
+// one entity's script, on a build with the Code panel
+void ScriptEditor::showEdit() {
+    _edit->setVisible(CodeEditor::isAvailable() && _ids.size() == 1 && !_mixed);
 }
 
 void ScriptEditor::setEntities(const QList<QUuid>& ids) {
@@ -173,6 +195,7 @@ void ScriptEditor::setEntities(const QList<QUuid>& ids) {
     ++_generation;
     _answers.clear();
     showStatus();
+    showEdit();
     updatePolling();
 }
 
