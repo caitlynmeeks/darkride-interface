@@ -1025,6 +1025,14 @@ void TestScriptingInterface::codeSave() {
     DependencyManager::get<CodeEditor>()->testSave();
 }
 
+void TestScriptingInterface::codeShowNearby() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeShowNearby");
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testShowNearby();
+}
+
 // the widget that has the keyboard; in a test client running behind other windows (no window active), the one that
 // would have it: chat's floating window's, else the main window's
 static QWidget* keyboardWidget() {

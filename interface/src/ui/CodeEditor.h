@@ -156,6 +156,8 @@ public:
     QVariant testAnswerFor(int run) const { return _testAnswers.contains(run) ? QVariant(_testAnswers.value(run)) : QVariant(); }
     Q_INVOKABLE void testAnswer(int run, const QString& json) { _testAnswers.insert(run, json); }
     void testSave() { emit testRequest("save", QString(), 0); }
+    // the panel open on Code near you alone, unfolded, no script (performance's ride row)
+    void testShowNearby();
 
 signals:
     void documentChanged();   // a new document, or the same one's text replaced (Undo of a save): the page shows text()
@@ -172,6 +174,7 @@ signals:
     void streamEnded(const QString& text);
     void changeShown(const QString& oldText, const QString& newText);
     void changeClosed();
+    void nearbyUnfoldRequested();
 
 private:
     enum class Place { None, WrittenIn, WorldFiles, Web };

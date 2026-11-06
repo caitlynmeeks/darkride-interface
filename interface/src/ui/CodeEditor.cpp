@@ -552,6 +552,19 @@ void CodeEditor::closeChange() {
     }
 }
 
+void CodeEditor::testShowNearby() {
+    clear();
+    emit documentChanged();
+    emit rightsChanged();
+    emit savingChanged();
+    emit savedChanged();
+    emit noteChanged();
+    emit statusChanged();
+    emit claudeChanged();
+    emit nearbyUnfoldRequested();
+    DependencyManager::get<Panels>()->open(PANEL);
+}
+
 int CodeEditor::testRun(const QString& source) {
     if (!_pageReady) {
         return 0;

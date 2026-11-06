@@ -437,6 +437,12 @@ public slots:
     Q_INVOKABLE void codeSave();
 
     /**jsdoc
+     * Opens the Code panel on Code near you alone, unfolded, with no script open (a timing run's case).
+     * @function Test.codeShowNearby
+     */
+    Q_INVOKABLE void codeShowNearby();
+
+    /**jsdoc
      * Shows a count on the bar's Chat button's badge (ui/ChatButton.h), as chat's unread count would, until chat's
      * next count.
      * @function Test.setChatBadge

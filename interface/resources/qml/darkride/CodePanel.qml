@@ -414,6 +414,9 @@ Rectangle {
                 root.nearbyUnfolded = false;   // the editor gets the room
             }
         }
+        function onNearbyUnfoldRequested() {
+            root.nearbyUnfolded = true;
+        }
     }
     Column {
         id: nearbySection

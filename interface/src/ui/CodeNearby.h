@@ -5,7 +5,8 @@
 //  The Code panel's "Code near you" list (Make v1, team/editor-ui/CODE-EDITOR-PLAN.md): one row per script within
 //  50 m, nearest first, with its kind, file name, the entity it belongs to, the distance and whether it's running.
 //  Server scripts are listed only to people who can edit their entity (Caity, 22:25 11-06). It looks at the world only
-//  while the list is shown (the Code panel open with the list unfolded): every 2 s, one read of the entity tree, and
+//  while the list is shown (the Code panel open with the list unfolded): a scan when the avatar has moved 5 m (at most
+//  every 5 s) or every 10 s, on a worker thread with the entity tree's read lock held only for the sphere search, and
 //  the running status of the nearest entity scripts from this client's own engine. Nothing while it's hidden.
 //
 //  Copyright 2026 Darkride.
@@ -25,7 +26,11 @@
 #include <QtCore/QUuid>
 #include <QtCore/QVector>
 
+#include <glm/glm.hpp>
+
 class CallbackTarget;
+class EntityTree;
+using EntityTreePointer = std::shared_ptr<EntityTree>;   // as EntityTree.h
 
 class CodeNearby : public QAbstractListModel {
     Q_OBJECT
@@ -65,10 +70,16 @@ private:
         QString state;
     };
 
-    void refresh();
+    void tick();
+    static QVector<Row> scan(const EntityTreePointer& tree, const glm::vec3& center, bool mayEdit);
+    void take(QVector<Row> rows, int generation);
     void answered(int32_t callback, const QVariantList& arguments);
 
     bool _active { false };
+    bool _scanning { false };     // a scan on its worker thread
+    int _generation { 0 };        // shown and hidden again: a scan from before is dropped
+    qint64 _scannedAt { 0 };
+    glm::vec3 _scannedFrom { 0.0f };
     QTimer _timer;
     QVector<Row> _rows;
     std::shared_ptr<CallbackTarget> _target;
