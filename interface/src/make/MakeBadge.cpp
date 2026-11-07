@@ -62,8 +62,12 @@ void MakeBadge::setPanelInSight(bool inSight) {
 }
 
 void MakeBadge::testForce(const QString& state) {
+    const bool wasForced = isForced();
     _forced = state;
     update();
+    if (isForced() != wasForced) {
+        emit stateChanged();   // forced changed, the state maybe not
+    }
 }
 
 void MakeBadge::requestEnded(bool finished) {

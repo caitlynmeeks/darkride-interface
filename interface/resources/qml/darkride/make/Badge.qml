@@ -38,7 +38,9 @@ Item {
     Timer {
         interval: 1000
         repeat: true
-        running: root.visible && root.badgeState === "working" && Qt.application.state === Qt.ApplicationActive
+        // a test's forced state steps in a background client too (performance's rows; MakeBadge.forced)
+        running: root.visible && root.badgeState === "working"
+            && (Qt.application.state === Qt.ApplicationActive || MakeBadge.forced)
         onTriggered: root.lead = (root.lead + 1) % 12
     }
 

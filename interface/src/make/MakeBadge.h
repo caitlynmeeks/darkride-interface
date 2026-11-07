@@ -29,11 +29,15 @@ class MakeDock;
 class MakeBadge : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString state READ state NOTIFY stateChanged)
+    // a test's state (Test.makeBadge): the spinner steps even in a background test client, which is never the active
+    // app, so performance's rows measure the real cost (performance, 11-07)
+    Q_PROPERTY(bool forced READ isForced NOTIFY stateChanged)
 
 public:
     explicit MakeBadge(MakeDock* dock);
 
     QString state() const { return _state; }
+    bool isForced() const { return !_forced.isEmpty(); }
 
     /// The Make panel, on Now; a "failed" badge is cleared (seen).
     Q_INVOKABLE void open();
