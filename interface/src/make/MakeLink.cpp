@@ -601,6 +601,8 @@ void MakeLink::stopToolsEngine() {
 void MakeLink::toEngine(const QString& tool) {
     _server.setHandler(tool, [this, tool](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
         if (tool == "add" || tool == "edit") {
+            // here, after the gate: its asks (a web address in the material, a world not the person's own) come before
+            // anything goes into the world's files (security, 11-07)
             longMaterialToFile(inputs, [this, tool, reply](const QJsonObject& ready) { forward(tool, ready, reply); });
         } else {
             forward(tool, inputs, reply);

@@ -104,6 +104,13 @@ if not material["error"]:
     check("...into the world's files, the Material pointing at it",
           str(held.get("materialURL", "")).startswith("atp:/claude-materials/") and len(held.get("materialData", "")) <= 1200,
           "materialURL %s, materialData %d chars" % (held.get("materialURL"), len(held.get("materialData", ""))))
+# a long material naming a web address is asked about first, and on "no" nothing goes into the world's files (the
+# runner counts the /claude-materials/ files in the client's log: this one adds none)
+web_material = tool("add", {"properties": {"type": "Material", "name": "Make kit web material", "parentID": box_id,
+                                           "materialData": '{"materials":{"albedoMap":"https://example.com/kit.png","name":"'
+                                                           + "m" * 1500 + '"}}'}})
+check("a long material with a web address is asked first (the kit says no)", web_material["error"]
+      and web_material["code"] == "refused", web_material["text"][:200])
 
 script = tool("set_script", {"id": box_id, "side": "client", "source":
                              "(function () { this.clickDownOnEntity = function () { print('MAKE KIT CLICKED'); }; })"})
