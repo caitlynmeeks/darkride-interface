@@ -27,6 +27,9 @@
 #ifndef hifi_QmlDock_h
 #define hifi_QmlDock_h
 
+#include <QtCore/QList>
+#include <QtCore/QPair>
+#include <QtCore/QPointer>
 #include <QtCore/QUrl>
 #include <QtWidgets/QDockWidget>
 
@@ -48,6 +51,8 @@ public:
     void releaseContent();
     // the page made before the panel first shows, whichever way it shows (Panels, the saved layout, a drag)
     void setVisible(bool visible) override;
+    // an object this panel's QML alone finds by name (the Code panel's CodeEditor): set before the panel is made
+    void setContextObject(const QString& name, QObject* object);
 
 protected:
     bool event(QEvent* event) override;
@@ -57,6 +62,7 @@ private:
     void makeContent();
 
     QUrl _source;
+    QList<QPair<QString, QPointer<QObject>>> _contextObjects;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QQuickView* _view { nullptr };
     QWidget* _container { nullptr };   // holds _view, and owns it once made

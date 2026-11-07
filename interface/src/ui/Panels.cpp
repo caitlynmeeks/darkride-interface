@@ -18,6 +18,7 @@
 #include <SettingHandle.h>
 
 #include "Application.h"
+#include "CodeEditor.h"
 #include "InterfaceLogging.h"
 #include "PanelTheme.h"
 #include "QmlDock.h"
@@ -30,6 +31,7 @@ namespace {
     const QString CHAT = "Chat";
     const QString MY_FILES = "My Files";
     const QString CONSOLE = "Console";
+    const QString CODE = "Code";   // the Code panel (Make v1): Qt 6's web engine only (ui/CodeEditor.h)
     const QString PEOPLE = "People";
     // People's saved person and tab (PeoplePanel.qml), and its Profile tab
     const QString PEOPLE_PROFILE = "io.darkride.peoplePanel.profile";
@@ -54,6 +56,9 @@ namespace {
         { "People", "qrc:///qml/darkride/PeoplePanel.qml", 560 },
         { "Explore", "qrc:///qml/darkride/ExplorePanel.qml", 760 },
         { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 320, 640 },
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        { CODE, "qrc:///qml/darkride/CodePanel.qml", 640 },
+#endif
     };
 
     const QString TABS_BEGIN = "/* dock tabs: begin */";
@@ -121,12 +126,19 @@ QStringList Panels::names() const {
     // chat's button sits between People's and Explore's; then My Files, and Build mode's own
     QStringList result;
     for (const auto& panel : QML_PANELS) {
+        if (panel.name == CODE) {
+            continue;   // with the tools, after My Files
+        }
         if (panel.name == "Explore") {
             result << CHAT;
         }
         result << panel.name;
     }
-    result << MY_FILES << CONSOLE << HIERARCHY << INSPECTOR;
+    result << MY_FILES;
+    if (CodeEditor::isAvailable()) {
+        result << CODE;
+    }
+    result << CONSOLE << HIERARCHY << INSPECTOR;
     return result;
 }
 
@@ -189,6 +201,9 @@ QDockWidget* Panels::dock(const QString& name) {
         }
         gl::ViewChangeGuard guard;
         auto made = new QmlDock(panel.name, QUrl(panel.source), window);
+        if (name == CODE) {
+            made->setContextObject("CodeEditor", DependencyManager::get<CodeEditor>().data());
+        }
         // hidden until it's opened or the saved layout shows it
         made->hide();
         // where the saved layout had it (restored after sign-in), open or closed as it was; asked before it's added

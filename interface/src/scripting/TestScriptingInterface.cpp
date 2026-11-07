@@ -75,6 +75,7 @@
 #include "graphics/GraphicsEngine.h"
 #include "editor/ui/PropertyEditors.h"
 #include "editor/ui/ScriptEditor.h"
+#include "ui/CodeEditor.h"
 #include <EntityTreeRenderer.h>
 #include <RenderableEntityItem.h>
 
@@ -969,6 +970,67 @@ bool TestScriptingInterface::saveDockPicture(const QString& objectName, const QS
     }
     QPixmap picture = dock->grab();
     return !picture.isNull() && picture.save(path);
+}
+
+bool TestScriptingInterface::openInCode(const QUuid& id, const QString& which) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "openInCode", Q_RETURN_ARG(bool, result), Q_ARG(QUuid, id), Q_ARG(QString, which));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->open(id, which);
+}
+
+QVariantMap TestScriptingInterface::codePanel() {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "codePanel", Q_RETURN_ARG(QVariantMap, result));
+        return result;
+    }
+    auto code = DependencyManager::get<CodeEditor>();
+    return {
+        { "hasDocument", code->hasDocument() }, { "pageReady", code->isPageReady() }, { "fileName", code->fileName() },
+        { "kind", code->kind() }, { "where", code->where() }, { "canSave", code->canSave() },
+        { "readOnlyReason", code->readOnlyReason() }, { "problem", code->problem() }, { "saving", code->isSaving() },
+        { "savedText", code->savedText() }, { "note", code->note() }, { "status", code->status() },
+        { "statusState", code->statusState() }, { "errorLine", code->errorLine() }, { "errorText", code->errorText() },
+        { "claudeWriting", code->isClaudeWriting() }, { "showingChange", code->isShowingChange() },
+        { "nearby", code->nearby()->property("count") },
+    };
+}
+
+int TestScriptingInterface::codePageRun(const QString& source) {
+    if (QThread::currentThread() != thread()) {
+        int result = 0;
+        BLOCKING_INVOKE_METHOD(this, "codePageRun", Q_RETURN_ARG(int, result), Q_ARG(QString, source));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->testRun(source);
+}
+
+QVariant TestScriptingInterface::codePageAnswer(int run) {
+    if (QThread::currentThread() != thread()) {
+        QVariant result;
+        BLOCKING_INVOKE_METHOD(this, "codePageAnswer", Q_RETURN_ARG(QVariant, result), Q_ARG(int, run));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->testAnswerFor(run);
+}
+
+void TestScriptingInterface::codeSave() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeSave");
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testSave();
+}
+
+void TestScriptingInterface::codeShowNearby() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeShowNearby");
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testShowNearby();
 }
 
 // the widget that has the keyboard; in a test client running behind other windows (no window active), the one that

@@ -1,0 +1,75 @@
+/*
+  code.css
+  html/code
+
+  The Code panel's page: the editor fills the panel, with the error line and the status strip under it, in Darkride's
+  colours (CODE-EDITOR-PLAN.md, "Look").
+
+  Copyright 2026 Darkride.
+
+  Distributed under the MIT License.
+  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
+*/
+
+:root {
+    --background: #171b2d;
+    --strip: #12162a;
+    --text: #f4f6f8;
+    --secondary: #9aa1bd;
+    --error: #ff5555;
+    --changed: #ffb86c;
+    --mono: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--background);
+    color: var(--text);
+    font: 12px -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+#editor, #diff {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+#error {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    color: var(--error);
+    font-family: var(--mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-top: 1px solid #2a2f48;
+}
+
+#status {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 14px;
+    padding: 3px 10px;
+    background: var(--strip);
+    color: var(--secondary);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+#status #saved {
+    margin-left: auto;
+}
+
+#status #saved.changed {
+    color: var(--changed);
+}

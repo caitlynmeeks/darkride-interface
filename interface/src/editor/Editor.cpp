@@ -94,6 +94,8 @@
 #include "scripting/RenderScriptingInterface.h"
 #include "PropertySpec.h"
 #include "ui/AssetsPanel.h"
+#include "ui/CodeEditor.h"   // interface/src/ui: the Code panel
+#include <EntityScriptRights.h>
 #include "ui/PanelTheme.h"
 #include "ui/Popup.h"
 #include "ui/HierarchyPanel.h"
@@ -4403,7 +4405,25 @@ void Editor::showHierarchyMenu(const QPoint& globalPos) {
             tree->edit(tree->currentIndex());
         }
     })->setEnabled(!_selection.isEmpty() && !_readOnly);
+    addScriptActions(menu);
     menu.exec(globalPos);
+}
+
+// Edit Script and Edit Server Script: one selected entity's script in the Code panel (Make v1; Qt 6 only)
+void Editor::addScriptActions(QMenu& menu) {
+    if (!CodeEditor::isAvailable()) {
+        return;
+    }
+    const QList<QUuid> ids = _selection.ids();
+    const bool one = ids.size() == 1;
+    menu.addSeparator();
+    menu.addAction("Edit Script", this, [ids] {
+        DependencyManager::get<CodeEditor>()->open(ids.first(), "script");
+    })->setEnabled(one);
+    // a world's server scripts are its editors' only (Caity, 22:25 11-06), by the entity server's own rule
+    menu.addAction("Edit Server Script", this, [ids] {
+        DependencyManager::get<CodeEditor>()->open(ids.first(), "serverScripts");
+    })->setEnabled(one && entity_script_rights::mayChangeScriptsOf(EditorUndo::isLocked(ids.first())));
 }
 
 void Editor::showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos) {
@@ -4423,6 +4443,7 @@ void Editor::showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos
     menu.addMenu(create);
     menu.addSeparator();
     addSelectionActions(menu, &point);
+    addScriptActions(menu);
     menu.exec(globalPos);
 }
 
