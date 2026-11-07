@@ -24,7 +24,9 @@ Item {
     anchors.fill: parent
     readonly property bool shouldReposition: false
 
-    readonly property string badgeState: typeof MakeBadge !== "undefined" ? MakeBadge.state : ""
+    // at the client's quit the context object goes before this item: null, not undefined (performance 23:09 11-07)
+    readonly property bool live: typeof MakeBadge !== "undefined" && MakeBadge !== null
+    readonly property string badgeState: live ? MakeBadge.state : ""
     readonly property bool answer: badgeState === "answer"
     readonly property bool inHeadset: typeof HMD !== "undefined" && HMD.active   // the VR screen's place is vr's call
     readonly property string words: badgeState === "working" ? "Working"
@@ -40,7 +42,7 @@ Item {
         repeat: true
         // a test's forced state steps in a background client too (performance's rows; MakeBadge.forced)
         running: root.visible && root.badgeState === "working"
-            && (Qt.application.state === Qt.ApplicationActive || MakeBadge.forced)
+            && (Qt.application.state === Qt.ApplicationActive || (root.live && MakeBadge.forced))
         onTriggered: root.lead = (root.lead + 1) % 12
     }
 
