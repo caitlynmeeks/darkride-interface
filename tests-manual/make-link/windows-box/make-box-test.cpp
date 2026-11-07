@@ -16,7 +16,18 @@
 //       the parent; Blender must end with it (the job's own pids, never a name).
 //  Writes <test folder>\results.json (each check's pass and refused/opened, counts) and deletes the job folder, the
 //  container profile and its throwaway test credential afterwards.
-//    make-box-test.exe <blender.exe> <test folder>
+//    make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port] [--lan-listener]
+//  Run 6 (security, 11-07): every network check runs twice, boxed and as an UNBOXED control (the same Blender, the
+//  box's environment, no container, no job), so a refusal in the box means something. The checks: the program's own
+//  loopback listener, a closed port on the laptop's own LAN address, the laptop's own computer name (resolved or not,
+//  nothing kept), a name under .invalid, and with the flags:
+//    --mac <address>:<port>  a listener scripting runs on the Mac (off the laptop, on the home network)
+//    --system-port           Windows' own RPC endpoint mapper (TCP 135 on the LAN address): a bare connect, closed at
+//                            once, nothing sent or read; no listener of ours, so no firewall alert
+//    --lan-listener          a listener of this program's own on the LAN address (the Connect self-test's shape).
+//                            On a Windows with the firewall's notifications on, opening it shows the firewall's
+//                            "Allow access?" alert (a window): pass it only where that can't happen, or with the
+//                            person's OK for that alert
 //
 //  Copyright 2026 Darkride.
 //
@@ -34,6 +45,7 @@
 #include <userenv.h>
 #include <wincred.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -330,24 +342,118 @@ std::vector<DWORD> jobPids(HANDLE job) {
     return pids;
 }
 
-// the network targets: the program's own loopback listener, and a closed port on this laptop's own LAN address
+// the run's options (run 6): each extra network target only with its flag
+struct Options {
+    std::string macAddress;  // --mac <address>:<port>
+    int macPort = 0;
+    bool systemPort = false;   // --system-port
+    bool lanListener = false;  // --lan-listener
+};
+
+bool parseOptions(int argc, wchar_t** argv, Options& options) {
+    for (int i = 3; i < argc; ++i) {
+        const std::wstring arg = argv[i];
+        if (arg == L"--system-port") {
+            options.systemPort = true;
+        } else if (arg == L"--lan-listener") {
+            options.lanListener = true;
+        } else if (arg == L"--mac" && i + 1 < argc) {
+            const std::string value = narrow(argv[++i]);
+            const size_t colon = value.find(':');
+            in_addr check {};
+            if (colon == std::string::npos || inet_pton(AF_INET, value.substr(0, colon).c_str(), &check) != 1) {
+                return false;
+            }
+            options.macAddress = value.substr(0, colon);
+            options.macPort = std::atoi(value.substr(colon + 1).c_str());
+            if (options.macPort <= 0 || options.macPort > 65535) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+// a listener of this program's own: every connection it takes gets the run's token and is closed; it counts them
+struct Listener {
+    SOCKET socket = INVALID_SOCKET;
+    std::atomic<int> accepted { 0 };
+};
+
+// the network targets: the program's own loopback listener, a closed port on this laptop's own LAN address, and with
+// the flags the Mac's listener, Windows' own port 135 on the LAN address, and a listener of ours on the LAN address
 struct Targets {
-    SOCKET loopback = INVALID_SOCKET;
+    Listener loopback;
+    Listener lan;  // --lan-listener only
+    std::string token;
+    std::atomic<bool> stop { false };
+    std::thread acceptor;
     std::string json;
 };
 
-Targets openTargets() {
-    Targets targets;
+std::string randomToken() {
+    BYTE bytes[16];
+    BCryptGenRandom(nullptr, bytes, sizeof bytes, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    static const char* digits = "0123456789abcdef";
+    std::string token = "darkride-run6-";
+    for (BYTE b : bytes) {
+        token += digits[b >> 4];
+        token += digits[b & 15];
+    }
+    return token;
+}
+
+void acceptLoop(Targets* targets) {
+    while (!targets->stop) {
+        fd_set ready;
+        FD_ZERO(&ready);
+        for (Listener* listener : { &targets->loopback, &targets->lan }) {
+            if (listener->socket != INVALID_SOCKET) {
+                FD_SET(listener->socket, &ready);
+            }
+        }
+        timeval wait { 0, 200 * 1000 };
+        const int count = select(0, &ready, nullptr, nullptr, &wait);
+        if (count < 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));  // no listener open: don't spin
+        }
+        if (count <= 0) {
+            continue;
+        }
+        for (Listener* listener : { &targets->loopback, &targets->lan }) {
+            if (listener->socket == INVALID_SOCKET || !FD_ISSET(listener->socket, &ready)) {
+                continue;
+            }
+            SOCKET client = accept(listener->socket, nullptr, nullptr);
+            if (client != INVALID_SOCKET) {
+                ++listener->accepted;
+                const std::string line = targets->token + "\n";
+                send(client, line.data(), static_cast<int>(line.size()), 0);
+                shutdown(client, SD_BOTH);
+                closesocket(client);
+            }
+        }
+    }
+}
+
+std::string addressJson(const char* address, int port) {
+    return std::string("[\"") + address + "\", " + std::to_string(port) + "]";
+}
+
+void openTargets(Targets& targets, const Options& options) {
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
+    targets.token = randomToken();
     sockaddr_in address {};
     address.sin_family = AF_INET;
     inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-    targets.loopback = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    bind(targets.loopback, reinterpret_cast<sockaddr*>(&address), sizeof address);
-    listen(targets.loopback, 4);
+    targets.loopback.socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    bind(targets.loopback.socket, reinterpret_cast<sockaddr*>(&address), sizeof address);
+    listen(targets.loopback.socket, 4);
     int length = sizeof address;
-    getsockname(targets.loopback, reinterpret_cast<sockaddr*>(&address), &length);
+    getsockname(targets.loopback.socket, reinterpret_cast<sockaddr*>(&address), &length);
     const int loopbackPort = ntohs(address.sin_port);
     // the LAN address: a UDP socket "connected" to a documentation address sends nothing, and names the local address
     SOCKET probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -367,13 +473,61 @@ Targets openTargets() {
     length = sizeof lan;
     getsockname(spare, reinterpret_cast<sockaddr*>(&lan), &length);
     closesocket(spare);
+    const int closedPort = ntohs(lan.sin_port);
     char lanText[INET_ADDRSTRLEN] {};
     inet_ntop(AF_INET, &lan.sin_addr, lanText, sizeof lanText);
+    // a listener of ours on the LAN address: only with --lan-listener (the firewall's alert, see the top)
+    int lanListenerPort = 0;
+    if (options.lanListener) {
+        sockaddr_in listenOn = lan;
+        listenOn.sin_port = 0;
+        targets.lan.socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (bind(targets.lan.socket, reinterpret_cast<sockaddr*>(&listenOn), sizeof listenOn) == 0 &&
+            listen(targets.lan.socket, 4) == 0) {
+            length = sizeof listenOn;
+            getsockname(targets.lan.socket, reinterpret_cast<sockaddr*>(&listenOn), &length);
+            lanListenerPort = ntohs(listenOn.sin_port);
+        } else {
+            closesocket(targets.lan.socket);
+            targets.lan.socket = INVALID_SOCKET;
+        }
+    }
+    targets.acceptor = std::thread(acceptLoop, &targets);
     std::ostringstream json;
-    json << "{\"loopback\": [\"127.0.0.1\", " << loopbackPort << "], \"lan\": [\"" << lanText << "\", " << ntohs(lan.sin_port)
-         << "]}";
+    json << "{\"token\": \"" << targets.token << "\", \"loopback\": " << addressJson("127.0.0.1", loopbackPort)
+         << ", \"lan_closed\": " << addressJson(lanText, closedPort)
+         << ", \"lan_listener\": " << (lanListenerPort ? addressJson(lanText, lanListenerPort) : "null")
+         << ", \"system_port\": " << (options.systemPort ? addressJson(lanText, 135) : "null")
+         << ", \"mac\": " << (options.macPort ? addressJson(options.macAddress.c_str(), options.macPort) : "null") << "}";
     targets.json = json.str();
-    return targets;
+}
+
+void closeTargets(Targets& targets) {
+    targets.stop = true;
+    if (targets.acceptor.joinable()) {
+        targets.acceptor.join();
+    }
+    for (Listener* listener : { &targets.loopback, &targets.lan }) {
+        if (listener->socket != INVALID_SOCKET) {
+            closesocket(listener->socket);
+            listener->socket = INVALID_SOCKET;
+        }
+    }
+}
+
+std::string acceptedJson(const Targets& targets) {
+    return "{\"loopback\": " + std::to_string(targets.loopback.accepted.load()) +
+           ", \"lan_listener\": " + std::to_string(targets.lan.accepted.load()) + "}";
+}
+
+std::string readFile(const fs::path& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return "null";
+    }
+    std::stringstream read;
+    read << file.rdbuf();
+    return read.str();
 }
 
 // the throwaway credential the box must not read: a random value, a name marked as a test, this logon only
@@ -434,8 +588,10 @@ int wmain(int argc, wchar_t** argv) {
         return runParent(argv[2], argv[3], argv[4], argv[5], std::wstring(argv[6]) == L"lpac",
                          static_cast<DWORD>(std::wcstoul(argv[7], nullptr, 10)), std::wstring(argv[8]) == L"own");
     }
-    if (argc != 3) {
-        std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder>\n";
+    Options options;
+    if (argc < 3 || !parseOptions(argc, argv, options)) {
+        std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port]"
+                      L" [--lan-listener]\n";
         return 2;
     }
     // run as the normal user only: an elevated run would test a different box
@@ -474,17 +630,44 @@ int wmain(int argc, wchar_t** argv) {
     if (programFiles.empty() || blender.wstring().rfind(programFiles, 0) != 0) {
         granted = grant(blender.parent_path(), sid, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE) && granted;
     }
-    Targets targets = openTargets();
+    Targets targets;
+    openTargets(targets, options);
     std::ofstream(job / L"targets.json") << targets.json;
+    std::cout << "targets: mac " << (options.macPort ? "yes" : "no") << ", system port " << (options.systemPort ? "yes" : "no")
+              << ", lan listener " << (options.lanListener ? (targets.lan.socket != INVALID_SOCKET ? "open" : "not opened") : "no")
+              << "\n";
     std::string form;
     bool lpacChosen = false;
     DWORD uiChosen = 0;
     bool ownDesktopChosen = false;
     DWORD exitCode = 0;
     std::string results = "null";
+    std::string control = "null";
+    DWORD controlExit = 0;
+    std::string acceptedAfterControl = "null";
+    std::string acceptedAfterProbe = "null";
     std::ostringstream starts;
     {
         TestCredential credential;
+
+        // the UNBOXED control of every network check (run 6): the same Blender and probe, the box's environment, no
+        // container, no job, so each target is shown reachable from this laptop and a refusal in the box means
+        // something
+        fs::remove(job / L"net-control.json", ignored);
+        Started unboxed = startBoxed(blender, scripts / L"probe.py", job, test, L"net-control", sid, false, 0, std::wstring(),
+                                     false, false, true);
+        controlExit = unboxed.error;
+        if (!unboxed.error) {
+            WaitForSingleObject(unboxed.process.hProcess, 120000);
+            GetExitCodeProcess(unboxed.process.hProcess, &controlExit);
+            CloseHandle(unboxed.process.hThread);
+            CloseHandle(unboxed.process.hProcess);
+        }
+        control = readFile(job / L"net-control.json");
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        acceptedAfterControl = acceptedJson(targets);
+        std::cout << "unboxed network control: " << (control == "null" ? "no results" : "done") << " (" << controlExit << ")\n";
+
         OwnDesktop own;
         makeOwnDesktop(own, sid);
         std::cout << "own desktop: " << (own.name.empty() ? "not made, error " + std::to_string(own.error) : "made") << "\n";
@@ -546,15 +729,12 @@ int wmain(int argc, wchar_t** argv) {
             }
             CloseHandle(started.job);  // kill-on-close: nothing of it outlives this
             std::cout << "probe under \"" << form << "\": Blender exit " << exitCode << "\n";
-            std::ifstream file(job / L"probe-results.json");
-            if (file.is_open()) {
-                std::stringstream read;
-                read << file.rdbuf();
-                results = read.str();
-            }
+            results = readFile(job / L"probe-results.json");
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            acceptedAfterProbe = acceptedJson(targets);  // counts since the start: the box's own are these minus the control's
         }
     }  // the test credential is deleted here
-    closesocket(targets.loopback);
+    closeTargets(targets);
 
     // kill the parent: Blender, looping in the parent's job, must end with it
     std::string killed = "\"not run\"";
@@ -592,6 +772,10 @@ int wmain(int argc, wchar_t** argv) {
 
     std::ofstream out(test / L"results.json");
     out << "{\"form\": " << jsonString(form.empty() ? "none started" : form) << ", \"granted\": " << (granted ? "true" : "false")
+        << ", \"targets\": {\"mac\": " << (options.macPort ? "true" : "false") << ", \"system_port\": "
+        << (options.systemPort ? "true" : "false") << ", \"lan_listener\": " << (options.lanListener ? "true" : "false")
+        << "}, \"control_exit\": " << controlExit << ", \"control\": " << control
+        << ", \"accepted_after_control\": " << acceptedAfterControl << ", \"accepted_after_probe\": " << acceptedAfterProbe
         << ", \"starts\": [" << starts.str() << "], \"blender_exit\": " << exitCode << ", \"probe\": " << results << ", \"kill_the_parent_ends_blender\": " << killed
         << "}\n";
     out.close();

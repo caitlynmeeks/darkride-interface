@@ -10,8 +10,14 @@
 #  renders four views of a test model, on the GPU (EEVEE) and on the CPU (Cycles). It writes probe-results.json in the
 #  job folder: each check's refused/opened and an exception type only, never a path or a message (security, 11-07).
 #  Mode "start" only says it started (the UI-limit ladder); mode "runaway" only loops, for the kill-the-parent case.
+#  Mode "net-control" (run 6) runs only the network checks, UNBOXED, and writes net-control.json: there each check
+#  passes when it reaches its target, which shows the boxed refusal of the same check means something.
+#  Network targets (targets.json): the test's loopback listener, a closed port on the LAN address, the laptop's own
+#  computer name, a name under .invalid, and when the test was given them: a listener on the Mac, Windows' own port
+#  135 on the LAN address (a bare connect, closed at once, nothing sent or read), a listener of the test's own on the
+#  LAN address. Details keep an exception's type and number only, never an address or a message.
 #    blender --background --factory-startup --disable-autoexec -noaudio --python probe.py --
-#            <job folder> <probe|runaway> <profile folder> <test folder>
+#            <job folder> <probe|net-control|start|runaway> <profile folder> <test folder>
 #
 #  Copyright 2026 Darkride.
 #
@@ -48,24 +54,87 @@ def open_folder(path):
         pass
 
 
+targets = json.load(open(os.path.join(job, "targets.json")))
+# {"token": str, "loopback", "lan_closed", "lan_listener", "system_port", "mac": [address, port] or null}
+
+
+def failure(e):
+    """An exception's type and number only (never its message, which can name an address)."""
+    return "%s %s" % (type(e).__name__, getattr(e, "winerror", None) or getattr(e, "errno", None) or "")
+
+
+def connect(address, greeting=None, read=True):
+    """(reached, detail). Reached: the connection opened, or the target's machine answered "refused" (an RST, so the
+    attempt got through to its network stack). Not reached: anything else (access denied, timed out, unreachable)."""
+    try:
+        with socket.create_connection(tuple(address), timeout=5) as s:
+            if not read:  # Windows' own port 135: nothing sent, nothing read, closed at once
+                return True, "connected"
+            s.settimeout(5)
+            try:
+                got = s.recv(64)
+            except OSError:
+                got = b""
+            if greeting is None:
+                return True, "connected"
+            return True, "connected, " + ("greeting ok" if got.startswith(greeting) else "no greeting")
+    except ConnectionRefusedError as e:
+        return True, "answered refused (%s)" % failure(e)
+    except Exception as e:  # noqa: BLE001 - any other failure is not reaching it
+        return False, failure(e)
+
+
+def resolve(name):
+    """name: a name, or None for this laptop's own computer name (looked up inside the try: the box may refuse that)."""
+    try:
+        socket.getaddrinfo(socket.gethostname() if name is None else name, 80)
+        return True, "resolved"  # pass/fail only: no address kept
+    except Exception as e:  # noqa: BLE001
+        return False, failure(e)
+
+
+def network_checks(boxed):
+    """Each check: reached or not. Boxed, a check passes when it did NOT reach. In the unboxed control it passes when it
+    shows the target is there: a listener (ours, the Mac's, Windows' port 135) must CONNECT, the closed port must be
+    answered, the own name must resolve; only then does the boxed refusal of the same check mean something (security:
+    otherwise it's unknown). A name under .invalid fails unboxed too: no control (pass null)."""
+    token = targets["token"].encode()
+    # (name, action, what the control needs: "connected", "reached", or None for no control)
+    checks = [("the test's own loopback listener", lambda: connect(targets["loopback"], token), "connected"),
+              ("a closed port on this laptop's LAN address", lambda: connect(targets["lan_closed"], None, False), "reached"),
+              ("this laptop's own computer name (DNS)", lambda: resolve(None), "reached"),
+              ("a name under .invalid (DNS)", lambda: resolve("darkride-box-test.invalid"), None)]
+    if targets.get("lan_listener"):
+        checks.append(("the test's own listener on this laptop's LAN address",
+                       lambda: connect(targets["lan_listener"], token), "connected"))
+    if targets.get("system_port"):
+        checks.append(("Windows' own port 135 on this laptop's LAN address",
+                       lambda: connect(targets["system_port"], None, False), "connected"))
+    if targets.get("mac"):
+        # the Mac's listener only accepts and closes: a bare connect, nothing sent or read
+        checks.append(("the Mac's listener (off the laptop)", lambda: connect(targets["mac"], None, False), "connected"))
+    for name, action, control_needs in checks:
+        reached, detail = action()
+        if boxed:
+            passed = not reached
+        elif control_needs == "connected":
+            passed = reached and detail.startswith("connected")
+        elif control_needs == "reached":
+            passed = reached
+        else:
+            passed = None
+        results.append({"check": "network: " + name, "reached": reached, "pass": passed, "detail": detail})
+
+
+if mode == "net-control":
+    network_checks(boxed=False)
+    json.dump({"results": results}, open(os.path.join(job, "net-control.json"), "w"), indent=1)
+    raise SystemExit(0)
+
 for folder in ("Documents", "Desktop", ".ssh", os.path.join("AppData", "Roaming"), os.path.join("AppData", "Local")):
     path = os.path.join(profile, folder)
     refused("open " + folder, lambda path=path: open_folder(path))
-targets = json.load(open(os.path.join(job, "targets.json")))  # {"loopback": [address, port], "lan": [address, port]}
-# loopback: the test program's own listener there; any failure is the box's refusal
-refused("connect to the test's own loopback listener",
-        lambda: socket.create_connection(tuple(targets["loopback"]), timeout=5).close())
-# the LAN: a closed port on this laptop's own LAN address (no listener, so no firewall prompt and no other machine).
-# Outside a box that's "connection refused" (the laptop answered); the box refuses it itself (access denied)
-try:
-    socket.create_connection(tuple(targets["lan"]), timeout=5).close()
-    results.append({"check": "connect to this laptop's LAN address", "pass": False, "detail": "opened"})
-except ConnectionRefusedError:
-    results.append({"check": "connect to this laptop's LAN address", "pass": False, "detail": "reached the laptop (not boxed)"})
-except Exception as e:  # noqa: BLE001
-    results.append({"check": "connect to this laptop's LAN address", "pass": True, "detail": "refused (%s %s)" % (
-        type(e).__name__, getattr(e, "winerror", None) or getattr(e, "errno", ""))})
-refused("DNS lookup", lambda: socket.getaddrinfo("darkride-box-test.invalid", 80))
+network_checks(boxed=True)
 refused("write outside the job folder", lambda: open(os.path.join(outside, "written-from-the-box.txt"), "w").write("x"))
 refused("start another program", lambda: subprocess.run(["cmd.exe", "/c", "echo", "hi"], check=True, timeout=10))
 
