@@ -289,6 +289,8 @@ QString MakeLink::startLine() const {
     // the same limits as the key route (security, the Terminal route's condition): --restricted keeps the person's own
     // user, project and local settings files out (their allows and hooks), and Make's settings still apply; only our MCP
     // server; no built-in tools. One line, absolute single-quoted paths ("Application Support" has a space).
+    // The dock's Connect sentence ("can't run programs or reach the web") holds only for this exact line, as proven by
+    // scripting's route kit: any change to it goes to security and editor-ui first.
     const MakeClaude::Settings files = claudeSettings();
 #ifdef Q_OS_WIN
     // PowerShell: a single-quoted string takes '' for a quote; --tools= passes the empty list on every PowerShell
