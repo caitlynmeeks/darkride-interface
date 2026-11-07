@@ -144,6 +144,8 @@ public:
     double costSoFar() const { return _costSoFar; }
     QObject* timeline() { return &_timeline; }
     QObject* made() { return &_made; }
+    /// The dock's window is watched for real input (watchWindow was given it).
+    bool isWatching() const { return !_window.isNull(); }
 
     // ---- the dock's calls (contract). "Real input" ones answer false when refused. ----
 

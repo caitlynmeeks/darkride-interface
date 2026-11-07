@@ -468,6 +468,54 @@ public slots:
     Q_INVOKABLE void codeSetWorld(const QString& name);
 
     /**jsdoc
+     * The Make dock as its QML sees it (Qt 6 builds; make/MakeDock.h): <code>available, dockMade, open, floating, area,
+     * state, reason, route, hasKey, claudeFound, blenderFound, blenderSealed, blenderWhy, keyStoreName, working,
+     * timeline, made</code> (row counts), <code>timelineRows, madeRows, watching</code> (its window is watched for real
+     * input), <code>provider</code> (its engine has the "make" picture provider), <code>windowActive</code> (the dock's
+     * Qt Quick window), <code>dockWindowActive</code> (the dock widget's window), <code>folder</code> (the Make folder).
+     * @function Test.makeDock
+     * @returns {object} The dock's state.
+     */
+    Q_INVOKABLE QVariantMap makeDock();
+
+    /**jsdoc
+     * Calls one of the Make dock's real-input calls from a test, as its QML would but with no person's input: it must
+     * be refused. <code>"setRoute"</code> (to the route it isn't on) or <code>"answer"</code> (a question that was never
+     * asked); <code>"events:setRoute"</code> first gives the dock's window a mouse release and a key press made by the
+     * test (not by the window system). Only calls whose doing would change nothing outside the client's own settings.
+     * @function Test.makeDockTry
+     * @param {string} call - The call.
+     * @returns {boolean} The call's answer: <code>true</code> means it was NOT refused.
+     */
+    Q_INVOKABLE bool makeDockTry(const QString& call);
+
+    /**jsdoc
+     * Gives the Make dock a made card as Make's link does when Claude's tools make something (MakeLink::made):
+     * <code>{ kind: "script", id, side, name, file }</code> or <code>{ kind: "thing", id, name }</code>.
+     * @function Test.makeDockCard
+     * @param {number} request - The request it belongs to.
+     * @param {object} card - The card.
+     */
+    Q_INVOKABLE void makeDockCard(int request, const QVariantMap& card);
+
+    /**jsdoc
+     * Does what a script card's Open does in the Make dock: the card's script in the Code panel.
+     * @function Test.makeDockOpenCard
+     * @param {string} cardId - The card's item id (Test.makeDock's madeRows).
+     */
+    Q_INVOKABLE void makeDockOpenCard(const QString& cardId);
+
+    /**jsdoc
+     * The file the Make dock's picture provider would serve for <code>image://make/&lt;what&gt;/&lt;id&gt;</code>, or
+     * <code>""</code> when it would serve none (MakeDock::servedFile).
+     * @function Test.makeDockServed
+     * @param {string} what - <code>"sheet"</code>, <code>"thumb"</code> or <code>"picture"</code>.
+     * @param {string} id - The picture's or model's id.
+     * @returns {string} The file's path, or <code>""</code>.
+     */
+    Q_INVOKABLE QString makeDockServed(const QString& what, const QString& id);
+
+    /**jsdoc
      * Saves a picture of the Code panel's menu, drawn as it would show but without showing it.
      * @function Test.saveCodeMenuPicture
      * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu).

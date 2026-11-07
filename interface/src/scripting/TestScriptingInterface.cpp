@@ -80,6 +80,10 @@
 #include "editor/ui/PropertyEditors.h"
 #include "editor/ui/ScriptEditor.h"
 #include "ui/CodeEditor.h"
+#include "make/MakeDock.h"
+#include "make/MakeLink.h"
+#include <QtGui/QKeyEvent>
+#include <QtQml/QQmlEngine>
 #include <EntityTreeRenderer.h>
 #include <RenderableEntityItem.h>
 
@@ -1093,6 +1097,134 @@ void TestScriptingInterface::codeSetWorld(const QString& name) {
         return;
     }
     DependencyManager::get<CodeEditor>()->testSetWorld(name);
+}
+
+namespace {
+    // a list model's rows as plain maps, every role by its name
+    QVariantList rowsOf(QAbstractItemModel* model) {
+        QVariantList rows;
+        if (!model) {
+            return rows;
+        }
+        const auto roles = model->roleNames();
+        for (int i = 0; i < model->rowCount(); ++i) {
+            QVariantMap row;
+            for (auto role = roles.begin(); role != roles.end(); ++role) {
+                row.insert(QString::fromUtf8(role.value()), model->data(model->index(i, 0), role.key()));
+            }
+            rows.append(row);
+        }
+        return rows;
+    }
+
+    QmlDock* makeDockPanel() {
+        auto window = qApp->getWindow();
+        return window ? window->findChild<QmlDock*>("MakeDock") : nullptr;
+    }
+}
+
+QVariantMap TestScriptingInterface::makeDock() {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "makeDock", Q_RETURN_ARG(QVariantMap, result));
+        return result;
+    }
+    auto make = DependencyManager::get<MakeDock>();
+    if (!MakeDock::isAvailable() || !make) {
+        return { { "available", false } };
+    }
+    auto panel = makeDockPanel();
+    auto window = qApp->getWindow();
+    QString area;
+    if (panel && window && !panel->isFloating()) {
+        switch (window->dockWidgetArea(panel)) {
+            case Qt::LeftDockWidgetArea: area = "left"; break;
+            case Qt::RightDockWidgetArea: area = "right"; break;
+            case Qt::TopDockWidgetArea: area = "top"; break;
+            case Qt::BottomDockWidgetArea: area = "bottom"; break;
+            default: break;
+        }
+    }
+    QWindow* content = panel ? panel->contentWindow() : nullptr;
+    QQuickItem* page = panel ? panel->panel() : nullptr;
+    QQmlEngine* engine = page ? qmlEngine(page) : nullptr;
+    auto timeline = qobject_cast<QAbstractItemModel*>(make->timeline());
+    auto made = qobject_cast<QAbstractItemModel*>(make->made());
+    return {
+        { "available", true }, { "dockMade", panel != nullptr }, { "open", panel && !panel->isHidden() },
+        { "floating", panel && panel->isFloating() }, { "area", area },
+        { "state", make->state() }, { "reason", make->reason() }, { "route", make->route() },
+        { "hasKey", make->hasKey() }, { "claudeFound", make->claudeFound() }, { "blenderFound", make->blenderFound() },
+        { "blenderSealed", make->blenderSealed() }, { "blenderWhy", make->blenderWhy() },
+        { "keyStoreName", make->keyStoreName() }, { "working", make->isWorking() },
+        { "timeline", timeline ? timeline->rowCount() : -1 }, { "made", made ? made->rowCount() : -1 },
+        { "timelineRows", rowsOf(timeline) }, { "madeRows", rowsOf(made) },
+        { "watching", make->isWatching() }, { "provider", engine && engine->imageProvider("make") != nullptr },
+        { "windowActive", content && content->isActive() },
+        { "dockWindowActive", panel && panel->isActiveWindow() },
+        { "folder", DependencyManager::get<MakeLink>()->folder() },
+    };
+}
+
+bool TestScriptingInterface::makeDockTry(const QString& call) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockTry", Q_RETURN_ARG(bool, result), Q_ARG(QString, call));
+        return result;
+    }
+    auto make = DependencyManager::get<MakeDock>();
+    if (!MakeDock::isAvailable() || !make) {
+        return false;
+    }
+    QString which = call;
+    if (which.startsWith("events:")) {
+        which = which.mid(7);
+        // input made here, not by the window system: sendEvent marks it so (QEvent::spontaneous() false). In the
+        // window's top left corner, a release with no press: nothing in the dock is clicked by it
+        auto panel = makeDockPanel();
+        if (QWindow* content = panel ? panel->contentWindow() : nullptr) {
+            QMouseEvent release(QEvent::MouseButtonRelease, QPointF(1, 1), content->mapToGlobal(QPointF(1, 1)),
+                                Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(content, &release);
+            QKeyEvent key(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
+            QCoreApplication::sendEvent(content, &key);
+        }
+    }
+    if (which == "setRoute") {
+        // the route it isn't on: a setting in the client's own config, the only change if the gate let it through
+        return make->setRoute(make->route() == "key" ? "terminal" : "key");
+    }
+    return false;
+}
+
+void TestScriptingInterface::makeDockCard(int request, const QVariantMap& card) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "makeDockCard", Q_ARG(int, request), Q_ARG(QVariantMap, card));
+        return;
+    }
+    if (MakeDock::isAvailable()) {
+        emit DependencyManager::get<MakeLink>()->made(request, card);
+    }
+}
+
+void TestScriptingInterface::makeDockOpenCard(const QString& cardId) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "makeDockOpenCard", Q_ARG(QString, cardId));
+        return;
+    }
+    if (MakeDock::isAvailable()) {
+        DependencyManager::get<MakeDock>()->openInCode(cardId);
+    }
+}
+
+QString TestScriptingInterface::makeDockServed(const QString& what, const QString& id) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeDockServed", Q_RETURN_ARG(QString, result), Q_ARG(QString, what),
+                               Q_ARG(QString, id));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->servedFile(what, id) : QString();
 }
 
 void TestScriptingInterface::codeShowNearby() {
