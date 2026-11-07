@@ -333,6 +333,12 @@ if (UNIX AND NOT ANDROID)
     if (CMAKE_SYSTEM_NAME MATCHES "Linux")
         # Linux
         target_link_libraries(${TARGET_NAME} pthread atomic)
+        if (QT_VERSION_MAJOR EQUAL 6)
+            # Qt 6 declares X11's display type as Display at global scope on Linux, the name of the app's own class:
+            # every C++ file takes Qt's header first with the X11 name changed (src/LinuxQtX11Display.h)
+            target_compile_options(${TARGET_NAME} PRIVATE
+                "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/LinuxQtX11Display.h>")
+        endif ()
     else ()
         # OSX
         target_link_libraries(${TARGET_NAME} pthread)

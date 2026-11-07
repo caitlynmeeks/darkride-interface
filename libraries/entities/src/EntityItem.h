@@ -152,6 +152,25 @@ public:
                                                         EntityTreeElementExtraEncodeDataPointer entityTreeElementExtraEncodeData,
                                                         const bool destinationNodeCanGetAndSetPrivateUserData = false) const;
 
+    // The room one entity's encoding has in an empty stream packet: the entity server's packets to each viewer
+    // (EntityTreeSendThread) carry at most this, so a property too big for it never reaches anyone else.
+    static int streamSectionRoom();
+    // The bytes `property` of this entity takes alone in a stream packet (the section's header, the entity's header
+    // and the property), measured by the stream's own encoder; 0 if the stream doesn't send that property for this
+    // entity's type, -1 if it needs more than `room`.
+    int bytesToStreamAlone(EntityPropertyList property, int room,
+                           bool destinationNodeCanGetAndSetPrivateUserData = false) const;
+    // The smallest room in which `property` of this entity streams alone, for log lines: a few bytes more than
+    // bytesToStreamAlone's size, since the encoder writes the property flags at full width before trimming them.
+    // 0 if the stream doesn't send that property for this entity's type, -1 if it needs more than any string can.
+    int streamRoomNeededAlone(EntityPropertyList property, bool destinationNodeCanGetAndSetPrivateUserData = false) const;
+    // Which of `properties` could never be streamed: each doesn't fit an empty stream packet even alone. `margin`
+    // takes bytes off the room, for an entity whose header may grow (the time deltas) before it is streamed.
+    EntityPropertyFlags propertiesTooBigToStream(const EntityPropertyFlags& properties, int margin = 0,
+                                                 bool destinationNodeCanGetAndSetPrivateUserData = false) const;
+    // A property's name as scripts know it ("userData"), for log lines
+    static QString propertyName(EntityPropertyList property);
+
     virtual void appendSubclassData(OctreePacketData* packetData, EncodeBitstreamParams& params,
                                     EntityTreeElementExtraEncodeDataPointer entityTreeElementExtraEncodeData,
                                     EntityPropertyFlags& requestedProperties,

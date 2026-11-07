@@ -78,7 +78,8 @@ if [ $SCRIPTED = 1 ]; then
         echo "{\"WindowGeometry\": \"@Rect(1110 470 800 600)\"}" > "$R/config/$_org/Interface.json"
     done
 fi
-SESSION=scripting
+# the caller's session when it holds the lock itself (LOCK_PID): its take is then its own, not queued behind it
+SESSION=${SESSION:-scripting}
 SANDBOX=$HOME/tivoli-sandboxes/wasm
 . "$D/../physics-baseline/harness.sh"
 lock_take "run-client $NAME" $((SECONDS_MAX / 60 + 2)) || exit 1
