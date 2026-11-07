@@ -452,9 +452,6 @@ public:
     using Pointer = std::shared_ptr<TerrainUploadPayload>;
     explicit TerrainUploadPayload(const std::shared_ptr<std::atomic<uint64_t>>& fed) : _fed(fed) {}
     void setBuffers(std::vector<gpu::BufferPointer> buffers, uint64_t serial) { _buffers = std::move(buffers); _serial = serial; }
-    // the tiles still on their way (entry 29 step 2b): referenced so the backend meets them and its transfer engine
-    // uploads them on its thread; the chunk items take them once resident
-    void setTextures(std::vector<gpu::TexturePointer> textures) { _textures = std::move(textures); }
     void setBound(const Item::Bound& bound) { _bound = bound; }
     void setKey(const ItemKey& key) { _key = key; }
     const ItemKey& getKey() const { return _key; }
@@ -462,7 +459,6 @@ public:
     void render(RenderArgs* args);
 private:
     std::vector<gpu::BufferPointer> _buffers;
-    std::vector<gpu::TexturePointer> _textures;
     uint64_t _serial { 0 };                        // the post's serial
     std::shared_ptr<std::atomic<uint64_t>> _fed;   // the serial a batch has referenced up to (read on the editing thread)
     Item::Bound _bound;
@@ -504,17 +500,12 @@ private:
     struct ChunkItem {
         ItemID id { Item::INVALID_ITEM_ID };
         uint64_t meshVersion { 0 };
-        TerrainPaintTile::Pointer paintTile;   // the tiles the item shows (a new one is taken once resident, step 2b)
-        gpu::TexturePointer topTile;
     };
     std::map<terrain::ChunkKey, ChunkItem> _chunkItems;
     // the upload item (TerrainUploadPayload) and what it was last given
     ItemID _uploadItem { Item::INVALID_ITEM_ID };
     std::shared_ptr<std::atomic<uint64_t>> _uploadsFed { std::make_shared<std::atomic<uint64_t>>(0) };
     uint64_t _uploadsPosted { 0 };
-    std::vector<gpu::TexturePointer> _pendingTiles;         // tiles a chunk item waits for (entry 29 step 2b)
-    std::vector<gpu::TexturePointer> _pendingTilesPosted;   // what the upload item was last given of them
-    bool _tilesPending { false };                           // the drawn set is read again next frame while any waits
     std::chrono::steady_clock::time_point _firstDrawn;   // when the first chunk item was made; unset until then
     void postUploads(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity);
     // The chunk items as the render thread asks for them (metaFetchMetaSubItems, for selection outlines): the main
