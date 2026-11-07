@@ -485,10 +485,21 @@ void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropert
 // A refused edit is taken back on its sender's screen too: the client shows its own edit at once, and takes the server's
 // copy only if it was edited later. So the entity goes out again (all of it, as ever), last edited after the refused
 // edit. Physics updates aren't sent back: they come many times a second, and are refused as before.
+//   - The new time is counted from the refused edit's time but never from later than now: a sender's clock (or a
+//     time it wrote) ahead of this server's would otherwise put the entity's time ahead too, and for as long as it
+//     stays ahead the stream sends the entity again to every viewer whose view moves, every pass.
+//   - The entity's element and the elements above it are marked changed, as the simulation does when it changes an
+//     entity itself (SimpleEntitySimulation): a viewer whose view hasn't moved rescans only changed elements, so with
+//     the time alone a sender standing still got its copy back only if something else near it was edited later.
 void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused) {
     if (getIsServer()) {
-        entity->setLastEdited(std::max(usecTimestampNow(), refused.getLastEdited() + 1));
+        const quint64 now = usecTimestampNow();
+        entity->setLastEdited(std::max(now, std::min(refused.getLastEdited(), now) + 1));
         entity->markAsChangedOnServer();
+        if (auto element = entity->getElement()) {
+            DirtyOctreeElementOperator op(element);
+            recurseTreeWithOperator(&op);
+        }
     }
 }
 
@@ -3273,6 +3284,7 @@ static QVariantList parentsBeforeChildren(const QVariantList& entities) {
 bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
     // These are needed to deal with older content (before adding inheritance modes)
     int contentVersion = map["Version"].toInt();
+    int futureTimesLoaded = 0;
 
     if (map.contains("Id")) {
         _persistID = map["Id"].toUuid();
@@ -3476,6 +3488,14 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
             warnRefusedAddresses(entityItemID, EntityContentAddresses::clearThisComputer(properties));
         }
 
+        // a time ahead of this computer's clock comes back to now: the stream sends an entity again whenever its time
+        // is later than the last send, so one saved ahead kept going out to moving viewers until its time came
+        const quint64 loadedAt = usecTimestampNow();
+        if (properties.getLastEdited() > loadedAt) {
+            futureTimesLoaded++;
+            properties.setLastEdited(loadedAt);
+        }
+
         EntityItemPointer entity = addEntity(entityItemID, properties, isImport);
         if (!entity) {
             qCDebug(entities) << "adding Entity failed:" << entityItemID << properties.getType();
@@ -3497,6 +3517,10 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
         }
     }
 
+    if (futureTimesLoaded > 0) {
+        qCWarning(entities) << futureTimesLoaded << "entities were saved with a last-edited time ahead of this"
+            << "computer's clock; loaded as edited now";
+    }
     return success;
 }
 
