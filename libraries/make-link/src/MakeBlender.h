@@ -122,6 +122,15 @@ public:
     /// The self-test probe's result file read: true when it says "refused" (`held` true, the box kept the connection
     /// in) or "reached" (`held` false); false for anything else, which is unknown.
     static bool readSelfTestResult(const QByteArray& text, bool& held);
+    /// The two rules on a program's name and its version resource's product name that say it is Blender (on Windows
+    /// MakeBox::isBlender adds the signature); false with a plain `why`.
+    static bool looksLikeBlender(const QString& fileName, const QString& productName, QString& why);
+    /// Whether `folder` is Blender's own, the only folder outside Program Files Make ever opens to the box: it holds
+    /// Blender's "<major>.<minor>" folder for `version`, it is no drive root, and it is none of `forbidden` (the
+    /// person's known folders, canonical) nor a parent of one. False with a plain `why`. A blender.exe sitting loose
+    /// in Downloads is refused by this.
+    static bool isBlendersOwnFolder(const QString& folder, const QString& version, const QStringList& forbidden,
+                                    QString& why);
 
     void setBlender(const QString& app) { _blender = app; }
     /// The watcher program (defaultWatcher() unless set, for tests).

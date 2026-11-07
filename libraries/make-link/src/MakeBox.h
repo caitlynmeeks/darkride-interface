@@ -70,6 +70,17 @@ QString fileVersion(const QString& path);
 /// Whether a path is under Program Files (where the box may read already).
 bool underProgramFiles(const QString& path);
 
+/// The name Blender's Windows builds are signed with: the signer certificate's subject, read as its simple display
+/// name (CertGetNameStringW with CERT_NAME_SIMPLE_DISPLAY_TYPE, the common name) and matched whole, case-sensitively.
+extern const char* const BLENDER_SIGNER;
+/// Whether `exe` is Blender, before any folder is opened to the box and before any make: a file named blender.exe,
+/// its version resource's ProductName "Blender", and its Authenticode signature verifying (WinVerifyTrust, no UI, no
+/// revocation check, nothing fetched) with the signer's name exactly BLENDER_SIGNER. False with a plain `why`.
+bool isBlender(const QString& exe, QString& why);
+/// The person's known folders a Blender's own folder must never be nor contain: the profile, Downloads, Desktop,
+/// Documents, Local and Roaming AppData, Public (canonical, forward slashes).
+QStringList knownFolders();
+
 }  // namespace MakeBox
 
 #endif  // Q_OS_WIN

@@ -41,6 +41,8 @@ private slots:
     void testVersionAndWords();
     void testSelfTestResult();
     void testSelfTestAnswers();
+    void testBlenderIdentityRules();
+    void testBlenderIsBlenderLive();
 };
 
 #endif // hifi_MakeBlenderTests_h

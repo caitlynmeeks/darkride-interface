@@ -72,8 +72,12 @@ const int ASK_NAME_LENGTH = 60;  // a thing's name (the world's words) in an ask
 const int ASK_WAIT_MS = 100 * 1000;
 const int MAX_LOG_LINES = 500;
 const int LOG_LINES_GIVEN = 120;
-// the person's own choice of Blender (useBlender), kept in Settings
-const QString BLENDER_SETTING = "make/blender";
+// the person's own choice of Blender (useBlender), kept in Settings under the prefix a world's script may neither read
+// nor write (ScriptSettingsInterface's protected prefixes; the same on every platform): the path names the person's
+// user folder, and a program named here runs in Make's box
+const QString BLENDER_SETTING = "private/make/blender";
+// the key an earlier build kept it under, outside that prefix: never read again, removed when found
+const QString OLD_BLENDER_SETTING = "make/blender";
 const int MAX_INLINE_VALUE_BYTES = 1200;  // the same as make-tools.js MAX_VALUE_BYTES
 const QSize PICTURE_SIZE { 768, 512 };
 const float PICTURE_FIELD_OF_VIEW = 45.0f;
@@ -181,7 +185,9 @@ MakeLink::MakeLink() {
         // the list comes from the library's resources: a build that lost them would offer no tool at all, so say so once
         qCWarning(makelog) << "Make: the tool list didn't load:" << _server.toolList().loadError();
     }
-    // the person's own choice of Blender, when they made one (useBlender); the usual places otherwise
+    // the person's own choice of Blender, when they made one (useBlender); the usual places otherwise. The old,
+    // unprotected key is dropped unread.
+    Setting::Handle<QString>(OLD_BLENDER_SETTING).remove();
     const QString chosenBlender = Setting::Handle<QString>(BLENDER_SETTING).get();
     if (!chosenBlender.isEmpty()) {
         _blender->setBlender(chosenBlender);

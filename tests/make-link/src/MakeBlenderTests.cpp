@@ -9,6 +9,10 @@
 
 #include "MakeBlenderTests.h"
 
+#ifdef Q_OS_WIN
+#include <MakeBox.h>
+#endif
+
 #include <cerrno>
 #include <cstdio>
 
@@ -841,6 +845,65 @@ void MakeBlenderTests::testSelfTestAnswers() {
     QVERIFY(!offered);
     QVERIFY(!why.isEmpty());
     QCOMPARE(static_cast<int>(blender.selfTestState()), static_cast<int>(MakeBlender::SelfTest::Failed));
+#endif
+}
+
+void MakeBlenderTests::testBlenderIdentityRules() {
+    // the program: its name and its product name, both exact (the signature is the Windows check's, live below)
+    QString why;
+    QVERIFY(MakeBlender::looksLikeBlender("blender.exe", "Blender", why));
+    QVERIFY(MakeBlender::looksLikeBlender("Blender.EXE", " Blender ", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("onedrive.exe", "Blender", why));
+    QVERIFY(why.contains("blender.exe"));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender.exe", "OneDrive", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender.exe", "Blender Launcher", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender.exe", "", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender", "Blender", why));
+
+    // the folder: Blender's own holds its "<major>.<minor>" folder, is no root, and is none of the person's known
+    // folders nor a parent of one; a blender.exe loose in a known folder is refused
+    QTemporaryDir dir;
+    const QString unpacked = dir.filePath("Downloads/blender-5.2.2-windows-x64");
+    const QString downloads = dir.filePath("Downloads");
+    QVERIFY(QDir().mkpath(unpacked + "/5.2"));
+    QVERIFY(QDir().mkpath(dir.filePath("other")));
+    const QStringList known { downloads, dir.filePath("Desktop"), dir.path() };
+    QVERIFY2(MakeBlender::isBlendersOwnFolder(unpacked, "5.2.2", known, why), qPrintable(why));
+    QVERIFY(MakeBlender::isBlendersOwnFolder(unpacked + "/", "5.2.9", known, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(unpacked, "5.3.0", known, why));   // no 5.3 folder in it
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(dir.filePath("other"), "5.2.2", known, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(downloads, "5.2.2", known, why));   // the known folder itself
+    QVERIFY(why.contains("Blender's own"));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(dir.path(), "5.2.2", known, why));  // a parent of known folders
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QDir::rootPath(), "5.2.2", QStringList(), why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QString(), "5.2.2", QStringList(), why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(unpacked, "5", known, why));
+    // case and separators don't matter for the known folders
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(downloads.toUpper(), "5.2.2", QStringList { downloads }, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(downloads, "5.2.2", QStringList { QDir::toNativeSeparators(downloads) + "/" }, why));
+}
+
+void MakeBlenderTests::testBlenderIsBlenderLive() {
+#ifdef Q_OS_WIN
+    // the installed Blender passes the whole check (name, product name, signature by BLENDER_SIGNER); a program of
+    // another maker named blender.exe doesn't; the person's known folders are read
+    QString why;
+    const QString found = MakeBlender::findBlender(why);
+    if (found.isEmpty()) {
+        QSKIP(qPrintable("no Blender here: " + why));
+    }
+    QVERIFY2(MakeBox::isBlender(found, why), qPrintable(why));
+    QTemporaryDir dir;
+    const QString impostor = dir.filePath("blender.exe");
+    QVERIFY(QFile::copy(qEnvironmentVariable("SystemRoot") + "/System32/notepad.exe", impostor));
+    QVERIFY(!MakeBox::isBlender(impostor, why));
+    QVERIFY(!why.isEmpty());
+    QVERIFY(!MakeBox::isBlender(dir.filePath("missing.exe"), why));
+    const QStringList known = MakeBox::knownFolders();
+    QVERIFY(known.size() >= 5);
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QDir::homePath(), "5.2.2", known, why));
+#else
+    QSKIP("the signature and known-folder checks are Windows' own");
 #endif
 }
 

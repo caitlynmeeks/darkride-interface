@@ -22,8 +22,14 @@
 #include <windows.h>
 #include <aclapi.h>
 #include <sddl.h>
+#include <shlobj.h>
 #include <userenv.h>
+#include <wincrypt.h>
+#include <softpub.h>
+#include <wintrust.h>
 
+#include <cwchar>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -31,6 +37,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QLoggingCategory>
 
+#include "MakeBlender.h"
 #include "MakeFirewall.h"
 
 Q_DECLARE_LOGGING_CATEGORY(makelink)
@@ -147,8 +154,13 @@ bool grantObject(HANDLE object, PSID sid, DWORD access) {
     return ok;
 }
 
-// the run's own window station and desktop; `name` is "<window station>\<desktop>" for the start, empty on failure
+// the run's own window station and desktop; `name` is "<window station>\<desktop>" for the start, empty on failure.
+// The switch of the process's window station is process-wide state, and the self-test's thread and a make can
+// overlap, so one at a time
+std::mutex desktopSwitch;
+
 bool makeOwnDesktop(MakeBox::Run& run, std::wstring& name) {
+    std::lock_guard<std::mutex> oneAtATime(desktopSwitch);
     HWINSTA original = GetProcessWindowStation();
     run.station = CreateWindowStationW(nullptr, 0, WINSTA_ALL_ACCESS | READ_CONTROL | WRITE_DAC, nullptr);
     if (!run.station || !SetProcessWindowStation(run.station)) {
@@ -260,6 +272,117 @@ std::wstring quoted(const QString& argument) {
     return out + L"\"";
 }
 
+// the version resource's ProductName, through its translation table (the first language that has one)
+QString productName(const std::wstring& file) {
+    DWORD handle = 0;
+    const DWORD size = GetFileVersionInfoSizeW(file.c_str(), &handle);
+    if (size == 0) {
+        return QString();
+    }
+    std::vector<char> data(size);
+    if (!GetFileVersionInfoW(file.c_str(), 0, size, data.data())) {
+        return QString();
+    }
+    struct Translation {
+        WORD language;
+        WORD codePage;
+    };
+    Translation* translations = nullptr;
+    UINT length = 0;
+    if (!VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<LPVOID*>(&translations), &length) ||
+        !translations) {
+        return QString();
+    }
+    for (UINT i = 0; i < length / sizeof(Translation); ++i) {
+        wchar_t key[64] {};
+        swprintf_s(key, L"\\StringFileInfo\\%04x%04x\\ProductName", translations[i].language, translations[i].codePage);
+        wchar_t* value = nullptr;
+        UINT valueLength = 0;
+        if (VerQueryValueW(data.data(), key, reinterpret_cast<LPVOID*>(&value), &valueLength) && value && valueLength > 0) {
+            const QString name = QString::fromWCharArray(value).trimmed();
+            if (!name.isEmpty()) {
+                return name;
+            }
+        }
+    }
+    return QString();
+}
+
+// the file's Authenticode signature verified (no UI, no revocation check, nothing fetched) and its signer's subject
+// name, as its simple display name (the common name); false with `why` when it doesn't verify
+bool signerOf(const std::wstring& file, QString& signer, QString& why) {
+    WINTRUST_FILE_INFO fileInfo {};
+    fileInfo.cbStruct = sizeof fileInfo;
+    fileInfo.pcwszFilePath = file.c_str();
+    WINTRUST_DATA trust {};
+    trust.cbStruct = sizeof trust;
+    trust.dwUIChoice = WTD_UI_NONE;
+    trust.fdwRevocationChecks = WTD_REVOKE_NONE;
+    trust.dwUnionChoice = WTD_CHOICE_FILE;
+    trust.pFile = &fileInfo;
+    trust.dwStateAction = WTD_STATEACTION_VERIFY;
+    trust.dwProvFlags = WTD_REVOCATION_CHECK_NONE | WTD_CACHE_ONLY_URL_RETRIEVAL;
+    GUID action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+    HWND noWindow = static_cast<HWND>(INVALID_HANDLE_VALUE);
+    const LONG status = WinVerifyTrust(noWindow, &action, &trust);
+    bool ok = false;
+    if (status == ERROR_SUCCESS) {
+        CRYPT_PROVIDER_DATA* data = WTHelperProvDataFromStateData(trust.hWVTStateData);
+        CRYPT_PROVIDER_SGNR* chain = data ? WTHelperGetProvSignerFromChain(data, 0, FALSE, 0) : nullptr;
+        CRYPT_PROVIDER_CERT* cert = chain ? WTHelperGetProvCertFromChain(chain, 0) : nullptr;
+        if (cert && cert->pCert) {
+            wchar_t subject[512] {};
+            if (CertGetNameStringW(cert->pCert, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nullptr, subject, 512) > 1) {
+                signer = QString::fromWCharArray(subject);
+                ok = true;
+            }
+        }
+        if (!ok) {
+            why = "That program's signer couldn't be read.";
+        }
+    } else {
+        why = QString("That program isn't signed, or its signature doesn't verify (0x%1).")
+                  .arg(static_cast<quint32>(status), 8, 16, QChar('0'));
+    }
+    trust.dwStateAction = WTD_STATEACTION_CLOSE;
+    WinVerifyTrust(noWindow, &action, &trust);
+    return ok;
+}
+
+// the box's token and job, read from the child while it is still suspended: an AppContainer token for Make's SID,
+// and in the job; nothing of Blender runs before this holds
+bool provenBoxed(MakeBox::Run* run, QString& why) {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(run->process.hProcess, TOKEN_QUERY, &token)) {
+        why = "its token couldn't be read";
+        return false;
+    }
+    DWORD isContainer = 0;
+    DWORD length = 0;
+    bool ok = GetTokenInformation(token, TokenIsAppContainer, &isContainer, sizeof isContainer, &length) &&
+              isContainer == 1;
+    if (!ok) {
+        why = "its token isn't an AppContainer token";
+    } else {
+        std::vector<char> buffer(sizeof(TOKEN_APPCONTAINER_INFORMATION) + SECURITY_MAX_SID_SIZE + 64);
+        auto info = reinterpret_cast<TOKEN_APPCONTAINER_INFORMATION*>(buffer.data());
+        ok = GetTokenInformation(token, TokenAppContainerSid, buffer.data(), static_cast<DWORD>(buffer.size()), &length) &&
+             info->TokenAppContainer && EqualSid(info->TokenAppContainer, run->sid);
+        if (!ok) {
+            why = "its token's container isn't Make's";
+        }
+    }
+    CloseHandle(token);
+    if (ok) {
+        BOOL inJob = FALSE;
+        ok = IsProcessInJob(run->process.hProcess, run->job, &inJob) && inJob;
+        if (!ok) {
+            why = "it isn't in the job";
+        }
+    }
+    return ok;
+}
+
 }  // namespace
 
 namespace MakeBox {
@@ -345,16 +468,30 @@ Run* start(const Start& given, QString& why) {
     DWORD childPolicy = PROCESS_CREATION_CHILD_PROCESS_RESTRICTED;
     HANDLE jobs[1] = { run->job };
     HANDLE handles[1] = { run->output };
-    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &capabilities,
-                              sizeof capabilities, nullptr, nullptr);
-    if (given.lpac) {
-        UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY, &optOut,
-                                  sizeof optOut, nullptr, nullptr);
+    // every attribute must take, or Blender would start as the person, outside the job or able to start programs
+    struct Attribute {
+        DWORD_PTR id;
+        PVOID value;
+        SIZE_T size;
+        const char* name;
+        bool wanted;
+    };
+    const Attribute wantedAttributes[] = {
+        { PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &capabilities, sizeof capabilities, "the container", true },
+        { PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY, &optOut, sizeof optOut, "the stricter form", given.lpac },
+        { PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, &childPolicy, sizeof childPolicy, "no child processes", true },
+        { PROC_THREAD_ATTRIBUTE_JOB_LIST, jobs, sizeof jobs, "the job", true },
+        { PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles, sizeof handles, "the one output handle", true },
+    };
+    for (const Attribute& attribute : wantedAttributes) {
+        if (attribute.wanted &&
+            !UpdateProcThreadAttribute(attributes, 0, attribute.id, attribute.value, attribute.size, nullptr, nullptr)) {
+            why = QString("the box's start couldn't be set up: %1 (error %2)").arg(attribute.name).arg(GetLastError());
+            DeleteProcThreadAttributeList(attributes);
+            end(run);
+            return nullptr;
+        }
     }
-    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, &childPolicy, sizeof childPolicy,
-                              nullptr, nullptr);
-    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, jobs, sizeof jobs, nullptr, nullptr);
-    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles, sizeof handles, nullptr, nullptr);
 
     std::wstring command = quoted(QDir::toNativeSeparators(given.blender));
     for (const QString& argument : given.arguments) {
@@ -381,6 +518,15 @@ Run* start(const Start& given, QString& why) {
     DeleteProcThreadAttributeList(attributes);
     if (!started) {
         why = QString("Blender didn't start in the box (error %1)").arg(error);
+        end(run);
+        return nullptr;
+    }
+    // the box proven on the suspended child, before its first instruction: its token is an AppContainer token for
+    // Make's SID and it is in the job; otherwise it never runs
+    QString unproven;
+    if (!provenBoxed(run, unproven)) {
+        TerminateProcess(run->process.hProcess, 1);
+        why = "the box wasn't proven before Blender's first instruction: " + unproven;
         end(run);
         return nullptr;
     }
@@ -561,6 +707,47 @@ QString fileVersion(const QString& path) {
         return QString();
     }
     return QString("%1.%2.%3").arg(major).arg(minor).arg(patch);
+}
+
+// the signer certificate's subject of Blender's Windows builds, its common name as CertGetNameStringW gives it with
+// CERT_NAME_SIMPLE_DISPLAY_TYPE, matched whole and case-sensitively (a near name never passes). windowz confirms or
+// corrects this value from a real build (the file's Digital Signatures tab, or signtool verify /v) before the branch
+// builds; if Blender's builds turn out unsigned, security decides the fallback, and the name and ProductName rules
+// stay regardless.
+const char* const BLENDER_SIGNER = "Stichting Blender Foundation";
+
+bool isBlender(const QString& exe, QString& why) {
+    const QFileInfo info(exe);
+    if (!info.isFile()) {
+        why = "That isn't a program file.";
+        return false;
+    }
+    const std::wstring file = nativePath(info.absoluteFilePath());
+    if (!MakeBlender::looksLikeBlender(info.fileName(), productName(file), why)) {
+        return false;
+    }
+    QString signer;
+    if (!signerOf(file, signer, why)) {
+        return false;
+    }
+    if (signer != QString::fromLatin1(BLENDER_SIGNER)) {
+        why = "That program isn't signed by the Blender Foundation.";
+        return false;
+    }
+    return true;
+}
+
+QStringList knownFolders() {
+    QStringList folders;
+    for (const KNOWNFOLDERID* id : { &FOLDERID_Profile, &FOLDERID_Downloads, &FOLDERID_Desktop, &FOLDERID_Documents,
+                                     &FOLDERID_LocalAppData, &FOLDERID_RoamingAppData, &FOLDERID_Public }) {
+        PWSTR path = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(*id, KF_FLAG_DEFAULT, nullptr, &path)) && path) {
+            folders.append(QDir::cleanPath(QDir::fromNativeSeparators(QString::fromWCharArray(path))));
+        }
+        CoTaskMemFree(path);
+    }
+    return folders;
 }
 
 }  // namespace MakeBox

@@ -266,6 +266,45 @@ bool MakeBlender::readSelfTestResult(const QByteArray& text, bool& held) {
     return false;
 }
 
+bool MakeBlender::looksLikeBlender(const QString& fileName, const QString& productName, QString& why) {
+    if (QString::compare(fileName, "blender.exe", Qt::CaseInsensitive) != 0) {
+        why = "That program isn't blender.exe.";
+        return false;
+    }
+    if (productName.trimmed() != "Blender") {
+        why = "That program doesn't say it is Blender.";
+        return false;
+    }
+    return true;
+}
+
+bool MakeBlender::isBlendersOwnFolder(const QString& folder, const QString& version, const QStringList& forbidden,
+                                      QString& why) {
+    static const QString NOT_OWN = "That folder isn't Blender's own.";
+    const QString own = QDir::cleanPath(QDir::fromNativeSeparators(folder));
+    if (own.isEmpty() || QDir(own).isRoot()) {
+        why = NOT_OWN;
+        return false;
+    }
+    for (const QString& known : forbidden) {
+        const QString other = QDir::cleanPath(QDir::fromNativeSeparators(known));
+        if (other.isEmpty()) {
+            continue;
+        }
+        // the folder itself, or a parent of it: a grant there would open the known folder to the box
+        if (QString::compare(own, other, Qt::CaseInsensitive) == 0 || other.startsWith(own + "/", Qt::CaseInsensitive)) {
+            why = NOT_OWN;
+            return false;
+        }
+    }
+    const QStringList parts = version.split('.');
+    if (parts.size() < 2 || !QFileInfo(own + "/" + parts.at(0) + "." + parts.at(1)).isDir()) {
+        why = NOT_OWN;
+        return false;
+    }
+    return true;
+}
+
 bool MakeBlender::available(QString& why) const {
 #if defined(Q_OS_WIN)
     // Windows: a Blender found, and this Connect's self-test (selfTest) passed: the box's own connection out was
@@ -331,14 +370,25 @@ QString MakeBlender::findBlender(QString& why, const QString& app) {
     }
     QString best;
     QStringList bestVersion;
+    const QStringList known = MakeBox::knownFolders();
     for (const QString& candidate : candidates) {
         if (!QFileInfo(candidate).isFile()) {
+            continue;
+        }
+        // Blender by name, product name and signature, in its own folder: nothing else is ever opened to the box
+        QString reason;
+        if (!MakeBox::isBlender(candidate, reason)) {
+            why = reason;
             continue;
         }
         const QString version = blenderVersion(candidate);
         if (!versionIsEnough(version)) {
             why = QString("Blender %1 is older than Make needs (%2.%3 or newer)")
                       .arg(version.isEmpty() ? QString("there") : version).arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+            continue;
+        }
+        if (!isBlendersOwnFolder(QFileInfo(candidate).absolutePath(), version, known, reason)) {
+            why = reason;
             continue;
         }
         const QStringList parts = version.split('.');
@@ -525,7 +575,14 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     boxed.cpuSeconds = _cpuLimitS;
     boxed.memoryBytes = MEMORY_LIMIT_BYTES;
     boxed.lpac = _lpac;
-    _box = MakeBox::start(boxed, why);
+    // Blender proven Blender, and its folder its own, before any folder is opened to the box
+    const bool fit = MakeBox::isBlender(_blender, why) &&
+                     (MakeBox::underProgramFiles(_blender) ||
+                      isBlendersOwnFolder(QFileInfo(_blender).absolutePath(), blenderVersion(_blender),
+                                          MakeBox::knownFolders(), why));
+    if (fit) {
+        _box = MakeBox::start(boxed, why);
+    }
     if (!_box) {
         for (QTimer* timer : { _limit, _memory }) {
             timer->deleteLater();
@@ -535,7 +592,7 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         QDir(_job).removeRecursively();
         _job.clear();
         made.code = MakeError::NOT_AVAILABLE_HERE;
-        made.message = "Make couldn't start Blender in its box: " + why;
+        made.message = fit ? "Make couldn't start Blender in its box: " + why : why;
         finish(made);
         return;
     }
@@ -840,6 +897,15 @@ ProbeOutcome runSelfTest(const QString& blender, const QString& job, bool lpacFi
     }
     if (MakeBox::connectOnce(address, SELF_TEST_PORT, SELF_TEST_CONTROL_MS) != MakeBox::Reach::Connected) {
         outcome.detail = "the control couldn't reach this computer's own address";
+        return outcome;
+    }
+    // Blender proven Blender, and its folder its own, before the probe opens any folder to the box
+    QString reason;
+    if (!MakeBox::isBlender(blender, reason) ||
+        (!MakeBox::underProgramFiles(blender) &&
+         !MakeBlender::isBlendersOwnFolder(QFileInfo(blender).absolutePath(), MakeBlender::blenderVersion(blender),
+                                           MakeBox::knownFolders(), reason))) {
+        outcome.detail = "Blender's program or folder was refused: " + reason;
         return outcome;
     }
     const QString fixed = job + "/fixed";
