@@ -438,8 +438,7 @@ int streamCheckSize() {
 const int STREAM_HEADER_GROWTH = 20;
 
 // How far after a refused too-big edit its sender's copy is put back (sendBackRefusedTooBigEdit): a margin over the
-// sender's clock-offset estimate. For that long the entity's later edits keep this time, and viewers whose view
-// moves get it again each pass until then.
+// sender's clock-offset estimate. For that long the entity's later edits keep this time.
 const quint64 REFUSED_TOO_BIG_LEAD = 100 * USECS_PER_MSEC;
 
 // One warning per entity and property for the server's life, whoever sends it, and at most this many in all
@@ -487,9 +486,8 @@ std::atomic<uint64_t> EntityTree::_largestStampLeadUsec { 0 };
 std::atomic<uint64_t> EntityTree::_sendBacksSkipped { 0 };
 
 namespace {
-// At most this many send-backs a second to one sender, and this many at once: each one sends the entity again to
-// every viewer near it, so beyond the budget a refused edit is refused without one (only that sender's own copy
-// stays as it made it).
+// A per-sender budget of send-backs: at most this many a second to one sender, and this many at once. Beyond it a
+// refused edit is still refused, without a send-back.
 const float SEND_BACKS_PER_SECOND = 5.0f;
 const float SEND_BACK_BURST = 10.0f;
 struct SendBackBudget {
@@ -533,9 +531,8 @@ bool takeSendBack(const QUuid& sender, quint64 now) {
 // A refused edit is taken back on its sender's screen too: the client shows its own edit at once, and takes the server's
 // copy only if it was edited later. So the entity goes out again (all of it, as ever), last edited after the refused
 // edit. Physics updates aren't sent back: they come many times a second, and are refused as before.
-//   - The new time is counted from the refused edit's time but never from later than now: a sender's clock (or a
-//     time it wrote) ahead of this server's would otherwise put the entity's time ahead too, and for as long as it
-//     stays ahead the stream sends the entity again to every viewer whose view moves, every pass.
+//   - The new time is counted from the refused edit's time but never from later than now: it is never ahead of
+//     this server's clock.
 //   - The entity's element and the elements above it are marked changed, as the simulation does when it changes an
 //     entity itself (SimpleEntitySimulation): a viewer whose view hasn't moved rescans only changed elements, so with
 //     the time alone a sender standing still got its copy back only if something else near it was edited later.
@@ -1930,9 +1927,8 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
             }
 
             endDecode = usecTimestampNow();
-            // a time ahead of this server's clock is taken as now, from every sender: the stream sends an entity again
-            // whenever its time is later than the last send, so a time ahead kept it going out to moving viewers
-            // until then, and survived a save. No honest edit is stamped ahead by more than its clock-offset error.
+            // a time is never ahead of this server's clock: one ahead (a sender's clock-offset error) is taken as
+            // now, from every sender
             if (properties.getLastEdited() > endDecode) {
                 const uint64_t lead = properties.getLastEdited() - endDecode;
                 _editsStampedAhead++;
@@ -1954,10 +1950,10 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                 }
             }
 
-            // A property too big for one stream packet would reach nobody but its sender and would hold up the
-            // stream of everyone who should see it. An add or an edit carrying one is refused; a refused edit is sent
-            // back, so the sender's client drops what it tried, as for the refusals below. Only an edit at least
-            // streamCheckSize() long can carry one, so nothing shorter (a vehicle's motion, say) is measured.
+            // A property too big for one stream packet could never be streamed to anyone else. An add or an edit
+            // carrying one is refused; a refused edit is sent back, so the sender's client drops what it tried, as
+            // for the refusals below. Only an edit at least streamCheckSize() long can carry one, so nothing shorter
+            // (a vehicle's motion, say) is measured.
             // Only for a sender whose add or edit would go through: anyone else's is refused (an add) or kept to
             // simulation properties (an edit) further on, so it needn't cost a stand-in, a warning slot or a send-back.
             // As the add's rights check below, and updateEntity's for an edit.
