@@ -28,6 +28,12 @@
 //                            On a Windows with the firewall's notifications on, opening it shows the firewall's
 //                            "Allow access?" alert (a window): pass it only where that can't happen, or with the
 //                            person's OK for that alert
+//  The installer proof kit (installer-kit.ps1 beside this file) runs the box in Make's real profile, where the
+//  installer's firewall rules apply, and makes and deletes that profile as Make does:
+//    --profile Darkride.MakeBlender  the box in Make's profile (default: the test's own Darkride.MakeBoxTest)
+//    --keep-profile                  leave the profile for the kit's own delete step
+//    make-box-test.exe --profile-create | --profile-delete   Make's profile alone (create also says whether its SID
+//                                    is the one the installer's rules name)
 //
 //  Copyright 2026 Darkride.
 //
@@ -60,7 +66,18 @@ namespace fs = std::filesystem;
 
 namespace {
 
-const wchar_t* CONTAINER = L"Darkride.MakeBoxTest";
+// the box's AppContainer profile: the test's own throwaway one, or with --profile Darkride.MakeBlender Make's real one
+// (the installer proof kit: the installer's firewall rules name that profile's package SID, so only a box in it shows
+// whether they hold). No other name is taken.
+const wchar_t* TEST_CONTAINER = L"Darkride.MakeBoxTest";
+const wchar_t* MAKE_CONTAINER = L"Darkride.MakeBlender";
+// the package SID the installer's two rules name (release, 11-07: windowz's derivation of "Darkride.MakeBlender")
+const wchar_t* RULE_SID = L"S-1-15-2-579646438-1863717342-1691229924-821914009-3625600486-3308443927-3175962496";
+std::wstring boxProfile = TEST_CONTAINER;
+
+bool knownContainer(const std::wstring& name) {
+    return name == TEST_CONTAINER || name == MAKE_CONTAINER;
+}
 const wchar_t* CREDENTIAL = L"Darkride Make box test - delete me";
 const DWORD BLENDER_WAIT_MS = 8 * 60 * 1000;
 
@@ -86,14 +103,47 @@ std::string jsonString(const std::string& s) {
 }
 
 // the container: made once, its SID; removed at the end
+HRESULT createContainer(PSID* sid) {
+    const bool make = boxProfile == MAKE_CONTAINER;
+    // Make's own names for its profile (scripting to release, 11-07)
+    return CreateAppContainerProfile(boxProfile.c_str(), make ? L"Darkride Make (Blender)" : L"Darkride Make box test",
+                                     make ? L"Darkride Make's Blender box" : L"Darkride Make box test (delete me)", nullptr,
+                                     0, sid);
+}
+
 PSID containerSid() {
     PSID sid = nullptr;
-    HRESULT made = CreateAppContainerProfile(CONTAINER, L"Darkride Make box test", L"Darkride Make box test (delete me)",
-                                             nullptr, 0, &sid);
+    HRESULT made = createContainer(&sid);
     if (made == HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)) {
-        made = DeriveAppContainerSidFromAppContainerName(CONTAINER, &sid);
+        made = DeriveAppContainerSidFromAppContainerName(boxProfile.c_str(), &sid);
     }
     return SUCCEEDED(made) ? sid : nullptr;
+}
+
+// the installer proof kit's steps 2 and 3: Make's profile made, then deleted, as Make does (no admin); the kit runs the
+// installer's own rule check after each. Prints the HRESULT, and on create whether the derived SID is the rules' one
+int profileStep(bool create) {
+    boxProfile = MAKE_CONTAINER;
+    if (!create) {
+        const HRESULT deleted = DeleteAppContainerProfile(boxProfile.c_str());
+        std::cout << "profile deleted: 0x" << std::hex << static_cast<unsigned long>(deleted) << std::dec << "\n";
+        return SUCCEEDED(deleted) ? 0 : 3;
+    }
+    PSID sid = nullptr;
+    const HRESULT made = createContainer(&sid);
+    std::cout << "profile created: 0x" << std::hex << static_cast<unsigned long>(made) << std::dec << "\n";
+    if (made == HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)) {
+        return 1;  // the kit wants it fresh
+    }
+    if (FAILED(made)) {
+        return 3;
+    }
+    PSID rule = nullptr;
+    const bool same = ConvertStringSidToSidW(RULE_SID, &rule) && EqualSid(sid, rule);
+    std::cout << "its SID is the installer's rules' SID: " << (same ? "yes" : "NO") << "\n";
+    LocalFree(rule);
+    FreeSid(sid);
+    return same ? 0 : 5;
 }
 
 bool grant(const fs::path& path, PSID sid, DWORD access) {
@@ -348,6 +398,7 @@ struct Options {
     int macPort = 0;
     bool systemPort = false;   // --system-port
     bool lanListener = false;  // --lan-listener
+    bool keepProfile = false;  // --keep-profile: the profile stays for the kit's own delete step
 };
 
 bool parseOptions(int argc, wchar_t** argv, Options& options) {
@@ -357,6 +408,13 @@ bool parseOptions(int argc, wchar_t** argv, Options& options) {
             options.systemPort = true;
         } else if (arg == L"--lan-listener") {
             options.lanListener = true;
+        } else if (arg == L"--keep-profile") {
+            options.keepProfile = true;
+        } else if (arg == L"--profile" && i + 1 < argc) {
+            boxProfile = argv[++i];
+            if (!knownContainer(boxProfile)) {
+                return false;
+            }
         } else if (arg == L"--mac" && i + 1 < argc) {
             const std::string value = narrow(argv[++i]);
             const size_t colon = value.find(':');
@@ -584,17 +642,15 @@ int runParent(const fs::path& blender, const fs::path& probe, const fs::path& jo
 
 int wmain(int argc, wchar_t** argv) {
     const fs::path self = argv[0];
-    if (argc == 9 && std::wstring(argv[1]) == L"--parent") {
+    if (argc == 10 && std::wstring(argv[1]) == L"--parent") {
+        boxProfile = argv[9];
+        if (!knownContainer(boxProfile)) {
+            return 2;
+        }
         return runParent(argv[2], argv[3], argv[4], argv[5], std::wstring(argv[6]) == L"lpac",
                          static_cast<DWORD>(std::wcstoul(argv[7], nullptr, 10)), std::wstring(argv[8]) == L"own");
     }
-    Options options;
-    if (argc < 3 || !parseOptions(argc, argv, options)) {
-        std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port]"
-                      L" [--lan-listener]\n";
-        return 2;
-    }
-    // run as the normal user only: an elevated run would test a different box
+    // run as the normal user only: an elevated run would test a different box (and Make never runs elevated)
     HANDLE self_token = nullptr;
     TOKEN_ELEVATION elevation {};
     DWORD elevationSize = 0;
@@ -605,6 +661,16 @@ int wmain(int argc, wchar_t** argv) {
     if (elevation.TokenIsElevated) {
         std::cerr << "run this as the normal user, not elevated\n";
         return 4;
+    }
+    if (argc == 2 && (std::wstring(argv[1]) == L"--profile-create" || std::wstring(argv[1]) == L"--profile-delete")) {
+        return profileStep(std::wstring(argv[1]) == L"--profile-create");
+    }
+    Options options;
+    if (argc < 3 || !parseOptions(argc, argv, options)) {
+        std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port]"
+                      L" [--lan-listener] [--profile Darkride.MakeBoxTest|Darkride.MakeBlender] [--keep-profile]\n"
+                      L"       make-box-test.exe --profile-create | --profile-delete   (Make's profile, the installer kit)\n";
+        return 2;
     }
     const fs::path blender = fs::absolute(argv[1]);
     const fs::path test = fs::absolute(argv[2]);
@@ -744,7 +810,7 @@ int wmain(int argc, wchar_t** argv) {
         std::wstring command = L"\"" + fs::absolute(self).wstring() + L"\" --parent \"" + blender.wstring() + L"\" \"" +
                                (scripts / L"probe.py").wstring() + L"\" \"" + job.wstring() + L"\" \"" + test.wstring() +
                                L"\" " + (lpacChosen ? L"lpac" : L"plain") + L" " + std::to_wstring(uiChosen) + L" " +
-                               (ownDesktopChosen ? L"own" : L"shared");
+                               (ownDesktopChosen ? L"own" : L"shared") + L" " + boxProfile;
         STARTUPINFOW startup { sizeof startup };
         PROCESS_INFORMATION parent {};
         if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &parent) &&
@@ -772,6 +838,7 @@ int wmain(int argc, wchar_t** argv) {
 
     std::ofstream out(test / L"results.json");
     out << "{\"form\": " << jsonString(form.empty() ? "none started" : form) << ", \"granted\": " << (granted ? "true" : "false")
+        << ", \"profile\": " << jsonString(narrow(boxProfile)) << ", \"profile_kept\": " << (options.keepProfile ? "true" : "false")
         << ", \"targets\": {\"mac\": " << (options.macPort ? "true" : "false") << ", \"system_port\": "
         << (options.systemPort ? "true" : "false") << ", \"lan_listener\": " << (options.lanListener ? "true" : "false")
         << "}, \"control_exit\": " << controlExit << ", \"control\": " << control
@@ -783,7 +850,9 @@ int wmain(int argc, wchar_t** argv) {
 
     fs::remove_all(job, ignored);
     fs::remove(test / L"written-from-the-box.txt", ignored);
-    DeleteAppContainerProfile(CONTAINER);
+    if (!options.keepProfile) {
+        DeleteAppContainerProfile(boxProfile.c_str());
+    }
     FreeSid(sid);
     WSACleanup();
     return form.empty() ? 1 : 0;
