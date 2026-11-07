@@ -7,7 +7,7 @@
 #  speaks to a running test client's Make through the darkride-mcp helper, as a Claude Code started with Make's chat
 #  line would. Prints one line per check or event and "CHANNEL KIT PASS" or "CHANNEL KIT FAIL n".
 #    python3 -I channel-kit.py <the test client's Make folder> [--mode check|chat|silent] [--line chat|plain|edited|none]
-#                              [--version 2.1.319] [--seconds 10]
+#                              [--version 2.1.319] [--seconds 10] [--log <the test client's log>]
 #  --mode check  (default) what a channel client must see: the initialize reply (the protocol held at 2025-11-25 when
 #                2026-07-28 is asked, "claude/channel" the only experimental capability, never the permission relay),
 #                the reply tool taking msg_id and the picture tool taking reference, a reply by msg_id shown, a
@@ -22,7 +22,8 @@
 #                the plain line ("off"); none (default) leaves the kit's own arguments ("unknown": allowed).
 #  --line edited Make's chat line plus one option its line check refuses (`--add-dir /tmp`, or the arguments in
 #                CHANNEL_KIT_EXTRA): the app drops the helper as it connects and the dock shows the refused words
-#                (C9, editor-ui's kit 6); the kit expects no answer to initialize and ends with PASS on that.
+#                (C9, editor-ui's kit 6); the kit expects no answer to initialize and, with --log <the test client's
+#                log>, Make's own refusal line written in this run; PASS needs both.
 #  --version     what the kit says as clientInfo.version (an old one proves the dock's "Update Claude Code" line).
 #  Kits 1 and 2 of the plan (the dock's Send makes one event; nothing else does) are editor-ui's dock kit, which
 #  reads MakeLink::channelEventCount(); this kit is the other end of them.
@@ -51,6 +52,8 @@ mode = option("--mode", "check")
 line = option("--line", "none")
 version = option("--version", "2.1.319")
 seconds = float(option("--seconds", "10"))
+log = option("--log", "")   # the test client's log, for --line edited: the pass needs Make's own refusal line in it
+log_start = os.path.getsize(log) if log and os.path.exists(log) else 0
 
 if line in ("chat", "plain", "edited") and not os.environ.get("CHANNEL_KIT_RERUN"):
     # become a process whose arguments are Make's line (argv[0] "claude" too): the app reads them from the system
@@ -59,7 +62,7 @@ if line in ("chat", "plain", "edited") and not os.environ.get("CHANNEL_KIT_RERUN
     # and -I's isolation comes from the environment instead (no PYTHONPATH or PYTHONHOME, no user site, safe path)
     env = dict(os.environ, CHANNEL_KIT_RERUN="1", CHANNEL_KIT_FOLDER=folder, CHANNEL_KIT_MODE=mode,
                CHANNEL_KIT_LINE=line, CHANNEL_KIT_VERSION=version, CHANNEL_KIT_SECONDS=str(seconds),
-               PYTHONSAFEPATH="1", PYTHONNOUSERSITE="1")
+               CHANNEL_KIT_LOG=log, PYTHONSAFEPATH="1", PYTHONNOUSERSITE="1")
     for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE"):
         env.pop(name, None)
     argv = ["claude", os.path.abspath(sys.argv[0]),
@@ -146,6 +149,23 @@ if line == "edited":
         taken = False
         detail = str(ended)[:200]
     check("the edited line was refused: the helper was dropped before any answer", not taken, detail)
+    # no answer alone would also pass on a link that's down (security 21:5x 11-07): with --log <the test client's
+    # log> the pass needs Make's own refusal line written in this run, and the dock's refused words are the dock
+    # kit's to read and print
+    if log:
+        refusal = ""
+        deadline = time.time() + 10
+        while not refusal and time.time() < deadline:
+            with open(log, "rb") as handle:
+                handle.seek(log_start)
+                for row in handle.read().decode("utf-8", "replace").splitlines():
+                    if "Make refused a Claude Code started with a different line" in row:
+                        refusal = row.strip()
+            if not refusal:
+                time.sleep(0.5)
+        check("the client log says Make refused the line", bool(refusal), refusal[:300] or "no such line within 10 s")
+    else:
+        say("no --log given: Make's refusal line and the dock's refused words are the dock kit's to show")
     say("PASS" if failures == 0 else "FAIL %d" % failures)
     try:
         helper.stdin.close()
