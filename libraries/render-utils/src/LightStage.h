@@ -105,6 +105,8 @@ public:
                                 float nearDepth = 1.0f, float farDepth = 1000.0f);
         void setKeylightCascadeFrustum(unsigned int cascadeIndex, const ViewFrustum& viewFrustum,
                                 float nearDepth = 1.0f, float farDepth = 1000.0f);
+        // the biases are METRES along the light (RenderShadowSetup::calculateBiases, 2026-11-07); the shader adds a
+        // fraction of the cascade map's depth range, so each write divides them by that cascade's current range
         void setKeylightCascadeBias(unsigned int cascadeIndex, float constantBias, float slopeBias);
         void setCascadeFrustum(unsigned int cascadeIndex, const ViewFrustum& shadowFrustum);
 
@@ -152,6 +154,8 @@ public:
         bool _stableCascades { true };
         bool _cacheCascades { true };
         int _cascadesDrawn { 0 };
+        glm::vec2 _biasMetres[SHADOW_CASCADE_MAX_COUNT];
+        void writeCascadeBias(unsigned int cascadeIndex);
 
         UniformBufferView _schemaBuffer = nullptr;
     };
