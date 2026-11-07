@@ -710,11 +710,10 @@ QString fileVersion(const QString& path) {
 }
 
 // the signer certificate's subject of Blender's Windows builds, its common name as CertGetNameStringW gives it with
-// CERT_NAME_SIMPLE_DISPLAY_TYPE, matched whole and case-sensitively (a near name never passes). windowz confirms or
-// corrects this value from a real build (the file's Digital Signatures tab, or signtool verify /v) before the branch
-// builds; if Blender's builds turn out unsigned, security decides the fallback, and the name and ProductName rules
-// stay regardless.
-const char* const BLENDER_SIGNER = "Stichting Blender Foundation";
+// CERT_NAME_SIMPLE_DISPLAY_TYPE, matched whole and case-sensitively (a near name never passes). Read from a real
+// Blender 5.2 blender.exe on the Windows lab laptop (11-07): the signature is valid and the subject is
+// "CN=Blender Foundation, O=Blender Foundation, L=Amsterdam, S=Noord-Holland, C=NL", so the name is exactly this.
+const char* const BLENDER_SIGNER = "Blender Foundation";
 
 bool isBlender(const QString& exe, QString& why) {
     const QFileInfo info(exe);
