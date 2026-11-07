@@ -9,7 +9,7 @@
 #  program's own throwaway Credential Manager entry by its exact name, and that no key is in its environment. Then it
 #  renders four views of a test model, on the GPU (EEVEE) and on the CPU (Cycles). It writes probe-results.json in the
 #  job folder: each check's refused/opened and an exception type only, never a path or a message (security, 11-07).
-#  Mode "runaway" only loops, for the kill-the-parent case.
+#  Mode "start" only says it started (the UI-limit ladder); mode "runaway" only loops, for the kill-the-parent case.
 #    blender --background --factory-startup --disable-autoexec -noaudio --python probe.py --
 #            <job folder> <probe|runaway> <profile folder> <test folder>
 #
@@ -21,6 +21,9 @@
 import ctypes, json, os, socket, subprocess, sys, time
 
 job, mode, profile, outside = sys.argv[sys.argv.index("--") + 1:][:4]
+if mode == "start":  # the start ladder: only that Blender got this far
+    open(os.path.join(job, "started.txt"), "w").write("started")
+    raise SystemExit(0)
 if mode == "runaway":
     open(os.path.join(job, "runaway-started.txt"), "w").write(str(os.getpid()))
     while True:

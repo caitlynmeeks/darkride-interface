@@ -35,6 +35,7 @@
 #include <wincred.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -106,7 +107,14 @@ bool grant(const fs::path& path, PSID sid, DWORD access) {
     return ok;
 }
 
-HANDLE makeJob() {
+// the job's UI limits, strictest first: run 2 found Blender failing to start (0xC0000142, a DLL's start-up) under the
+// full set, so each run tries the ladder and keeps the strictest one Blender starts under
+const DWORD UI_FULL = JOB_OBJECT_UILIMIT_DESKTOP | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS | JOB_OBJECT_UILIMIT_EXITWINDOWS |
+                      JOB_OBJECT_UILIMIT_GLOBALATOMS | JOB_OBJECT_UILIMIT_HANDLES | JOB_OBJECT_UILIMIT_READCLIPBOARD |
+                      JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS | JOB_OBJECT_UILIMIT_WRITECLIPBOARD;
+const DWORD UI_NO_DESKTOP_HANDLES = UI_FULL & ~(JOB_OBJECT_UILIMIT_DESKTOP | JOB_OBJECT_UILIMIT_HANDLES);
+
+HANDLE makeJob(DWORD uiLimits) {
     HANDLE job = CreateJobObjectW(nullptr, nullptr);
     if (!job) {
         return nullptr;
@@ -119,9 +127,7 @@ HANDLE makeJob() {
     limits.BasicLimitInformation.PerProcessUserTimeLimit.QuadPart = 10LL * 60 * 10000000;  // 10 min, in 100 ns
     limits.ProcessMemoryLimit = static_cast<SIZE_T>(4ULL << 30);
     JOBOBJECT_BASIC_UI_RESTRICTIONS ui {};
-    ui.UIRestrictionsClass = JOB_OBJECT_UILIMIT_DESKTOP | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS | JOB_OBJECT_UILIMIT_EXITWINDOWS |
-                             JOB_OBJECT_UILIMIT_GLOBALATOMS | JOB_OBJECT_UILIMIT_HANDLES | JOB_OBJECT_UILIMIT_READCLIPBOARD |
-                             JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS | JOB_OBJECT_UILIMIT_WRITECLIPBOARD;
+    ui.UIRestrictionsClass = uiLimits;
     if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof limits) ||
         !SetInformationJobObject(job, JobObjectBasicUIRestrictions, &ui, sizeof ui)) {
         CloseHandle(job);
@@ -175,9 +181,9 @@ struct Started {
 // Blender boxed: an AppContainer token with no capabilities (LPAC: also out of "ALL APPLICATION PACKAGES"), child
 // processes restricted, in the job from its first instruction (started suspended, the job given at creation)
 Started startBoxed(const fs::path& blender, const fs::path& probe, const fs::path& job, const fs::path& test,
-                   const wchar_t* mode, PSID sid, bool lpac) {
+                   const wchar_t* mode, PSID sid, bool lpac, DWORD uiLimits) {
     Started started;
-    started.job = makeJob();
+    started.job = makeJob(uiLimits);
     if (!started.job) {
         started.error = GetLastError();
         return started;
@@ -317,9 +323,10 @@ bool waitForFile(const fs::path& path, int seconds) {
 }
 
 // the kill case's parent: a boxed Blender that loops, its job's pids written, then it waits to be ended
-int runParent(const fs::path& blender, const fs::path& probe, const fs::path& job, const fs::path& test, bool lpac) {
+int runParent(const fs::path& blender, const fs::path& probe, const fs::path& job, const fs::path& test, bool lpac,
+              DWORD uiLimits) {
     PSID sid = containerSid();
-    Started started = startBoxed(blender, probe, job, test, L"runaway", sid, lpac);
+    Started started = startBoxed(blender, probe, job, test, L"runaway", sid, lpac, uiLimits);
     if (started.error || !waitForFile(job / L"runaway-started.txt", 120)) {
         return 2;
     }
@@ -336,11 +343,9 @@ int runParent(const fs::path& blender, const fs::path& probe, const fs::path& jo
 
 int wmain(int argc, wchar_t** argv) {
     const fs::path self = argv[0];
-    if (argc == 6 && std::wstring(argv[1]) == L"--parent") {
-        return runParent(argv[2], argv[3], argv[4], argv[5], false);
-    }
-    if (argc == 7 && std::wstring(argv[1]) == L"--parent") {
-        return runParent(argv[2], argv[3], argv[4], argv[5], std::wstring(argv[6]) == L"lpac");
+    if (argc == 8 && std::wstring(argv[1]) == L"--parent") {
+        return runParent(argv[2], argv[3], argv[4], argv[5], std::wstring(argv[6]) == L"lpac",
+                         static_cast<DWORD>(std::wcstoul(argv[7], nullptr, 10)));
     }
     if (argc != 3) {
         std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder>\n";
@@ -385,31 +390,59 @@ int wmain(int argc, wchar_t** argv) {
     Targets targets = openTargets();
     std::ofstream(job / L"targets.json") << targets.json;
     std::string form;
+    bool lpacChosen = false;
+    DWORD uiChosen = 0;
     DWORD exitCode = 0;
     std::string results = "null";
+    std::ostringstream starts;
     {
         TestCredential credential;
-        for (bool lpac : { true, false }) {
-            fs::remove(job / L"probe-results.json", ignored);
-            Started started = startBoxed(blender, scripts / L"probe.py", job, test, L"probe", sid, lpac);
-            if (started.error) {
-                std::cout << (lpac ? "lpac" : "plain") << ": Blender didn't start, error " << started.error << "\n";
-                CloseHandle(started.job);
-                continue;
+        struct Step { bool lpac; DWORD ui; const char* name; };
+        const Step ladder[] = { { true, UI_FULL, "lpac, all UI limits" },
+                                { true, UI_NO_DESKTOP_HANDLES, "lpac, UI limits but desktop and handles" },
+                                { true, 0, "lpac, no UI limits" },
+                                { false, UI_FULL, "plain, all UI limits" },
+                                { false, UI_NO_DESKTOP_HANDLES, "plain, UI limits but desktop and handles" },
+                                { false, 0, "plain, no UI limits" } };
+        bool first = true;
+        for (const Step& step : ladder) {
+            fs::remove(job / L"started.txt", ignored);
+            Started started = startBoxed(blender, scripts / L"probe.py", job, test, L"start", sid, step.lpac, step.ui);
+            DWORD code = started.error;
+            if (!started.error) {
+                WaitForSingleObject(started.process.hProcess, 120000);
+                GetExitCodeProcess(started.process.hProcess, &code);
+                CloseHandle(started.process.hThread);
+                CloseHandle(started.process.hProcess);
             }
-            WaitForSingleObject(started.process.hProcess, BLENDER_WAIT_MS);
-            GetExitCodeProcess(started.process.hProcess, &exitCode);
-            CloseHandle(started.process.hThread);
-            CloseHandle(started.process.hProcess);
+            CloseHandle(started.job);
+            const bool ran = !started.error && fs::exists(job / L"started.txt");
+            starts << (first ? "" : ", ") << "{\"step\": " << jsonString(step.name) << ", \"started\": " << (ran ? "true" : "false")
+                   << ", \"" << (started.error ? "start_error" : "exit") << "\": " << code << "}";
+            first = false;
+            std::cout << step.name << ": " << (ran ? "started" : "didn't start") << " (" << code << ")\n";
+            if (ran && form.empty()) {
+                form = step.name;
+                lpacChosen = step.lpac;
+                uiChosen = step.ui;
+            }
+        }
+        if (!form.empty()) {
+            fs::remove(job / L"probe-results.json", ignored);
+            Started started = startBoxed(blender, scripts / L"probe.py", job, test, L"probe", sid, lpacChosen, uiChosen);
+            if (!started.error) {
+                WaitForSingleObject(started.process.hProcess, BLENDER_WAIT_MS);
+                GetExitCodeProcess(started.process.hProcess, &exitCode);
+                CloseHandle(started.process.hThread);
+                CloseHandle(started.process.hProcess);
+            }
             CloseHandle(started.job);  // kill-on-close: nothing of it outlives this
-            std::cout << (lpac ? "lpac" : "plain") << ": Blender exit " << exitCode << "\n";
+            std::cout << "probe under \"" << form << "\": Blender exit " << exitCode << "\n";
             std::ifstream file(job / L"probe-results.json");
             if (file.is_open()) {
                 std::stringstream read;
                 read << file.rdbuf();
                 results = read.str();
-                form = lpac ? "lpac" : "plain";
-                break;
             }
         }
     }  // the test credential is deleted here
@@ -422,7 +455,7 @@ int wmain(int argc, wchar_t** argv) {
         fs::remove(job / L"job-pids.txt", ignored);
         std::wstring command = L"\"" + fs::absolute(self).wstring() + L"\" --parent \"" + blender.wstring() + L"\" \"" +
                                (scripts / L"probe.py").wstring() + L"\" \"" + job.wstring() + L"\" \"" + test.wstring() +
-                               L"\" " + (form == "lpac" ? L"lpac" : L"plain");
+                               L"\" " + (lpacChosen ? L"lpac" : L"plain") + L" " + std::to_wstring(uiChosen);
         STARTUPINFOW startup { sizeof startup };
         PROCESS_INFORMATION parent {};
         if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &parent) &&
@@ -450,7 +483,7 @@ int wmain(int argc, wchar_t** argv) {
 
     std::ofstream out(test / L"results.json");
     out << "{\"form\": " << jsonString(form.empty() ? "none started" : form) << ", \"granted\": " << (granted ? "true" : "false")
-        << ", \"blender_exit\": " << exitCode << ", \"probe\": " << results << ", \"kill_the_parent_ends_blender\": " << killed
+        << ", \"starts\": [" << starts.str() << "], \"blender_exit\": " << exitCode << ", \"probe\": " << results << ", \"kill_the_parent_ends_blender\": " << killed
         << "}\n";
     out.close();
     std::cout << "results: " << narrow((test / L"results.json").wstring()) << "\n";
