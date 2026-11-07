@@ -44,7 +44,10 @@ private slots:
     void testBlenderIdentityRules();
     void testBlenderIsBlenderLive();
     void testLinuxParsesAndCaps();
+    void testLinuxOwnFolderRule();
+    void testLinuxBoxFilterRulesNamed();
     void testLinuxWatcherRefusesOtherLines();
+    void testLinuxBoxRefusesShortening();
 };
 
 #endif // hifi_MakeBlenderTests_h

@@ -136,6 +136,13 @@ public:
     /// in Downloads is refused by this.
     static bool isBlendersOwnFolder(const QString& folder, const QString& version, const QStringList& forbidden,
                                     QString& why);
+    /// Linux: the folders Make never opens to the box, nor any parent of them, for isBlendersOwnFolder: the system's
+    /// own (/, /usr, /usr/bin, /usr/local/bin, /bin, /opt) and the person's (the home folder, Downloads, Desktop,
+    /// Documents), canonical. The usual places themselves are in it, so only a Blender folder inside one passes.
+    static QStringList linuxForbiddenFolders();
+    /// Linux: what the watcher's seccomp filter does, one line per rule, the same lines the watcher prints with
+    /// --filter-rules (the tests compare them where the watcher is built, and read them everywhere).
+    static QStringList linuxBoxFilterRules();
     /// Linux: Blender's version from the unpacked tarball's folder ("blender-5.2.3-linux-x64" gives "5.2.3"), else from
     /// the "5.2" folder Blender keeps its own files in beside the program; empty when neither says.
     static QString versionFromTarball(const QString& folder);

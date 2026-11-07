@@ -20,6 +20,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QProcess>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QtEndian>
 #include <QtGui/QGuiApplication>
@@ -990,6 +991,8 @@ void MakeBlenderTests::testLinuxWatcherRefusesOtherLines() {
              { "60", pid, "--fixed", fixed, "--", "/usr/bin/touch", marker },
              { "60", pid, "--job", "work", "--fixed", fixed, "--", "/usr/bin/touch", marker },
              { "60", pid, "--job", work, "--fixed", fixed, "--env", "lower=1", "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--env", "PYTHONPATH=/tmp", "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--env", "MAKE_OUT", "--", "/usr/bin/touch", marker },
              { "60", pid, "--job", work, "--fixed", fixed, "--folder-cap", "0", "--", "/usr/bin/touch", marker },
              { "0", pid, "--job", work, "--fixed", fixed, "--", "/usr/bin/touch", marker } }) {
         const Watched watched = watch(line);
@@ -998,5 +1001,106 @@ void MakeBlenderTests::testLinuxWatcherRefusesOtherLines() {
         QVERIFY(!QFileInfo::exists(marker));
     }
     QVERIFY(!QFileInfo::exists(pid));
+#endif
+}
+
+void MakeBlenderTests::testLinuxOwnFolderRule() {
+    // the Linux forbidden list: the system's folders and the person's, and the own-folder rule against it (the folder
+    // itself and any parent of one refused, a Blender folder inside one allowed)
+    const QStringList forbidden = MakeBlender::linuxForbiddenFolders();
+    for (const QString& folder : { "/", "/usr", "/usr/bin", "/usr/local/bin", "/bin", "/opt" }) {
+        QVERIFY2(forbidden.contains(folder), qPrintable(folder));
+    }
+    QVERIFY(forbidden.contains(QDir::homePath()) || forbidden.contains(QFileInfo(QDir::homePath()).canonicalFilePath()));
+    QString why;
+    QVERIFY(!MakeBlender::isBlendersOwnFolder("/opt", "5.2.2", forbidden, why));           // the place itself
+    QVERIFY(!MakeBlender::isBlendersOwnFolder("/usr/bin", "5.2.2", forbidden, why));       // a distro Blender's folder
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QDir::homePath(), "5.2.2", forbidden, why)); // the home folder
+    const QString downloads = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (!downloads.isEmpty()) {
+        QVERIFY(!MakeBlender::isBlendersOwnFolder(QFileInfo(downloads).absolutePath(), "5.2.2", forbidden, why));  // a parent of Downloads
+    }
+    // a tarball unpacked inside a usual place: its own folder, with Blender's version folder in it, passes; the place
+    // it sits in (a stand-in for /opt, added to the list) does not
+    QTemporaryDir dir;
+    const QString place = QFileInfo(dir.path()).canonicalFilePath();
+    const QString unpacked = place + "/blender-5.2.3-linux-x64";
+    QVERIFY(QDir().mkpath(unpacked + "/5.2"));
+    QStringList withPlace = forbidden;
+    withPlace.append(place);
+    QVERIFY2(MakeBlender::isBlendersOwnFolder(unpacked, "5.2.3", withPlace, why), qPrintable(why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(place, "5.2.3", withPlace, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(unpacked, "5.3.0", withPlace, why));  // no 5.3 folder in it
+    QCOMPARE(MakeBlender::versionFromTarball(unpacked), QString("5.2.3"));
+}
+
+void MakeBlenderTests::testLinuxBoxFilterRulesNamed() {
+    // the three rules that close the shortening gap below Landlock ABI 3, named in the list the watcher prints too
+    const QStringList rules = MakeBlender::linuxBoxFilterRules();
+    QVERIFY(rules.filter(QRegularExpression("^truncate: EPERM")).size() == 1);
+    QVERIFY(rules.filter(QRegularExpression("^open, openat with O_TRUNC in a read-only mode: EPERM")).size() == 1);
+    QVERIFY(rules.filter(QRegularExpression("^openat2: ENOSYS")).size() == 1);
+    QVERIFY(rules.filter(QRegularExpression("^execve, execveat: the exec gate")).size() == 1);
+#ifdef Q_OS_LINUX
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    // the watcher's own list is the same, line for line
+    const Watched watched = watch({ "--filter-rules" });
+    QCOMPARE(watched.exit, 0);
+    QCOMPARE(QString::fromUtf8(watched.said).split('\n', Qt::SkipEmptyParts), rules);
+#endif
+}
+
+void MakeBlenderTests::testLinuxBoxRefusesShortening() {
+#ifndef Q_OS_LINUX
+    QSKIP("the Linux box");
+#else
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    if (!QFileInfo("/usr/bin/python3").isExecutable()) {
+        QSKIP("no python3 to run in the box");
+    }
+    // inside the box (python3 as the one program, its own start let through by the exec gate): a file in the work
+    // folder can't be shortened by path nor by a read-only O_TRUNC open, on any kernel; ftruncate on a write open
+    // still works (Blender's saves). The file outside the work folder can't even be opened (Landlock)
+    QTemporaryDir dir;
+    const QString work = dir.filePath("work");
+    const QString fixed = dir.filePath("fixed");
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(fixed));
+    const QString inside = work + "/inside.txt";
+    const QString outside = dir.filePath("outside.txt");
+    for (const QString& path : { inside, outside }) {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.write(QByteArray(100, 'x')) == 100);
+    }
+    const QString script =
+        QString("import os, sys\n"
+                "def attempt(label, call):\n"
+                "    try:\n"
+                "        call()\n"
+                "        print(label, 'DONE')\n"
+                "    except OSError as error:\n"
+                "        print(label, 'REFUSED', error.errno)\n"
+                "attempt('TRUNCATE_INSIDE', lambda: os.truncate(%1, 10))\n"
+                "attempt('TRUNCATE_OUTSIDE', lambda: os.truncate(%2, 10))\n"
+                "attempt('RDONLY_TRUNC_INSIDE', lambda: os.close(os.open(%1, os.O_RDONLY | os.O_TRUNC)))\n"
+                "def ftruncate_inside():\n"
+                "    fd = os.open(%1, os.O_WRONLY)\n"
+                "    os.ftruncate(fd, 50)\n"
+                "    os.close(fd)\n"
+                "attempt('FTRUNCATE_INSIDE', ftruncate_inside)\n")
+            .arg("'" + inside + "'", "'" + outside + "'");
+    const Watched watched = watch({ "60", dir.filePath("a.pid"), "--job", work, "--fixed", fixed, "--",
+                                    "/usr/bin/python3", "-I", "-c", script }, nullptr, 60000);
+    QVERIFY2(watched.exit == 0, qPrintable(QString::number(watched.exit) + "\n" + watched.said));
+    QVERIFY2(watched.said.contains("TRUNCATE_INSIDE REFUSED 1"), watched.said.constData());   // EPERM by the filter
+    QVERIFY2(watched.said.contains("TRUNCATE_OUTSIDE REFUSED"), watched.said.constData());
+    QVERIFY2(watched.said.contains("RDONLY_TRUNC_INSIDE REFUSED 1"), watched.said.constData());
+    QVERIFY2(watched.said.contains("FTRUNCATE_INSIDE DONE"), watched.said.constData());
+    QCOMPARE(QFileInfo(inside).size(), qint64(50));
+    QCOMPARE(QFileInfo(outside).size(), qint64(100));
 #endif
 }

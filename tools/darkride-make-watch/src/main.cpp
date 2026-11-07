@@ -50,7 +50,7 @@ int main(int, char**) {
 // runs 1 and 2 on Ubuntu 22.04 and 24.04, security's "no /proc" form):
 //
 //    darkride-make-watch <cap seconds> <pid file> --job <work folder> --fixed <fixed scripts folder>
-//                        [--env NAME=VALUE]... [--folder-cap <megabytes>] -- <blender> <its arguments>
+//                        [--env MAKE_NAME=VALUE]... [--folder-cap <megabytes>] -- <blender> <its arguments>
 //
 //  In the child: its own session (setsid) and a kill when this process dies (PR_SET_PDEATHSIG); /dev/null as standard
 //  input, this program's standard output and error (the app reads the log there); the work folder as its folder; the
@@ -62,7 +62,8 @@ int main(int, char**) {
 //  exec gate: every execve and execveat in the box comes to this program as a user notification, the child's own start
 //  of Blender is let through, every later one is answered EPERM, and with this program gone the kernel answers ENOSYS;
 //  then every other open file closed, and Blender started with an environment built from nothing plus the --env
-//  lines. /dev/dri is open to the box when there is a GPU (the driver's attack surface; accepted, security 11-07).
+//  lines (MAKE_ names only). Truncation by path is refused by the filter on every kernel, as Landlock governs it only
+//  from ABI 3. /dev/dri is open to the box when there is a GPU (the driver's attack surface; accepted, security 11-07).
 //
 //  The watcher side: the pid file as on macOS, then poll on its standard input (a line or its end), a signalfd for the
 //  ending signals and SIGCHLD, the exec gate's listener, the cap's clock, and every two seconds the work folder's size
@@ -163,8 +164,27 @@ uint64_t fsRights(int abi) {
 // system calls newer than some headers, x86_64 numbers
 constexpr long NR_PIDFD_SEND_SIGNAL = 424, NR_IO_URING_SETUP = 425, NR_IO_URING_ENTER = 426,
                NR_IO_URING_REGISTER = 427, NR_OPEN_TREE = 428, NR_MOVE_MOUNT = 429, NR_FSOPEN = 430, NR_FSCONFIG = 431,
-               NR_FSMOUNT = 432, NR_FSPICK = 433, NR_CLONE3 = 435, NR_CLOSE_RANGE = 436, NR_PIDFD_GETFD = 438,
-               NR_PROCESS_MADVISE = 440, NR_MOUNT_SETATTR = 442, NR_QUOTACTL_FD = 443;
+               NR_FSMOUNT = 432, NR_FSPICK = 433, NR_CLONE3 = 435, NR_CLOSE_RANGE = 436, NR_OPENAT2 = 437,
+               NR_PIDFD_GETFD = 438, NR_PROCESS_MADVISE = 440, NR_MOUNT_SETATTR = 442, NR_QUOTACTL_FD = 443;
+
+// what the filter does, one line per rule, printed by --filter-rules (the app's tests read it; MakeBlender keeps the
+// same lines for the tests that run elsewhere)
+const char* const FILTER_RULES[] = {
+    "execve, execveat: the exec gate (the child's own start of Blender passes, every later one EPERM)",
+    "truncate: EPERM (shortening a file by path; Landlock governs it only from ABI 3)",
+    "open, openat with O_TRUNC in a read-only mode: EPERM (shortening without a write open; Landlock from ABI 3)",
+    "openat2: ENOSYS (its flags are behind a pointer; the C library falls back to openat)",
+    "fork, vfork: EPERM; clone3: ENOSYS; clone with a namespace flag: EPERM (threads only)",
+    "socket, socketpair: EACCES (no sockets of any family)",
+    "kill, tkill, tgkill, rt_sigqueueinfo, rt_tgsigqueueinfo to another process: EPERM; pidfd_send_signal: EPERM",
+    "ioctl TIOCSTI, TIOCLINUX: EPERM (no typing into a terminal)",
+    "ptrace, process_vm_readv, process_vm_writev, kcmp, pidfd_getfd, process_madvise, io_uring, bpf, perf_event_open, "
+    "userfaultfd, unshare, setns, mount, umount2, pivot_root, chroot, open_tree, move_mount, fsopen, fsconfig, fsmount, "
+    "fspick, mount_setattr, add_key, request_key, keyctl, kexec_load, kexec_file_load, init_module, finit_module, "
+    "delete_module, acct, swapon, swapoff, reboot, quotactl, quotactl_fd, open_by_handle_at, name_to_handle_at, iopl, "
+    "ioperm, uselib, vhangup, syslog, fanotify_init: EPERM",
+    "x32 system calls: EPERM; another architecture: the process is killed",
+};
 
 int fail(const std::string& why) {
     std::fprintf(stderr, "darkride-make-watch: %s\n", why.c_str());
@@ -425,6 +445,25 @@ std::vector<sock_filter> seccompFilter(std::vector<size_t>& selfSlots) {
     // the exec gate: this program decides
     answer(__NR_execve, SECCOMP_RET_USER_NOTIF);
     answer(__NR_execveat, SECCOMP_RET_USER_NOTIF);
+    // shortening a file: Landlock's TRUNCATE right governs it only from ABI 3 (kernels from 6.2; Ubuntu 22.04's 5.15
+    // is below), so the filter covers what that right would, on every kernel (at ABI 3 and later nothing changes in
+    // effect): truncate by path refused; open and openat refused when their flags carry O_TRUNC in a read-only mode
+    // (a write mode's O_TRUNC stays: Landlock limits write opens to the work folder from ABI 1, and Blender's saves
+    // need it); openat2's flags are behind a pointer, so it answers ENOSYS and the C library falls back to openat.
+    // ftruncate stays: it needs a file the box opened for writing
+    answer(__NR_truncate, REFUSE);
+    const std::vector<sock_filter> readOnlyTruncate = {
+        BPF_STMT(BPF_ALU | BPF_AND | BPF_K, static_cast<uint32_t>(O_ACCMODE | O_TRUNC)),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<uint32_t>(O_TRUNC), 0, 1), BPF_STMT(BPF_RET | BPF_K, REFUSE),
+        BPF_STMT(BPF_RET | BPF_K, ALLOW) };
+    auto flagsThen = [&](int argument) {
+        std::vector<sock_filter> body { BPF_STMT(BPF_LD | BPF_W | BPF_ABS, argLow(argument)) };
+        body.insert(body.end(), readOnlyTruncate.begin(), readOnlyTruncate.end());
+        return body;
+    };
+    guarded(__NR_open, flagsThen(1));
+    guarded(__NR_openat, flagsThen(2));
+    answer(NR_OPENAT2, NOT_HERE);
     // no other process: threads only
     answer(__NR_fork, REFUSE);
     answer(__NR_vfork, REFUSE);
@@ -585,8 +624,11 @@ int receiveFd(int socket, int timeoutMs) {
     _exit(127);
 }
 
-// the work folder's size: what its files take on the disk, links not followed, a few levels deep
-long long folderBytes(const std::string& path, int depth) {
+// the work folder's size: what its files take on the disk, links not followed, 16 levels deep; a folder deeper
+// than that isn't walked and sets `tooDeep`, which counts as over the cap (what's below it isn't counted otherwise)
+const int FOLDER_WALK_DEPTH = 16;
+
+long long folderBytes(const std::string& path, int depth, bool& tooDeep) {
     long long total = 0;
     DIR* dir = opendir(path.c_str());
     if (!dir) {
@@ -603,8 +645,10 @@ long long folderBytes(const std::string& path, int depth) {
             continue;
         }
         if (S_ISDIR(info.st_mode)) {
-            if (depth < 16) {
-                total += folderBytes(child, depth + 1);
+            if (depth + 1 < FOLDER_WALK_DEPTH) {
+                total += folderBytes(child, depth + 1, tooDeep);
+            } else {
+                tooDeep = true;
             }
         } else if (S_ISREG(info.st_mode)) {
             total += static_cast<long long>(info.st_blocks) * 512;
@@ -623,9 +667,15 @@ long long nowMs() {
 }  // namespace
 
 int main(int argc, char** argv) {
-    // darkride-make-watch <cap> <pid file> --job <work> --fixed <fixed> [--env NAME=VALUE]... [--folder-cap <MB>] -- <blender> ...
+    // darkride-make-watch <cap> <pid file> --job <work> --fixed <fixed> [--env MAKE_NAME=VALUE]... [--folder-cap <MB>] -- <blender> ...
+    if (argc == 2 && std::strcmp(argv[1], "--filter-rules") == 0) {
+        for (const char* rule : FILTER_RULES) {
+            std::printf("%s\n", rule);
+        }
+        return 0;
+    }
     const char* usage = "usage: darkride-make-watch <cap seconds, 1-3600> <absolute pid file> --job <absolute work folder> "
-                        "--fixed <absolute fixed scripts folder> [--env NAME=VALUE]... [--folder-cap <megabytes>] -- "
+                        "--fixed <absolute fixed scripts folder> [--env MAKE_NAME=VALUE]... [--folder-cap <megabytes>] -- "
                         "<absolute blender> ...";
     int cap = 0;
     if (argc < 8 || !parseCap(argv[1], cap) || argv[2][0] != '/') {
@@ -646,9 +696,9 @@ int main(int argc, char** argv) {
             work = value;
         } else if (option == "--fixed" && value[0] == '/') {
             fixed = value;
-        } else if (option == "--env" && std::strchr(value, '=') != nullptr && std::strchr(value, '=') != value &&
+        } else if (option == "--env" && std::strncmp(value, "MAKE_", 5) == 0 && std::strchr(value, '=') != nullptr &&
                    std::strspn(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789") == static_cast<size_t>(std::strchr(value, '=') - value)) {
-            extraEnv.push_back(value);
+            extraEnv.push_back(value);  // Make's own lines only (MAKE_OUT, MAKE_KIND): no loader or Python variable ever
         } else if (option == "--folder-cap" && parseMegabytes(value, folderCap)) {
             // taken
         } else {
@@ -852,7 +902,11 @@ int main(int argc, char** argv) {
             nextFolderCheck = after + FOLDER_CHECK_MS;
         } else if (after >= nextFolderCheck) {
             nextFolderCheck = after + FOLDER_CHECK_MS;
-            if (folderBytes(p.work, 0) > folderCap) {
+            bool tooDeep = false;
+            const long long bytes = folderBytes(p.work, 0, tooDeep);
+            if (tooDeep) {
+                end("Blender's work folder grew deeper than the size check walks, which counts as over the cap; Blender was ended");
+            } else if (bytes > folderCap) {
                 end("Blender's work folder passed its size cap and Blender was ended");
             }
         }

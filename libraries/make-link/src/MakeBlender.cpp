@@ -22,6 +22,7 @@
 #include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
 #include <QtCore/QtEndian>
@@ -324,6 +325,46 @@ bool MakeBlender::isBlendersOwnFolder(const QString& folder, const QString& vers
     return true;
 }
 
+QStringList MakeBlender::linuxForbiddenFolders() {
+    // the system's own folders (a distro package's Blender lives in /usr/bin, and has no "5.2" folder beside it
+    // anyway) and the person's own, canonical; the usual places (/opt, the home folder, Downloads) are in it
+    // themselves, so only a Blender folder inside one passes, never the place itself or a parent of it
+    QStringList folders { "/", "/usr", "/usr/bin", "/usr/local/bin", "/bin", "/opt" };
+    for (QStandardPaths::StandardLocation location : { QStandardPaths::HomeLocation, QStandardPaths::DownloadLocation,
+                                                       QStandardPaths::DesktopLocation,
+                                                       QStandardPaths::DocumentsLocation }) {
+        const QString path = QStandardPaths::writableLocation(location);
+        if (!path.isEmpty()) {
+            const QString canonical = QFileInfo(path).canonicalFilePath();
+            folders.append(canonical.isEmpty() ? path : canonical);
+        }
+    }
+    folders.append(QDir::homePath());
+    folders.removeDuplicates();
+    return folders;
+}
+
+QStringList MakeBlender::linuxBoxFilterRules() {
+    // the same lines as the watcher's FILTER_RULES (tools/darkride-make-watch/src/main.cpp): change both together; the
+    // Linux test compares them against the watcher's --filter-rules output
+    return QStringList {
+        "execve, execveat: the exec gate (the child's own start of Blender passes, every later one EPERM)",
+        "truncate: EPERM (shortening a file by path; Landlock governs it only from ABI 3)",
+        "open, openat with O_TRUNC in a read-only mode: EPERM (shortening without a write open; Landlock from ABI 3)",
+        "openat2: ENOSYS (its flags are behind a pointer; the C library falls back to openat)",
+        "fork, vfork: EPERM; clone3: ENOSYS; clone with a namespace flag: EPERM (threads only)",
+        "socket, socketpair: EACCES (no sockets of any family)",
+        "kill, tkill, tgkill, rt_sigqueueinfo, rt_tgsigqueueinfo to another process: EPERM; pidfd_send_signal: EPERM",
+        "ioctl TIOCSTI, TIOCLINUX: EPERM (no typing into a terminal)",
+        "ptrace, process_vm_readv, process_vm_writev, kcmp, pidfd_getfd, process_madvise, io_uring, bpf, perf_event_open, "
+        "userfaultfd, unshare, setns, mount, umount2, pivot_root, chroot, open_tree, move_mount, fsopen, fsconfig, fsmount, "
+        "fspick, mount_setattr, add_key, request_key, keyctl, kexec_load, kexec_file_load, init_module, finit_module, "
+        "delete_module, acct, swapon, swapoff, reboot, quotactl, quotactl_fd, open_by_handle_at, name_to_handle_at, iopl, "
+        "ioperm, uselib, vhangup, syslog, fanotify_init: EPERM",
+        "x32 system calls: EPERM; another architecture: the process is killed",
+    };
+}
+
 QString MakeBlender::versionFromTarball(const QString& folder) {
     // the official tarball unpacks as "blender-5.2.3-linux-x64": the version is in the name; a renamed folder still
     // holds Blender's own "5.2" folder beside the program (the newest such folder when there are several)
@@ -508,15 +549,24 @@ QString MakeBlender::findBlender(QString& why, const QString& app) {
     }
     QString best;
     QStringList bestVersion;
+    const QStringList forbidden = linuxForbiddenFolders();
     for (const QString& candidate : candidates) {
         const QFileInfo program(candidate);
         if (!program.isFile() || !program.isExecutable()) {
             continue;
         }
-        const QString version = blenderVersion(candidate);
+        // the folder the box is opened to is the canonical one (the watcher grants read+run on it): it must be
+        // Blender's own, with Blender's version folder in it and none of the person's or the system's folders
+        const QString real = realPath(candidate);
+        const QString version = blenderVersion(real);
         if (!versionIsEnough(version)) {
             why = QString("Blender %1 is older than Make needs (%2.%3 or newer)")
                       .arg(version.isEmpty() ? QString("there") : version).arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+            continue;
+        }
+        QString reason;
+        if (!isBlendersOwnFolder(QFileInfo(real).absolutePath(), version, forbidden, reason)) {
+            why = reason;
             continue;
         }
         const QStringList parts = version.split('.');
@@ -605,6 +655,17 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     if (!QFileInfo(watch).isExecutable()) {
         made.code = MakeError::NOT_AVAILABLE_HERE;
         made.message = "Make's Blender watcher is missing from the app, so Blender can't be started safely";
+        done(made);
+        return;
+    }
+#endif
+#ifdef Q_OS_LINUX
+    // Blender's folder proven its own before any folder is opened to the box: the watcher grants read+run on the
+    // canonical folder of the program it is given, so that folder is the one judged
+    if (!isBlendersOwnFolder(QFileInfo(realPath(_blender)).absolutePath(), blenderVersion(realPath(_blender)),
+                             linuxForbiddenFolders(), why)) {
+        made.code = MakeError::NOT_AVAILABLE_HERE;
+        made.message = why;
         done(made);
         return;
     }
