@@ -14,7 +14,9 @@
 #include <signal.h>
 #include <unistd.h>
 #ifdef Q_OS_MAC
+#include <cstring>
 #include <libproc.h>
+#include <Security/Security.h>
 #endif
 
 #include <QtCore/QJsonArray>
@@ -432,6 +434,16 @@ try:
 except Exception as e:
     print("SECURITY_CLI REFUSED", type(e).__name__)
 )";
+#ifdef Q_OS_MAC
+    // the control, outside the box: the same lookup reaches the Keychain (found, or "item not found"), so a different
+    // answer from inside is the box's doing, not a wrong call (kit 00:55 11-07: outside -25300, inside -50)
+    const char* service = "Darkride Make";
+    const char* account = "Anthropic API key";
+    const OSStatus outside = SecKeychainFindGenericPassword(nullptr, static_cast<UInt32>(strlen(service)), service,
+                                                            static_cast<UInt32>(strlen(account)), account, nullptr,
+                                                            nullptr, nullptr);
+    QVERIFY2(outside == errSecSuccess || outside == errSecItemNotFound, qPrintable(QString::number(outside)));
+#endif
     const MakeBlender::Made made = makeAndWait(blender, script);
     QVERIFY2(made.ok(), qPrintable(made.code + ": " + made.message + "\n" + made.log));
     const QRegularExpression STATUS("KEYCHAIN_STATUS (\\S+)");
