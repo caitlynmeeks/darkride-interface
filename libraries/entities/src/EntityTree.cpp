@@ -1860,12 +1860,16 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                 if (!senderNode) {
                     return true;
                 }
-                if (isAdd) {
-                    bool certified = !properties.getCertificateID().isEmpty();
-                    return certified ? (senderNode->getCanRezCertified() || senderNode->getCanRezTmpCertified())
-                                     : (senderNode->getCanRez() || senderNode->getCanRezTmp());
+                if (senderNode->isAllowedEditor()) {
+                    return true;
                 }
-                return senderMayChange(senderNode, existingEntity);
+                if (isAdd) {
+                    // a certificate counts only for an editor (it is dropped below for anyone else), so this is the
+                    // uncertified rule
+                    return senderNode->getCanRez() || senderNode->getCanRezTmp();
+                }
+                // a locked entity takes the right to change locks
+                return senderMayChange(senderNode, existingEntity) && !existingEntity->getLocked();
             };
             if (validEditPacket && !isClone && processedBytes >= streamCheckSize() && senderMayWrite()) {
                 EntityTypes::EntityType type = isAdd ? properties.getType() : existingEntity->getType();
