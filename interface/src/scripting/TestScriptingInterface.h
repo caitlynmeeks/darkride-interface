@@ -443,6 +443,16 @@ public slots:
     Q_INVOKABLE void codeShowNearby();
 
     /**jsdoc
+     * Saves a picture of one of the Code panel's two menus, drawn as it would show but without showing it.
+     * @function Test.saveCodeMenuPicture
+     * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu) or <code>"nearby"</code> (the name's
+     *     list of the code near you).
+     * @param {string} path - Where to save it (PNG).
+     * @returns {boolean} Whether it was saved.
+     */
+    Q_INVOKABLE bool saveCodeMenuPicture(const QString& which, const QString& path);
+
+    /**jsdoc
      * Shows a count on the bar's Chat button's badge (ui/ChatButton.h), as chat's unread count would, until chat's
      * next count.
      * @function Test.setChatBadge

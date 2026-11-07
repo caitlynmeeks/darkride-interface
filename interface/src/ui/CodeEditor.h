@@ -45,6 +45,7 @@
 
 class CallbackTarget;
 class CodeNearby;
+class QMenu;
 
 class CodeEditor : public QObject, public Dependency {
     Q_OBJECT
@@ -137,6 +138,8 @@ public:
     // Near You (the list in the panel; `listShown`: it's showing)
     Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
     Q_INVOKABLE void showNearbyMenu(qreal x, qreal y, bool listShown);
+    // a test's picture of one of those menus ("more" or "nearby"), drawn without showing it
+    bool saveMenuPicture(const QString& which, const QString& path);
     // the panel open or closed: the status is asked for only while it's open
     Q_INVOKABLE void setPanelOpen(bool open);
     // Code near you (ui/CodeNearby.h), and whether it's unfolded: it looks at the world only while the panel is open
@@ -191,6 +194,9 @@ signals:
     void nearbyFoldRequested();
 
 private:
+    QMenu* makeMoreMenu();
+    QMenu* makeNearbyMenu(bool listShown);
+
     enum class Place { None, WrittenIn, WorldFiles, Web };
 
     void clear();

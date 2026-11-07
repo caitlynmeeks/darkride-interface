@@ -498,22 +498,26 @@ namespace {
     }
 }
 
-void CodeEditor::showMoreMenu(qreal x, qreal y) {
+QMenu* CodeEditor::makeMoreMenu() {
     auto menu = new QMenu(qApp->getWindow());
-    menu->setAttribute(Qt::WA_DeleteOnClose);
     auto inspector = menu->addAction("Show in Inspector");
     inspector->setEnabled(hasDocument());
     connect(inspector, &QAction::triggered, this, &CodeEditor::showInInspector);
     auto link = menu->addAction("Copy Link");
     link->setEnabled(hasLink());
     connect(link, &QAction::triggered, this, &CodeEditor::copyLink);
+    return menu;
+}
+
+void CodeEditor::showMoreMenu(qreal x, qreal y) {
+    auto menu = makeMoreMenu();
+    menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->popup(QPoint(qRound(x), qRound(y)));
 }
 
-void CodeEditor::showNearbyMenu(qreal x, qreal y, bool listShown) {
+QMenu* CodeEditor::makeNearbyMenu(bool listShown) {
     const int MOST = 30;   // the nearest; Show All Code Near You has the rest, with its filter
     auto menu = new QMenu(qApp->getWindow());
-    menu->setAttribute(Qt::WA_DeleteOnClose);
     auto heading = menu->addAction("Code Near You");
     heading->setEnabled(false);
     const int count = _nearby->rowCount();
@@ -551,7 +555,22 @@ void CodeEditor::showNearbyMenu(qreal x, qreal y, bool listShown) {
             emit nearbyUnfoldRequested();
         }
     });
+    return menu;
+}
+
+void CodeEditor::showNearbyMenu(qreal x, qreal y, bool listShown) {
+    auto menu = makeNearbyMenu(listShown);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
+bool CodeEditor::saveMenuPicture(const QString& which, const QString& path) {
+    QMenu* menu = which == "more" ? makeMoreMenu() : makeNearbyMenu(false);
+    menu->ensurePolished();
+    menu->adjustSize();
+    const bool saved = menu->grab().save(path);   // drawn as it would show, without showing it
+    delete menu;
+    return saved;
 }
 
 QObject* CodeEditor::nearby() const {

@@ -57,7 +57,10 @@
 
 #include "Application.h"
 #include "InterfaceLogging.h"
+#include <QtGui/QPainter>
 #include <QtGui/QPixmap>
+#include <QtQuick/QQuickWindow>
+#include "ui/QmlDock.h"
 #include <plugins/DisplayPlugin.h>
 #include <display-plugins/DisplayLink.h>
 #include <display-plugins/OpenGLDisplayPlugin.h>
@@ -969,7 +972,24 @@ bool TestScriptingInterface::saveDockPicture(const QString& objectName, const QS
         return false;
     }
     QPixmap picture = dock->grab();
-    return !picture.isNull() && picture.save(path);
+    if (picture.isNull()) {
+        return false;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // on Qt 6 a QML panel draws in its own window inside the dock (QmlDock), which the widget grab leaves blank: its
+    // Qt Quick window's own picture goes in on top, where its container sits
+    auto qmlDock = qobject_cast<QmlDock*>(dock);
+    auto item = qmlDock ? qmlDock->panel() : nullptr;
+    auto quickWindow = item ? item->window() : nullptr;
+    if (quickWindow && dock->widget()) {
+        const QImage content = quickWindow->grabWindow();
+        if (!content.isNull()) {
+            QPainter painter(&picture);
+            painter.drawImage(QRect(dock->widget()->mapTo(dock, QPoint(0, 0)), dock->widget()->size()), content);
+        }
+    }
+#endif
+    return picture.save(path);
 }
 
 bool TestScriptingInterface::openInCode(const QUuid& id, const QString& which) {
@@ -1023,6 +1043,16 @@ void TestScriptingInterface::codeSave() {
         return;
     }
     DependencyManager::get<CodeEditor>()->testSave();
+}
+
+bool TestScriptingInterface::saveCodeMenuPicture(const QString& which, const QString& path) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "saveCodeMenuPicture", Q_RETURN_ARG(bool, result), Q_ARG(QString, which),
+                               Q_ARG(QString, path));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->saveMenuPicture(which, path);
 }
 
 void TestScriptingInterface::codeShowNearby() {
