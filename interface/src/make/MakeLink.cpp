@@ -213,6 +213,7 @@ MakeLink::MakeLink() {
     // a new world: the tools start again in it (Undo starts again too)
     connect(&DependencyManager::get<NodeList>()->getDomainHandler(), &DomainHandler::domainURLChanged, this, [this] {
         _askedOutsideFor = 0;  // a world not the person's own asks again there
+        _names.clear();        // the last world's names never reach this one's asks and records
         if (_engine) {
             stopToolsEngine();
             startToolsEngine();
@@ -492,6 +493,7 @@ void MakeLink::disconnectLink() {
         it.value()(false);
     }
     _asks.clear();
+    _names.clear();
     setState(State::Off);
 }
 
