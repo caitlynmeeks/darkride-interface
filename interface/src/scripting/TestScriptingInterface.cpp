@@ -1228,10 +1228,15 @@ bool TestScriptingInterface::makeDockConnect(const QString& route) {
         BLOCKING_INVOKE_METHOD(this, "makeDockConnect", Q_RETURN_ARG(bool, result), Q_ARG(QString, route));
         return result;
     }
-    if ((route != "terminal" && route != "chat") || !MakeDock::isAvailable()) {
+    if ((route != "terminal" && route != "chat" && route != "off") || !MakeDock::isAvailable()) {
         return false;   // never the key route
     }
-    return DependencyManager::get<MakeDock>()->testConnectTerminal(route == "chat");
+    auto make = DependencyManager::get<MakeDock>();
+    if (route == "off") {
+        make->disconnect();   // the dock's own Disconnect, which only ends things: it needs no real input
+        return true;
+    }
+    return make->testConnectTerminal(route == "chat");
 }
 
 int TestScriptingInterface::makeDockSend(const QString& text) {

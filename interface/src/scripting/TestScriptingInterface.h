@@ -519,10 +519,12 @@ public slots:
      * Connects the Make dock on the Terminal route without the person's click, for a kit that then speaks to Make as
      * Claude Code would (scripting's mcp-kit.py). From then on every question Claude asks is answered no. The key route
      * is never connected this way. <code>"chat"</code> connects with the chat line for this run only (the person's own
-     * choice isn't changed), whether or not the connect screen offers chat yet.
+     * choice isn't changed), whether or not the connect screen offers chat yet. <code>"off"</code> is the dock's
+     * Disconnect (which ends a test's chat).
      * @function Test.makeDockConnect
-     * @param {string} route - <code>"terminal"</code> or <code>"chat"</code>; anything else is refused.
-     * @returns {boolean} Whether Make is listening.
+     * @param {string} route - <code>"terminal"</code>, <code>"chat"</code> or <code>"off"</code>; anything else is
+     *     refused.
+     * @returns {boolean} Whether Make is listening (<code>"off"</code>: true).
      */
     Q_INVOKABLE bool makeDockConnect(const QString& route);
 
