@@ -10,7 +10,9 @@
 #include "Panels.h"
 
 #include <QtGui/QScreen>
+#include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
 #include <QtWidgets/QDockWidget>
 
 #include <gl/GLHelpers.h>
@@ -26,12 +28,14 @@
 #include "WindowLayout.h"
 #include "chat/ChatWindow.h"
 #include "editor/Editor.h"
+#include "make/MakeDock.h"
 
 namespace {
     const QString CHAT = "Chat";
     const QString MY_FILES = "My Files";
     const QString CONSOLE = "Console";
     const QString CODE = "Code";   // the Code panel (Make v1): Qt 6's web engine only (ui/CodeEditor.h)
+    const QString MAKE = "Make";   // the Make dock (Make v1, make/MakeDock.h): Qt 6 only, with the Code panel
     const QString PEOPLE = "People";
     // People's saved person and tab (PeoplePanel.qml), and its Profile tab
     const QString PEOPLE_PROFILE = "io.darkride.peoplePanel.profile";
@@ -58,6 +62,7 @@ namespace {
         { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 320, 640 },
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         { CODE, "qrc:///qml/darkride/CodePanel.qml", 640 },
+        { MAKE, "qrc:///qml/darkride/MakePanel.qml", 420 },
 #endif
     };
 
@@ -126,7 +131,7 @@ QStringList Panels::names() const {
     // chat's button sits between People's and Explore's; then My Files, and Build mode's own
     QStringList result;
     for (const auto& panel : QML_PANELS) {
-        if (panel.name == CODE) {
+        if (panel.name == CODE || panel.name == MAKE) {
             continue;   // with the tools, after My Files
         }
         if (panel.name == "Explore") {
@@ -135,6 +140,9 @@ QStringList Panels::names() const {
         result << panel.name;
     }
     result << MY_FILES;
+    if (MakeDock::isAvailable()) {
+        result << MAKE;
+    }
     if (CodeEditor::isAvailable()) {
         result << CODE;
     }
@@ -203,6 +211,17 @@ QDockWidget* Panels::dock(const QString& name) {
         auto made = new QmlDock(panel.name, QUrl(panel.source), window);
         if (name == CODE) {
             made->setContextObject("CodeEditor", DependencyManager::get<CodeEditor>().data());
+        }
+        if (name == MAKE) {
+            // MakeDock on the Make dock's own context alone; it watches the dock's window for real input and gives
+            // the engine its picture provider once the view is made
+            made->setContextObject("MakeDock", DependencyManager::get<MakeDock>().data());
+            connect(made, &QmlDock::contentMade, this, [made] {
+                if (auto dock = DependencyManager::get<MakeDock>()) {
+                    dock->watchWindow(qobject_cast<QQuickWindow*>(made->contentWindow()),
+                                      made->panel() ? qmlEngine(made->panel()) : nullptr);
+                }
+            });
         }
         // hidden until it's opened or the saved layout shows it
         made->hide();

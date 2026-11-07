@@ -203,6 +203,15 @@ void QmlDock::makeContent() {
     setWidget(_view);
 #endif
     qCDebug(interfaceapp) << objectName() << "made," << (isFloating() ? "floating" : "docked");
+    emit contentMade();
+}
+
+QWindow* QmlDock::contentWindow() const {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return _view;
+#else
+    return nullptr;
+#endif
 }
 
 QQuickItem* QmlDock::panel() const {
