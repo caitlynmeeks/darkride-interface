@@ -9,7 +9,8 @@
 #  (its readable copy kept) and clicked (its print in the log), an edit watched, a script that uses the web asked about
 #  first (the kit's client answers no), a model made in Blender, put in the world's files and placed, a picture, a walk,
 #  and undo. Prints one line per check and "MCP KIT PASS" or "MCP KIT FAIL n".
-#    python3 -I mcp-kit.py <the test client's Make folder>
+#    python3 -I mcp-kit.py <the test client's Make folder> [<folder for the made model's views>]
+#  (the MCP line is in the Make folder's claude-code/, where Connect writes it)
 #
 #  Copyright 2026 Darkride.
 #
@@ -19,6 +20,9 @@
 import base64, json, os, subprocess, sys, time
 
 folder = sys.argv[1]
+if os.path.exists(os.path.join(folder, "claude-code", ".darkride-mcp.json")):
+    folder = os.path.join(folder, "claude-code")
+out = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(os.path.abspath(sys.argv[0]))
 config = json.load(open(os.path.join(folder, ".darkride-mcp.json")))["mcpServers"]["darkride"]
 helper = subprocess.Popen([config["command"]] + config["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE)
@@ -113,7 +117,7 @@ blender = tool("make_with_blender", {"name": "kit stool", "script":
     "bpy.context.active_object.data.materials.append(m)\n"})
 check("make_with_blender", not blender["error"] and len(blender["images"]) == 1, "%s s, %s" % (blender["seconds"], blender["text"][:200]))
 if not blender["error"]:
-    open(os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "results-kit-views.jpg"), "wb").write(
+    open(os.path.join(out, "results-kit-views.jpg"), "wb").write(
         base64.b64decode(blender["images"][0]["data"]))
     uploaded = tool("upload_model", {"model_id": blender["value"]["model_id"], "name": "kit stool"})
     check("upload_model", not uploaded["error"] and uploaded["value"]["url"].startswith("atp:/claude-models/"), uploaded["text"][:200])
