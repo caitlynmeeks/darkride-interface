@@ -328,7 +328,8 @@ protected:
     static std::atomic<uint64_t> _streamChecksRun;
 
     void recursivelyFilterAndCollectForDelete(const EntityItemPointer& entity, std::vector<EntityItemPointer>& entitiesToDelete, bool force) const;
-    void sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused, quint64 lead = 1);
+    void sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused);
+    void sendBackRefusedTooBigEdit(const EntityItemPointer& entity, const EntityItemProperties& refused);
     void warnTooBigToStream(const EntityItem& probe, const EntityPropertyFlags& tooBig, const EntityItemID& entityID,
                             bool isAdd, const SharedNodePointer& senderNode);
     void processRemovedEntities(const DeleteEntityOperator& theOperator);
