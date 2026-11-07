@@ -191,6 +191,13 @@ MakeLink::MakeLink() {
     _server.setGate([this](const QString& tool, const QJsonObject& inputs,
                            const std::function<void(bool, const QString&)>& proceed) { gate(tool, inputs, proceed); });
     setHandlers();
+    connect(&_server, &MakeLinkServer::clientIdentified, this, [this] {
+        // Claude Code's hello, after the connection: the version is known only now (editor-ui's catch, 11-07: read at
+        // the connection it was always empty, and the dock's "Update Claude Code" line never showed)
+        const QString version = _server.clientVersion().isEmpty() ? QStringLiteral("(no version)") : _server.clientVersion();
+        qCInfo(makelog) << "Make: Claude Code" << version << "(" << _server.clientName() << ")";
+        emit claudeVersionChanged();
+    });
     connect(&_server, &MakeLinkServer::connectedChanged, this, [this](bool connected) {
         // at the limit, the ended run's helper leaving doesn't hide the limit line
         if (_state == State::Off || (_state == State::Limit && !connected)) {
@@ -377,9 +384,9 @@ void MakeLink::judgeConnection() {
             setState(State::Listening, MakePeer::REFUSED_WORDS);
             return;
     }
-    // the channel hello carries no version string; the line says so instead of printing ""
-    const QString version = _server.clientVersion().isEmpty() ? QStringLiteral("(no version)") : _server.clientVersion();
-    qCInfo(makelog) << "Make: Claude Code" << version << "connected, channel" << _channelFlag;
+    // the version isn't known yet: Claude Code's hello (initialize) comes after the connection and is logged on
+    // clientIdentified
+    qCInfo(makelog) << "Make: Claude Code connected, channel" << _channelFlag;
 }
 
 MakeClaude::Settings MakeLink::claudeSettings() const {
