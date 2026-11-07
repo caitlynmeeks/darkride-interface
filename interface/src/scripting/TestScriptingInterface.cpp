@@ -1274,6 +1274,23 @@ QString TestScriptingInterface::makeBadge(const QString& state) {
     return badge->state();
 }
 
+QVariantMap TestScriptingInterface::makeBadgeItem() {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "makeBadgeItem", Q_RETURN_ARG(QVariantMap, result));
+        return result;
+    }
+    // where OffscreenUi::show put it (ApplicationScripting.cpp: darkride/make/Badge.qml, objectName "MakeBadge")
+    auto offscreenUi = DependencyManager::get<OffscreenUi>();
+    QQuickItem* root = offscreenUi ? offscreenUi->getRootItem() : nullptr;
+    QQuickItem* item = root ? root->findChild<QQuickItem*>("MakeBadge") : nullptr;
+    if (!item) {
+        return QVariantMap { { "found", false } };
+    }
+    return QVariantMap { { "found", true }, { "visible", item->isVisible() }, { "words", item->property("words") },
+                         { "lead", item->property("lead") }, { "badgeState", item->property("badgeState") } };
+}
+
 QString TestScriptingInterface::makeDockServed(const QString& what, const QString& id) {
     if (QThread::currentThread() != thread()) {
         QString result;

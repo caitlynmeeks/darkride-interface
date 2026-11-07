@@ -561,6 +561,15 @@ public slots:
     Q_INVOKABLE QString makeBadge(const QString& state);
 
     /**jsdoc
+     * The Make badge as the view's QML has it, for a kit's check that it shows and spins:
+     * <code>{ found, visible, words, lead, badgeState }</code> (lead: the spinner's step, 0 to 11, one step a second
+     * while it spins).
+     * @function Test.makeBadgeItem
+     * @returns {object} The badge item's values, or <code>{ found: false }</code>.
+     */
+    Q_INVOKABLE QVariantMap makeBadgeItem();
+
+    /**jsdoc
      * Copy as the Make dock's Copy does (MakeDock.copyLine), without its real-input check: writes the system's clipboard,
      * which is the person's, so only in a run that has a clipboard slot.
      * @function Test.makeDockCopy

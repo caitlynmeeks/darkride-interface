@@ -50,12 +50,13 @@ Rectangle {
     readonly property bool plainClaude: chatting && linkState === "connected" && dock.channelFlag === "off"
     readonly property bool oldClaude: linkState === "connected" && !!dock && olderThan(dock.claudeVersion || "", "2.1.319")
 
-    // a version older than the one the kits ran on ("2.1.248" < "2.1.319"); "" isn't older
+    // a version older than the one the kits ran on ("2.1.248" < "2.1.319"); "" or one with no digits isn't older (a
+    // channel hello carries no version: Caity's Channels try, security 11-07)
     function olderThan(version, floor) {
-        if (version === "") {
+        var a = String(version).split(/[^0-9]+/).filter(function (part) { return part !== ""; }).map(Number);
+        if (a.length === 0) {
             return false;
         }
-        var a = version.split(/[^0-9]+/).filter(function (part) { return part !== ""; }).map(Number);
         var b = floor.split(".").map(Number);
         for (var i = 0; i < b.length; i++) {
             var x = i < a.length ? a[i] : 0;
