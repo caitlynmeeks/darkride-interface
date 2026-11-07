@@ -37,6 +37,7 @@
 #include "MakeToolList.h"
 
 class QLocalServer;
+class MakePipeListener;
 class QTimer;
 
 class MakeLinkServer : public QObject {
@@ -88,8 +89,11 @@ public:
 
     /// Listens on `folder`/link.sock: the folder is made (or kept) this user's own, mode 0700, and the socket 0600.
     /// False with a plain reason when the folder isn't this user's, the path is too long for a socket, or another
-    /// program holds it.
+    /// program holds it. On Windows `folder` is a pipe name from newPipeName() instead (security's named pipe: this
+    /// user only, the first instance ours, no remote clients, each client's user checked).
     bool listen(const QString& folder, QString& error);
+    /// A fresh random pipe name for listen() on Windows (\\.\pipe\darkride-make-<32 hex>), one per Connect.
+    static QString newPipeName();
     bool isListening() const;
     /// Stops listening, closes Claude Code's connection and removes the socket.
     void close();
@@ -127,6 +131,10 @@ private:
     };
 
     void accept();
+    /// Takes `socket` as Claude Code's connection unless `refused` already says why not (or one is connected).
+    void adopt(QLocalSocket* socket, QString refused);
+    /// Windows: a pipe instance a client connected to (a HANDLE): its user checked, then adopted or closed.
+    void adoptPipe(void* pipe);
     void readClient();
     void dropClient();
     void handle(const QJsonObject& message);
@@ -144,6 +152,7 @@ private:
     QString _instructions;
 
     QLocalServer* _server { nullptr };
+    MakePipeListener* _pipes { nullptr };  // Windows' named pipe, in place of _server
     QString _socketPath;
     QPointer<QLocalSocket> _client;
     QByteArray _buffer;

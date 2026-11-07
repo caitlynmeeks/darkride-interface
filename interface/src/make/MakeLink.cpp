@@ -258,8 +258,15 @@ QString MakeLink::socketFolder() const {
 }
 
 QString MakeLink::mcpConfigText() const {
+#ifdef Q_OS_WIN
+    // the helper's program beside ours, and this Connect's own random pipe name (this file is the one place it's written)
+    const QString helper =
+        QDir::toNativeSeparators(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp.exe"));
+    const QString socket = _pipeName;
+#else
     const QString helper = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp");
     const QString socket = QDir(socketFolder()).absoluteFilePath("link.sock");
+#endif
     const QJsonObject config { { "mcpServers", QJsonObject { { "darkride", QJsonObject {
         { "command", helper }, { "args", QJsonArray { "--socket", socket } } } } } } };
     return QString::fromUtf8(QJsonDocument(config).toJson(QJsonDocument::Indented));
@@ -447,7 +454,14 @@ bool MakeLink::connectLink() {
         setState(_server.isConnected() ? State::Connected : State::Listening);
         return true;
     }
-    if (!writeFolder(error) || !_server.listen(socketFolder(), error)) {
+#ifdef Q_OS_WIN
+    // Windows' link is a named pipe: a fresh random name at each Connect, in Claude Code's MCP file only (security)
+    _pipeName = MakeLinkServer::newPipeName();
+    const QString listenOn = _pipeName;
+#else
+    const QString listenOn = socketFolder();
+#endif
+    if (!writeFolder(error) || !_server.listen(listenOn, error)) {
         setState(State::Failed, error);
         return false;
     }

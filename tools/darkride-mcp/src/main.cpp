@@ -7,7 +7,8 @@
 //  local socket only the same user can open: no network port, so no web page, world script or other computer can
 //  reach Make. All of MCP (the tools, their checks, the person's rights) is in the app; this only passes bytes.
 //
-//    darkride-mcp --socket <path>     (the line the app writes into the Make folder's MCP configuration)
+//    darkride-mcp --socket <path>     (the line the app writes into the Make folder's MCP configuration; on
+//                                     Windows the path is Make's named pipe, \\.\pipe\darkride-make-<id>)
 //
 //  Before it connects it checks that the socket and its folder belong to this user and that nobody else may open
 //  them; after, that the app at the other end runs as this user. The app checks the same of the helper.
@@ -20,6 +21,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cwctype>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -27,9 +29,169 @@
 
 #ifdef _WIN32
 
-int main(int, char**) {
-    std::fputs("darkride-mcp: Make's link isn't on Windows yet.\n", stderr);
-    return 1;
+// Windows: Make's link is a named pipe (security's make-blender-box-windows-linux, "the link"). The name must be one
+// of Make's on this computer (never a remote pipe), the app at the other end must run as this user, unboxed, and the
+// app may only identify this helper, never act as it (SECURITY_IDENTIFICATION).
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+
+#include <vector>
+
+namespace {
+
+const char* NOT_CONNECTED =
+    "darkride-mcp: Darkride isn't ready for Make. Open Darkride, press Connect in Make, then start this again.\n";
+const auto CONNECT_WAIT = std::chrono::seconds(5);
+const std::wstring PIPE_PREFIX = L"\\\\.\\pipe\\darkride-make-";
+
+void fail(const std::string& why) {
+    std::fprintf(stderr, "darkride-mcp: %s\n", why.c_str());
+}
+
+// a process's user SID (bytes), and whether it runs in an AppContainer
+bool userOf(HANDLE process, std::vector<char>& sid, bool& boxed) {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(process, TOKEN_QUERY, &token)) {
+        return false;
+    }
+    DWORD size = 0;
+    GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+    std::vector<char> user(size);
+    DWORD inContainer = 0;
+    DWORD containerSize = sizeof inContainer;
+    const bool read = size > 0 && GetTokenInformation(token, TokenUser, user.data(), size, &size) &&
+                      GetTokenInformation(token, TokenIsAppContainer, &inContainer, containerSize, &containerSize);
+    CloseHandle(token);
+    if (!read) {
+        return false;
+    }
+    PSID userSid = reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid;
+    const char* bytes = reinterpret_cast<const char*>(userSid);
+    sid.assign(bytes, bytes + GetLengthSid(userSid));
+    boxed = inContainer != 0;
+    return true;
+}
+
+// `refused`: the pipe opened but isn't this user's own Darkride (no retry then)
+HANDLE connectTo(const std::wstring& name, bool& refused) {
+    HANDLE pipe = CreateFileW(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                              FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE) {
+        return pipe;
+    }
+    // the app at the other end runs as this user, unboxed
+    ULONG pid = 0;
+    std::vector<char> theirs, ours;
+    bool theirsBoxed = true, oursBoxed = true;
+    HANDLE server = GetNamedPipeServerProcessId(pipe, &pid) ? OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)
+                                                            : nullptr;
+    const bool known = server && userOf(server, theirs, theirsBoxed) && userOf(GetCurrentProcess(), ours, oursBoxed);
+    if (server) {
+        CloseHandle(server);
+    }
+    if (!known || theirs != ours || theirsBoxed) {
+        fail("the other end of the pipe isn't this user's own Darkride; not connecting");
+        CloseHandle(pipe);
+        refused = true;
+        return INVALID_HANDLE_VALUE;
+    }
+    return pipe;
+}
+
+// one overlapped transfer on the pipe: true with the bytes moved, false when it closed or failed
+bool onPipe(bool reading, HANDLE pipe, char* data, DWORD size, DWORD& moved) {
+    OVERLAPPED overlapped {};
+    overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!overlapped.hEvent) {
+        return false;
+    }
+    const BOOL started = reading ? ReadFile(pipe, data, size, nullptr, &overlapped)
+                                 : WriteFile(pipe, data, size, nullptr, &overlapped);
+    const bool ok = (started || GetLastError() == ERROR_IO_PENDING) && GetOverlappedResult(pipe, &overlapped, &moved, TRUE);
+    CloseHandle(overlapped.hEvent);
+    return ok;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    std::string path;
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::strcmp(argv[i], "--socket") == 0) {
+            path = argv[i + 1];
+        }
+    }
+    const std::wstring name(path.begin(), path.end());
+    // only Make's own pipes on this computer: \\.\pipe\darkride-make-<32 hex>
+    bool shaped = name.size() == PIPE_PREFIX.size() + 32 && name.compare(0, PIPE_PREFIX.size(), PIPE_PREFIX) == 0;
+    for (size_t i = PIPE_PREFIX.size(); shaped && i < name.size(); ++i) {
+        shaped = std::iswxdigit(name[i]) != 0;
+    }
+    if (!shaped) {
+        std::fputs("usage: darkride-mcp --socket \\\\.\\pipe\\darkride-make-<id>  (Darkride's Make writes this line for "
+                   "Claude Code)\n", stderr);
+        return 1;
+    }
+
+    HANDLE pipe = INVALID_HANDLE_VALUE;
+    const auto giveUp = std::chrono::steady_clock::now() + CONNECT_WAIT;
+    while (pipe == INVALID_HANDLE_VALUE) {
+        bool refused = false;
+        pipe = connectTo(name, refused);
+        const DWORD error = GetLastError();
+        if (refused) {
+            return 1;
+        }
+        if (pipe != INVALID_HANDLE_VALUE || std::chrono::steady_clock::now() > giveUp) {
+            break;
+        }
+        if (error == ERROR_PIPE_BUSY) {
+            WaitNamedPipeW(name.c_str(), 200);
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));  // not there yet: Connect may be starting it
+        }
+    }
+    if (pipe == INVALID_HANDLE_VALUE) {
+        std::fputs(NOT_CONNECTED, stderr);
+        return 1;
+    }
+
+    // both ways until either side closes; the process ends with the first to close
+    HANDLE closed = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    std::thread toApp([pipe, closed] {
+        HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+        std::vector<char> buffer(65536);
+        DWORD got = 0;
+        while (ReadFile(in, buffer.data(), static_cast<DWORD>(buffer.size()), &got, nullptr) && got > 0) {
+            for (DWORD sent = 0, moved = 0; sent < got; sent += moved) {
+                if (!onPipe(false, pipe, buffer.data() + sent, got - sent, moved) || moved == 0) {
+                    SetEvent(closed);
+                    return;
+                }
+            }
+        }
+        SetEvent(closed);  // Claude Code closed: tell the app by closing
+    });
+    std::thread fromApp([pipe, closed] {
+        HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+        std::vector<char> buffer(65536);
+        DWORD got = 0;
+        while (onPipe(true, pipe, buffer.data(), static_cast<DWORD>(buffer.size()), got) && got > 0) {
+            for (DWORD written = 0, moved = 0; written < got; written += moved) {
+                if (!WriteFile(out, buffer.data() + written, got - written, &moved, nullptr) || moved == 0) {
+                    SetEvent(closed);
+                    return;
+                }
+            }
+        }
+        SetEvent(closed);  // the app closed (Disconnect, or it quit)
+    });
+    toApp.detach();
+    fromApp.detach();
+    WaitForSingleObject(closed, INFINITE);
+    CloseHandle(pipe);
+    return 0;
 }
 
 #else
