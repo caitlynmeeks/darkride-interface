@@ -16,10 +16,18 @@
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QSet>
 #include <QtCore/QTimer>
+#include <QtCore/QUuid>
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_WIN
+#include <functional>
+
+#include <QtCore/QWinEventNotifier>
+
+#include <windows.h>
+#include <sddl.h>
+#else
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -48,6 +56,192 @@ const int INVALID_PARAMS = -32602;
 
 }  // namespace
 
+#ifdef Q_OS_WIN
+
+namespace {
+
+const QString PIPE_PREFIX = QStringLiteral("\\\\.\\pipe\\darkride-make-");
+
+// a process's user, and whether it runs in an AppContainer (a boxed program never talks to Make)
+bool userOf(HANDLE process, QByteArray& sid, bool& boxed) {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(process, TOKEN_QUERY, &token)) {
+        return false;
+    }
+    DWORD size = 0;
+    GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+    QByteArray user(static_cast<int>(size), '\0');
+    DWORD inContainer = 0;
+    DWORD containerSize = sizeof inContainer;
+    const bool read = size > 0 && GetTokenInformation(token, TokenUser, user.data(), size, &size) &&
+                      GetTokenInformation(token, TokenIsAppContainer, &inContainer, containerSize, &containerSize);
+    CloseHandle(token);
+    if (!read) {
+        return false;
+    }
+    PSID userSid = reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid;
+    sid = QByteArray(reinterpret_cast<const char*>(userSid), static_cast<int>(GetLengthSid(userSid)));
+    boxed = inContainer != 0;
+    return true;
+}
+
+QString thisUserSid() {
+    QByteArray sid;
+    bool boxed = false;
+    LPWSTR text = nullptr;
+    if (!userOf(GetCurrentProcess(), sid, boxed) ||
+        !ConvertSidToStringSidW(reinterpret_cast<PSID>(sid.data()), &text)) {
+        return QString();
+    }
+    const QString result = QString::fromWCharArray(text);
+    LocalFree(text);
+    return result;
+}
+
+// the client of a connected pipe instance runs as this user, unboxed
+bool clientIsThisUser(HANDLE pipe, QString& why) {
+    ULONG pid = 0;
+    if (!GetNamedPipeClientProcessId(pipe, &pid)) {
+        why = "a program connected that can't be told apart";
+        return false;
+    }
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    QByteArray theirs, ours;
+    bool theirsBoxed = true, oursBoxed = true;
+    const bool known = process && userOf(process, theirs, theirsBoxed) && userOf(GetCurrentProcess(), ours, oursBoxed);
+    if (process) {
+        CloseHandle(process);
+    }
+    if (!known || theirs != ours) {
+        why = "a program of another user tried to connect";
+        return false;
+    }
+    if (theirsBoxed) {
+        why = "a boxed program tried to connect";
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+// Make's named pipe (security's make-blender-box-windows-linux, "the link"): a name from newPipeName(), a DACL for
+// this user only, the first instance ours (FILE_FLAG_FIRST_PIPE_INSTANCE: a program that made the name first is
+// refused), no remote clients (named pipes are otherwise reachable over SMB). One instance waits at a time; once a
+// client connects, the next is made before that one is handed on, so the name stays ours.
+class MakePipeListener {
+public:
+    explicit MakePipeListener(std::function<void(HANDLE)> connected) : _connected(std::move(connected)) {}
+    MakePipeListener(const MakePipeListener&) = delete;
+    ~MakePipeListener() {
+        delete _notifier;
+        closeWaiting();
+        if (_overlapped.hEvent) {
+            CloseHandle(_overlapped.hEvent);
+        }
+        LocalFree(_descriptor);
+    }
+
+    bool start(const QString& name, QString& error) {
+        _name = name.toStdWString();
+        const QString sid = thisUserSid();
+        const std::wstring dacl = QString("D:P(A;;GA;;;%1)").arg(sid).toStdWString();
+        if (sid.isEmpty() ||
+            !ConvertStringSecurityDescriptorToSecurityDescriptorW(dacl.c_str(), SDDL_REVISION_1, &_descriptor, nullptr)) {
+            error = "can't make the link private";
+            return false;
+        }
+        _overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!_overlapped.hEvent) {
+            error = "can't open the link";
+            return false;
+        }
+        _notifier = new QWinEventNotifier(_overlapped.hEvent);
+        QObject::connect(_notifier, &QWinEventNotifier::activated, [this] { ready(); });
+        if (!wait(true)) {
+            error = GetLastError() == ERROR_ACCESS_DENIED ? "another program holds the link's name"
+                                                          : "can't open the link (" + QString::number(GetLastError()) + ")";
+            return false;
+        }
+        return true;
+    }
+
+private:
+    bool wait(bool first) {
+        SECURITY_ATTRIBUTES attributes { sizeof attributes, _descriptor, FALSE };
+        _waiting = CreateNamedPipeW(_name.c_str(),
+                                    PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | (first ? FILE_FLAG_FIRST_PIPE_INSTANCE : 0),
+                                    PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                                    PIPE_UNLIMITED_INSTANCES, 64 * 1024, 64 * 1024, 0, &attributes);
+        if (_waiting == INVALID_HANDLE_VALUE) {
+            return false;
+        }
+        ResetEvent(_overlapped.hEvent);
+        _connectedAtOnce = false;
+        if (!ConnectNamedPipe(_waiting, &_overlapped)) {
+            const DWORD error = GetLastError();
+            if (error == ERROR_PIPE_CONNECTED) {
+                _connectedAtOnce = true;  // a client came between the create and the connect
+                SetEvent(_overlapped.hEvent);
+            } else if (error != ERROR_IO_PENDING) {
+                closeWaiting();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void ready() {
+        if (_waiting == INVALID_HANDLE_VALUE) {
+            return;
+        }
+        DWORD ignored = 0;
+        const bool connected = _connectedAtOnce || GetOverlappedResult(_waiting, &_overlapped, &ignored, FALSE);
+        HANDLE pipe = _waiting;
+        _waiting = INVALID_HANDLE_VALUE;
+        if (!wait(false)) {
+            // no next instance: the event stays as it is, so the notifier stops here (Make's Connect opens a new link)
+            ResetEvent(_overlapped.hEvent);
+            _notifier->setEnabled(false);
+        }
+        if (connected) {
+            _connected(pipe);
+        } else {
+            CloseHandle(pipe);
+        }
+    }
+
+    void closeWaiting() {
+        if (_waiting != INVALID_HANDLE_VALUE) {
+            // the waiting connect is cancelled and has ended before its OVERLAPPED goes
+            DWORD ignored = 0;
+            if (CancelIoEx(_waiting, &_overlapped)) {
+                GetOverlappedResult(_waiting, &_overlapped, &ignored, TRUE);
+            }
+            CloseHandle(_waiting);
+            _waiting = INVALID_HANDLE_VALUE;
+        }
+    }
+
+    std::wstring _name;
+    HANDLE _waiting { INVALID_HANDLE_VALUE };
+    OVERLAPPED _overlapped {};
+    bool _connectedAtOnce { false };
+    QWinEventNotifier* _notifier { nullptr };
+    PSECURITY_DESCRIPTOR _descriptor { nullptr };
+    std::function<void(HANDLE)> _connected;
+};
+
+#endif  // Q_OS_WIN
+
+QString MakeLinkServer::newPipeName() {
+#ifdef Q_OS_WIN
+    return PIPE_PREFIX + QUuid::createUuid().toString(QUuid::Id128);
+#else
+    return QString();
+#endif
+}
+
 MakeLinkServer::MakeLinkServer(QObject* parent) : QObject(parent) {
 }
 
@@ -65,9 +259,20 @@ void MakeLinkServer::setHandler(const QString& name, Handler handler) {
 
 bool MakeLinkServer::listen(const QString& folder, QString& error) {
 #ifdef Q_OS_WIN
-    Q_UNUSED(folder);
-    error = "Make's link isn't on Windows yet";
-    return false;
+    close();
+    if (!folder.startsWith(PIPE_PREFIX) || folder.size() != PIPE_PREFIX.size() + 32) {
+        error = "the link's pipe name isn't Make's";
+        return false;
+    }
+    _pipes = new MakePipeListener([this](HANDLE pipe) { adoptPipe(pipe); });
+    if (!_pipes->start(folder, error)) {
+        delete _pipes;
+        _pipes = nullptr;
+        return false;
+    }
+    _socketPath = folder;
+    qCInfo(makelink) << "Make's link is listening";
+    return true;
 #else
     close();
     if (!QDir().mkpath(folder)) {
@@ -122,11 +327,19 @@ bool MakeLinkServer::listen(const QString& folder, QString& error) {
 }
 
 bool MakeLinkServer::isListening() const {
-    return _server && _server->isListening();
+    return (_server && _server->isListening()) || _pipes;
 }
 
 void MakeLinkServer::close() {
     dropClient();
+#ifdef Q_OS_WIN
+    if (_pipes) {
+        delete _pipes;
+        _pipes = nullptr;
+        _socketPath.clear();
+        qCInfo(makelink) << "Make's link is closed";
+    }
+#endif
     if (_server) {
         _server->close();
         delete _server;
@@ -157,28 +370,51 @@ void MakeLinkServer::accept() {
             refused = "a program of another user tried to connect";
         }
 #endif
-        if (refused.isEmpty() && _client) {
-            refused = "a second Claude Code tried to connect while one is connected";
-        }
-        if (!refused.isEmpty()) {
-            qCWarning(makelink) << "refused a connection:" << refused;
-            emit connectionRefused(refused);
-            socket->abort();
-            socket->deleteLater();
-            continue;
-        }
-        _client = socket;
-        _buffer.clear();
-        _clientName.clear();
-        connect(socket, &QLocalSocket::readyRead, this, &MakeLinkServer::readClient);
-        connect(socket, &QLocalSocket::disconnected, this, [this, socket] {
-            if (_client == socket) {
-                dropClient();
-            }
-        });
-        qCInfo(makelink) << "Claude Code connected to Make";
-        emit connectedChanged(true);
+        adopt(socket, refused);
     }
+}
+
+void MakeLinkServer::adoptPipe(void* pipe) {
+#ifdef Q_OS_WIN
+    // who connected, before anything is read from it
+    QString refused;
+    if (!clientIsThisUser(pipe, refused)) {
+        qCWarning(makelink) << "refused a connection:" << refused;
+        emit connectionRefused(refused);
+        DisconnectNamedPipe(pipe);
+        CloseHandle(pipe);
+        return;
+    }
+    auto socket = new QLocalSocket(this);
+    socket->setSocketDescriptor(reinterpret_cast<qintptr>(pipe));
+    adopt(socket, QString());
+#else
+    Q_UNUSED(pipe);
+#endif
+}
+
+void MakeLinkServer::adopt(QLocalSocket* socket, QString refused) {
+    if (refused.isEmpty() && _client) {
+        refused = "a second Claude Code tried to connect while one is connected";
+    }
+    if (!refused.isEmpty()) {
+        qCWarning(makelink) << "refused a connection:" << refused;
+        emit connectionRefused(refused);
+        socket->abort();
+        socket->deleteLater();
+        return;
+    }
+    _client = socket;
+    _buffer.clear();
+    _clientName.clear();
+    connect(socket, &QLocalSocket::readyRead, this, &MakeLinkServer::readClient);
+    connect(socket, &QLocalSocket::disconnected, this, [this, socket] {
+        if (_client == socket) {
+            dropClient();
+        }
+    });
+    qCInfo(makelink) << "Claude Code connected to Make";
+    emit connectedChanged(true);
 }
 
 void MakeLinkServer::dropClient() {

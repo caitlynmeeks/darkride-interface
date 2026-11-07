@@ -213,6 +213,7 @@ MakeLink::MakeLink() {
     // a new world: the tools start again in it (Undo starts again too)
     connect(&DependencyManager::get<NodeList>()->getDomainHandler(), &DomainHandler::domainURLChanged, this, [this] {
         _askedOutsideFor = 0;  // a world not the person's own asks again there
+        _names.clear();        // the last world's names never reach this one's asks and records
         if (_engine) {
             stopToolsEngine();
             startToolsEngine();
@@ -257,8 +258,15 @@ QString MakeLink::socketFolder() const {
 }
 
 QString MakeLink::mcpConfigText() const {
+#ifdef Q_OS_WIN
+    // the helper's program beside ours, and this Connect's own random pipe name (this file is the one place it's written)
+    const QString helper =
+        QDir::toNativeSeparators(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp.exe"));
+    const QString socket = _pipeName;
+#else
     const QString helper = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp");
     const QString socket = QDir(socketFolder()).absoluteFilePath("link.sock");
+#endif
     const QJsonObject config { { "mcpServers", QJsonObject { { "darkride", QJsonObject {
         { "command", helper }, { "args", QJsonArray { "--socket", socket } } } } } } };
     return QString::fromUtf8(QJsonDocument(config).toJson(QJsonDocument::Indented));
@@ -446,7 +454,14 @@ bool MakeLink::connectLink() {
         setState(_server.isConnected() ? State::Connected : State::Listening);
         return true;
     }
-    if (!writeFolder(error) || !_server.listen(socketFolder(), error)) {
+#ifdef Q_OS_WIN
+    // Windows' link is a named pipe: a fresh random name at each Connect, in Claude Code's MCP file only (security)
+    _pipeName = MakeLinkServer::newPipeName();
+    const QString listenOn = _pipeName;
+#else
+    const QString listenOn = socketFolder();
+#endif
+    if (!writeFolder(error) || !_server.listen(listenOn, error)) {
         setState(State::Failed, error);
         return false;
     }
@@ -492,6 +507,7 @@ void MakeLink::disconnectLink() {
         it.value()(false);
     }
     _asks.clear();
+    _names.clear();
     setState(State::Off);
 }
 
@@ -601,6 +617,8 @@ void MakeLink::stopToolsEngine() {
 void MakeLink::toEngine(const QString& tool) {
     _server.setHandler(tool, [this, tool](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
         if (tool == "add" || tool == "edit") {
+            // here, after the gate: its asks (a web address in the material, a world not the person's own) come before
+            // anything goes into the world's files (security, 11-07)
             longMaterialToFile(inputs, [this, tool, reply](const QJsonObject& ready) { forward(tool, ready, reply); });
         } else {
             forward(tool, inputs, reply);

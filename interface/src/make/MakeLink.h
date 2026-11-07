@@ -195,6 +195,7 @@ private:
     bool _blenderOffered { false };
     QString _blenderWhy;
     QString _folder;
+    QString _pipeName;  // Windows: this Connect's pipe (MakeLinkServer::newPipeName)
     QString _model;
 
     int _request { 0 };

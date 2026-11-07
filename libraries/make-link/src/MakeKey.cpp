@@ -2,8 +2,8 @@
 //  MakeKey.cpp
 //  libraries/make-link/src
 //
-//  The key's shape check, the same on every system; keeping it is each system's own (MakeKeyMac.cpp, and a stand-in
-//  below where there is none yet: the Terminal route only).
+//  The key's shape check, the same on every system; keeping it is each system's own (MakeKeyMac.cpp, MakeKeyWin.cpp,
+//  and a stand-in below where there is none yet: the Terminal route only).
 //
 //  Copyright 2026 Darkride.
 //
@@ -28,9 +28,9 @@ bool MakeKey::looksRight(const QString& key, QString& why) {
     return true;
 }
 
-#if !defined(Q_OS_MAC)
+#if !defined(Q_OS_MAC) && !defined(Q_OS_WIN)
 
-// no key store here yet (Windows' and Linux's come next): the Terminal route only, never a plaintext file
+// no key store here yet (Linux's comes next): the Terminal route only, never a plaintext file
 bool MakeKey::store(const QString& key, QString& why) {
     if (!looksRight(key, why)) {
         return false;
