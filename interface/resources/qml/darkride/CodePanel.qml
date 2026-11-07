@@ -25,6 +25,7 @@ import QtQuick
 import QtQuick.Controls
 import QtWebEngine
 import "panel"
+import "editor"
 
 Rectangle {
     id: root
@@ -281,55 +282,20 @@ Rectangle {
 
     // ---- Build mode's look (interface/resources/styles/editor.qss; Caity 11-07 "ok as drawn", mockups/code-panel) ----
 
-    readonly property color panelColor: "#383838"
-    readonly property color textColor: "#d2d2d2"
-    readonly property color mutedColor: "#8f8f8f"
-    readonly property color dimColor: "#6a6a6a"
-    readonly property color fieldColor: "#2a2a2a"
-    readonly property color fieldEdge: "#1f1f1f"
-    readonly property color edgeColor: "#232323"
-    readonly property color hoverColor: "#474747"
-    readonly property color selectionColor: "#2c5d87"
-    readonly property color runningColor: "#5fb760"
-    readonly property color problemColor: "#ff6b6b"
+    // the colours: editor/BuildTheme.qml, shared with the Make panel so the two can't drift
+    readonly property color panelColor: BuildTheme.panel
+    readonly property color textColor: BuildTheme.text
+    readonly property color mutedColor: BuildTheme.mutedText
+    readonly property color dimColor: BuildTheme.dimText
+    readonly property color fieldColor: BuildTheme.field
+    readonly property color fieldEdge: BuildTheme.fieldEdge
+    readonly property color edgeColor: BuildTheme.edge
+    readonly property color hoverColor: BuildTheme.hover
+    readonly property color selectionColor: BuildTheme.selection
+    readonly property color runningColor: BuildTheme.running
+    readonly property color problemColor: BuildTheme.problem
 
-    // drawn as the Inspector's buttons (Edit, Reload): flat grey, a 1 px bevel, square corners, 23 px
-    component BuildButton: Item {
-        id: button
-        property string text: ""
-        property string tip: ""
-        property bool down: false
-        signal pressed()
-        implicitWidth: Math.max(text.length > 3 ? 64 : 30, label.implicitWidth + 24)
-        implicitHeight: 23
-        Rectangle {
-            anchors.fill: parent
-            color: buttonMouse.pressed || button.down ? root.hoverColor : root.panelColor
-        }
-        Rectangle { width: parent.width; height: 1; color: "#404040" }
-        Rectangle { width: 1; height: parent.height - 1; color: "#404040" }
-        Rectangle { x: parent.width - 1; width: 1; height: parent.height - 1; color: "#252525" }
-        Rectangle { y: parent.height - 2; width: parent.width; height: 1; color: "#252525" }
-        Rectangle { y: parent.height - 1; width: parent.width; height: 1; color: "#131313" }
-        Text {
-            id: label
-            anchors.centerIn: parent
-            text: button.text
-            textFormat: Text.PlainText
-            color: button.enabled ? root.textColor : root.dimColor
-            font.pixelSize: 12
-        }
-        MouseArea {
-            id: buttonMouse
-            anchors.fill: parent
-            enabled: button.enabled
-            hoverEnabled: true
-            onClicked: button.pressed()
-            ToolTip.visible: containsMouse && button.tip !== ""
-            ToolTip.text: button.tip
-            ToolTip.delay: 600
-        }
-    }
+    // the buttons: editor/BuildButton.qml, shared with the Make panel
 
     // ---- the list on the left: Code near you, every script and shader within 50 m, nearest first, one row per file
     // (Caity 11-07 "EXCELLENT, as drawn", mockups/code-panel-list). It folds away when the panel is narrow; the

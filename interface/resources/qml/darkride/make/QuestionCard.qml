@@ -20,7 +20,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Window
-import "../panel"
+import "../editor"
 
 Card {
     id: card
@@ -36,7 +36,7 @@ Card {
     readonly property bool open: answered === "" && !pressed
 
     highlighted: open
-    spacing: 8 * Theme.unit
+    spacing: 8
 
     function answer(allow) {
         if (!open || !dock) {
@@ -77,8 +77,8 @@ Card {
         Layout.fillWidth: true
         text: card.text
         textFormat: Text.PlainText
-        color: Theme.text
-        font.pixelSize: Theme.bodySize
+        color: BuildTheme.text
+        font.pixelSize: BuildTheme.textSize
         font.weight: Font.DemiBold
         wrapMode: Text.Wrap
         lineHeight: 1.15
@@ -87,41 +87,38 @@ Card {
     Rectangle {
         Layout.fillWidth: true
         visible: card.exactly !== ""
-        implicitHeight: exactlyText.implicitHeight + 12 * Theme.unit
-        radius: 6 * Theme.unit
-        color: Theme.background
+        implicitHeight: exactlyText.implicitHeight + 12
+        radius: BuildTheme.radius
+        color: BuildTheme.panel
         TextEdit {
             id: exactlyText
-            x: 8 * Theme.unit
-            y: 6 * Theme.unit
-            width: parent.width - 16 * Theme.unit
+            x: 8
+            y: 6
+            width: parent.width - 16
             text: card.exactly
             textFormat: TextEdit.PlainText
             readOnly: true
             selectByMouse: true
             wrapMode: TextEdit.WrapAnywhere
-            color: Theme.secondaryText
-            selectionColor: Theme.tint
+            color: BuildTheme.mutedText
+            selectionColor: BuildTheme.selection
             font.family: "Menlo"
-            font.pixelSize: 11 * Theme.unit
+            font.pixelSize: 11
             Keys.onEscapePressed: if (card.dock) card.dock.giveBackKeyboard()
         }
     }
     RowLayout {
         Layout.fillWidth: true
-        Layout.topMargin: 2 * Theme.unit
+        Layout.topMargin: 2
         visible: card.answered === ""
-        spacing: 8 * Theme.unit
+        spacing: 6
+        Item { Layout.fillWidth: true }   // Don't Allow, then Allow, at their own width on the right (macOS's order)
         MakeButton {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1   // the pair splits the row in equal halves
             text: "Don't Allow"
             enabled: card.open && card.armed
             onClicked: card.answer(false)
         }
         MakeButton {
-            Layout.fillWidth: true
-            Layout.preferredWidth: 1
             kind: "primary"
             text: "Allow"
             enabled: card.open && card.armed
@@ -133,7 +130,7 @@ Card {
         visible: card.answered !== ""
         text: card.answered === "allowed" ? "Allowed" : card.answered === "refused" ? "Not allowed" : "No answer in time, so not allowed"
         textFormat: Text.PlainText
-        color: card.answered === "allowed" ? Theme.on : Theme.secondaryText
-        font.pixelSize: Theme.detailSize
+        color: card.answered === "allowed" ? BuildTheme.running : BuildTheme.mutedText
+        font.pixelSize: BuildTheme.noteSize
     }
 }

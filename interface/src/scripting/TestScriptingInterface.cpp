@@ -1229,6 +1229,26 @@ bool TestScriptingInterface::makeDockConnect(const QString& route) {
     return DependencyManager::get<MakeDock>()->testConnectTerminal();
 }
 
+QVariantMap TestScriptingInterface::makeDockItem(const QString& name) {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "makeDockItem", Q_RETURN_ARG(QVariantMap, result), Q_ARG(QString, name));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testItem(name) : QVariantMap { { "found", false } };
+}
+
+bool TestScriptingInterface::makeDockMouse(const QString& name, double fromX, double fromY, double toX, double toY) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockMouse", Q_RETURN_ARG(bool, result), Q_ARG(QString, name),
+                               Q_ARG(double, fromX), Q_ARG(double, fromY), Q_ARG(double, toX), Q_ARG(double, toY));
+        return result;
+    }
+    return MakeDock::isAvailable() &&
+        DependencyManager::get<MakeDock>()->testMouse(name, QPointF(fromX, fromY), QPointF(toX, toY));
+}
+
 QString TestScriptingInterface::makeDockServed(const QString& what, const QString& id) {
     if (QThread::currentThread() != thread()) {
         QString result;

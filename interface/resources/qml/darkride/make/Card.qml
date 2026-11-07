@@ -2,8 +2,8 @@
 //  Card.qml
 //  qml/darkride/make
 //
-//  A rounded card on the dock's background, in the theme's card colour or a skin's card frame; its content goes in a
-//  column with the card's padding. Make's own, not the panels' Section: Section carries the rich-text rights line,
+//  A box on the dock's panel, drawn as the Inspector's User Data box (the panel's grey, a 1 px #2b2b2b edge, 3 px
+//  corners); its content goes in a column with the box's padding. Make's own, not the panels' Section: Section carries the rich-text rights line,
 //  and every text in the Make dock is plain (security, 11-06).
 //
 //  Copyright 2026 Darkride.
@@ -13,32 +13,27 @@
 
 import QtQuick
 import QtQuick.Layouts
-import "../panel"
+import "../editor"
 
 Rectangle {
     id: card
 
     property bool padded: true
-    property bool highlighted: false   // a question waiting for an answer
-    property real spacing: 8 * Theme.unit
+    property bool highlighted: false   // a question waiting for an answer: the selection blue edge
+    property real spacing: 8
     default property alias content: column.data
 
-    implicitHeight: column.implicitHeight + (padded ? 2 * Theme.cardPadding * 0.85 : 0)
-    radius: Theme.cardRadius
-    color: cardFrame.shown ? "transparent" : Theme.card
-    border.width: highlighted ? 1 : 0
-    border.color: Theme.tint
-
-    SkinFrame {
-        id: cardFrame
-        part: "card"
-        anchors.fill: parent
-    }
+    // a box on the panel, as the Inspector's User Data box (mary's MAKE-PANEL-LOOK.md), not a raised card
+    implicitHeight: column.implicitHeight + (padded ? 2 * BuildTheme.padding : 0)
+    radius: BuildTheme.radius
+    color: BuildTheme.panel
+    border.width: 1
+    border.color: highlighted ? BuildTheme.selection : BuildTheme.sectionLine
 
     ColumnLayout {
         id: column
-        x: card.padded ? Theme.cardPadding * 0.85 : 0
-        y: card.padded ? Theme.cardPadding * 0.85 : 0
+        x: card.padded ? BuildTheme.padding : 0
+        y: card.padded ? BuildTheme.padding : 0
         width: card.width - 2 * x
         spacing: card.spacing
     }

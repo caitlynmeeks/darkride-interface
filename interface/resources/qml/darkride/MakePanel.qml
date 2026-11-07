@@ -5,7 +5,8 @@
 //  The Make dock (Make v1, make-dock-1): build and script in this world with your own Claude. Connect first (what's
 //  on this computer, how Make reaches Claude, the Allow); then one timeline of what you asked, what Claude does, what it
 //  asks and what it made, with Stop and Undo; the Made tab keeps this session's things. Native QML on Qt 6 only (Make
-//  ships with the Qt 6 app), drawn in the panels' Theme so the schemes and skins apply.
+//  ships with the Qt 6 app), drawn in Build mode's look (editor/BuildTheme.qml, shared with the Code panel; mary's
+//  team/mary/brand/make-panel/MAKE-PANEL-LOOK.md), as it docks beside the Inspector.
 //
 //  It sees one object, MakeDock (editor-ui's interface/src/make/MakeDock, set on this dock's own context only;
 //  team/editor-ui/MAKE-DOCK-CONTRACT.md), and calls nothing else but Panels. MakeDock cleans every string before it
@@ -18,9 +19,8 @@
 //
 
 import QtQuick
-import QtQuick.Controls as QQC2
 import QtQuick.Layouts
-import "panel"
+import "editor"
 import "make"
 
 Rectangle {
@@ -37,7 +37,7 @@ Rectangle {
     readonly property bool terminalRoute: dock ? dock.route === "terminal" : false
 
     anchors.fill: parent
-    color: Theme.background
+    color: BuildTheme.panel
 
     ConnectView {
         anchors.fill: parent
@@ -50,77 +50,51 @@ Rectangle {
         visible: !root.showConnect
         spacing: 0
 
-        // the header: the name, how it's connected, Now or Made, and the more menu (Disconnect)
-        RowLayout {
+        // the header, one line as the Code panel's: how it's connected on the left (no name: the tab and the dock's
+        // title say "Make"), Now or Made and the more menu (the app's own menu: Disconnect) on the right
+        Rectangle {
             Layout.fillWidth: true
-            Layout.leftMargin: 14 * Theme.unit
-            Layout.rightMargin: 8 * Theme.unit
-            Layout.topMargin: 8 * Theme.unit
-            Layout.bottomMargin: 8 * Theme.unit
-            spacing: 10 * Theme.unit
-
-            Text {
-                text: "Make"
-                textFormat: Text.PlainText
-                color: Theme.text
-                font.pixelSize: 16 * Theme.unit
-                font.weight: Font.DemiBold
-            }
-            Text {
-                Layout.fillWidth: true
-                text: root.linkState === "connected" ? "● Connected"
-                    : root.linkState === "starting" ? "Starting your Claude…"
-                    : root.linkState === "listening" ? "Waiting for Claude in Terminal" : ""
-                textFormat: Text.PlainText
-                color: root.linkState === "connected" ? Theme.on : Theme.secondaryText
-                font.pixelSize: Theme.detailSize
-                elide: Text.ElideRight
-            }
-            Segmented {
-                model: [{ text: "Now", value: "now" }, { text: "Made", value: "made" }]
-                current: root.tab
-                onChosen: function (value) { root.tab = value; }
-            }
-            MakeButton {
-                id: moreButton
-                text: "•••"
-                implicitWidth: 34 * Theme.unit
-                color: "transparent"
-                Accessible.name: "More"
-                onClicked: morePopup.open()
-
-                QQC2.Popup {
-                    id: morePopup
-                    y: moreButton.height + 4 * Theme.unit
-                    x: moreButton.width - width
-                    padding: 6 * Theme.unit
-                    background: Rectangle {
-                        radius: Theme.cardRadius
-                        color: Theme.card
-                        border.width: 1
-                        border.color: Theme.separator
-                    }
-                    contentItem: ColumnLayout {
-                        spacing: 4 * Theme.unit
-                        MakeButton {
-                            Layout.fillWidth: true
-                            text: "Disconnect"
-                            onClicked: {
-                                morePopup.close();
-                                if (root.dock) {
-                                    root.dock.disconnect();
-                                }
-                            }
+            implicitHeight: 30
+            color: BuildTheme.panel
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 6
+                spacing: 6
+                Text {
+                    Layout.fillWidth: true
+                    text: root.linkState === "connected" ? "● Connected"
+                        : root.linkState === "starting" ? "Starting your Claude…"
+                        : root.linkState === "listening" ? "Waiting for Claude in Terminal" : ""
+                    textFormat: Text.PlainText
+                    color: root.linkState === "connected" ? BuildTheme.running : BuildTheme.mutedText
+                    font.pixelSize: BuildTheme.textSize
+                    elide: Text.ElideRight
+                }
+                BuildToggle {
+                    text: "Now"
+                    checked: root.tab === "now"
+                    onToggled: root.tab = "now"
+                }
+                BuildToggle {
+                    text: "Made"
+                    checked: root.tab === "made"
+                    onToggled: root.tab = "made"
+                }
+                MakeButton {
+                    id: moreButton
+                    text: "•••"
+                    tip: "More"
+                    Accessible.name: "More"
+                    onClicked: {
+                        if (root.dock && root.dock.showMoreMenu !== undefined) {
+                            var at = moreButton.mapToGlobal(moreButton.width, moreButton.height + 2);
+                            root.dock.showMoreMenu(at.x, at.y);
                         }
                     }
                 }
             }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: 1
-            color: Theme.separator
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: BuildTheme.edge }
         }
 
         NowView {

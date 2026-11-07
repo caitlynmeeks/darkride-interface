@@ -21,7 +21,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
-import "../panel"
+import "../editor"
 import "format.js" as Format
 
 Item {
@@ -38,15 +38,20 @@ Item {
         model: view.dock ? view.dock.timeline : null
     }
 
-    // before anything: the Terminal route's start line while Make waits for Claude, else a welcome
+    // before anything: the Terminal route's start line while Make waits for Claude (at the top, under the header),
+    // else a welcome (in the middle). Above the list (z), which is empty then but still takes clicks and drags: under
+    // it, Copy and the line never got them (Caity's try, 11-07).
     ColumnLayout {
+        z: 1
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.leftMargin: 18 * Theme.unit
-        anchors.rightMargin: 18 * Theme.unit
+        anchors.top: view.terminalRoute ? parent.top : undefined
+        anchors.verticalCenter: view.terminalRoute ? undefined : parent.verticalCenter
+        anchors.topMargin: 12
+        anchors.leftMargin: 14
+        anchors.rightMargin: 14
         visible: view.empty
-        spacing: 12 * Theme.unit
+        spacing: 12
 
         StartLine {
             Layout.fillWidth: true
@@ -59,9 +64,9 @@ Item {
             visible: !view.terminalRoute
             text: "Say what you want, in your own words."
             textFormat: Text.PlainText
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
-            font.weight: Font.Medium
+            color: BuildTheme.text
+            font.pixelSize: BuildTheme.textSize
+            font.weight: Font.Normal
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
         }
@@ -71,21 +76,21 @@ Item {
             delegate: Rectangle {
                 required property string modelData
                 Layout.alignment: Qt.AlignHCenter
-                Layout.maximumWidth: view.width - 36 * Theme.unit
-                implicitWidth: example.implicitWidth + 24 * Theme.unit
-                implicitHeight: example.implicitHeight + 12 * Theme.unit
-                radius: height / 2
-                color: exampleMouse.pressed ? Theme.cardPressed : Theme.card
+                Layout.maximumWidth: view.width - 36
+                implicitWidth: example.implicitWidth + 24
+                implicitHeight: example.implicitHeight + 12
+                radius: BuildTheme.radius
+                color: exampleMouse.pressed ? BuildTheme.fieldPressed : BuildTheme.field
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData
                 Text {
                     id: example
                     anchors.centerIn: parent
-                    width: Math.min(implicitWidth, parent.Layout.maximumWidth - 24 * Theme.unit)
+                    width: Math.min(implicitWidth, parent.Layout.maximumWidth - 24)
                     text: "“" + parent.modelData + "”"
                     textFormat: Text.PlainText
-                    color: Theme.secondaryText
-                    font.pixelSize: Theme.detailSize
+                    color: BuildTheme.mutedText
+                    font.pixelSize: BuildTheme.noteSize
                     elide: Text.ElideRight
                 }
                 MouseArea {
@@ -98,11 +103,11 @@ Item {
         }
         Text {
             Layout.fillWidth: true
-            text: view.terminalRoute ? "Ask Claude in Terminal. What it does shows here, with Stop and Undo."
-                : "Claude makes it in 3D, places it, makes it work and tests it."
+            visible: !view.terminalRoute   // the Terminal route says it once, on the bottom line
+            text: "Claude makes it in 3D, places it, makes it work and tests it."
             textFormat: Text.PlainText
-            color: Theme.tertiaryText
-            font.pixelSize: Theme.detailSize
+            color: BuildTheme.dimText
+            font.pixelSize: BuildTheme.noteSize
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
         }
@@ -111,7 +116,7 @@ Item {
     ListView {
         id: list
         anchors.fill: parent
-        anchors.topMargin: 10 * Theme.unit
+        anchors.topMargin: 10
         clip: true
         model: view.dock ? view.dock.timeline : null
         boundsBehavior: Flickable.StopAtBounds
@@ -131,16 +136,16 @@ Item {
             width: list.width
             readonly property bool shown: view.terminalRoute && !view.empty && !!view.dock
                 && view.dock.state === "listening"
-            height: shown ? footerLine.implicitHeight + 24 * Theme.unit : 0
+            height: shown ? footerLine.implicitHeight + 24 : 0
             visible: shown
             StartLine {
                 id: footerLine
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.topMargin: 12 * Theme.unit
-                anchors.leftMargin: 14 * Theme.unit
-                anchors.rightMargin: 14 * Theme.unit
+                anchors.topMargin: 12
+                anchors.leftMargin: 14
+                anchors.rightMargin: 14
                 dock: view.dock
             }
         }
@@ -155,7 +160,7 @@ Item {
             readonly property int request: model.request || 0
             readonly property string mode: requests.revision >= 0 ? requests.mode(index) : "row"
             readonly property var info: requests.revision >= 0 ? requests.info(request) : null
-            readonly property real gap: (kind === "activity" && mode === "row" ? 5 : 12) * Theme.unit
+            readonly property real gap: (kind === "activity" && mode === "row" ? 5 : 12)
 
             width: ListView.view.width
             height: mode === "hidden" ? 0 : loader.implicitHeight + gap
@@ -163,8 +168,8 @@ Item {
 
             Loader {
                 id: loader
-                x: 14 * Theme.unit
-                width: parent.width - 28 * Theme.unit
+                x: 14
+                width: parent.width - 28
                 active: row.mode !== "hidden"
                 sourceComponent: row.mode === "fold" ? foldLine
                     : row.mode === "steps" ? stepsLine
@@ -181,9 +186,9 @@ Item {
             Component {
                 id: foldLine
                 Rectangle {
-                    implicitHeight: foldRow.implicitHeight + 18 * Theme.unit
-                    radius: 10 * Theme.unit
-                    color: foldMouse.pressed ? Theme.cardPressed : Theme.card
+                    implicitHeight: foldRow.implicitHeight + 18
+                    radius: BuildTheme.radius
+                    color: foldMouse.pressed ? BuildTheme.fieldPressed : BuildTheme.field
                     opacity: !!row.info && row.info.undone ? 0.6 : 1
                     Accessible.role: Accessible.Button
                     Accessible.name: foldTitle.text
@@ -192,22 +197,22 @@ Item {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 12 * Theme.unit
-                        anchors.rightMargin: 12 * Theme.unit
-                        spacing: 8 * Theme.unit
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        spacing: 8
                         Text {
                             text: "▸"
                             textFormat: Text.PlainText
-                            color: Theme.secondaryText
-                            font.pixelSize: Theme.bodySize
+                            color: BuildTheme.mutedText
+                            font.pixelSize: BuildTheme.textSize
                         }
                         Text {
                             id: foldTitle
                             Layout.fillWidth: true
                             text: row.info ? (row.info.title || row.info.firstText) : ""
                             textFormat: Text.PlainText
-                            color: Theme.text
-                            font.pixelSize: Theme.bodySize
+                            color: BuildTheme.text
+                            font.pixelSize: BuildTheme.textSize
                             elide: Text.ElideRight
                             maximumLineCount: 1
                         }
@@ -218,8 +223,8 @@ Item {
                                    row.info.done && row.info.endTime > 0 ? Format.duration(row.info.endTime - row.info.startTime) : "",
                                    Format.cost(row.info.cost)].filter(function (part) { return part !== ""; }).join(" · ")
                             textFormat: Text.PlainText
-                            color: Theme.secondaryText
-                            font.pixelSize: Theme.detailSize
+                            color: BuildTheme.mutedText
+                            font.pixelSize: BuildTheme.noteSize
                         }
                     }
                     MouseArea {
@@ -235,7 +240,7 @@ Item {
             Component {
                 id: stepsLine
                 Item {
-                    implicitHeight: stepsText.implicitHeight + 4 * Theme.unit
+                    implicitHeight: stepsText.implicitHeight + 4
                     Text {
                         id: stepsText
                         width: parent.width
@@ -255,9 +260,9 @@ Item {
                             return "▸  " + earlier + (earlier === 1 ? " earlier step" : " earlier steps");
                         }
                         textFormat: Text.PlainText
-                        color: Theme.secondaryText
-                        font.pixelSize: Theme.detailSize
-                        leftPadding: 2 * Theme.unit
+                        color: BuildTheme.mutedText
+                        font.pixelSize: BuildTheme.noteSize
+                        leftPadding: 2
                         Accessible.role: Accessible.Button
                         Accessible.name: text
                     }
@@ -276,32 +281,32 @@ Item {
                     id: ask
                     readonly property var views: Format.urls(row.model.views)
                     readonly property int shown: Math.min(views.length, 3)
-                    readonly property real picturesWidth: shown > 0 ? shown * 96 * Theme.unit + (shown - 1) * 6 * Theme.unit : 0
+                    readonly property real picturesWidth: shown > 0 ? shown * 96 + (shown - 1) * 6 : 0
                     implicitHeight: bubble.height
                     Rectangle {
                         id: bubble
                         anchors.right: parent.right
-                        width: Math.min(parent.width * 0.82, Math.max(askText.implicitWidth, ask.picturesWidth) + 24 * Theme.unit)
-                        height: askColumn.implicitHeight + 18 * Theme.unit
-                        radius: 14 * Theme.unit
-                        color: Theme.fill
+                        width: Math.min(parent.width * 0.82, Math.max(askText.implicitWidth, ask.picturesWidth) + 24)
+                        height: askColumn.implicitHeight + 18
+                        radius: BuildTheme.radius
+                        color: BuildTheme.field
                         ColumnLayout {
                             id: askColumn
-                            x: 12 * Theme.unit
-                            y: 9 * Theme.unit
-                            width: parent.width - 24 * Theme.unit
-                            spacing: 8 * Theme.unit
+                            x: 12
+                            y: 9
+                            width: parent.width - 24
+                            spacing: 8
                             Flow {
                                 id: pictures
                                 Layout.fillWidth: true
                                 visible: ask.views.length > 0
-                                spacing: 6 * Theme.unit
+                                spacing: 6
                                 Repeater {
                                     model: ask.views
                                     delegate: Image {
                                         required property string modelData
-                                        width: 96 * Theme.unit
-                                        height: 72 * Theme.unit
+                                        width: 96
+                                        height: 72
                                         source: modelData
                                         fillMode: Image.PreserveAspectCrop
                                         asynchronous: true
@@ -316,8 +321,8 @@ Item {
                                 Layout.fillWidth: true
                                 text: row.model.text || ""
                                 textFormat: Text.PlainText
-                                color: Theme.text
-                                font.pixelSize: Theme.bodySize
+                                color: BuildTheme.text
+                                font.pixelSize: BuildTheme.textSize
                                 wrapMode: Text.Wrap
                                 lineHeight: 1.15
                             }
@@ -333,24 +338,24 @@ Item {
                     implicitHeight: replyBack.height
                     Rectangle {
                         id: replyBack
-                        width: Math.min(parent.width * 0.9, replyText.implicitWidth + 24 * Theme.unit)
-                        height: replyText.implicitHeight + 18 * Theme.unit
-                        radius: 14 * Theme.unit
-                        color: Theme.card
+                        width: Math.min(parent.width * 0.9, replyText.implicitWidth + 24)
+                        height: replyText.implicitHeight + 18
+                        radius: BuildTheme.radius
+                        color: BuildTheme.field
                         TextEdit {
                             id: replyText
-                            x: 12 * Theme.unit
-                            y: 9 * Theme.unit
-                            width: Math.min(implicitWidth, row.width * 0.9 - 24 * Theme.unit)
+                            x: 12
+                            y: 9
+                            width: Math.min(implicitWidth, row.width * 0.9 - 24)
                             text: row.model.text || ""
                             textFormat: TextEdit.PlainText
                             readOnly: true
                             selectByMouse: true
                             wrapMode: TextEdit.Wrap
-                            color: Theme.text
-                            selectionColor: Theme.tint
+                            color: BuildTheme.text
+                            selectionColor: BuildTheme.selection
                             selectedTextColor: "#ffffff"
-                            font.pixelSize: Theme.bodySize
+                            font.pixelSize: BuildTheme.textSize
                             Keys.onEscapePressed: if (view.dock) view.dock.giveBackKeyboard()
                         }
                     }
@@ -365,19 +370,19 @@ Item {
                     readonly property bool current: !!row.info && !row.info.done && !!view.dock && view.dock.working
                         && row.request === requests.newestRequest
                         && row.info.activities[row.info.activities.length - 1] === row.index
-                    spacing: 8 * Theme.unit
+                    spacing: 8
                     Item {
                         Layout.alignment: Qt.AlignTop
-                        Layout.topMargin: 1 * Theme.unit
-                        implicitWidth: 14 * Theme.unit
-                        implicitHeight: 14 * Theme.unit
+                        Layout.topMargin: 1
+                        implicitWidth: 14
+                        implicitHeight: 14
                         Text {
                             anchors.centerIn: parent
                             visible: !step.current
                             text: "✓"
                             textFormat: Text.PlainText
-                            color: Theme.on
-                            font.pixelSize: Theme.detailSize
+                            color: BuildTheme.running
+                            font.pixelSize: BuildTheme.noteSize
                             font.weight: Font.DemiBold
                         }
                         Busy {
@@ -389,8 +394,8 @@ Item {
                         Layout.fillWidth: true
                         text: row.model.text || ""
                         textFormat: Text.PlainText
-                        color: step.current ? Theme.text : Theme.secondaryText
-                        font.pixelSize: Theme.detailSize + 0.5 * Theme.unit
+                        color: step.current ? BuildTheme.text : BuildTheme.mutedText
+                        font.pixelSize: BuildTheme.noteSize + 0.5
                         wrapMode: Text.Wrap
                         lineHeight: 1.1
                     }
@@ -436,10 +441,10 @@ Item {
             Component {
                 id: doneLine
                 ColumnLayout {
-                    spacing: 4 * Theme.unit
+                    spacing: 4
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 8 * Theme.unit
+                        spacing: 8
                         Text {
                             Layout.fillWidth: true
                             text: !row.info ? ""
@@ -448,8 +453,8 @@ Item {
                                    row.info.endTime > 0 ? Format.duration(row.info.endTime - row.info.startTime) : "",
                                    Format.cost(row.model.cost)].filter(function (part) { return part !== ""; }).join(" · ")
                             textFormat: Text.PlainText
-                            color: Theme.secondaryText
-                            font.pixelSize: Theme.detailSize
+                            color: BuildTheme.mutedText
+                            font.pixelSize: BuildTheme.noteSize
                             elide: Text.ElideRight
                         }
                         MakeButton {
@@ -464,8 +469,8 @@ Item {
                         visible: text !== "" && text !== "Done"
                         text: row.model.text || ""
                         textFormat: Text.PlainText
-                        color: Theme.tertiaryText
-                        font.pixelSize: Theme.detailSize
+                        color: BuildTheme.dimText
+                        font.pixelSize: BuildTheme.noteSize
                         wrapMode: Text.Wrap
                     }
                 }
@@ -486,19 +491,19 @@ Item {
     }
     Rectangle {
         anchors.fill: parent
-        anchors.margins: 8 * Theme.unit
+        anchors.margins: 8
         visible: drop.containsDrag
-        radius: Theme.cardRadius
-        color: Qt.rgba(Theme.background.r, Theme.background.g, Theme.background.b, 0.88)
-        border.width: 2 * Theme.unit
-        border.color: Theme.tint
+        radius: BuildTheme.radius
+        color: Qt.rgba(BuildTheme.panel.r, BuildTheme.panel.g, BuildTheme.panel.b, 0.88)
+        border.width: 2
+        border.color: BuildTheme.selection
         Text {
             anchors.centerIn: parent
             text: "Drop pictures to add them"
             textFormat: Text.PlainText
-            color: Theme.text
-            font.pixelSize: Theme.bodySize
-            font.weight: Font.Medium
+            color: BuildTheme.text
+            font.pixelSize: BuildTheme.textSize
+            font.weight: Font.Normal
         }
     }
 }

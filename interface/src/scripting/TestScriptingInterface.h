@@ -526,6 +526,30 @@ public slots:
     Q_INVOKABLE bool makeDockConnect(const QString& route);
 
     /**jsdoc
+     * An item of the Make dock's view, found by its objectName: whether it's shown, its place in the dock's window,
+     * its text and selected text (a text item's).
+     * @function Test.makeDockItem
+     * @param {string} name - The item's objectName (e.g. <code>"makeStartLine"</code>, <code>"makeCopy"</code>).
+     * @returns {object} <code>{ found, visible, x, y, width, height, text, selectedText }</code>.
+     */
+    Q_INVOKABLE QVariantMap makeDockItem(const QString& name);
+
+    /**jsdoc
+     * A press, a drag and a release of the left button in the Make dock's window, over an item found by its objectName,
+     * from and to points given as fractions of the item's width and height (a click when they're the same). Sent as
+     * Qt events, not the system's: MakeDock's real-input check refuses any call they lead to, so a kit sees whether
+     * the click reached its target (the refusal's log line) without anything happening.
+     * @function Test.makeDockMouse
+     * @param {string} name - The item's objectName.
+     * @param {number} fromX - From, 0 to 1 across the item.
+     * @param {number} fromY - From, 0 to 1 down the item.
+     * @param {number} toX - To, 0 to 1 across the item.
+     * @param {number} toY - To, 0 to 1 down the item.
+     * @returns {boolean} Whether the item was found and shown, and the events were sent.
+     */
+    Q_INVOKABLE bool makeDockMouse(const QString& name, double fromX, double fromY, double toX, double toY);
+
+    /**jsdoc
      * Saves a picture of the Code panel's menu, drawn as it would show but without showing it.
      * @function Test.saveCodeMenuPicture
      * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu).

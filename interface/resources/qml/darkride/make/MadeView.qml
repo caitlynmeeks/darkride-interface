@@ -14,7 +14,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls as QQC2
-import "../panel"
+import "../editor"
 import "format.js" as Format
 
 Item {
@@ -24,12 +24,12 @@ Item {
 
     Text {
         anchors.centerIn: parent
-        width: parent.width - 36 * Theme.unit
+        width: parent.width - 36
         visible: grid.count === 0
         text: "Nothing made yet. What Claude makes for you shows here."
         textFormat: Text.PlainText
-        color: Theme.secondaryText
-        font.pixelSize: Theme.bodySize
+        color: BuildTheme.mutedText
+        font.pixelSize: BuildTheme.textSize
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
     }
@@ -37,14 +37,14 @@ Item {
     GridView {
         id: grid
 
-        readonly property int columns: Math.max(2, Math.floor(width / (150 * Theme.unit)))   // width is inside the margins
+        readonly property int columns: Math.max(2, Math.floor(width / (150)))   // width is inside the margins
 
         anchors.fill: parent
-        anchors.margins: 14 * Theme.unit
+        anchors.margins: 14
         clip: true
         model: view.visible && view.dock ? view.dock.made : null   // nothing made or loaded while the tab is hidden
         cellWidth: Math.floor(width / columns)
-        cellHeight: 172 * Theme.unit
+        cellHeight: 172
         boundsBehavior: Flickable.StopAtBounds
         QQC2.ScrollBar.vertical: QQC2.ScrollBar {}
 
@@ -55,7 +55,7 @@ Item {
 
             MadeCard {
                 anchors.fill: parent
-                anchors.margins: 4 * Theme.unit
+                anchors.margins: 4
                 tile: true
                 dock: view.dock
                 kind: parent.model.kind || "thing"

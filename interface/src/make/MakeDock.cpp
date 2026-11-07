@@ -26,18 +26,24 @@
 #include <QtCore/QRunnable>
 #include <QtCore/QThreadPool>
 #include <QtCore/QUuid>
+#include <QtGui/QClipboard>
 #include <QtGui/QDropEvent>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QMouseEvent>
 #include <QtGui/QImageReader>
 #include <QtGui/QImageWriter>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickImageProvider>
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMenu>
 
 #include <MainWindow.h>
 #include <MakeBlender.h>
 #include <MakeClaude.h>
 #include <MakeKey.h>
+#include <AccountManager.h>
 #include <SettingHandle.h>
 
 #include "Application.h"
@@ -61,8 +67,17 @@ namespace {
     const QRegularExpression PICTURE_ID(QStringLiteral("^[0-9a-f]{16}$"));
     const QRegularExpression MODEL_ID(QStringLiteral("^[A-Za-z0-9_-]{1,64}$"));
 
-    Setting::Handle<QString> routeSetting { QStringList { "Make", "route" }, QString("key") };
-    Setting::Handle<QString> allowedSetupSetting { QStringList { "Make", "allowedSetup" }, QString() };
+    // under private/: a world script's Settings can neither read nor write them (ScriptSettingsInterface's protected
+    // prefixes; security R1, 11-07). The keys before that, under Make/, are dropped once, never read.
+    Setting::Handle<QString> routeSetting { QStringList { "private", "Make", "route" }, QString("key") };
+    Setting::Handle<QString> allowedSetupSetting { QStringList { "private", "Make", "allowedSetup" }, QString() };
+    Setting::Handle<QString> oldRouteSetting { QStringList { "Make", "route" }, QString() };
+    Setting::Handle<QString> oldAllowedSetupSetting { QStringList { "Make", "allowedSetup" }, QString() };
+    // the Allow's words as ConnectView shows them: a new version whenever they change, so changed words ask again
+    // (security R2)
+    const QString ALLOW_WORDS = QStringLiteral("allow words 2026-11-07");
+    // the link's socket or pipe in the set-up text: a fresh pipe name at each Connect on Windows, so masked in the hash
+    const QRegularExpression LINK_SOCKET(QStringLiteral("(\"--socket\",\\s*\")[^\"]*(\")"));
 
     QString hashOf(const QString& text) {
         return QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex());
@@ -221,10 +236,15 @@ bool MakeDock::isAvailable() {
 
 MakeDock::MakeDock() {
     // nothing looked up until the dock first opens (watchWindow): no Keychain, Claude Code or Blender look-ups at start
+    oldRouteSetting.remove();
+    oldAllowedSetupSetting.remove();
     _route = routeSetting.get() == "terminal" ? QString("terminal") : QString("key");
 
     auto link = DependencyManager::get<MakeLink>();
     QObject::connect(link.data(), &MakeLink::stateChanged, this, &MakeDock::linkStateChanged);
+    // an Allow covers one signed-in account (allowHash)
+    QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
+                     [this] { emit setupTextChanged(); });
     QObject::connect(link.data(), &MakeLink::activity, this, [this](int request, const QString& line) {
         if (request > _doneRequest && _working == false) {
             _costSoFar = -1.0;
@@ -415,8 +435,22 @@ QString MakeDock::setupText() const {
         "What Claude Code may do (no commands, no web, no files):\n" + link->settingsText();
 }
 
+QString MakeDock::allowHash() const {
+    // what one Allow covers (security R2, R4): the Allow's words, the route, what Make sets up and the start line, the
+    // per-Connect link name masked, and the signed-in account; any change asks again with the whole card
+    QString setup = setupText();
+    setup.replace(LINK_SOCKET, QStringLiteral("\\1<link>\\2"));
+    const QString account = DependencyManager::get<AccountManager>()->getAccountInfo().getUsername();
+    return hashOf(ALLOW_WORDS + "\n" + _route + "\n" + account + "\n" + setup + "\n" + startLine());
+}
+
 bool MakeDock::isSetupChanged() const {
-    return lastAllowedSetupHash() != hashOf(setupText());
+    return lastAllowedSetupHash() != allowHash();
+}
+
+void MakeDock::stopAllowing() {
+    allowedSetupSetting.remove();
+    emit setupTextChanged();
 }
 
 QString MakeDock::lastAllowedSetupHash() const {
@@ -483,6 +517,56 @@ bool MakeDock::testConnectTerminal() {
     return connectNow();
 }
 
+namespace {
+    // the shown one of the items by that name (the start line is in two places, one shown at a time), else the first
+    QQuickItem* testFind(QQuickWindow* window, const QString& objectName) {
+        if (!window) {
+            return nullptr;
+        }
+        const auto items = window->contentItem()->findChildren<QQuickItem*>(objectName);
+        for (QQuickItem* item : items) {
+            if (item->isVisible()) {
+                return item;
+            }
+        }
+        return items.isEmpty() ? nullptr : items.first();
+    }
+}
+
+QVariantMap MakeDock::testItem(const QString& objectName) const {
+    QQuickItem* item = testFind(_window, objectName);
+    if (!item) {
+        return { { "found", false } };
+    }
+    const QRectF place = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+    return { { "found", true }, { "visible", item->isVisible() }, { "x", place.x() }, { "y", place.y() },
+             { "width", place.width() }, { "height", place.height() }, { "text", item->property("text") },
+             { "selectedText", item->property("selectedText") } };
+}
+
+bool MakeDock::testMouse(const QString& objectName, const QPointF& from, const QPointF& to) {
+    QQuickItem* item = testFind(_window, objectName);
+    if (!item || !item->isVisible()) {
+        return false;
+    }
+    auto at = [item](const QPointF& fraction) {
+        return item->mapToScene(QPointF(fraction.x() * item->width(), fraction.y() * item->height()));
+    };
+    auto send = [this](QEvent::Type type, const QPointF& point, Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, point, _window->mapToGlobal(point), Qt::LeftButton, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(_window, &event);
+    };
+    const QPointF start = at(from);
+    const QPointF end = at(to);
+    send(QEvent::MouseButtonPress, start, Qt::LeftButton);
+    const int steps = start == end ? 0 : 8;
+    for (int i = 1; i <= steps; ++i) {
+        send(QEvent::MouseMove, start + (end - start) * (double(i) / steps), Qt::LeftButton);
+    }
+    send(QEvent::MouseButtonRelease, end, Qt::NoButton);
+    return true;
+}
+
 bool MakeDock::connectNow() {
     auto link = DependencyManager::get<MakeLink>();
     _reason.clear();
@@ -492,7 +576,7 @@ bool MakeDock::connectNow() {
         emit stateChanged();
         return false;
     }
-    allowedSetupSetting.set(hashOf(setupText()));   // what the person allowed, as written
+    allowedSetupSetting.set(allowHash());   // what the person allowed, as written
     if (_route == "key") {
         QString why;
         if (link->claude()->isRunning()) {
@@ -529,6 +613,7 @@ bool MakeDock::setRoute(const QString& route) {
         routeSetting.set(route);
         emit routeChanged();
         emit stateChanged();
+        emit setupTextChanged();   // an Allow covers one route (allowHash)
     }
     return true;
 }
@@ -683,6 +768,30 @@ void MakeDock::giveBackKeyboard() {
         viewport->activateWindow();
         viewport->setFocus(Qt::OtherFocusReason);
     }
+}
+
+bool MakeDock::copyLine(const QString& which) {
+    // a whole line of Make's own, read here: never a part (a part of the start line could leave out --restricted) and
+    // never text from QML (security, 11-07)
+    const QString text = which == "start" ? startLine() : which == "setup" ? setupText() : QString();
+    if (text.isEmpty()) {
+        qCWarning(interfaceapp) << "Make: refused copyLine" << which.left(20);
+        return false;
+    }
+    if (!takeRealInput("copyLine")) {
+        return false;
+    }
+    QGuiApplication::clipboard()->setText(text);
+    return true;
+}
+
+void MakeDock::showMoreMenu(qreal x, qreal y) {
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    auto disconnectAction = menu->addAction("Disconnect");
+    disconnectAction->setEnabled(DependencyManager::get<MakeLink>()->stateName() != "off");
+    QObject::connect(disconnectAction, &QAction::triggered, this, &MakeDock::disconnect);
+    menu->popup(QPoint(qRound(x), qRound(y)));
 }
 
 // ---- pictures ----

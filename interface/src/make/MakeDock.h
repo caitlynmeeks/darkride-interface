@@ -179,10 +179,23 @@ public:
     Q_INVOKABLE QString pictureView(const QString& id) const;
     /// The keyboard back to the world (Esc in the dock).
     Q_INVOKABLE void giveBackKeyboard();
+    /// Copy onto the clipboard, from C++ (the Assets panel's path, not a QML text item's): the whole of the Terminal
+    /// route's start line ("start") or of setupText ("setup"), read here, never a part. Real input.
+    Q_INVOKABLE bool copyLine(const QString& which);
+    /// "Stop allowing" in the Allow's Details: forgets the Allow, so the next Connect shows the whole card (security R3).
+    Q_INVOKABLE void stopAllowing();
+    /// The more menu (•••): the app's own menu at (x, y) on the screen, as the Code panel's. Disconnect.
+    Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
 
     /// Tests only (Test.makeDockConnect, with --testScript): Connect on the Terminal route without the person's click;
     /// from then on every question Claude asks is answered no at once. Never the key route. Not on the QML's context.
     bool testConnectTerminal();
+    /// Tests only (Test.makeDockItem): an item of the dock's view by objectName: found, visible, its place, text and
+    /// selectedText.
+    QVariantMap testItem(const QString& objectName) const;
+    /// Tests only (Test.makeDockMouse): a left press, a drag in steps and a release over that item, at fractions of its
+    /// size, sent as Qt events (not spontaneous, so takeRealInput refuses whatever they lead to).
+    bool testMouse(const QString& objectName, const QPointF& from, const QPointF& to);
 
     /// The Make dock's view, once made (Panels): MakeDock watches its input and gives its engine the image provider.
     void watchWindow(QQuickWindow* window, QQmlEngine* engine);
@@ -220,6 +233,9 @@ private:
     /// A model's sheet of views kept in the Make folder's sheets/ from MakeLink's bytes; a path as it is; "" when not kept
     QString keepSheet(const QString& model, const QVariant& views) const;
     QString lastAllowedSetupHash() const;
+    /// The hash one Allow covers: the Allow's words, the route, setupText and the start line (per-Connect parts masked)
+    /// and the signed-in account (security R2, R4).
+    QString allowHash() const;
 
     MakeDockRows _timeline;
     MakeDockRows _made;

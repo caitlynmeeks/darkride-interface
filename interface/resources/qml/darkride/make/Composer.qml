@@ -20,7 +20,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
-import "../panel"
+import "../editor"
 import "format.js" as Format
 
 Rectangle {
@@ -39,8 +39,8 @@ Rectangle {
     readonly property bool terminalRoute: dock ? dock.route === "terminal" : false
     readonly property bool canSend: connected && !working && (input.text.trim() !== "" || pictures.length > 0)
 
-    implicitHeight: column.implicitHeight + 20 * Theme.unit
-    color: Theme.card
+    implicitHeight: column.implicitHeight + 16
+    color: BuildTheme.panel
 
     function prefill(text) {
         input.text = text;
@@ -94,21 +94,21 @@ Rectangle {
     Rectangle {
         width: parent.width
         height: 1
-        color: Theme.separator
+        color: BuildTheme.edge
     }
 
     ColumnLayout {
         id: column
-        x: 14 * Theme.unit
-        y: 10 * Theme.unit
-        width: parent.width - 28 * Theme.unit
-        spacing: 8 * Theme.unit
+        x: 10
+        y: 8
+        width: parent.width - 20
+        spacing: 6
 
         // while Claude works: Stop, and how long and how much so far
         RowLayout {
             Layout.fillWidth: true
             visible: composer.working
-            spacing: 10 * Theme.unit
+            spacing: 10
             MakeButton {
                 kind: "stop"
                 text: "Stop"
@@ -125,8 +125,8 @@ Rectangle {
                     return parts.join(" · ");
                 }
                 textFormat: Text.PlainText
-                color: Theme.secondaryText
-                font.pixelSize: Theme.detailSize
+                color: BuildTheme.mutedText
+                font.pixelSize: BuildTheme.noteSize
                 elide: Text.ElideRight
             }
         }
@@ -135,17 +135,17 @@ Rectangle {
         Flow {
             Layout.fillWidth: true
             visible: !composer.terminalRoute && !composer.atLimit && composer.pictures.length > 0
-            spacing: 6 * Theme.unit
+            spacing: 6
             Repeater {
                 model: composer.pictures
                 delegate: Rectangle {
                     id: thumb
                     required property string modelData
                     required property int index
-                    width: 64 * Theme.unit
-                    height: 48 * Theme.unit
-                    radius: 6 * Theme.unit
-                    color: Theme.background
+                    width: 64
+                    height: 48
+                    radius: BuildTheme.radius
+                    color: BuildTheme.field
                     clip: true
                     Image {
                         anchors.fill: parent
@@ -160,9 +160,9 @@ Rectangle {
                     Rectangle {
                         anchors.top: parent.top
                         anchors.right: parent.right
-                        anchors.margins: 3 * Theme.unit
-                        width: 16 * Theme.unit
-                        height: 16 * Theme.unit
+                        anchors.margins: 3
+                        width: 16
+                        height: 16
                         radius: width / 2
                         color: "#99000000"
                         Accessible.role: Accessible.Button
@@ -172,11 +172,11 @@ Rectangle {
                             text: "×"
                             textFormat: Text.PlainText
                             color: "#ffffff"
-                            font.pixelSize: 12 * Theme.unit
+                            font.pixelSize: 12
                         }
                         MouseArea {
                             anchors.fill: parent
-                            anchors.margins: -4 * Theme.unit
+                            anchors.margins: -4
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 var list = composer.pictures.slice();
@@ -193,13 +193,13 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             visible: composer.atLimit
-            spacing: 10 * Theme.unit
+            spacing: 10
             Text {
                 Layout.fillWidth: true
                 text: composer.dock ? composer.dock.reason : ""
                 textFormat: Text.PlainText
-                color: Theme.text
-                font.pixelSize: Theme.detailSize + 0.5 * Theme.unit
+                color: BuildTheme.text
+                font.pixelSize: BuildTheme.textSize
                 wrapMode: Text.Wrap
             }
             MakeButton {
@@ -213,15 +213,15 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             visible: !composer.terminalRoute && !composer.atLimit
-            spacing: 8 * Theme.unit
+            spacing: 8
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(Math.max(input.implicitHeight, 36 * Theme.unit), 120 * Theme.unit)
-                radius: 10 * Theme.unit
-                color: Theme.background
-                border.width: input.activeFocus ? 1 : 0
-                border.color: Theme.tint
+                Layout.preferredHeight: Math.min(Math.max(input.implicitHeight, 23), 120)
+                radius: BuildTheme.radius
+                color: BuildTheme.field
+                border.width: 1
+                border.color: input.activeFocus ? BuildTheme.selection : BuildTheme.fieldEdge
 
                 QQC2.ScrollView {
                     anchors.fill: parent
@@ -230,15 +230,15 @@ Rectangle {
                         textFormat: TextEdit.PlainText
                         wrapMode: TextEdit.Wrap
                         placeholderText: composer.connected ? "Make…" : "Make starts when your Claude is ready"
-                        placeholderTextColor: Theme.tertiaryText
-                        color: Theme.text
-                        selectionColor: Theme.tint
+                        placeholderTextColor: BuildTheme.dimText
+                        color: BuildTheme.text
+                        selectionColor: BuildTheme.selection
                         selectedTextColor: "#ffffff"
-                        font.pixelSize: Theme.bodySize
-                        leftPadding: 12 * Theme.unit
-                        rightPadding: 12 * Theme.unit
-                        topPadding: 9 * Theme.unit
-                        bottomPadding: 9 * Theme.unit
+                        font.pixelSize: BuildTheme.textSize
+                        leftPadding: 7
+                        rightPadding: 7
+                        topPadding: 4
+                        bottomPadding: 4
                         enabled: composer.connected
                         background: null
                         Accessible.name: "Ask Make"
@@ -256,18 +256,14 @@ Rectangle {
             }
             MakeButton {
                 Layout.alignment: Qt.AlignBottom
-                implicitWidth: 36 * Theme.unit
-                implicitHeight: 36 * Theme.unit
-                radius: 10 * Theme.unit
                 text: "+"
+                tip: "Add a picture"
                 Accessible.name: "Add a picture"
                 enabled: composer.connected
                 onClicked: composer.addPictures()
             }
             MakeButton {
                 Layout.alignment: Qt.AlignBottom
-                implicitHeight: 36 * Theme.unit
-                radius: 10 * Theme.unit
                 kind: "primary"
                 text: "Make"
                 enabled: composer.canSend
@@ -279,8 +275,8 @@ Rectangle {
             visible: !composer.terminalRoute && !composer.atLimit && (composer.pictures.length > 0 || composer.pictureNote !== "")
             text: composer.pictureNote !== "" ? composer.pictureNote : "Pictures you add are sent to Claude to guide the build."
             textFormat: Text.PlainText
-            color: Theme.tertiaryText
-            font.pixelSize: Theme.detailSize
+            color: BuildTheme.dimText
+            font.pixelSize: BuildTheme.noteSize
             wrapMode: Text.Wrap
         }
 
@@ -288,10 +284,10 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             visible: composer.terminalRoute && !composer.atLimit
-            text: "You talk to Claude in Terminal. What it does shows here."
+            text: "Ask Claude in Terminal. Its work shows here."
             textFormat: Text.PlainText
-            color: Theme.secondaryText
-            font.pixelSize: Theme.detailSize
+            color: BuildTheme.mutedText
+            font.pixelSize: BuildTheme.noteSize
             wrapMode: Text.Wrap
         }
     }

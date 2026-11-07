@@ -2,7 +2,9 @@
 //  Heading.qml
 //  qml/darkride/make
 //
-//  A small capitals heading over a card ("ON THIS MAC"), or inside one ("CLAUDE ASKS"), as the panels' sections do.
+//  A section heading on Make's set-up page, drawn as the Inspector's section header: a #3c3c3c bar with a 1 px line on
+//  top, 12 px bold, sentence case (mary's MAKE-PANEL-LOOK.md). "accent" is a small heading inside a card ("Claude
+//  asks"): no bar, the selection blue.
 //
 //  Copyright 2026 Darkride.
 //
@@ -11,17 +13,28 @@
 
 import QtQuick
 import QtQuick.Layouts
-import "../panel"
+import "../editor"
 
-Text {
+Rectangle {
+    id: heading
+
+    property alias text: label.text
     property bool accent: false
 
     Layout.fillWidth: true
-    textFormat: Text.PlainText
-    color: accent ? Theme.tint : Theme.secondaryText
-    font.pixelSize: Theme.sectionSize
-    font.weight: Font.DemiBold
-    font.letterSpacing: 0.4 * Theme.unit
-    font.capitalization: Font.AllUppercase
-    elide: Text.ElideRight
+    implicitHeight: label.implicitHeight + (accent ? 0 : 8)
+    color: accent ? "transparent" : BuildTheme.sectionBar
+    Rectangle { visible: !heading.accent; width: parent.width; height: 1; color: BuildTheme.sectionLine }
+
+    Text {
+        id: label
+        x: heading.accent ? 0 : 6
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width - 2 * x
+        textFormat: Text.PlainText
+        color: heading.accent ? BuildTheme.accentText : BuildTheme.text
+        font.pixelSize: BuildTheme.textSize
+        font.bold: true
+        elide: Text.ElideRight
+    }
 }

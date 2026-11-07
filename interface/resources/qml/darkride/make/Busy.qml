@@ -14,15 +14,15 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import "../panel"
+import "../editor"
 
 Item {
     id: busy
 
     property int step: 0
 
-    implicitWidth: 13 * Theme.unit
-    implicitHeight: 13 * Theme.unit
+    implicitWidth: 13
+    implicitHeight: 13
     Accessible.role: Accessible.Animation
     Accessible.name: "Working"
 
@@ -34,14 +34,14 @@ Item {
             // each spoke a short rounded bar from the middle out, turned to its place on the dial
             x: (busy.width - width) / 2
             y: 0
-            width: 1.6 * Theme.unit
+            width: 1.6
             height: busy.height * 0.3
             radius: width / 2
-            color: Theme.secondaryText
+            color: BuildTheme.mutedText
             // the spoke at `step` is brightest; those behind it fade
             opacity: 0.25 + 0.75 * (((spoke.index - busy.step + 12) % 12) === 0 ? 1 : Math.max(0, 1 - ((busy.step - spoke.index + 12) % 12) / 6))
             transform: Rotation {
-                origin.x: 0.8 * Theme.unit
+                origin.x: 0.8
                 origin.y: busy.height / 2
                 angle: spoke.index * 30
             }

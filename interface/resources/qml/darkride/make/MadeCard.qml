@@ -16,7 +16,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
-import "../panel"
+import "../editor"
 
 Card {
     id: card
@@ -34,7 +34,7 @@ Card {
     readonly property string title: detail !== "" ? detail : text
     readonly property string kindName: kind === "model" ? "3D model" : kind === "script" ? "Script" : "Thing"
 
-    spacing: 8 * Theme.unit
+    spacing: 8
     opacity: undone ? 0.55 : 1
 
     function act() {
@@ -52,22 +52,22 @@ Card {
     // its corner; a tile shows the front alone, across the tile
     Rectangle {
         id: sheetBox
-        readonly property real side: Math.min(parent ? parent.width : 0, 240 * Theme.unit)
+        readonly property real side: Math.min(parent ? parent.width : 0, 240)
         Layout.fillWidth: card.tile
         Layout.preferredWidth: card.tile ? -1 : side
-        Layout.preferredHeight: card.tile ? 96 * Theme.unit : side
+        Layout.preferredHeight: card.tile ? 96 : side
         visible: card.kind === "model" || card.tile   // in a tile, a script or a thing gets the same box, with its mark
-        radius: 8 * Theme.unit
-        color: Theme.background
+        radius: BuildTheme.radius
+        color: BuildTheme.panel
         clip: true
         Text {
             anchors.centerIn: parent
             visible: card.kind !== "model"
             text: card.kind === "script" ? "{ }" : "◇"
             textFormat: Text.PlainText
-            color: Theme.tint
+            color: BuildTheme.accentText
             font.family: card.kind === "script" ? "Menlo" : ""
-            font.pixelSize: 26 * Theme.unit
+            font.pixelSize: 22
         }
         Image {
             anchors.fill: parent
@@ -84,38 +84,38 @@ Card {
                                     { name: "Back", right: false, bottom: true }, { name: "Top", right: true, bottom: true }]
             delegate: Text {
                 required property var modelData
-                x: modelData.right ? sheetBox.width / 2 + 6 * Theme.unit : 6 * Theme.unit
-                y: modelData.bottom ? sheetBox.height / 2 + 4 * Theme.unit : 4 * Theme.unit
+                x: modelData.right ? sheetBox.width / 2 + 6 : 6
+                y: modelData.bottom ? sheetBox.height / 2 + 4 : 4
                 text: modelData.name
                 textFormat: Text.PlainText
-                color: Theme.secondaryText
-                font.pixelSize: 10 * Theme.unit
+                color: BuildTheme.mutedText
+                font.pixelSize: 10
             }
         }
     }
 
     RowLayout {
         Layout.fillWidth: true
-        spacing: 10 * Theme.unit
+        spacing: 10
         // a mark for a script or a thing
         Text {
             visible: card.kind !== "model" && !card.tile
             Layout.alignment: Qt.AlignTop
             text: card.kind === "script" ? "{ }" : "◇"
             textFormat: Text.PlainText
-            color: Theme.tint
+            color: BuildTheme.accentText
             font.family: card.kind === "script" ? "Menlo" : ""
-            font.pixelSize: Theme.bodySize
+            font.pixelSize: BuildTheme.textSize
         }
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 2 * Theme.unit
+            spacing: 2
             Text {
                 Layout.fillWidth: true
                 text: card.title
                 textFormat: Text.PlainText
-                color: Theme.text
-                font.pixelSize: card.tile ? Theme.detailSize + 1 * Theme.unit : Theme.bodySize
+                color: BuildTheme.text
+                font.pixelSize: card.tile ? BuildTheme.noteSize + 1 : BuildTheme.textSize
                 font.weight: Font.DemiBold
                 elide: Text.ElideMiddle
             }
@@ -124,8 +124,8 @@ Card {
                 text: card.undone ? card.kindName + ", undone"
                     : card.detail !== "" && card.text !== "" ? card.text : card.kindName
                 textFormat: Text.PlainText
-                color: Theme.secondaryText
-                font.pixelSize: Theme.detailSize
+                color: BuildTheme.mutedText
+                font.pixelSize: BuildTheme.noteSize
                 wrapMode: card.tile ? Text.NoWrap : Text.Wrap
                 elide: Text.ElideRight
                 maximumLineCount: card.tile ? 1 : 3
