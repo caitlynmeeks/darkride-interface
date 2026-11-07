@@ -258,6 +258,9 @@ MakeDock::MakeDock() {
 
     auto link = DependencyManager::get<MakeLink>();
     QObject::connect(link.data(), &MakeLink::stateChanged, this, &MakeDock::linkStateChanged);
+    // Claude Code's version comes with its hello, after the connection: the panel re-reads claudeVersion (the
+    // "Update Claude Code" line; the chat kit's old-version phase)
+    QObject::connect(link.data(), &MakeLink::claudeVersionChanged, this, &MakeDock::stateChanged);
     // an Allow covers one signed-in account (allowHash)
     QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
                      [this] { emit setupTextChanged(); });
