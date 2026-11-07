@@ -11,6 +11,7 @@
 #include <ScriptNetworkPolicy.h>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFileInfo>
 
 #include <QtCore/QStandardPaths>
@@ -201,6 +202,8 @@ void ScriptEngines::removeScriptEngine(ScriptEnginePointer engine) {
 
 void ScriptEngines::shutdownScripting() {
     _isStopped = true;
+    QElapsedTimer stopping;
+    stopping.start();
     QMutexLocker locker(&_allScriptsMutex);
     qCDebug(scriptengine) << "Stopping all scripts.... currently known scripts:" << _allKnownScriptEngines.size();
 
@@ -237,7 +240,7 @@ void ScriptEngines::shutdownScripting() {
 
     // Once the scripts are stopped, we can remove them from our set
     _allKnownScriptEngines.clear();
-    qCDebug(scriptengine) << "DONE Stopping all scripts....";
+    qCDebug(scriptengine) << "DONE Stopping all scripts...." << stopping.elapsed() << "ms";
 }
 
 /**jsdoc

@@ -66,9 +66,17 @@
     var plain = 0, app = 0;
     function onMessage(channel, message, sender, localOnly) {
         if (channel === "avatar-probe") { plain++; } else if (channel === "io.darkride.avatar-probe") { app++; }
+        if (channel === "avatar-probe-spin") {
+            // the mid-call driver (avatar-scripts-midcall.js): a call that runs this long, for a stop to find running
+            say("spinning " + message + " ms");
+            var started = Date.now();
+            while (Date.now() - started < Number(message)) {}
+            say("spin ended after " + (Date.now() - started) + " ms");
+        }
     }
     try {
         Messages.messageReceived.connect(onMessage);
+        Messages.subscribe("avatar-probe-spin");
         Messages.subscribe("avatar-probe");
         Messages.subscribe("io.darkride.avatar-probe");
         Messages.sendLocalMessage("avatar-probe", "hello");
@@ -85,6 +93,13 @@
     Script.scriptEnding.connect(function () {
         try { Controller.keyPressEvent.disconnect(onKey); } catch (e) {}
         try { Messages.messageReceived.disconnect(onMessage); } catch (e) {}
-        say("ending (" + keys + " keys seen)");
+        // taken off, this avatar's world is left before its scripts are stopped, and this does not run; on a plain stop
+        // (avatar-scripts-midcall.js) it does, and its entity is made
+        var late = null;
+        try {
+            late = Entities.addEntity({ type: "Box", name: "avatar-script late", position: { x: 0, y: 0, z: 0 },
+                                        dimensions: { x: 0.1, y: 0.1, z: 0.1 }, collisionless: true, lifetime: 5 });
+        } catch (e) {}
+        say("ending (" + keys + " keys seen), late entity " + (late && !Uuid.isNull(late) ? "MADE" : "refused"));
     });
 })();
