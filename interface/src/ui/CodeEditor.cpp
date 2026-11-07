@@ -16,9 +16,13 @@
 #include <QtCore/QRegularExpression>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QPainter>
+#include <QtGui/QPixmap>
+#include <QtWidgets/QMenu>
 #include <QUndoStack>   // QtWidgets in Qt 5, QtGui in Qt 6
 
 #include <AssetClient.h>
+#include <MainWindow.h>   // the menus' parent
 #include <AssetUpload.h>
 #include <EntityItemProperties.h>
 #include <EntityScriptRights.h>
@@ -465,6 +469,89 @@ void CodeEditor::giveBackKeyboard() {
         viewport->activateWindow();
         viewport->setFocus(Qt::OtherFocusReason);
     }
+}
+
+namespace {
+    // a script's state as the menu's small dot: running green, an error red, else grey
+    QIcon stateDot(const QString& state) {
+        static QHash<QString, QIcon> dots;
+        if (!dots.contains(state)) {
+            const qreal ratio = qApp->devicePixelRatio();
+            QPixmap pixmap(QSize(12, 12) * ratio);
+            pixmap.setDevicePixelRatio(ratio);
+            pixmap.fill(Qt::transparent);
+            QPainter painter(&pixmap);
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(state == "running" ? "#5fb760" : state == "error" ? "#ff6b6b" : "#8f8f8f"));
+            painter.drawEllipse(QRectF(3, 3, 6, 6));
+            painter.end();
+            dots.insert(state, QIcon(pixmap));
+        }
+        return dots.value(state);
+    }
+
+    // a menu item's words as plain words: "&" is QMenu's shortcut mark
+    QString menuText(const QString& text) {
+        QString plain = text.left(60);
+        return plain.replace("&", "&&");
+    }
+}
+
+void CodeEditor::showMoreMenu(qreal x, qreal y) {
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    auto inspector = menu->addAction("Show in Inspector");
+    inspector->setEnabled(hasDocument());
+    connect(inspector, &QAction::triggered, this, &CodeEditor::showInInspector);
+    auto link = menu->addAction("Copy Link");
+    link->setEnabled(hasLink());
+    connect(link, &QAction::triggered, this, &CodeEditor::copyLink);
+    menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
+void CodeEditor::showNearbyMenu(qreal x, qreal y, bool listShown) {
+    const int MOST = 30;   // the nearest; Show All Code Near You has the rest, with its filter
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    auto heading = menu->addAction("Code Near You");
+    heading->setEnabled(false);
+    const int count = _nearby->rowCount();
+    for (int i = 0; i < count && i < MOST; i++) {
+        const QModelIndex index = _nearby->index(i, 0);
+        const QUuid entity = _nearby->data(index, CodeNearby::EntityRole).toUuid();
+        const QString which = _nearby->data(index, CodeNearby::WhichRole).toString();
+        const QString name = _nearby->data(index, CodeNearby::NameRole).toString();
+        const QString file = _nearby->data(index, CodeNearby::FileRole).toString();
+        const QString kind = _nearby->data(index, CodeNearby::KindRole).toString();
+        const QString distance = _nearby->data(index, CodeNearby::DistanceRole).toString();
+        const QString state = _nearby->data(index, CodeNearby::StateRole).toString();
+        const QString where = file == "Written in" ? QString("written in") : file;
+        // the distance in the shortcut column, at the right
+        auto action = menu->addAction(stateDot(state), menuText((name.isEmpty() ? file : name) + "  \u00b7  " + kind +
+                                                                ", " + where) + "\t" + distance);
+        action->setCheckable(true);
+        action->setChecked(hasDocument() && entity == _entity && which == _which);
+        connect(action, &QAction::triggered, this, [this, entity, which] {
+            open(entity, which);
+        });
+    }
+    if (count == 0) {
+        auto none = menu->addAction("No scripts within 50 m");
+        none->setEnabled(false);
+    }
+    menu->addSeparator();
+    auto all = menu->addAction("Show All Code Near You");
+    all->setCheckable(true);
+    all->setChecked(listShown);
+    connect(all, &QAction::triggered, this, [this, listShown] {
+        if (listShown) {
+            emit nearbyFoldRequested();
+        } else {
+            emit nearbyUnfoldRequested();
+        }
+    });
+    menu->popup(QPoint(qRound(x), qRound(y)));
 }
 
 QObject* CodeEditor::nearby() const {

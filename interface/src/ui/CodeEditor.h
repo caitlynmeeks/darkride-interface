@@ -126,8 +126,17 @@ public:
     Q_INVOKABLE void showInInspector();
     // the script's address on the clipboard
     Q_INVOKABLE void copyLink();
+    // whether this script is the open one (Code near you's highlighted row)
+    Q_INVOKABLE bool isOpenScript(const QUuid& entity, const QString& which) const {
+        return hasDocument() && entity == _entity && which == _which;
+    }
     // Esc in the editor: the keyboard back to the 3D view
     Q_INVOKABLE void giveBackKeyboard();
+    // the panel's two menus, the app's own (as Create's and the Entities list's), at (x, y) on the screen: ••• (Show in
+    // Inspector, Copy Link), and the name's: the code near you, nearest first, the open one ticked, then Show All Code
+    // Near You (the list in the panel; `listShown`: it's showing)
+    Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
+    Q_INVOKABLE void showNearbyMenu(qreal x, qreal y, bool listShown);
     // the panel open or closed: the status is asked for only while it's open
     Q_INVOKABLE void setPanelOpen(bool open);
     // Code near you (ui/CodeNearby.h), and whether it's unfolded: it looks at the world only while the panel is open
@@ -179,6 +188,7 @@ signals:
     void changeShown(const QString& oldText, const QString& newText);
     void changeClosed();
     void nearbyUnfoldRequested();
+    void nearbyFoldRequested();
 
 private:
     enum class Place { None, WrittenIn, WorldFiles, Web };

@@ -31,7 +31,7 @@ Rectangle {
     signal sendToScript(var message)   // the tablet's loader connects it; nothing is sent (desktop only in v1)
 
     anchors.fill: parent
-    color: Theme.background
+    color: root.panelColor
 
     readonly property url pageUrl: "qrc:///html/code/code.html"
     readonly property bool hasEditor: typeof CodeEditor !== "undefined" && CodeEditor !== null
@@ -53,7 +53,7 @@ Rectangle {
     }
     Component.onCompleted: {
         if (hasEditor) {
-            CodeEditor.setNearbyShown(nearbyUnfolded);
+            CodeEditor.setNearbyShown(true);   // the name's menu lists it whenever the panel is open
             CodeEditor.setPanelOpen(panelOpen);
         }
     }
@@ -104,6 +104,7 @@ Rectangle {
             doc.draft = CodeEditor.draft();
         }
         call("open", [doc]);
+        showNote();
         dirty = CodeEditor.hasDraft();
         var change = CodeEditor.change();
         if (change.length === 2) {
@@ -111,6 +112,16 @@ Rectangle {
         }
         loader.item.forceActiveFocus();
         call("focus", []);
+    }
+
+    // a save's answer, or why it can't be changed here, on the page's bottom line (red when it's a problem)
+    function showNote() {
+        if (!hasEditor) {
+            return;
+        }
+        var text = CodeEditor.note !== "" ? CodeEditor.note
+            : (!CodeEditor.canSave && CodeEditor.problem === "" ? CodeEditor.readOnlyReason : "");
+        call("setNote", [text, CodeEditor.note !== "" ? CodeEditor.noteIsProblem : false]);
     }
 
     // the person's Save or Cmd+S: the page's text to CodeEditor, which saves with the person's own rights
@@ -184,6 +195,10 @@ Rectangle {
         }
         function onRightsChanged() {
             root.call("setReadOnly", [!CodeEditor.canSave]);
+            root.showNote();
+        }
+        function onNoteChanged() {
+            root.showNote();
         }
         function onSavedChanged() {
             if (CodeEditor.savedText !== "") {
@@ -233,121 +248,134 @@ Rectangle {
         }
     }
 
-    // ---- the title bar ----
+    // ---- Build mode's look (interface/resources/styles/editor.qss; Caity 11-07 "ok as drawn", mockups/code-panel) ----
 
-    component BarButton: Rectangle {
-        id: barButton
+    readonly property color panelColor: "#383838"
+    readonly property color textColor: "#d2d2d2"
+    readonly property color mutedColor: "#8f8f8f"
+    readonly property color dimColor: "#6a6a6a"
+    readonly property color fieldColor: "#2a2a2a"
+    readonly property color fieldEdge: "#1f1f1f"
+    readonly property color edgeColor: "#232323"
+    readonly property color hoverColor: "#474747"
+    readonly property color selectionColor: "#2c5d87"
+    readonly property color runningColor: "#5fb760"
+    readonly property color problemColor: "#ff6b6b"
+
+    // drawn as the Inspector's buttons (Edit, Reload): flat grey, a 1 px bevel, square corners, 23 px
+    component BuildButton: Item {
+        id: button
         property string text: ""
-        property bool strong: false
         property string tip: ""
+        property bool down: false
         signal pressed()
-        implicitWidth: barButtonLabel.implicitWidth + 20 * Theme.unit
-        implicitHeight: Theme.controlHeight
-        radius: 7 * Theme.unit
-        color: strong && enabled ? Theme.tint : Theme.fill
-        opacity: enabled ? (barButtonMouse.pressed ? 0.7 : 1) : 0.45
+        implicitWidth: Math.max(text.length > 3 ? 64 : 30, label.implicitWidth + 24)
+        implicitHeight: 23
+        Rectangle {
+            anchors.fill: parent
+            color: buttonMouse.pressed || button.down ? root.hoverColor : root.panelColor
+        }
+        Rectangle { width: parent.width; height: 1; color: "#404040" }
+        Rectangle { width: 1; height: parent.height - 1; color: "#404040" }
+        Rectangle { x: parent.width - 1; width: 1; height: parent.height - 1; color: "#252525" }
+        Rectangle { y: parent.height - 2; width: parent.width; height: 1; color: "#252525" }
+        Rectangle { y: parent.height - 1; width: parent.width; height: 1; color: "#131313" }
         Text {
-            id: barButtonLabel
+            id: label
             anchors.centerIn: parent
-            text: barButton.text
+            text: button.text
             textFormat: Text.PlainText
-            color: barButton.strong && barButton.enabled ? "#ffffff" : Theme.tint
-            font.pixelSize: Theme.controlTextSize
-            font.bold: barButton.strong
+            color: button.enabled ? root.textColor : root.dimColor
+            font.pixelSize: 12
         }
         MouseArea {
-            id: barButtonMouse
+            id: buttonMouse
             anchors.fill: parent
-            enabled: barButton.enabled
+            enabled: button.enabled
             hoverEnabled: true
-            onClicked: barButton.pressed()
-            ToolTip.visible: containsMouse && barButton.tip !== ""
-            ToolTip.text: barButton.tip
+            onClicked: button.pressed()
+            ToolTip.visible: containsMouse && button.tip !== ""
+            ToolTip.text: button.tip
             ToolTip.delay: 600
         }
     }
 
-    Column {
+    // ---- the header: one line ----
+
+    Item {
         id: bar
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.leftMargin: Theme.gap
-        anchors.rightMargin: Theme.gap
-        anchors.topMargin: 8 * Theme.unit
-        spacing: 4 * Theme.unit
-        visible: root.hasEditor && CodeEditor.hasDocument
+        height: 30
+        visible: root.hasEditor
 
-        Item {
-            width: parent.width
-            height: Theme.controlHeight
-            Text {
-                id: title
-                anchors.left: parent.left
-                anchors.right: buttons.left
-                anchors.rightMargin: 8 * Theme.unit
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.hasEditor ? CodeEditor.fileName + (root.dirty ? " •" : "") : ""
-                textFormat: Text.PlainText
-                elide: Text.ElideMiddle
-                color: Theme.text
-                font.pixelSize: Theme.bodySize
-                font.bold: true
-            }
+        // the name: its menu is the code near you (as Xcode's jump bar), so Code near you needs no row of its own
+        Rectangle {
+            id: jump
+            x: 4
+            anchors.verticalCenter: parent.verticalCenter
+            width: jumpRow.width + 12
+            height: 22
+            radius: 3
+            color: jumpMouse.pressed || jumpMouse.containsMouse ? root.hoverColor : "transparent"
             Row {
-                id: buttons
-                anchors.right: parent.right
+                id: jumpRow
+                x: 6
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 6 * Theme.unit
-                BarButton {
-                    text: "Back to the Script"
-                    visible: root.hasEditor && CodeEditor.showingChange
-                    tip: "Claude's change side by side: back to the script itself"
-                    onPressed: CodeEditor.closeChange()
+                spacing: 5
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "{ }"
+                    textFormat: Text.PlainText
+                    color: root.mutedColor
+                    font.family: "Menlo"
+                    font.pixelSize: 11
                 }
-                BarButton {
-                    text: root.hasEditor && CodeEditor.saving ? "Saving…" : "Save"
-                    strong: true
-                    visible: root.hasEditor && CodeEditor.problem === "" && CodeEditor.where !== "On the web, read only"
-                    enabled: root.hasEditor && CodeEditor.canSave && root.dirty && !CodeEditor.saving &&
-                        !CodeEditor.claudeWriting
-                    tip: root.hasEditor && !CodeEditor.canSave ? CodeEditor.readOnlyReason : "Save (⌘S)"
-                    onPressed: root.save()
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, bar.width * 0.4)
+                    text: root.hasEditor && CodeEditor.hasDocument ? CodeEditor.fileName : "No script open"
+                    textFormat: Text.PlainText
+                    elide: Text.ElideMiddle
+                    color: root.hasEditor && CodeEditor.hasDocument ? root.textColor : root.mutedColor
+                    font.pixelSize: 13
+                    font.bold: root.hasEditor && CodeEditor.hasDocument
                 }
-                BarButton {
-                    text: "Reload"
-                    visible: root.hasEditor && CodeEditor.problem === ""
-                    enabled: root.hasEditor && CodeEditor.canSave
-                    tip: "Load it again for everyone in the world"
-                    onPressed: CodeEditor.reloadForEveryone()
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "\u25be"
+                    textFormat: Text.PlainText
+                    color: root.mutedColor
+                    font.pixelSize: 11
                 }
-                BarButton {
-                    id: moreButton
-                    text: "•••"
-                    tip: "More"
-                    onPressed: moreMenu.popup(moreButton, 0, moreButton.height)
+            }
+            MouseArea {
+                id: jumpMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                onPressed: {
+                    var at = jump.mapToGlobal(0, jump.height + 2);
+                    CodeEditor.showNearbyMenu(at.x, at.y, root.nearbyUnfolded);
                 }
             }
         }
 
-        // the kind, where it lives, the entity it belongs to, and whether it's running
+        // the kind, where it lives, the entity it belongs to, whether it's running, and Edited
         Row {
-            width: parent.width
-            spacing: 8 * Theme.unit
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                width: 7 * Theme.unit
-                height: width
-                radius: width / 2
-                color: !root.hasEditor ? Theme.tertiaryText
-                    : CodeEditor.statusState === "running" ? Theme.on
-                    : CodeEditor.statusState === "error" ? Theme.destructive : Theme.tertiaryText
-                visible: root.hasEditor && CodeEditor.status !== ""
-            }
+            id: meta
+            anchors.left: jump.right
+            anchors.leftMargin: 6
+            anchors.right: buttons.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+            clip: true
+            visible: root.hasEditor && CodeEditor.hasDocument
             Text {
-                width: parent.width - 15 * Theme.unit
+                anchors.verticalCenter: parent.verticalCenter
                 text: {
-                    if (!root.hasEditor) {
+                    if (!root.hasEditor || !CodeEditor.hasDocument) {
                         return "";
                     }
                     var parts = [CodeEditor.kind];
@@ -357,56 +385,90 @@ Rectangle {
                     if (CodeEditor.entityName !== "" && CodeEditor.entityName !== CodeEditor.fileName) {
                         parts.push(CodeEditor.entityName);
                     }
-                    if (CodeEditor.claudeWriting) {
-                        parts.push("Claude is writing…");
-                    } else if (CodeEditor.status !== "") {
-                        parts.push(CodeEditor.status);
-                    }
-                    return parts.join("  ·  ");
+                    return parts.join("  \u00b7  ") + "  \u00b7";
                 }
                 textFormat: Text.PlainText
-                elide: Text.ElideRight
-                color: Theme.secondaryText
-                font.pixelSize: Theme.detailSize
+                color: root.mutedColor
+                font.pixelSize: 12
+            }
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 7
+                height: 7
+                radius: 3.5
+                color: !root.hasEditor ? root.dimColor
+                    : CodeEditor.statusState === "running" ? root.runningColor
+                    : CodeEditor.statusState === "error" ? root.problemColor : root.dimColor
+                visible: root.hasEditor && (CodeEditor.status !== "" || CodeEditor.claudeWriting)
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: !root.hasEditor ? "" : CodeEditor.claudeWriting ? "Claude is writing\u2026" : CodeEditor.status
+                textFormat: Text.PlainText
+                color: root.mutedColor
+                font.pixelSize: 12
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.dirty
+                text: "\u00b7  Edited"
+                textFormat: Text.PlainText
+                color: root.mutedColor
+                font.pixelSize: 12
             }
         }
 
-        // a save's answer, or why it can't be changed here
-        Text {
+        Row {
+            id: buttons
+            anchors.right: parent.right
+            anchors.rightMargin: 6
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+            BuildButton {
+                text: "Back to the Script"
+                visible: root.hasEditor && CodeEditor.showingChange
+                tip: "Claude's change side by side: back to the script itself"
+                onPressed: CodeEditor.closeChange()
+            }
+            BuildButton {
+                text: root.hasEditor && CodeEditor.saving ? "Saving\u2026" : "Save"
+                visible: !root.hasEditor || CodeEditor.where !== "On the web, read only"
+                enabled: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave &&
+                    root.dirty && !CodeEditor.saving && !CodeEditor.claudeWriting
+                tip: root.hasEditor && CodeEditor.hasDocument && !CodeEditor.canSave ? CodeEditor.readOnlyReason : "Save (\u2318S)"
+                onPressed: root.save()
+            }
+            BuildButton {
+                text: "Reload"
+                enabled: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave
+                tip: "Load it again for everyone in the world"
+                onPressed: CodeEditor.reloadForEveryone()
+            }
+            BuildButton {
+                id: moreButton
+                text: "\u2022\u2022\u2022"
+                tip: "More"
+                enabled: root.hasEditor && CodeEditor.hasDocument
+                onPressed: {
+                    var at = moreButton.mapToGlobal(moreButton.width, moreButton.height + 2);
+                    CodeEditor.showMoreMenu(at.x - 180, at.y);
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.bottom: parent.bottom
             width: parent.width
-            visible: text !== ""
-            text: !root.hasEditor ? ""
-                : CodeEditor.note !== "" ? CodeEditor.note
-                : (!CodeEditor.canSave && CodeEditor.problem === "" ? CodeEditor.readOnlyReason : "")
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            maximumLineCount: 3
-            color: root.hasEditor && CodeEditor.noteIsProblem ? Theme.destructive : Theme.secondaryText
-            font.pixelSize: Theme.detailSize
+            height: 1
+            color: root.edgeColor
         }
     }
 
-    Menu {
-        id: moreMenu
-        MenuItem {
-            text: "Show in Inspector"
-            onTriggered: CodeEditor.showInInspector()
-        }
-        MenuItem {
-            text: "Copy Link"
-            enabled: root.hasEditor && CodeEditor.hasLink
-            onTriggered: CodeEditor.copyLink()
-        }
-    }
+    // ---- Code near you: every script within 50 m, nearest first, drawn as the Entities list. It fills the panel
+    // while nothing is open; with a script open it shows above it when the name's menu says Show All ----
 
-    // ---- Code near you: every script within 50 m, nearest first; unfolded while nothing is open ----
-
-    property bool nearbyUnfolded: true
-    onNearbyUnfoldedChanged: {
-        if (hasEditor) {
-            CodeEditor.setNearbyShown(nearbyUnfolded);
-        }
-    }
+    property bool nearbyUnfolded: false
+    readonly property bool listFills: root.hasEditor && !CodeEditor.hasDocument
     Connections {
         target: root.hasEditor ? CodeEditor : null
         function onDocumentChanged() {
@@ -417,100 +479,118 @@ Rectangle {
         function onNearbyUnfoldRequested() {
             root.nearbyUnfolded = true;
         }
+        function onNearbyFoldRequested() {
+            root.nearbyUnfolded = false;
+        }
     }
-    Column {
+    Rectangle {
         id: nearbySection
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: bar.visible ? bar.bottom : parent.top
-        anchors.leftMargin: Theme.gap
-        anchors.rightMargin: Theme.gap
-        anchors.topMargin: 8 * Theme.unit
-        spacing: 4 * Theme.unit
-        visible: root.hasEditor
+        anchors.top: bar.bottom
+        readonly property bool shown: root.listFills || (root.nearbyUnfolded && root.hasEditor)
+        visible: shown
+        height: !shown ? 0
+            : root.listFills ? root.height - bar.height - statusLine.height
+            : Math.min(nearbyColumn.implicitHeight + 12, 6 * 20 + 46)
+        color: root.panelColor
 
-        Item {
-            width: parent.width
-            height: 20 * Theme.unit
-            Text {
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: (root.nearbyUnfolded ? "\u25be " : "\u25b8 ") + "Code near you" +
-                    (root.hasEditor && CodeEditor.nearby.count > 0 ? "  (" + CodeEditor.nearby.count + ")" : "")
-                textFormat: Text.PlainText
-                color: Theme.secondaryText
-                font.pixelSize: Theme.sectionSize
-                font.bold: true
+        Column {
+            id: nearbyColumn
+            anchors.fill: parent
+            anchors.margins: 6
+            spacing: 6
+            // the filter, drawn as the Entities list's Search field
+            Rectangle {
+                width: parent.width
+                height: 22
+                radius: 3
+                color: root.fieldColor
+                border.color: nearbyFilter.activeFocus ? root.selectionColor : root.fieldEdge
+                TextInput {
+                    id: nearbyFilter
+                    anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: root.textColor
+                    selectionColor: root.selectionColor
+                    font.pixelSize: 12
+                    maximumLength: 80
+                    clip: true
+                    // Return is the field's: not on to the app, where it opens Chat
+                    Keys.onReturnPressed: function (event) { event.accepted = true; }
+                    Keys.onEnterPressed: function (event) { event.accepted = true; }
+                    Keys.onEscapePressed: function (event) { event.accepted = true; CodeEditor.giveBackKeyboard(); }
+                }
+                Text {
+                    anchors.fill: parent
+                    anchors.leftMargin: 6
+                    verticalAlignment: Text.AlignVCenter
+                    visible: nearbyFilter.text === ""
+                    text: "Filter by file or name"
+                    textFormat: Text.PlainText
+                    color: "#7a7a7a"
+                    font.pixelSize: 12
+                }
             }
-            MouseArea {
-                anchors.fill: parent
-                onClicked: root.nearbyUnfolded = !root.nearbyUnfolded
-            }
-        }
-        Field {
-            id: nearbyFilter
-            width: parent.width
-            height: Theme.controlHeight
-            visible: root.nearbyUnfolded
-            placeholderText: "Filter by file or name"
-            maximumLength: 80
-            // Return is the field's: not on to the app, where it opens Chat
-            Keys.onReturnPressed: event.accepted = true
-            Keys.onEnterPressed: event.accepted = true
-        }
-        Rectangle {
-            width: parent.width
-            height: visible ? Math.min(nearbyList.contentHeight, 6 * 30 * Theme.unit) + 2 : 0
-            visible: root.nearbyUnfolded && root.hasEditor && CodeEditor.nearby.count > 0
-            radius: 7 * Theme.unit
-            color: Theme.fill
-            clip: true
             ListView {
                 id: nearbyList
-                anchors.fill: parent
-                anchors.margins: 1
+                width: parent.width
+                height: root.listFills ? parent.height - 28 : Math.min(contentHeight, 6 * 20)
+                clip: true
                 model: root.hasEditor ? CodeEditor.nearby : null
                 boundsBehavior: Flickable.StopAtBounds
                 delegate: Rectangle {
                     readonly property string filter: nearbyFilter.text.trim().toLowerCase()
                     readonly property bool matches: filter === "" || model.file.toLowerCase().indexOf(filter) >= 0 ||
                         model.name.toLowerCase().indexOf(filter) >= 0
+                    readonly property bool current: root.hasEditor && CodeEditor.hasDocument &&
+                        CodeEditor.isOpenScript(model.entity, model.which)
                     width: ListView.view.width
-                    height: matches ? 30 * Theme.unit : 0
+                    height: matches ? 20 : 0
                     visible: matches
-                    color: rowMouse.pressed ? Theme.cardPressed : rowMouse.containsMouse ? Theme.card : "transparent"
+                    color: current ? root.selectionColor : rowMouse.containsMouse ? "#404040" : "transparent"
                     Rectangle {
                         id: rowDot
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8 * Theme.unit
+                        x: 8
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 7 * Theme.unit
-                        height: width
-                        radius: width / 2
-                        color: model.state === "running" ? Theme.on
-                            : model.state === "error" ? Theme.destructive : Theme.tertiaryText
+                        width: 7
+                        height: 7
+                        radius: 3.5
+                        color: model.state === "running" ? root.runningColor
+                            : model.state === "error" ? root.problemColor : root.dimColor
                     }
-                    Text {
+                    Row {
                         anchors.left: rowDot.right
-                        anchors.leftMargin: 8 * Theme.unit
+                        anchors.leftMargin: 8
                         anchors.right: rowDistance.left
-                        anchors.rightMargin: 8 * Theme.unit
+                        anchors.rightMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
-                        text: model.file + "  \u00b7  " + model.kind + (model.name !== "" ? "  \u00b7  " + model.name : "")
-                        textFormat: Text.PlainText
-                        elide: Text.ElideRight
-                        color: Theme.text
-                        font.pixelSize: Theme.controlTextSize
+                        spacing: 8
+                        clip: true
+                        Text {
+                            text: model.name !== "" ? model.name : model.file
+                            textFormat: Text.PlainText
+                            color: current ? "#ffffff" : root.textColor
+                            font.pixelSize: 12
+                        }
+                        Text {
+                            text: model.kind + "  \u00b7  " + model.file
+                            textFormat: Text.PlainText
+                            color: current ? "#cfe0ef" : root.mutedColor
+                            font.pixelSize: 12
+                        }
                     }
                     Text {
                         id: rowDistance
                         anchors.right: parent.right
-                        anchors.rightMargin: 8 * Theme.unit
+                        anchors.rightMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
                         text: model.distance
                         textFormat: Text.PlainText
-                        color: Theme.secondaryText
-                        font.pixelSize: Theme.detailSize
+                        color: current ? "#cfe0ef" : root.mutedColor
+                        font.pixelSize: 12
                     }
                     MouseArea {
                         id: rowMouse
@@ -521,33 +601,55 @@ Rectangle {
                 }
             }
         }
-        Text {
+        Rectangle {
+            anchors.bottom: parent.bottom
             width: parent.width
-            visible: root.nearbyUnfolded && root.hasEditor && CodeEditor.nearby.count === 0
-            text: "No scripts within 50 m."
-            textFormat: Text.PlainText
-            color: Theme.tertiaryText
-            font.pixelSize: Theme.detailSize
+            height: 1
+            color: root.edgeColor
+            visible: !root.listFills
         }
     }
 
-    // ---- nothing open, or it couldn't open ----
+    // ---- the bottom line while the page isn't there (the page has its own, drawn the same) ----
 
-    Text {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: nearbySection.bottom
-        anchors.topMargin: 40 * Theme.unit
-        width: parent.width - 2 * Theme.pageMargin
+    Rectangle {
+        id: statusLine
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 22
         visible: !root.showPage
-        text: !root.hasEditor ? ""
-            : !CodeEditor.hasDocument ? "Open a script from Code near you, from the Inspector (Edit beside its Script), " +
-                "or from the Entities list (Edit Script)."
-            : CodeEditor.problem
-        textFormat: Text.PlainText
-        wrapMode: Text.Wrap
-        horizontalAlignment: Text.AlignHCenter
-        color: Theme.secondaryText
-        font.pixelSize: Theme.bodySize
+        color: root.panelColor
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: root.edgeColor
+        }
+        Text {
+            id: statusLeft
+            x: 10
+            anchors.verticalCenter: parent.verticalCenter
+            text: !root.hasEditor ? "" : CodeEditor.nearby.count === 0 ? "No scripts within 50 m"
+                : CodeEditor.nearby.count + (CodeEditor.nearby.count === 1 ? " script" : " scripts") + " within 50 m"
+            textFormat: Text.PlainText
+            color: root.mutedColor
+            font.pixelSize: 11
+        }
+        Text {
+            anchors.left: statusLeft.right
+            anchors.leftMargin: 18
+            anchors.right: parent.right
+            anchors.rightMargin: 10
+            anchors.verticalCenter: parent.verticalCenter
+            horizontalAlignment: Text.AlignRight
+            elide: Text.ElideRight
+            readonly property bool problem: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem !== ""
+            text: !root.hasEditor ? "" : problem ? CodeEditor.problem
+                : "Click one to open it, or Edit beside Script in the Inspector."
+            textFormat: Text.PlainText
+            color: problem ? root.problemColor : root.mutedColor
+            font.pixelSize: 11
+        }
     }
 
     // ---- the editor ----
@@ -556,9 +658,8 @@ Rectangle {
         id: loader
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: nearbySection.bottom
+        anchors.top: nearbySection.visible ? nearbySection.bottom : bar.bottom
         anchors.bottom: parent.bottom
-        anchors.topMargin: 8 * Theme.unit
         active: root.showPage
         onActiveChanged: {
             if (!active) {
@@ -568,7 +669,7 @@ Rectangle {
         sourceComponent: WebEngineView {
             id: view
             Component.onCompleted: view.url = root.pageUrl
-            backgroundColor: "#171b2d"   // the editor's own (code.css), behind it while it loads
+            backgroundColor: "#2a2a2a"   // the editor's own (code.css), behind it while it loads
 
             // one profile for the run, a walled-off client's folders set before it opens them (ContextAwareProfile)
             profile: TivoliWebEngineProfile.codeProfile

@@ -50,49 +50,57 @@
 
     // ---- Darkride's look ----
 
+    // Build mode's greys (interface/resources/styles/editor.qss): the editor on the Inspector's field grey, Build
+    // mode's selection blue, soft syntax colours (Caity 11-07: "ok as drawn", mockups/code-panel)
     monaco.editor.defineTheme("darkride", {
         base: "vs-dark",
         inherit: true,
         rules: [
-            { token: "", foreground: "f4f6f8" },
-            { token: "keyword", foreground: "c792ff" },
-            { token: "string", foreground: "50fa7b" },
-            { token: "string.escape", foreground: "8be9fd" },
-            { token: "number", foreground: "00afff" },
-            { token: "comment", foreground: "9aa1bd", fontStyle: "italic" },
-            { token: "regexp", foreground: "ff79c6" },
-            { token: "type", foreground: "8be9fd" },
-            { token: "type.identifier", foreground: "8be9fd" },
-            { token: "predefined", foreground: "ffb86c" },
-            { token: "delimiter", foreground: "c8cce0" }
+            { token: "", foreground: "d2d2d2" },
+            { token: "keyword", foreground: "8fb6de" },
+            { token: "string", foreground: "c9a36e" },
+            { token: "string.escape", foreground: "b9c79a" },
+            { token: "number", foreground: "a8c79a" },
+            { token: "comment", foreground: "7b7b7b", fontStyle: "italic" },
+            { token: "regexp", foreground: "c9a36e" },
+            { token: "type", foreground: "d9cf9c" },
+            { token: "type.identifier", foreground: "d9cf9c" },
+            { token: "predefined", foreground: "d9cf9c" },
+            { token: "delimiter", foreground: "a6a6a6" }
         ],
         colors: {
-            "editor.background": "#171b2d",
-            "editor.foreground": "#f4f6f8",
-            "editor.selectionBackground": "#333a5a",
-            "editor.inactiveSelectionBackground": "#2a3050",
-            "editor.lineHighlightBackground": "#1d2238",
+            "editor.background": "#2a2a2a",
+            "editor.foreground": "#d2d2d2",
+            "editor.selectionBackground": "#2c5d87aa",
+            "editor.inactiveSelectionBackground": "#2c5d8755",
+            "editor.wordHighlightBackground": "#2c5d8766",
+            "editor.wordHighlightStrongBackground": "#2c5d8788",
+            "editor.lineHighlightBackground": "#303030",
             "editor.lineHighlightBorder": "#00000000",
-            "editorCursor.foreground": "#f4f6f8",
-            "editorLineNumber.foreground": "#5c6385",
-            "editorLineNumber.activeForeground": "#c8cce0",
-            "editorError.foreground": "#ff5555",
-            "editorWarning.foreground": "#ffb86c",
-            "editorWidget.background": "#1d2238",
-            "editorWidget.border": "#333a5a",
-            "editorHoverWidget.background": "#1d2238",
-            "editorHoverWidget.border": "#333a5a",
-            "editorSuggestWidget.background": "#1d2238",
-            "editorSuggestWidget.border": "#333a5a",
-            "editorSuggestWidget.selectedBackground": "#333a5a",
-            "minimap.background": "#171b2d",
-            "scrollbarSlider.background": "#ffffff1f",
-            "scrollbarSlider.hoverBackground": "#ffffff33",
-            "scrollbarSlider.activeBackground": "#ffffff44",
-            "diffEditor.insertedTextBackground": "#50fa7b26",
-            "diffEditor.removedTextBackground": "#ff555530",
-            "diffEditor.insertedLineBackground": "#50fa7b14",
-            "diffEditor.removedLineBackground": "#ff55551a"
+            "editorCursor.foreground": "#e0e0e0",
+            "editorLineNumber.foreground": "#666666",
+            "editorLineNumber.activeForeground": "#b4b4b4",
+            "editorIndentGuide.background1": "#3a3a3a",
+            "editorIndentGuide.activeBackground1": "#4a4a4a",
+            "editorBracketMatch.background": "#2c5d8755",
+            "editorBracketMatch.border": "#00000000",
+            "editorError.foreground": "#ff6b6b",
+            "editorWarning.foreground": "#d8a657",
+            "editorWidget.background": "#383838",
+            "editorWidget.border": "#232323",
+            "editorHoverWidget.background": "#383838",
+            "editorHoverWidget.border": "#232323",
+            "editorSuggestWidget.background": "#383838",
+            "editorSuggestWidget.border": "#232323",
+            "editorSuggestWidget.selectedBackground": "#2c5d87",
+            "minimap.background": "#2a2a2a",
+            "scrollbarSlider.background": "#5a5a5a99",
+            "scrollbarSlider.hoverBackground": "#5a5a5acc",
+            "scrollbarSlider.activeBackground": "#6a6a6a",
+            "diffEditor.insertedTextBackground": "#5fb76026",
+            "diffEditor.removedTextBackground": "#ff6b6b30",
+            "diffEditor.insertedLineBackground": "#5fb76014",
+            "diffEditor.removedLineBackground": "#ff6b6b1a"
         }
     });
 
@@ -198,6 +206,8 @@
         readOnly: true,
         domReadOnly: false,
         stickyScroll: { enabled: false },
+        bracketPairColorization: { enabled: false },   // brackets in one colour, not a rainbow
+        guides: { bracketPairs: false },
         padding: { top: 6, bottom: 6 }
     });
 
@@ -209,7 +219,9 @@
         streaming: false,        // Claude is writing it: read only until Claude finishes
         savedVersion: model.getAlternativeVersionId(),
         dirty: false,
-        savedText: ""            // the status strip's "Saved 22:04", given by the panel
+        savedText: "",           // the status strip's "Saved 22:04", given by the panel
+        note: "",                // a save's answer or why it's read only, from the panel (setNote)
+        noteIsProblem: false
     };
 
     var LANGUAGE_NAMES = { javascript: "JavaScript", glsl: "GLSL" };
@@ -227,6 +239,9 @@
         if (state.streaming) {
             savedElement.textContent = "Claude is writing…";
             savedElement.className = "";
+        } else if (state.note !== "") {
+            savedElement.textContent = state.note;
+            savedElement.className = state.noteIsProblem ? "problem" : "";
         } else if (state.dirty) {
             savedElement.textContent = "Changed, not saved";
             savedElement.className = "changed";
@@ -317,6 +332,13 @@
     // ---- the panel's fixed calls ----
 
     window.darkrideCode = {
+        // the panel's message for the status strip's right end (a save's answer, why it's read only), as plain text;
+        // red when it's a problem
+        setNote: function (text, problem) {
+            state.note = typeof text === "string" ? text.slice(0, 300) : "";
+            state.noteIsProblem = problem === true;
+            showStatus();
+        },
         // a script to show: { language: "javascript" | "glsl", readOnly, text, savedText, errorLine, error }, and
         // draft: the person's unsaved change from before the panel was closed, shown as changed on top of text
         open: function (doc) {
