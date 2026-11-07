@@ -252,11 +252,11 @@ Targets openTargets() {
     const int loopbackPort = ntohs(address.sin_port);
     // the LAN address: a UDP socket "connected" to a documentation address sends nothing, and names the local address
     SOCKET probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    sockaddr_in far {};
-    far.sin_family = AF_INET;
-    far.sin_port = htons(9);
-    inet_pton(AF_INET, "192.0.2.1", &far.sin_addr);
-    connect(probe, reinterpret_cast<sockaddr*>(&far), sizeof far);
+    sockaddr_in documentation {};
+    documentation.sin_family = AF_INET;
+    documentation.sin_port = htons(9);
+    inet_pton(AF_INET, "192.0.2.1", &documentation.sin_addr);
+    connect(probe, reinterpret_cast<sockaddr*>(&documentation), sizeof documentation);
     sockaddr_in lan {};
     length = sizeof lan;
     getsockname(probe, reinterpret_cast<sockaddr*>(&lan), &length);
@@ -336,6 +336,18 @@ int wmain(int argc, wchar_t** argv) {
         std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder>\n";
         return 2;
     }
+    // run as the normal user only: an elevated run would test a different box
+    HANDLE self_token = nullptr;
+    TOKEN_ELEVATION elevation {};
+    DWORD elevationSize = 0;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &self_token)) {
+        GetTokenInformation(self_token, TokenElevation, &elevation, sizeof elevation, &elevationSize);
+        CloseHandle(self_token);
+    }
+    if (elevation.TokenIsElevated) {
+        std::cerr << "run this as the normal user, not elevated\n";
+        return 4;
+    }
     const fs::path blender = fs::absolute(argv[1]);
     const fs::path test = fs::absolute(argv[2]);
     const fs::path job = test / L"job";
@@ -382,7 +394,7 @@ int wmain(int argc, wchar_t** argv) {
             CloseHandle(started.job);  // kill-on-close: nothing of it outlives this
             std::cout << (lpac ? "lpac" : "plain") << ": Blender exit " << exitCode << "\n";
             std::ifstream file(job / L"probe-results.json");
-            if (file) {
+            if (file.is_open()) {
                 std::stringstream read;
                 read << file.rdbuf();
                 results = read.str();
@@ -409,7 +421,7 @@ int wmain(int argc, wchar_t** argv) {
             std::vector<HANDLE> boxed;
             std::ifstream pids(job / L"job-pids.txt");
             DWORD pid = 0;
-            while (pids >> pid) {
+            while (!(pids >> pid).fail()) {
                 if (HANDLE h = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)) {
                     boxed.push_back(h);
                 }
