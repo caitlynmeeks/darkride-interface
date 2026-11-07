@@ -749,7 +749,7 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
             renderable->getEntity()->setNeedsRenderUpdate(true);
             renderable->updateInScene(scene, transaction, changed);
             markRenderableRefreshed(renderable, frame);
-            slowest = std::max(slowest, usecTimestampNow() - start);
+            slowest = std::max<uint64_t>(slowest, usecTimestampNow() - start);
             refreshed++;
         }
         _prevNumCarriedEntityUpdates = (int)refreshed;
