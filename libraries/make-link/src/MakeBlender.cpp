@@ -29,6 +29,7 @@
 #include <QtGui/QImageWriter>
 #include <QtGui/QPainter>
 
+#include "MakeFirewall.h"
 #include "MakeToolList.h"
 
 #ifdef Q_OS_MAC
@@ -205,9 +206,26 @@ QString MakeBlender::defaultWatcher() {
     return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(WATCHER);
 }
 
-bool MakeBlender::available(QString& why) const {
 #ifndef Q_OS_MAC
-    why = "Make's Blender runs only on macOS for now, where it can be kept in a sealed box";
+// the builder's line wherever Make's Blender can't run sealed (pm and Caity's wording, 11-07; docs quote it)
+static const char* const UNAVAILABLE = "Blender isn't available here";
+#endif
+
+bool MakeBlender::available(QString& why) const {
+#if defined(Q_OS_WIN)
+    // Windows: the box reaches this computer's own address unless the installer's firewall rules close it, so without
+    // them, exactly right, Blender isn't offered (the zip's case). With them it still isn't until Make's Windows box
+    // and its self-test are in (6b, next): the self-test stays after this read in every build (security, 11-07)
+    QString rules;
+    if (!MakeFirewall::boxRulesInPlace(rules)) {
+        qCInfo(makelink) << "Blender isn't offered: the box's firewall rules:" << rules;
+    } else {
+        qCInfo(makelink) << "Blender isn't offered yet: the box's firewall rules are in place, its box start comes next";
+    }
+    why = UNAVAILABLE;
+    return false;
+#elif !defined(Q_OS_MAC)
+    why = UNAVAILABLE;
     return false;
 #else
     if (!QFileInfo(QStringLiteral("/usr/bin/sandbox-exec")).isExecutable()) {
@@ -225,7 +243,7 @@ bool MakeBlender::available(QString& why) const {
 QString MakeBlender::findBlender(QString& why, const QString& app) {
 #ifndef Q_OS_MAC
     Q_UNUSED(app);
-    why = "Make's Blender runs only on macOS for now, where it can be kept in a sandbox";
+    why = UNAVAILABLE;
     return QString();
 #else
     QStringList candidates;
