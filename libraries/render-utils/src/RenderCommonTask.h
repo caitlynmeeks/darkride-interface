@@ -9,6 +9,7 @@
 #ifndef hifi_RenderCommonTask_h
 #define hifi_RenderCommonTask_h
 
+#include <set>
 #include <gpu/Pipeline.h>
 #include "LightStage.h"
 #include "HazeStage.h"
@@ -52,7 +53,7 @@ class WarmPipelinesConfig : public render::Job::Config {
     Q_PROPERTY(int left READ getLeft NOTIFY dirty)
 public:
     WarmPipelinesConfig() : render::Job::Config(true) {}   // enableable, on until the world is presented
-    int perFrame { 1 };   // programs compiled per frame
+    int perFrame { 4 };   // distinct programs bound per frame (the plumber's pipelines share programs: ~960 keys, ~90 programs)
     int getWarmed() const { return warmed; }
     int getLeft() const { return left; }
     int warmed { 0 };
@@ -68,15 +69,17 @@ public:
 
     WarmPipelines(const render::ShapePlumberPointer& shapePlumber) : _shapePlumber(shapePlumber) {}
 
-    void configure(const Config& config) { _perFrame = config.perFrame; }
+    void configure(const Config& config);
     void run(const render::RenderContextPointer& renderContext);
 
 protected:
     render::ShapePlumberPointer _shapePlumber;
-    int _perFrame { 1 };
-    size_t _next { 0 };       // the next filtered pipeline to warm
-    int _warmed { 0 };
+    int _perFrame { 4 };
+    size_t _next { 0 };       // the next filtered pipeline to look at
+    int _warmed { 0 };        // distinct programs bound so far
     bool _done { false };
+    bool _wasEnabled { true };
+    std::set<const gpu::Shader*> _programsBound;   // a program shared by many keys is bound once
 };
 
 class DrawLayered3DConfig : public render::Job::Config {

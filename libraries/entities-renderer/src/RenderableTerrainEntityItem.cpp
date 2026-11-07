@@ -1329,8 +1329,8 @@ void TerrainChunkPayload::render(RenderArgs* args) {
 }
 
 void TerrainUploadPayload::render(RenderArgs* args) {
-    if (_buffers.empty() || !args || !args->_batch) {
-        return;
+    if ((_buffers.empty() && _textures.empty()) || !args || !args->_batch) {
+        return;   // (a tile with no buffer due must still be met: the check of 11-07 00:35 waited 13 s for the next post)
     }
     // referenced, not drawn: the backend uploads every buffer a batch holds as the batch executes (the transfer
     // pass), and a chunk item that draws the buffer later finds it there

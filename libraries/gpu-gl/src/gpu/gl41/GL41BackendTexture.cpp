@@ -78,7 +78,8 @@ GLTexture* GL41Backend::syncGPUObject(const TexturePointer& texturePointer) {
                 break;
 
             case TextureUsageType::RESOURCE:
-                qCDebug(gpugllogging) << "variable / Strict texture";
+                // no line here: a resource texture is the ordinary path, met in the hundreds in a world's arrival second,
+                // and a line per texture on this thread was milliseconds of formatting inside that second (entry 29)
                 object = new GL41ResourceTexture(shared_from_this(), texture);
                 _textureManagement._transferEngine->addMemoryManagedTexture(texturePointer);
                 break;
