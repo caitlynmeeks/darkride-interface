@@ -180,6 +180,10 @@ public:
     /// The keyboard back to the world (Esc in the dock).
     Q_INVOKABLE void giveBackKeyboard();
 
+    /// Tests only (Test.makeDockConnect, with --testScript): Connect on the Terminal route without the person's click;
+    /// from then on every question Claude asks is answered no at once. Never the key route. Not on the QML's context.
+    bool testConnectTerminal();
+
     /// The Make dock's view, once made (Panels): MakeDock watches its input and gives its engine the image provider.
     void watchWindow(QQuickWindow* window, QQmlEngine* engine);
     /// Plain text for the dock: control characters (but new lines) and bidi-override characters taken out.
@@ -203,6 +207,8 @@ protected:
 private:
     /// A real input in the dock's window in the last 500 ms, used up by this call. Logged when refused.
     bool takeRealInput(const char* call);
+    /// Connect's work, after the gate (or a test's Terminal connect)
+    bool connectNow();
     void linkStateChanged();
     void readFound();
     void addRow(MakeDockRows::Row row);
@@ -217,6 +223,7 @@ private:
     MakeDockRows _made;
 
     bool _starting { false };       // the key route: Claude Code started, not ready yet
+    bool _testRefusesAsks { false }; // connected by a test: every question answered no
     QString _reason;
     QString _route;
     bool _hasKey { false };

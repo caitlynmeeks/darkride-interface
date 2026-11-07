@@ -251,6 +251,14 @@ MakeDock::MakeDock() {
         row.text = clean(what);
         row.detail = clean(exactly);
         row.itemId = QString::number(id);
+        if (_testRefusesAsks) {
+            // a test's connection: no at once, shown as the person's no would be
+            qCWarning(interfaceapp) << "Make: a test answered no to question" << id;
+            row.answered = "refused";
+            addRow(row);
+            DependencyManager::get<MakeLink>()->answer(id, false);
+            return;
+        }
         _askTimes.insert(id, QDateTime::currentMSecsSinceEpoch());
         _askTimeouts.start();
         addRow(row);
@@ -458,6 +466,22 @@ bool MakeDock::connect() {
     if (!takeRealInput("connect")) {
         return false;
     }
+    return connectNow();
+}
+
+bool MakeDock::testConnectTerminal() {
+    // tests only (Test.makeDockConnect, which exists only with --testScript): never the key route, and every question
+    // answered no from now on, so a kit never gets a silent yes (scripting's rule)
+    _testRefusesAsks = true;
+    if (_route != "terminal") {
+        _route = "terminal";   // not saved: the person's own route setting stays as it was
+        emit routeChanged();
+    }
+    qCWarning(interfaceapp) << "Make: connected by a test (the Terminal route; every question is answered no)";
+    return connectNow();
+}
+
+bool MakeDock::connectNow() {
     auto link = DependencyManager::get<MakeLink>();
     _reason.clear();
     _starting = false;

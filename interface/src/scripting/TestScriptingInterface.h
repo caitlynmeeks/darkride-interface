@@ -516,6 +516,16 @@ public slots:
     Q_INVOKABLE QString makeDockServed(const QString& what, const QString& id);
 
     /**jsdoc
+     * Connects the Make dock on the Terminal route without the person's click, for a kit that then speaks to Make as
+     * Claude Code would (scripting's mcp-kit.py). From then on every question Claude asks is answered no. The key route
+     * is never connected this way.
+     * @function Test.makeDockConnect
+     * @param {string} route - <code>"terminal"</code>; anything else is refused.
+     * @returns {boolean} Whether Make is listening.
+     */
+    Q_INVOKABLE bool makeDockConnect(const QString& route);
+
+    /**jsdoc
      * Saves a picture of the Code panel's menu, drawn as it would show but without showing it.
      * @function Test.saveCodeMenuPicture
      * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu).

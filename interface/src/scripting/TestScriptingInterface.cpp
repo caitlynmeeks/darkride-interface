@@ -1217,6 +1217,18 @@ void TestScriptingInterface::makeDockOpenCard(const QString& cardId) {
     }
 }
 
+bool TestScriptingInterface::makeDockConnect(const QString& route) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockConnect", Q_RETURN_ARG(bool, result), Q_ARG(QString, route));
+        return result;
+    }
+    if (route != "terminal" || !MakeDock::isAvailable()) {
+        return false;   // never the key route
+    }
+    return DependencyManager::get<MakeDock>()->testConnectTerminal();
+}
+
 QString TestScriptingInterface::makeDockServed(const QString& what, const QString& id) {
     if (QThread::currentThread() != thread()) {
         QString result;
