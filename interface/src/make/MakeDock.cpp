@@ -80,10 +80,10 @@ namespace {
     // default: Caity 19:19 11-07, "happy with the Terminal route as it is"; chat is offered beside it); private as the
     // rest
     Setting::Handle<bool> chatSetting { QStringList { "private", "Make", "chat" }, false };
-    // whether the connect screen offers "in Darkride" (chat) at all: off until scripting's route test shows the chat
-    // line working with real Claude Code (pm 19:21 11-07: not in front of Caity before that); a kit turns chat on for
-    // its own run only (Test.makeDockConnect("chat"))
-    const bool CHAT_OFFERED = false;
+    // whether the connect screen offers "in Darkride" (chat) at all: on since Caity's Channels try worked (pm 21:10
+    // 11-07) with the link's start-line allow-list in (make-link-1 81eecca527, security's MUST, cleared 21:48); a kit
+    // turns chat on for its own run only (Test.makeDockConnect("chat"))
+    const bool CHAT_OFFERED = true;
     const int NOT_GOT_IT_MS = 30000;   // the first message of a Connect not taken up by Claude this long: not got
     const QString SENT_TO_CLAUDE = QStringLiteral("sent to Claude");   // MakeLink's activity when an event goes out
     Setting::Handle<QString> oldRouteSetting { QStringList { "Make", "route" }, QString() };
