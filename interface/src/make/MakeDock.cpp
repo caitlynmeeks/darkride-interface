@@ -12,6 +12,8 @@
 
 #include "MakeDock.h"
 
+#include <string>
+
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
@@ -879,22 +881,30 @@ bool MakeDock::eventFilter(QObject* watched, QEvent* event) {
 }
 
 QString MakeDock::clean(const QString& text) {
-    QString out;
-    out.reserve(text.size());
-    for (const QChar c : text) {
-        const char16_t u = c.unicode();
+    // by code point, not by QChar: a tag character is a surrogate pair (an unpaired surrogate comes as U+FFFD)
+    const auto points = text.toUcs4();
+    std::u32string out;
+    out.reserve(points.size());
+    for (const auto point : points) {
+        const char32_t u = static_cast<char32_t>(point);
         if (u == '\n') {
-            out += c;
+            out += u;
         } else if (u == '\t') {
-            out += ' ';
+            out += U' ';
         } else if (u < 0x20 || (u >= 0x7f && u < 0xa0)) {
             continue;   // control characters
         } else if ((u >= 0x202a && u <= 0x202e) || (u >= 0x2066 && u <= 0x2069) || u == 0x200e || u == 0x200f ||
                    u == 0x061c) {
             continue;   // bidi overrides, isolates and marks
+        } else if (u == 0x2028 || u == 0x2029) {
+            continue;   // line and paragraph separators
+        } else if ((u >= 0x200b && u <= 0x200d) || u == 0x2060 || u == 0xfeff) {
+            continue;   // zero-width characters
+        } else if (u >= 0xe0000 && u <= 0xe007f) {
+            continue;   // tag characters: invisible, and can carry hidden text (security)
         } else {
-            out += c;
+            out += u;
         }
     }
-    return out;
+    return QString::fromUcs4(out.data(), static_cast<int>(out.size()));
 }
