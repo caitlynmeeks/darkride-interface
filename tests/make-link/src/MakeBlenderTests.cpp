@@ -403,6 +403,47 @@ bpy.ops.mesh.primitive_cube_add(size=1)
     QVERIFY(!QFile::exists(outside));
 }
 
+// the Keychain from inside the box (security's kit case): Blender's script asks for Make's own item and must not reach
+// the Keychain at all. Only whether it exists is asked, never its secret, so no permission dialog can come up; and an
+// "item not found" would mean the Keychain answered, so that fails too.
+void MakeBlenderTests::testKeychainUnreachableInTheBox() {
+    QTemporaryDir dir;
+    MakeBlender blender(dir.path());
+    if (!haveBlender(blender)) {
+        QSKIP("no Blender here");
+    }
+    const QString script = QString(CUBE) + R"(
+import ctypes, subprocess
+try:
+    security = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/Security.framework/Security")
+    find = security.SecKeychainFindGenericPassword
+    find.restype = ctypes.c_int32
+    find.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32, ctypes.c_char_p,
+                     ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    service = b"Darkride Make"
+    account = b"Anthropic API key"
+    print("KEYCHAIN_STATUS", find(None, len(service), service, len(account), account, None, None, None))
+except Exception as e:
+    print("KEYCHAIN_STATUS refused", type(e).__name__)
+try:
+    subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Darkride Make"], check=True,
+                   capture_output=True)
+    print("SECURITY_CLI OPEN")
+except Exception as e:
+    print("SECURITY_CLI REFUSED", type(e).__name__)
+)";
+    const MakeBlender::Made made = makeAndWait(blender, script);
+    QVERIFY2(made.ok(), qPrintable(made.code + ": " + made.message + "\n" + made.log));
+    const QRegularExpression STATUS("KEYCHAIN_STATUS (\\S+)");
+    const QString status = STATUS.match(made.log).captured(1);
+    qDebug().noquote() << "the Keychain from the box: status" << status;
+    QVERIFY2(!status.isEmpty(), qPrintable(made.log));
+    const int errSecItemNotFound = -25300;
+    QVERIFY2(status != "0" && status != QString::number(errSecItemNotFound), qPrintable(made.log));
+    QVERIFY2(made.log.contains("SECURITY_CLI REFUSED"), qPrintable(made.log));
+    QVERIFY(!made.log.contains("SECURITY_CLI OPEN"));
+}
+
 void MakeBlenderTests::testRunawayIsStopped() {
     QTemporaryDir dir;
     MakeBlender blender(dir.path());

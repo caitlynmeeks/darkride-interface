@@ -28,6 +28,7 @@ private slots:
     void testMakeAModel();
     void testScriptErrorComesBack();
     void testTheBoxHolds();
+    void testKeychainUnreachableInTheBox();
     void testRunawayIsStopped();
     void testCpuCapInTheBox();
     void testBlenderEndsWithTheApp();
