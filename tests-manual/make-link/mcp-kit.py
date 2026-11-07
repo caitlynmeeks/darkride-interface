@@ -88,6 +88,23 @@ check("add refuses a script property", refused["error"] and refused["code"] == "
 got = tool("get", {"id": box_id})
 check("get", not got["error"] and got["value"]["properties"]["name"] == "Make kit box" and got["text"].startswith("World content:"))
 
+# a value longer than Make sets is refused with a plain line; a long material goes into the world's files instead
+long_ud = '{"d":"' + "u" * 1300 + '"}'
+refused_long = tool("add", {"properties": {"type": "Box", "name": "Make kit long", "userData": long_ud}})
+check("a too-long userData is refused", refused_long["error"] and refused_long["code"] == "bad_input"
+      and "1200 bytes" in refused_long["text"], refused_long["text"][:200])
+refused_edit = tool("edit", {"id": box_id, "properties": {"userData": long_ud}})
+check("a too-long edit is refused", refused_edit["error"] and refused_edit["code"] == "bad_input", refused_edit["text"][:200])
+material = tool("add", {"properties": {"type": "Material", "name": "Make kit long material", "parentID": box_id,
+                                       "materialData": '{"materials":{"name":"' + "m" * 5000 + '"}}'}})
+check("a long materialData is added", not material["error"], material["text"][:200])
+if not material["error"]:
+    time.sleep(1)
+    held = ((tool("get", {"id": material["value"]["id"]})["value"] or {}).get("properties") or {})
+    check("...into the world's files, the Material pointing at it",
+          str(held.get("materialURL", "")).startswith("atp:/claude-materials/") and len(held.get("materialData", "")) <= 1200,
+          "materialURL %s, materialData %d chars" % (held.get("materialURL"), len(held.get("materialData", ""))))
+
 script = tool("set_script", {"id": box_id, "side": "client", "source":
                              "(function () { this.clickDownOnEntity = function () { print('MAKE KIT CLICKED'); }; })"})
 check("set_script", not script["error"] and script["value"]["url"].startswith("atp:/claude-scripts/")
@@ -101,6 +118,9 @@ check("click", not clicked["error"] and clicked["value"]["clicked"])
 time.sleep(1)
 log = tool("log")
 check("log has the click", not log["error"] and any("MAKE KIT CLICKED" in line for line in log["value"]["client"]), log["text"][:300])
+# the person's own scripts stay out of the log (the kit client's script prints "MAKE KIT RUNNING" lines by then)
+check("log leaves out the person's own scripts", not log["error"] and not any("MAKE KIT RUNNING" in line or "MAKE KIT CLIENT" in line
+      for line in log["value"]["client"]))
 
 edited = tool("edit", {"id": box_id, "properties": {"rotationDegrees": {"x": 0, "y": 45, "z": 0}}})
 check("edit", not edited["error"])
@@ -134,6 +154,8 @@ undone = tool("undo", {"steps": 50})
 check("undo", not undone["error"] and len(undone["value"]["undone"]) >= 3, undone["text"][:300])
 gone = tool("scene", {"radius": 30, "name": "Make kit"})
 check("undo took them all back", not gone["error"] and len(gone["value"]["things"]) == 0, gone["text"][:300])
+# the kit client's script quits when it sees this (a throwaway world)
+tool("add", {"properties": {"type": "Box", "name": "Make kit done", "dimensions": {"x": 0.1, "y": 0.1, "z": 0.1}}})
 
 print("MCP KIT", "PASS" if failures == 0 else "FAIL %d" % failures)
 helper.stdin.close()

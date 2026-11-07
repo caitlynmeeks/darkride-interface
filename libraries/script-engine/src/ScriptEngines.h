@@ -365,6 +365,8 @@ protected:
     ScriptEngine::Context _context;
     QReadWriteLock _scriptEnginesHashLock;
     QMultiHash<QUrl, ScriptEnginePointer> _scriptEnginesHash;   // several engines may share a normalized URL
+    // every engine, Make's building tools' own (about:Make) among them; only shutdownScripting walks it, at quit. New
+    // code that walks it (or a new list of engines) skips about:Make, or goes to security first (Make v1 review)
     QSet<ScriptEnginePointer> _allKnownScriptEngines;
     QMutex _allScriptsMutex;
     ScriptsModel _scriptsModel;
