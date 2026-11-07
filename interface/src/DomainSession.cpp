@@ -56,6 +56,9 @@ QString worldNameForPopup();                     // ApplicationDialogs.cpp's: th
 static const int ENTITY_SERVER_ADDED_TIMEOUT = 5000;
 static const int ENTITY_SERVER_CONNECTION_TIMEOUT = 5000;
 static const float INITIAL_QUERY_RADIUS = 10.0f;  // priority radius for entities before physics enabled
+// the start-up's own arrival wait ends this long after the connect if no script takes it over: within the 10 s
+// arrival grace physics gives a vehicle's states (physics' ruling, 11-07)
+static const int LAUNCH_HOLD_LIMIT_SECONDS = 10;
 
 // Application's getMyAvatar is private; this is the same call
 static std::shared_ptr<MyAvatar> getMyAvatar() {
@@ -711,10 +714,47 @@ int DomainSession::getMaxOctreePacketsPerSecond() const {
 }
 
 void DomainSession::setArrivalWaitsForNearby(bool wait) {
+    // a script's word (worldLoading.js): it takes over the start-up's own wait, if that is still held
+    if (_firstArrivalHold.held) {
+        _firstArrivalHold.held = false;
+        qCDebug(interfaceapp) << "First arrival: the wait taken over by a script, which says" << wait;
+    }
+    setArrivalWait(wait);
+}
+
+void DomainSession::setArrivalWait(bool wait) {
     _arrivalWaitsForNearby = wait;
     // whole-world loading sets SafeLanding's wait itself, with its radius
     if (!_worldLoading.active) {
         _octreeProcessor.setSafeLandingWaitsForVisuals(wait);
+    }
+}
+
+void DomainSession::holdFirstArrival() {
+    _firstArrivalHold.held = true;
+    _firstArrivalHold.connectedAt = 0;
+    setArrivalWait(true);
+    qCDebug(interfaceapp) << "First arrival: waits for what is near the avatar until a script takes it over, or" <<
+        LAUNCH_HOLD_LIMIT_SECONDS << "s after the connect";
+}
+
+void DomainSession::updateFirstArrivalHold() {
+    if (!_firstArrivalHold.held) {
+        return;
+    }
+    const quint64 now = usecTimestampNow();
+    if (_firstArrivalHold.connectedAt == 0) {
+        if (isServerlessMode() || DependencyManager::get<NodeList>()->getDomainHandler().isConnected()) {
+            _firstArrivalHold.connectedAt = now;
+        }
+        return;
+    }
+    if (now - _firstArrivalHold.connectedAt > (quint64)LAUNCH_HOLD_LIMIT_SECONDS * USECS_PER_SECOND) {
+        // no script took it over (no worldLoading.js running): the start-up's wait ends by itself
+        _firstArrivalHold.held = false;
+        setArrivalWait(false);
+        qCDebug(interfaceapp) << "First arrival: no script took the wait over;" << LAUNCH_HOLD_LIMIT_SECONDS <<
+            "s after the connect it ends (physics" << (_physicsEnabled ? "on" : "not yet on") << ")";
     }
 }
 
@@ -848,6 +888,7 @@ void DomainSession::showWorldNow() {
 }
 
 void DomainSession::enablePhysicsWhenReady() {
+    updateFirstArrivalHold();   // outside the gate: it only sets or clears the wait the gate reads
     if (!_physicsEnabled) {
         if (!_domainLoadingInProgress) {
             PROFILE_ASYNC_BEGIN(app, "Scene Loading", "");

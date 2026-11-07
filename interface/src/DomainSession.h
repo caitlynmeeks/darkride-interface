@@ -77,6 +77,12 @@ public:
     void setMinimumGPUTextureMemStabilityCount(int stabilityCount) { _minimumGPUTextureMemSizeStabilityCount = stabilityCount; }
     bool gpuTextureMemSizeStable();
     void setArrivalWaitsForNearby(bool wait);   // a loading screen waits for what is near the avatar, even where the zone allows moving at once
+    // The first arrival after start-up waits for what is near the avatar, as a hop does: set by the sign-in gate just
+    // before it queues the first goToStartingLocation, because at a launch the default scripts (worldLoading.js, which
+    // sets the wait for a hop) start in the same moment and lost the race (physics on before the script ran: the
+    // first ride's car corrected by up to 1.2 m, physics 11-07). worldLoading.js takes the wait over when it starts
+    // (its setArrivalWaitsForNearby); if nothing takes it over, it ends LAUNCH_HOLD_LIMIT after the connect.
+    void holdFirstArrival();
     void setOverrideEntry() { _overrideEntry = true; }   // the first run goes to the address given, not to the entry
     // A link the app is opened with: macOS hands a world link clicked while Darkride isn't running to the app as it
     // starts, before it can go anywhere. Kept until the starting location is chosen, which then goes there instead of
@@ -164,6 +170,12 @@ private:
     // the physics gate
     bool _physicsEnabled{ false };
     std::atomic<bool> _arrivalWaitsForNearby{ false };
+    void setArrivalWait(bool wait);    // the wait itself (the flag and SafeLanding's), whoever asks
+    void updateFirstArrivalHold();     // once a frame, before the gate: the launch hold's time limit
+    struct FirstArrivalHold {
+        bool held { false };            // the start-up's own wait, not yet taken over by a script
+        quint64 connectedAt { 0 };      // when the domain (or a world file) was first there while held
+    } _firstArrivalHold;
     std::atomic<uint32_t> _fullSceneReceivedCounter{ 0 };  // how many times have we received a full-scene octree stats packet
     uint32_t _fullSceneCounterAtLastPhysicsCheck{ 0 };     // _fullSceneReceivedCounter last time we checked physics ready
     qint64 _gpuTextureMemSizeStabilityCount{ 0 };
