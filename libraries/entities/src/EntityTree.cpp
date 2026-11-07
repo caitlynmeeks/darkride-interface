@@ -541,12 +541,16 @@ bool takeSendBack(const QUuid& sender, quint64 now) {
 //   - The entity's element and the elements above it are marked changed, as the simulation does when it changes an
 //     entity itself (SimpleEntitySimulation): a viewer whose view hasn't moved rescans only changed elements, so with
 //     the time alone a sender standing still got its copy back only if something else near it was edited later.
-//   - Each sender has a budget of send-backs (takeSendBack); beyond it the edit is refused without one.
+//   - Each visitor has a budget of send-backs (takeSendBack); beyond it the edit is refused without one. The
+//     domain's own script server and physics server have none.
 void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused,
                                      const SharedNodePointer& senderNode) {
     if (getIsServer()) {
         const quint64 now = usecTimestampNow();
-        if (senderNode && !takeSendBack(senderNode->getUUID(), now)) {
+        // the domain's own servers (the script server, the physics server) aren't visitors: no budget for them
+        const bool domainServer = senderNode && (senderNode->getType() == NodeType::EntityScriptServer ||
+                                                 senderNode->getType() == NodeType::PhysicsServer);
+        if (senderNode && !domainServer && !takeSendBack(senderNode->getUUID(), now)) {
             _sendBacksSkipped++;
             return;
         }
