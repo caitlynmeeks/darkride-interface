@@ -10,6 +10,8 @@
 //
 
 #include "EntityTree.h"
+
+#include <mutex>
 #include "EntityContentAddresses.h"
 #include <QtCore/QDateTime>
 #include <QtCore/QQueue>
@@ -482,6 +484,54 @@ void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropert
     }
 }
 
+std::atomic<uint64_t> EntityTree::_editsStampedAhead { 0 };
+std::atomic<uint64_t> EntityTree::_largestStampLeadUsec { 0 };
+std::atomic<uint64_t> EntityTree::_sendBacksSkipped { 0 };
+
+namespace {
+// At most this many send-backs a second to one sender, and this many at once: each one sends the entity again to
+// every viewer near it, so beyond the budget a refused edit is refused without one (only that sender's own copy
+// stays as it made it).
+const float SEND_BACKS_PER_SECOND = 5.0f;
+const float SEND_BACK_BURST = 10.0f;
+struct SendBackBudget {
+    quint64 refilledAt;
+    float left;
+};
+std::mutex sendBackBudgetsMutex;
+QHash<QUuid, SendBackBudget> sendBackBudgets;
+
+bool takeSendBack(const QUuid& sender, quint64 now) {
+    std::lock_guard<std::mutex> lock(sendBackBudgetsMutex);
+    const quint64 FULL_AFTER = (quint64)(SEND_BACK_BURST / SEND_BACKS_PER_SECOND * USECS_PER_SECOND);
+    if (sendBackBudgets.size() > 1024) {
+        // a sender idle long enough is back to a full budget, the same as one never seen
+        for (auto it = sendBackBudgets.begin(); it != sendBackBudgets.end();) {
+            if (now > it->refilledAt + FULL_AFTER) {
+                it = sendBackBudgets.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    auto it = sendBackBudgets.find(sender);
+    if (it == sendBackBudgets.end()) {
+        sendBackBudgets.insert(sender, { now, SEND_BACK_BURST - 1.0f });
+        return true;
+    }
+    const quint64 elapsed = now > it->refilledAt ? now - it->refilledAt : 0;
+    const float left = std::min(SEND_BACK_BURST,
+        it->left + (float)elapsed / (float)USECS_PER_SECOND * SEND_BACKS_PER_SECOND);
+    it->refilledAt = std::max(now, it->refilledAt);
+    if (left < 1.0f) {
+        it->left = left;
+        return false;
+    }
+    it->left = left - 1.0f;
+    return true;
+}
+}
+
 // A refused edit is taken back on its sender's screen too: the client shows its own edit at once, and takes the server's
 // copy only if it was edited later. So the entity goes out again (all of it, as ever), last edited after the refused
 // edit. Physics updates aren't sent back: they come many times a second, and are refused as before.
@@ -491,9 +541,15 @@ void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropert
 //   - The entity's element and the elements above it are marked changed, as the simulation does when it changes an
 //     entity itself (SimpleEntitySimulation): a viewer whose view hasn't moved rescans only changed elements, so with
 //     the time alone a sender standing still got its copy back only if something else near it was edited later.
-void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused) {
+//   - Each sender has a budget of send-backs (takeSendBack); beyond it the edit is refused without one.
+void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused,
+                                     const SharedNodePointer& senderNode) {
     if (getIsServer()) {
         const quint64 now = usecTimestampNow();
+        if (senderNode && !takeSendBack(senderNode->getUUID(), now)) {
+            _sendBacksSkipped++;
+            return;
+        }
         entity->setLastEdited(std::max(now, std::min(refused.getLastEdited(), now) + 1));
         entity->markAsChangedOnServer();
         if (auto element = entity->getElement()) {
@@ -575,7 +631,7 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
     if (!allowLockChange && (entity->getLocked() != properties.getLocked())) {
         qCDebug(entities) << "Refusing disallowed lock adjustment.";
         if (!isPhysics) {
-            sendBackRefusedEdit(entity, properties);
+            sendBackRefusedEdit(entity, properties, senderNode);
         }
         return false;
     }
@@ -791,7 +847,7 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
                 }
             } else {
                 if (!isPhysics) {
-                    sendBackRefusedEdit(entity, properties);
+                    sendBackRefusedEdit(entity, properties, senderNode);
                 }
                 return false;
             }
@@ -1872,6 +1928,17 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
             }
 
             endDecode = usecTimestampNow();
+            // a time ahead of this server's clock is taken as now, from every sender: the stream sends an entity again
+            // whenever its time is later than the last send, so a time ahead kept it going out to moving viewers
+            // until then, and survived a save. No honest edit is stamped ahead by more than its clock-offset error.
+            if (properties.getLastEdited() > endDecode) {
+                const uint64_t lead = properties.getLastEdited() - endDecode;
+                _editsStampedAhead++;
+                uint64_t largest = _largestStampLeadUsec;
+                while (lead > largest && !_largestStampLeadUsec.compare_exchange_weak(largest, lead)) {
+                }
+                properties.setLastEdited(endDecode);
+            }
 
             EntityItemPointer existingEntity;
             if (!isAdd) {
@@ -2090,7 +2157,7 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                         QWriteLocker locker(&_recentlyDeletedEntitiesLock);
                         _recentlyDeletedEntityItemIDs.insert(usecTimestampNow(), entityItemID);
                     } else if (!isPhysics) {
-                        sendBackRefusedEdit(existingEntity, properties);
+                        sendBackRefusedEdit(existingEntity, properties, senderNode);
                     }
                     validEditPacket = false;
                 }

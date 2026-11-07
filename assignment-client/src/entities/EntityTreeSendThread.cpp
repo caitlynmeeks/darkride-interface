@@ -149,7 +149,10 @@ bool EntityTreeSendThread::traverseTreeAndSendContents(SharedNodePointer node, O
                     << "lodScale" << newView.lodScaleFactor << "cards" << newView.impostorCards
                     << "queue" << _sendQueue.size() << "known" << _knownState.size()
                     << "sentSinceLast" << _diagSentSinceLog
-                    << "droppedTooBig" << _diagDroppedProperties << "serverStreamChecks" << EntityTree::streamChecksRun();
+                    << "droppedTooBig" << _diagDroppedProperties << "serverStreamChecks" << EntityTree::streamChecksRun()
+                    << "editsStampedAhead" << EntityTree::editsStampedAhead()
+                    << "largestLeadMs" << (double)EntityTree::largestStampLeadUsec() / USECS_PER_MSEC
+                    << "sendBacksSkipped" << EntityTree::sendBacksSkipped();
                 _diagLastLog = now;
                 _diagSentSinceLog = 0;
             }
