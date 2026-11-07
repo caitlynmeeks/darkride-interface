@@ -67,15 +67,18 @@ public:
     using Config = WarmPipelinesConfig;
     using JobModel = render::Job::Model<WarmPipelines, Config>;
 
-    WarmPipelines(const render::ShapePlumberPointer& shapePlumber) : _shapePlumber(shapePlumber) {}
+    // extras: pipelines outside the plumber, bound after its (the sun shadow pass's shape pipelines, 2026-11-07)
+    WarmPipelines(const render::ShapePlumberPointer& shapePlumber, const std::vector<gpu::PipelinePointer>& extras = {}) :
+        _shapePlumber(shapePlumber), _extras(extras) {}
 
     void configure(const Config& config);
     void run(const render::RenderContextPointer& renderContext);
 
 protected:
     render::ShapePlumberPointer _shapePlumber;
+    std::vector<gpu::PipelinePointer> _extras;
     int _perFrame { 4 };
-    size_t _next { 0 };       // the next filtered pipeline to look at
+    size_t _next { 0 };       // the next pipeline to look at: the plumber's filtered ones, then the extras
     int _warmed { 0 };        // distinct programs bound so far
     bool _done { false };
     bool _wasEnabled { true };

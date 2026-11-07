@@ -51,8 +51,8 @@ void WarmPipelines::configure(const Config& config) {
     _perFrame = std::max(1, config.perFrame);
     if (_wasEnabled && !config.isEnabled() && !_done && _shapePlumber) {
         // the loading screen ended first: what was not reached compiles at its first use, as before
-        qCDebug(renderutils) << "WarmPipelines: paused at" << _warmed << "programs warmed," << (_shapePlumber->getFilteredPipelines().size() - _next)
-                             << "pipelines not looked at";
+        qCDebug(renderutils) << "WarmPipelines: paused at" << _warmed << "programs warmed,"
+                             << (_shapePlumber->getFilteredPipelines().size() + _extras.size() - _next) << "pipelines not looked at";
     }
     _wasEnabled = config.isEnabled();
 }
@@ -62,26 +62,35 @@ void WarmPipelines::run(const RenderContextPointer& renderContext) {
         return;
     }
     const auto& pipelines = _shapePlumber->getFilteredPipelines();
-    if (_next >= pipelines.size()) {
+    const size_t count = pipelines.size() + _extras.size();
+    if (_next >= count) {
         _done = true;
-        qCDebug(renderutils) << "WarmPipelines: done," << _warmed << "programs warmed of" << pipelines.size() << "pipelines";
+        qCDebug(renderutils) << "WarmPipelines: done," << _warmed << "programs warmed of" << count << "pipelines";
         return;
     }
     gpu::doInBatch("WarmPipelines", renderContext->args->_context, [&](gpu::Batch& batch) {
         // binding a pipeline compiles its program the first time (the backend's sync); nothing is drawn; a program many
         // keys share is bound once, and a frame binds perFrame distinct programs (the keys sharing them cost nothing)
         int bound = 0;
-        while (bound < _perFrame && _next < pipelines.size()) {
-            const auto& pipeline = pipelines[_next].pipeline;
-            ++_next;
-            if (!pipeline || !pipeline->pipeline || !pipeline->pipeline->getProgram()) {
+        while (bound < _perFrame && _next < count) {
+            const size_t index = _next++;
+            gpu::PipelinePointer pipeline;
+            if (index < pipelines.size()) {
+                const auto& shapePipeline = pipelines[index].pipeline;
+                if (shapePipeline) {
+                    pipeline = shapePipeline->pipeline;
+                }
+            } else {
+                pipeline = _extras[index - pipelines.size()];
+            }
+            if (!pipeline || !pipeline->getProgram()) {
                 continue;
             }
-            const gpu::Shader* program = pipeline->pipeline->getProgram().get();
+            const gpu::Shader* program = pipeline->getProgram().get();
             if (!_programsBound.insert(program).second) {
                 continue;   // already bound by an earlier key
             }
-            batch.setPipeline(pipeline->pipeline);
+            batch.setPipeline(pipeline);
             ++bound;
             ++_warmed;
         }
@@ -89,7 +98,7 @@ void WarmPipelines::run(const RenderContextPointer& renderContext) {
     auto config = std::static_pointer_cast<Config>(renderContext->jobConfig);
     if (config) {
         config->warmed = _warmed;
-        config->left = (int)(pipelines.size() - _next);
+        config->left = (int)(count - _next);
     }
 }
 
