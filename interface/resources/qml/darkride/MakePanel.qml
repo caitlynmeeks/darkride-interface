@@ -61,13 +61,22 @@ Rectangle {
                 anchors.leftMargin: 10
                 anchors.rightMargin: 6
                 spacing: 6
+                // the status: a dot (green connected, grey waiting) and its words, in one place (mary's mock)
+                Rectangle {
+                    visible: status.text !== ""
+                    implicitWidth: 7
+                    implicitHeight: 7
+                    radius: 3.5
+                    color: root.linkState === "connected" ? BuildTheme.running : BuildTheme.dimText
+                }
                 Text {
+                    id: status
                     Layout.fillWidth: true
-                    text: root.linkState === "connected" ? "● Connected"
+                    text: root.linkState === "connected" ? "Connected"
                         : root.linkState === "starting" ? "Starting your Claude…"
                         : root.linkState === "listening" ? "Waiting for Claude in Terminal" : ""
                     textFormat: Text.PlainText
-                    color: root.linkState === "connected" ? BuildTheme.running : BuildTheme.mutedText
+                    color: root.linkState === "connected" ? BuildTheme.text : BuildTheme.mutedText
                     font.pixelSize: BuildTheme.textSize
                     elide: Text.ElideRight
                 }

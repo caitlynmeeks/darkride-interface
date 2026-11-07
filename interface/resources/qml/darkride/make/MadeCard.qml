@@ -3,7 +3,9 @@
 //  qml/darkride/make
 //
 //  Something Claude made, in the timeline: a 3D model (its sheet: one picture of four views, front and side above,
-//  back and top below, on a 1 m grid beside a 1.75 m figure), a thing (a box, a light, a zone...) or a script. Its name, what it is, and its next step: Show me (Build mode, selected and framed:
+//  back and top below, on a 1 m grid beside a 1.75 m figure, under its row), a thing (a box, a light, a zone...) or a
+//  script. One row (mary's mock): a 38 px box with its mark or picture, its name, what it is, and its next step: Show me
+//  (Build mode, selected and framed:
 //  MakeDock.showThing) or, for a script, Open in Code (MakeDock.openInCode). A request's Undo is on its end line;
 //  an undone card fades and says so. In "tile" form it's the Made tab's square.
 //
@@ -35,6 +37,7 @@ Card {
     readonly property string kindName: kind === "model" ? "3D model" : kind === "script" ? "Script" : "Thing"
 
     spacing: 8
+    padded: true
     opacity: undone ? 0.55 : 1
 
     function act() {
@@ -48,17 +51,15 @@ Card {
         }
     }
 
-    // a model's sheet, square, at most 240 points a side so the timeline keeps its words in sight, each view named in
-    // its corner; a tile shows the front alone, across the tile
+    // the Made tab's tile: its picture (a model's front view) or its mark across the top
     Rectangle {
-        id: sheetBox
-        readonly property real side: Math.min(parent ? parent.width : 0, 240)
-        Layout.fillWidth: card.tile
-        Layout.preferredWidth: card.tile ? -1 : side
-        Layout.preferredHeight: card.tile ? 96 : side
-        visible: card.kind === "model" || card.tile   // in a tile, a script or a thing gets the same box, with its mark
+        Layout.fillWidth: true
+        Layout.preferredHeight: 96
+        visible: card.tile
         radius: BuildTheme.radius
-        color: BuildTheme.panel
+        color: BuildTheme.field
+        border.width: 1
+        border.color: BuildTheme.fieldEdge
         clip: true
         Text {
             anchors.centerIn: parent
@@ -66,22 +67,112 @@ Card {
             text: card.kind === "script" ? "{ }" : "◇"
             textFormat: Text.PlainText
             color: BuildTheme.accentText
-            font.family: card.kind === "script" ? "Menlo" : ""
+            font.family: card.kind === "script" ? BuildTheme.mono : ""
             font.pixelSize: 22
         }
         Image {
             anchors.fill: parent
+            anchors.margins: 1
             visible: card.kind === "model"
-            source: card.kind !== "model" ? "" : card.tile ? card.thumb : card.sheet
-            fillMode: card.tile ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+            source: card.kind === "model" && card.tile ? card.thumb : ""
+            fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            sourceSize.width: card.tile ? 256 : 512   // 240 points at 2x; the sheet's 1024 px would be 4 MB a card
+            sourceSize.width: 256
             Accessible.role: Accessible.Graphic
-            Accessible.name: card.tile ? card.title : card.title + ": front, side, back and top"
+            Accessible.name: card.title
+        }
+    }
+
+    // one row (mary's mock): a 38 px box with the mark or the model's front view, the name and what it is, the button
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 8
+        Rectangle {
+            visible: !card.tile
+            Layout.alignment: Qt.AlignVCenter
+            implicitWidth: 38
+            implicitHeight: 38
+            radius: BuildTheme.radius
+            color: BuildTheme.field
+            border.width: 1
+            border.color: BuildTheme.fieldEdge
+            clip: true
+            Text {
+                anchors.centerIn: parent
+                visible: card.kind !== "model"
+                text: card.kind === "script" ? "{ }" : "◇"
+                textFormat: Text.PlainText
+                color: BuildTheme.accentText
+                font.family: card.kind === "script" ? BuildTheme.mono : ""
+                font.pixelSize: BuildTheme.textSize
+            }
+            Image {
+                anchors.fill: parent
+                anchors.margins: 1
+                visible: card.kind === "model"
+                source: card.kind === "model" && !card.tile ? card.thumb : ""
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                sourceSize.width: 76
+            }
+        }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            spacing: 1
+            Text {
+                Layout.fillWidth: true
+                text: card.title
+                textFormat: Text.PlainText
+                color: BuildTheme.text
+                font.pixelSize: card.tile ? BuildTheme.noteSize + 1 : BuildTheme.textSize
+                elide: Text.ElideMiddle
+            }
+            Text {
+                Layout.fillWidth: true
+                text: card.undone ? card.kindName + ", undone"
+                    : card.detail !== "" && card.text !== "" ? card.text : card.kindName
+                textFormat: Text.PlainText
+                color: BuildTheme.mutedText
+                font.pixelSize: BuildTheme.noteSize
+                elide: Text.ElideRight
+                maximumLineCount: 1
+            }
+        }
+        MakeButton {
+            visible: !card.undone && !card.tile
+            Layout.alignment: Qt.AlignVCenter
+            text: card.kind === "script" ? "Open in Code" : "Show me"
+            onClicked: card.act()
+        }
+    }
+
+    // a model's sheet under its row in the timeline (four views: front and side above, back and top below, each named
+    // in its corner), at most 240 points a side so the timeline keeps its words in sight
+    Rectangle {
+        id: sheetBox
+        readonly property real side: Math.min(parent ? parent.width : 0, 240)
+        Layout.preferredWidth: side
+        Layout.preferredHeight: side
+        visible: card.kind === "model" && !card.tile
+        radius: BuildTheme.radius
+        color: BuildTheme.field
+        border.width: 1
+        border.color: BuildTheme.fieldEdge
+        clip: true
+        Image {
+            anchors.fill: parent
+            anchors.margins: 1
+            source: card.kind === "model" && !card.tile ? card.sheet : ""
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            sourceSize.width: 512   // 240 points at 2x; the sheet's 1024 px would be 4 MB a card
+            Accessible.role: Accessible.Graphic
+            Accessible.name: card.title + ": front, side, back and top"
         }
         Repeater {
-            model: card.tile ? [] : [{ name: "Front", right: false, bottom: false }, { name: "Side", right: true, bottom: false },
-                                    { name: "Back", right: false, bottom: true }, { name: "Top", right: true, bottom: true }]
+            model: [{ name: "Front", right: false, bottom: false }, { name: "Side", right: true, bottom: false },
+                    { name: "Back", right: false, bottom: true }, { name: "Top", right: true, bottom: true }]
             delegate: Text {
                 required property var modelData
                 x: modelData.right ? sheetBox.width / 2 + 6 : 6
@@ -92,51 +183,6 @@ Card {
                 font.pixelSize: 10
             }
         }
-    }
-
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: 10
-        // a mark for a script or a thing
-        Text {
-            visible: card.kind !== "model" && !card.tile
-            Layout.alignment: Qt.AlignTop
-            text: card.kind === "script" ? "{ }" : "◇"
-            textFormat: Text.PlainText
-            color: BuildTheme.accentText
-            font.family: card.kind === "script" ? "Menlo" : ""
-            font.pixelSize: BuildTheme.textSize
-        }
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 2
-            Text {
-                Layout.fillWidth: true
-                text: card.title
-                textFormat: Text.PlainText
-                color: BuildTheme.text
-                font.pixelSize: card.tile ? BuildTheme.noteSize + 1 : BuildTheme.textSize
-                font.weight: Font.DemiBold
-                elide: Text.ElideMiddle
-            }
-            Text {
-                Layout.fillWidth: true
-                text: card.undone ? card.kindName + ", undone"
-                    : card.detail !== "" && card.text !== "" ? card.text : card.kindName
-                textFormat: Text.PlainText
-                color: BuildTheme.mutedText
-                font.pixelSize: BuildTheme.noteSize
-                wrapMode: card.tile ? Text.NoWrap : Text.Wrap
-                elide: Text.ElideRight
-                maximumLineCount: card.tile ? 1 : 3
-            }
-        }
-    }
-
-    MakeButton {
-        visible: !card.undone && !card.tile
-        text: card.kind === "script" ? "Open in Code" : "Show me"
-        onClicked: card.act()
     }
 
     // a tile is one button as a whole
