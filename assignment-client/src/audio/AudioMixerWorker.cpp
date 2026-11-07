@@ -35,6 +35,7 @@
 #include "AvatarAudioStream.h"
 #include "InjectedAudioStream.h"
 #include "AudioHelpers.h"
+#include "AudioMixSilence.h"
 
 using namespace std;
 using AudioStreamVector = AudioMixerClientData::AudioStreamVector;
@@ -475,13 +476,7 @@ bool AudioMixerWorker::prepareMix(const SharedNodePointer& listener) {
 
     // check for silent audio before limiting
     // limiting uses a dither and can only guarantee abs(sample) <= 1
-    bool hasAudio = false;
-    for (int i = 0; i < AudioConstants::NETWORK_FRAME_SAMPLES_STEREO; ++i) {
-        if (_mixSamples[i] != 0.0f) {
-            hasAudio = true;
-            break;
-        }
-    }
+    bool hasAudio = AudioMixSilence::hasAudio(_mixSamples, AudioConstants::NETWORK_FRAME_SAMPLES_STEREO);
 
     // use the per listener AudioLimiter to render the mixed data
     listenerData->audioLimiter.render(_mixSamples, _bufferSamples, AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL);
