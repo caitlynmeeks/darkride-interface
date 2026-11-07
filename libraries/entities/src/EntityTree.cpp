@@ -3353,7 +3353,6 @@ static QVariantList parentsBeforeChildren(const QVariantList& entities) {
 bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
     // These are needed to deal with older content (before adding inheritance modes)
     int contentVersion = map["Version"].toInt();
-    int futureTimesLoaded = 0;
 
     if (map.contains("Id")) {
         _persistID = map["Id"].toUuid();
@@ -3557,14 +3556,6 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
             warnRefusedAddresses(entityItemID, EntityContentAddresses::clearThisComputer(properties));
         }
 
-        // a time ahead of this computer's clock comes back to now: the stream sends an entity again whenever its time
-        // is later than the last send, so one saved ahead kept going out to moving viewers until its time came
-        const quint64 loadedAt = usecTimestampNow();
-        if (properties.getLastEdited() > loadedAt) {
-            futureTimesLoaded++;
-            properties.setLastEdited(loadedAt);
-        }
-
         EntityItemPointer entity = addEntity(entityItemID, properties, isImport);
         if (!entity) {
             qCDebug(entities) << "adding Entity failed:" << entityItemID << properties.getType();
@@ -3586,10 +3577,6 @@ bool EntityTree::readFromMap(QVariantMap& map, const bool isImport) {
         }
     }
 
-    if (futureTimesLoaded > 0) {
-        qCWarning(entities) << futureTimesLoaded << "entities were saved with a last-edited time ahead of this"
-            << "computer's clock; loaded as edited now";
-    }
     return success;
 }
 
