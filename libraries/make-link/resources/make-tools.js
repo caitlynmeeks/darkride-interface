@@ -57,6 +57,44 @@
     }
     function failed(code, message) { return { error: { code: code, message: message } }; }
 
+    // the longest text value Make sets: a longer one is refused with a plain line, never reported as set
+    var MAX_VALUE_BYTES = 1200; // the same as MakeLink.cpp MAX_INLINE_VALUE_BYTES
+    function utf8Bytes(s) {
+        var n = 0;
+        for (var i = 0; i < s.length; i++) {
+            var c = s.charCodeAt(i);
+            if (c < 0x80) { n += 1; }
+            else if (c < 0x800) { n += 2; }
+            else if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) { n += 4; i++; }
+            else { n += 3; }
+        }
+        return n;
+    }
+    // a value longer than Make sets (put there some other way): Make won't change or remove a thing holding one, since
+    // its Undo couldn't put it back (every change undoable)
+    function cantPutBack(props) {
+        for (var k in props) {
+            if (props.hasOwnProperty(k) && typeof props[k] === "string" && props[k].length > MAX_VALUE_BYTES / 4 &&
+                utf8Bytes(props[k]) > MAX_VALUE_BYTES) {
+                return k + " holds " + utf8Bytes(props[k]) + " bytes, more than Undo could put back";
+            }
+        }
+        return null;
+    }
+    function tooLong(props) {
+        for (var k in props) {
+            if (props.hasOwnProperty(k) && typeof props[k] === "string" && props[k].length > MAX_VALUE_BYTES / 4) {
+                var bytes = utf8Bytes(props[k]);
+                if (bytes > MAX_VALUE_BYTES) {
+                    return failed("bad_input", k + " is " + bytes + " bytes; a value can be at most " + MAX_VALUE_BYTES +
+                        " bytes, or the world won't keep it. Put long data a script needs in the script itself" +
+                        " (set_script keeps scripts in the world's files).");
+                }
+            }
+        }
+        return null;
+    }
+
     var BASE = ["name", "description", "type", "position", "rotation", "dimensions", "parentID", "localPosition",
         "visible", "collisionless", "dynamic", "gravity", "velocity", "angularVelocity", "locked", "userData", "lifetime"];
     var BY_TYPE = {
@@ -139,6 +177,8 @@
         },
         add: function (a, request, done) {
             var props = convert(a.properties || {});
+            var long = tooLong(props);
+            if (long) { return done(long); }
             if (!props.position && isNull(props.parentID)) {
                 props.position = Vec3.sum(MyAvatar.position, Vec3.multiply(2, Quat.getFront(MyAvatar.orientation)));
             }
@@ -150,11 +190,15 @@
         },
         edit: function (a, request, done) {
             var props = convert(a.properties || {}), keys = Object.keys(props);
+            var long = tooLong(props);
+            if (long) { return done(long); }
             var before = Entities.getEntityProperties(a.id, keys.concat(["locked", "type"]));
             if (!before || !before.type || before.type === "Unknown") { return done(failed("not_found", "no thing " + a.id)); }
             if (before.locked) { return done(failed("refused", "it's locked: unlocking is for the world's own editors")); }
             var old = {};
             keys.forEach(function (k) { old[k] = before[k]; });
+            var stuck = cantPutBack(old);
+            if (stuck) { return done(failed("refused", "Make won't change this: " + stuck + ".")); }
             Entities.editEntity(a.id, props);
             remember({ op: "edit", id: a.id, before: old, request: request });
             Script.setTimeout(function () {
@@ -167,6 +211,8 @@
             var before = Entities.getEntityProperties(a.id);
             if (!before || !before.type || before.type === "Unknown") { return done(failed("not_found", "no thing " + a.id)); }
             if (before.locked) { return done(failed("refused", "it's locked: unlocking is for the world's own editors")); }
+            var stuck = cantPutBack(before);
+            if (stuck) { return done(failed("refused", "Make won't remove this: " + stuck + ".")); }
             Entities.deleteEntity(a.id);
             remember({ op: "remove", id: a.id, props: before, request: request });
             done({ id: a.id, removed: true });
@@ -187,14 +233,23 @@
         },
         undo: function (a, request, done) {
             var steps = a.steps || 1, undone = [];
-            while (steps-- > 0 && history.length) { undone.push(undoOne(history.pop())); }
+            while (steps-- > 0 && history.length) {
+                var entry = history.pop(), result = undoOne(entry);
+                undone.push(result);
+                if (result.notUndone) { history.push(entry); break; }
+            }
             Script.setTimeout(function () { done({ undone: undone }); }, 300);
         },
         // Make's Undo: every change of one request, newest first
         undo_request: function (a, request, done) {
             var undone = [];
             for (var i = history.length - 1; i >= 0; i--) {
-                if (history[i].request === a.request) { undone.push(undoOne(history.splice(i, 1)[0])); }
+                if (history[i].request === a.request) {
+                    var result = undoOne(history[i]);
+                    undone.push(result);
+                    if (result.notUndone) { break; }
+                    history.splice(i, 1);
+                }
             }
             Script.setTimeout(function () { done({ undone: undone }); }, 300);
         },
@@ -286,6 +341,11 @@
     };
 
     function undoOne(entry) {
+        var stuck = entry.op === "edit" ? cantPutBack(entry.before) : entry.op === "remove" ? cantPutBack(entry.props) : null;
+        if (stuck) {
+            return { tool: entry.tool || entry.op, id: entry.id, notUndone: "not undone, and the change is still there: " +
+                stuck + ". Tell the person; nothing after it was undone either." };
+        }
         if (entry.op === "add") {
             Entities.deleteEntity(entry.id);
             delete made[entry.id];

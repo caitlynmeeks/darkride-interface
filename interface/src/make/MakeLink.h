@@ -166,6 +166,8 @@ private:
     /// Decides blenderOffered() for this Connect and offers or withdraws the Blender tools by it.
     void offerBlender();
     void toEngine(const QString& tool);
+    void forward(const QString& tool, const QJsonObject& inputs, const MakeLinkServer::Reply& reply);
+    void longMaterialToFile(const QJsonObject& inputs, const std::function<void(const QJsonObject&)>& then);
     void gate(const QString& tool, const QJsonObject& inputs, const std::function<void(bool, const QString&)>& proceed);
     QString ask(const QString& what, const QString& exactly, const std::function<void(bool)>& decided);
     QJsonObject madeBy() const;

@@ -69,6 +69,7 @@ const int ASK_NAME_LENGTH = 60;  // a thing's name (the world's words) in an ask
 const int ASK_WAIT_MS = 100 * 1000;
 const int MAX_LOG_LINES = 500;
 const int LOG_LINES_GIVEN = 120;
+const int MAX_INLINE_VALUE_BYTES = 1200;  // the same as make-tools.js MAX_VALUE_BYTES
 const QSize PICTURE_SIZE { 768, 512 };
 const float PICTURE_FIELD_OF_VIEW = 45.0f;
 const int PICTURE_SETTLE_MS = 100;
@@ -599,33 +600,68 @@ void MakeLink::stopToolsEngine() {
 
 void MakeLink::toEngine(const QString& tool) {
     _server.setHandler(tool, [this, tool](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
-        if (!_engine) {
-            reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE, "Make's building tools aren't running"));
+        if (tool == "add" || tool == "edit") {
+            longMaterialToFile(inputs, [this, tool, reply](const QJsonObject& ready) { forward(tool, ready, reply); });
+        } else {
+            forward(tool, inputs, reply);
+        }
+    });
+}
+
+// a material longer than Make sets inline goes into the world's files, and the Material points at it (materialURL), as
+// a builder would do by hand; where the person may not add files, it goes on as it is and the tools refuse it plainly
+void MakeLink::longMaterialToFile(const QJsonObject& inputs, const std::function<void(const QJsonObject&)>& then) {
+    QJsonObject properties = inputs.value("properties").toObject();
+    const QJsonValue material = properties.value("materialData");
+    const QByteArray text = material.isObject() ? QJsonDocument(material.toObject()).toJson(QJsonDocument::Compact)
+                                                : material.toString().toUtf8();
+    if (text.size() <= MAX_INLINE_VALUE_BYTES || !DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
+        then(inputs);
+        return;
+    }
+    // a name the app makes, as for scripts: never the world's name for the thing or Claude's words
+    const QString name = "material-" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd-HHmmss-zzz") + "-" +
+                         QString::number(QRandomGenerator::global()->bounded(0x10000), 16).rightJustified(4, '0');
+    upload(text, "/claude-materials/" + name + ".json", [inputs, properties, then](const QString& url, const QString& error) mutable {
+        if (!error.isEmpty()) {
+            then(inputs);
             return;
         }
-        _bridge.send(tool, inputs, _request, [this, tool, inputs, reply](bool ok, const QJsonObject& result) {
-            if (!ok) {
-                reply(MakeLinkServer::Result::error(result.value("code").toString(MakeError::BAD_INPUT),
-                                                    result.value("message").toString()));
-                return;
+        properties.remove("materialData");
+        properties["materialURL"] = url;
+        QJsonObject moved = inputs;
+        moved["properties"] = properties;
+        then(moved);
+    });
+}
+
+void MakeLink::forward(const QString& tool, const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
+    if (!_engine) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE, "Make's building tools aren't running"));
+        return;
+    }
+    _bridge.send(tool, inputs, _request, [this, tool, inputs, reply](bool ok, const QJsonObject& result) {
+        if (!ok) {
+            reply(MakeLinkServer::Result::error(result.value("code").toString(MakeError::BAD_INPUT),
+                                                result.value("message").toString()));
+            return;
+        }
+        MakeLinkServer::Result answer;
+        answer.value = result;
+        if (tool == "add") {
+            answer.value["made_by"] = madeBy();
+            const QString name = inputs.value("properties").toObject().value("name").toString();
+            _names.insert(result.value("id").toString(), name);
+            emit made(_request, QVariantMap { { "kind", "thing" }, { "id", result.value("id").toString() },
+                                              { "name", name } });
+        } else if (tool == "scene") {
+            for (const QJsonValue& thing : result.value("things").toArray()) {
+                _names.insert(thing.toObject().value("id").toString(), thing.toObject().value("name").toString());
             }
-            MakeLinkServer::Result answer;
-            answer.value = result;
-            if (tool == "add") {
-                answer.value["made_by"] = madeBy();
-                const QString name = inputs.value("properties").toObject().value("name").toString();
-                _names.insert(result.value("id").toString(), name);
-                emit made(_request, QVariantMap { { "kind", "thing" }, { "id", result.value("id").toString() },
-                                                  { "name", name } });
-            } else if (tool == "scene") {
-                for (const QJsonValue& thing : result.value("things").toArray()) {
-                    _names.insert(thing.toObject().value("id").toString(), thing.toObject().value("name").toString());
-                }
-            } else if (tool == "remove") {
-                ++_removesThisRequest;
-            }
-            reply(answer);
-        });
+        } else if (tool == "remove") {
+            ++_removesThisRequest;
+        }
+        reply(answer);
     });
 }
 
