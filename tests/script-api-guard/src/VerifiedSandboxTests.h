@@ -42,6 +42,7 @@ private slots:
     void testResourcesNotForWorlds();
     void testInputAndPrivacyNotForWorlds();
     void testSignalsNotForWorlds();
+    void testWorldScriptStartsNoScript();
     void testServerEnginesAreRuled();
     void testWorldMappingDestinations();
 
