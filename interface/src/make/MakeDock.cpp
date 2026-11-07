@@ -71,15 +71,20 @@ namespace {
     // prefixes; security R1, 11-07). The keys before that, under Make/, are dropped once, never read.
     Setting::Handle<QString> routeSetting { QStringList { "private", "Make", "route" }, QString("key") };
     Setting::Handle<QString> allowedSetupSetting { QStringList { "private", "Make", "allowedSetup" }, QString() };
-    // the Claude-plan route's chat in the panel (true) or typing in Terminal (the fallback); private as the rest
-    Setting::Handle<bool> chatSetting { QStringList { "private", "Make", "chat" }, true };
+    // the Claude-plan route's chat in the panel (true, the "chat here" choice) or typing in Terminal (false, the
+    // default: Caity 19:19 11-07, "happy with the Terminal route as it is"; chat is offered beside it); private as the rest
+    Setting::Handle<bool> chatSetting { QStringList { "private", "Make", "chat" }, false };
+    // whether the connect screen offers "chat here" at all: off until scripting's route test shows the chat line
+    // working with real Claude Code (pm 19:21 11-07: not in front of Caity before that); a kit turns chat on for its own
+    // run only (Test.makeDockConnect("chat"))
+    const bool CHAT_OFFERED = false;
     const int NOT_GOT_IT_MS = 30000;   // the first message of a Connect not taken up by Claude this long: not got
     const QString SENT_TO_CLAUDE = QStringLiteral("sent to Claude");   // MakeLink's activity when an event goes out
     Setting::Handle<QString> oldRouteSetting { QStringList { "Make", "route" }, QString() };
     Setting::Handle<QString> oldAllowedSetupSetting { QStringList { "Make", "allowedSetup" }, QString() };
     // the Allow's words as ConnectView shows them: a new version whenever they change, so changed words ask again
     // (security R2)
-    const QString ALLOW_WORDS = QStringLiteral("allow words 2026-11-07 channels");
+    const QString ALLOW_WORDS = QStringLiteral("allow words 2026-11-07 three routes");
     // the link's socket or pipe in the set-up text: a fresh pipe name at each Connect on Windows, so masked in the hash
     const QRegularExpression LINK_SOCKET(QStringLiteral("(\"--socket\",\\s*\")[^\"]*(\")"));
 
@@ -491,7 +496,11 @@ QString MakeDock::startLine() const {
 }
 
 bool MakeDock::chat() const {
-    return chatSetting.get();
+    return _route == "terminal" && (_testChat || (CHAT_OFFERED && chatSetting.get()));
+}
+
+bool MakeDock::chatOffered() const {
+    return CHAT_OFFERED;
 }
 
 QString MakeDock::channelFlag() const {
@@ -502,17 +511,6 @@ QString MakeDock::claudeVersion() const {
     return clean(DependencyManager::get<MakeLink>()->claudeVersion()).left(40);
 }
 
-bool MakeDock::setChat(bool chat) {
-    if (!takeRealInput("setChat")) {
-        return false;
-    }
-    if (chat != chatSetting.get()) {
-        chatSetting.set(chat);
-        emit routeChanged();
-        emit setupTextChanged();   // another start line: the next Connect asks with the whole card (allowHash)
-    }
-    return true;
-}
 
 void MakeDock::channelTakenUp(int request) {
     if (_sentWaiting && request >= _sentRequest) {
@@ -581,15 +579,19 @@ bool MakeDock::connect() {
     return connectNow();
 }
 
-bool MakeDock::testConnectTerminal() {
+bool MakeDock::testConnectTerminal(bool chat) {
     // tests only (Test.makeDockConnect, which exists only with --testScript): never the key route, and every question
-    // answered no from now on, so a kit never gets a silent yes (scripting's rule)
+    // answered no from now on, so a kit never gets a silent yes (scripting's rule); chat for this run only, whether or
+    // not the connect screen offers it
     _testRefusesAsks = true;
-    if (_route != "terminal") {
+    if (_route != "terminal" || chat != _testChat) {
         _route = "terminal";   // not saved: the person's own route setting stays as it was
+        _testChat = chat;
         emit routeChanged();
+        emit setupTextChanged();
     }
-    qCWarning(interfaceapp) << "Make: connected by a test (the Terminal route; every question is answered no)";
+    qCWarning(interfaceapp) << "Make: connected by a test (the Terminal route" << (chat ? "with chat" : "without chat")
+                            << "; every question is answered no)";
     return connectNow();
 }
 
@@ -680,18 +682,24 @@ void MakeDock::disconnect() {
 }
 
 bool MakeDock::setRoute(const QString& route) {
-    if (route != "key" && route != "terminal") {
+    if (route != "key" && route != "terminal" && !(route == "chat" && CHAT_OFFERED)) {
         return false;
     }
     if (!takeRealInput("setRoute")) {
         return false;
     }
-    if (route != _route) {
-        _route = route;
-        routeSetting.set(route);
+    // "chat" is the Claude-plan route with the chat line; "terminal" the same route with today's plain line
+    const QString plan = route == "chat" ? QStringLiteral("terminal") : route;
+    const bool chatChanged = route != "key" && (route == "chat") != chatSetting.get();
+    if (chatChanged) {
+        chatSetting.set(route == "chat");
+    }
+    if (plan != _route || chatChanged) {
+        _route = plan;
+        routeSetting.set(plan);
         emit routeChanged();
         emit stateChanged();
-        emit setupTextChanged();   // an Allow covers one route (allowHash)
+        emit setupTextChanged();   // an Allow covers one route and one start line (allowHash)
     }
     return true;
 }

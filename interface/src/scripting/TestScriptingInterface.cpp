@@ -1223,10 +1223,10 @@ bool TestScriptingInterface::makeDockConnect(const QString& route) {
         BLOCKING_INVOKE_METHOD(this, "makeDockConnect", Q_RETURN_ARG(bool, result), Q_ARG(QString, route));
         return result;
     }
-    if (route != "terminal" || !MakeDock::isAvailable()) {
+    if ((route != "terminal" && route != "chat") || !MakeDock::isAvailable()) {
         return false;   // never the key route
     }
-    return DependencyManager::get<MakeDock>()->testConnectTerminal();
+    return DependencyManager::get<MakeDock>()->testConnectTerminal(route == "chat");
 }
 
 QVariantMap TestScriptingInterface::makeDockItem(const QString& name) {

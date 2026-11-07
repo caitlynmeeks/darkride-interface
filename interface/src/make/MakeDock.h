@@ -115,10 +115,12 @@ class MakeDock : public QObject, public Dependency {
     Q_PROPERTY(QString setupText READ setupText NOTIFY setupTextChanged)
     Q_PROPERTY(bool setupChanged READ isSetupChanged NOTIFY setupTextChanged)
     Q_PROPERTY(QString startLine READ startLine NOTIFY setupTextChanged)
-    // the Claude-plan route's chat in the panel over a Claude Code channel (MAKE-CHANNEL-PLAN.md): on unless the
-    // person chose "Type in Terminal"; what the connected Claude Code said of the channel ("on", "off", "unknown");
-    // its version; a message sent and not yet taken up; the first message not taken up in 30 s
+    // the Claude-plan route's chat in the panel over a Claude Code channel (MAKE-CHANNEL-PLAN.md): a choice of its own
+    // beside typing in Terminal (the default) and the API key, when offered; what the connected Claude Code said of the
+    // channel ("on", "off", "unknown"); its version; a message sent and not yet taken up; the first message not taken
+    // up in 30 s
     Q_PROPERTY(bool chat READ chat NOTIFY routeChanged)
+    Q_PROPERTY(bool chatOffered READ chatOffered CONSTANT)
     Q_PROPERTY(QString channelFlag READ channelFlag NOTIFY stateChanged)
     Q_PROPERTY(QString claudeVersion READ claudeVersion NOTIFY stateChanged)
     Q_PROPERTY(bool sentWaiting READ sentWaiting NOTIFY channelChanged)
@@ -155,6 +157,7 @@ public:
     /// The dock's window is watched for real input (watchWindow was given it).
     bool isWatching() const { return !_window.isNull(); }
     bool chat() const;
+    bool chatOffered() const;
     QString channelFlag() const;
     QString claudeVersion() const;
     bool sentWaiting() const { return _sentWaiting; }
@@ -167,7 +170,8 @@ public:
     Q_INVOKABLE bool connect();
     /// Stops everything: Claude Code, the link and Blender, by their own pids.
     Q_INVOKABLE void disconnect();
-    /// "key" or "terminal", kept in settings (not a secret). Real input.
+    /// "key", "terminal" (the Claude plan, typing in Terminal) or "chat" (the Claude plan, typing here; only when
+    /// chatOffered), kept in private/Make/route and private/Make/chat (not secrets). Real input.
     Q_INVOKABLE bool setRoute(const QString& route);
     /// Keeps the key (MakeKey); the key is never readable back. Real input.
     Q_INVOKABLE bool storeKey(const QString& text);
@@ -192,9 +196,6 @@ public:
     Q_INVOKABLE QString pictureView(const QString& id) const;
     /// The keyboard back to the world (Esc in the dock).
     Q_INVOKABLE void giveBackKeyboard();
-    /// The Claude-plan route: chat in the panel (true) or type in Terminal (false, the fallback where channels can't
-    /// work); kept in private/Make/chat; the start line changes, so the next Connect asks with the whole card. Real input.
-    Q_INVOKABLE bool setChat(bool chat);
     /// Copy onto the clipboard, from C++ (the Assets panel's path, not a QML text item's): the whole of the Terminal
     /// route's start line ("start") or of setupText ("setup"), read here, never a part. Real input.
     Q_INVOKABLE bool copyLine(const QString& which);
@@ -205,7 +206,7 @@ public:
 
     /// Tests only (Test.makeDockConnect, with --testScript): Connect on the Terminal route without the person's click;
     /// from then on every question Claude asks is answered no at once. Never the key route. Not on the QML's context.
-    bool testConnectTerminal();
+    bool testConnectTerminal(bool chat);
     /// Tests only (Test.makeDockItem): an item of the dock's view by objectName: found, visible, its place, text and
     /// selectedText.
     QVariantMap testItem(const QString& objectName) const;
@@ -261,6 +262,7 @@ private:
 
     bool _starting { false };       // the key route: Claude Code started, not ready yet
     bool _testRefusesAsks { false }; // connected by a test: every question answered no
+    bool _testChat { false };        // connected by a test with the chat line, for that run only
     QString _reason;
     QString _route;
     bool _hasKey { false };

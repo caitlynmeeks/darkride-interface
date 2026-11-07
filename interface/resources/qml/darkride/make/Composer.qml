@@ -37,7 +37,7 @@ Rectangle {
     readonly property bool atLimit: dock ? dock.state === "limit" : false
     readonly property bool working: dock ? dock.working : false
     readonly property bool terminalRoute: dock ? dock.route === "terminal" : false
-    // the Claude-plan route chats here too, over the channel, unless the person chose to type in Terminal
+    // the Claude-plan route chats here too when the person chose "chat here" (the channel), not "in Terminal"
     readonly property bool typesHere: !terminalRoute || (!!dock && dock.chat === true)
     readonly property bool canSend: connected && !working && (input.text.trim() !== "" || pictures.length > 0) &&
         (!terminalRoute || (!!dock && dock.channelFlag !== "off"))

@@ -31,6 +31,8 @@ Rectangle {
     // why Blender isn't offered, in one plain line ("" when it is): e.g. there, but it can't be closed off here
     readonly property string blenderWhy: dock && dock.blenderWhy ? dock.blenderWhy : ""
     readonly property string route: dock ? dock.route : "key"
+    readonly property bool chat: !!dock && dock.chat === true
+    readonly property bool chatOffered: !!dock && dock.chatOffered === true
     readonly property bool hasKey: dock ? dock.hasKey : false
     // what Make sets up changed since the last Allow (or there was none): MakeDock says which (setupChanged); then
     // the whole Allow shows, its Details open and unfoldable (security A5). Else the Allow is remembered.
@@ -219,29 +221,21 @@ Rectangle {
                         wrapMode: Text.WordWrap
                     }
                 }
+                // the Claude plan, typing in Terminal: today's route and line, the default (Caity 19:19 11-07)
                 RouteRow {
-                    chosen: view.route === "terminal"
-                    name: "With your Claude plan"
-                    detail: view.dock && view.dock.chat === false ? "You type in Terminal; the work shows here."
-                        : "Start Claude in Terminal once, then type here."
+                    chosen: view.route === "terminal" && !view.chat
+                    name: "With your Claude plan, in Terminal"
+                    detail: "Type in Terminal; the work shows here."
                     onPicked: if (view.dock) view.dock.setRoute("terminal")
                 }
-                // the fallback, and back: chat in the panel (the channel) or type in Terminal (MAKE-CHANNEL-PLAN.md)
-                Text {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 22
-                    visible: view.route === "terminal"
-                    text: view.dock && view.dock.chat === false ? "Chat here instead" : "Type in Terminal instead"
-                    textFormat: Text.PlainText
-                    color: BuildTheme.minorText
-                    font.pixelSize: BuildTheme.noteSize
-                    Accessible.role: Accessible.Button
-                    Accessible.name: text
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: if (view.dock) view.dock.setChat(!(view.dock.chat === true))
-                    }
+                // the Claude plan, typing here over a Claude Code channel (MAKE-CHANNEL-PLAN.md): offered beside the
+                // others once scripting's route test passes with real Claude Code (MakeDock CHAT_OFFERED)
+                RouteRow {
+                    visible: view.chatOffered
+                    chosen: view.route === "terminal" && view.chat
+                    name: "With your Claude plan, chat here"
+                    detail: "Start Claude in Terminal once, then type here."
+                    onPicked: if (view.dock) view.dock.setRoute("chat")
                 }
             }
 
@@ -445,7 +439,8 @@ Rectangle {
         }
     }
 
-    // one of the two ways to reach Claude: a radio, its name and what it means; the whole row picks it
+    // one of the ways to reach Claude (the key, the plan in Terminal, the plan chatting here): a radio, its name and
+    // what it means; the whole row picks it
     component RouteRow: RowLayout {
         id: routeRow
         property string name: ""

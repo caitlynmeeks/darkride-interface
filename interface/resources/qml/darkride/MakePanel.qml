@@ -171,7 +171,7 @@ Rectangle {
                     }
                     MakeButton {
                         text: "Type in Terminal"
-                        onClicked: if (root.dock && root.dock.setChat(false)) root.dock.disconnect()
+                        onClicked: if (root.dock && root.dock.setRoute("terminal")) root.dock.disconnect()
                     }
                 }
             }

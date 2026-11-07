@@ -518,9 +518,10 @@ public slots:
     /**jsdoc
      * Connects the Make dock on the Terminal route without the person's click, for a kit that then speaks to Make as
      * Claude Code would (scripting's mcp-kit.py). From then on every question Claude asks is answered no. The key route
-     * is never connected this way.
+     * is never connected this way. <code>"chat"</code> connects with the chat line for this run only (the person's own
+     * choice isn't changed), whether or not the connect screen offers chat yet.
      * @function Test.makeDockConnect
-     * @param {string} route - <code>"terminal"</code>; anything else is refused.
+     * @param {string} route - <code>"terminal"</code> or <code>"chat"</code>; anything else is refused.
      * @returns {boolean} Whether Make is listening.
      */
     Q_INVOKABLE bool makeDockConnect(const QString& route);
