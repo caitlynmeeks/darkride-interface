@@ -468,6 +468,31 @@ int EntityItem::bytesToStreamAlone(EntityPropertyList property, int room,
     return scratch.getUncompressedSize();
 }
 
+int EntityItem::streamRoomNeededAlone(EntityPropertyList property, bool destinationNodeCanGetAndSetPrivateUserData) const {
+    // the size it ends at, in a room big enough for any string; the room it needs is at most the full-width
+    // property flags more, so the smallest that fits is found between the two by halving
+    const int MEASURING_ROOM = 2 * MAX_APPENDED_VALUE_LENGTH + 4096;
+    const int FLAGS_AT_FULL_WIDTH = 256;
+    int fits = bytesToStreamAlone(property, MEASURING_ROOM, destinationNodeCanGetAndSetPrivateUserData);
+    if (fits <= 0) {
+        return fits;
+    }
+    int tooSmall = fits - 1;
+    fits = std::min(fits + FLAGS_AT_FULL_WIDTH, MEASURING_ROOM);
+    if (bytesToStreamAlone(property, fits, destinationNodeCanGetAndSetPrivateUserData) < 0) {
+        return -1;
+    }
+    while (fits - tooSmall > 1) {
+        const int room = tooSmall + (fits - tooSmall) / 2;
+        if (bytesToStreamAlone(property, room, destinationNodeCanGetAndSetPrivateUserData) < 0) {
+            tooSmall = room;
+        } else {
+            fits = room;
+        }
+    }
+    return fits;
+}
+
 EntityPropertyFlags EntityItem::propertiesTooBigToStream(const EntityPropertyFlags& properties, int margin,
                                                          bool destinationNodeCanGetAndSetPrivateUserData) const {
     EntityPropertyFlags tooBig;

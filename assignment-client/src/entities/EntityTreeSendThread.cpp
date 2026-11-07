@@ -607,12 +607,11 @@ void EntityTreeSendThread::dropUnsendableProperties(const EntityItem& entity, bo
                 return;
             }
         }
-        // the size it would need, measured once by the stream's own encoder in a room big enough for any string
-        const int MEASURING_ROOM = 2 * MAX_APPENDED_VALUE_LENGTH + 4096;
-        const int needed = entity.bytesToStreamAlone(property, MEASURING_ROOM, destinationCanGetAndSetPrivateUserData);
+        // the room it would need, found by the stream's own encoder
+        const int needed = entity.streamRoomNeededAlone(property, destinationCanGetAndSetPrivateUserData);
         qCWarning(entities).noquote() << "stream: entity" << entityID.toString() << loggableName(entity.getName())
             << "(" + EntityTypes::getEntityTypeName(entity.getType()) + ")" << "property" << EntityItem::propertyName(property)
-            << "needs" << (needed < 0 ? QString("more than %1").arg(MEASURING_ROOM) : QString::number(needed))
+            << "needs" << (needed < 0 ? QString("more than %1").arg(2 * MAX_APPENDED_VALUE_LENGTH) : QString::number(needed))
             << "bytes alone, more than the" << EntityItem::streamSectionRoom()
             << "a stream packet holds: it is not sent to other viewers; the entity's other properties are";
     }

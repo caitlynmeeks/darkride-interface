@@ -436,6 +436,11 @@ int streamCheckSize() {
 // grow by up to 9 bytes between the edit and the stream, so the stand-in is measured in a room this much smaller.
 const int STREAM_HEADER_GROWTH = 20;
 
+// How far after the refused edit its sender's copy is put back (sendBackRefusedEdit): more than a clock-offset
+// estimate moves between an edit and its answer. For that long the entity's later edits keep this time, and it is
+// resent to its viewers until then.
+const quint64 REFUSED_TOO_BIG_LEAD = 100 * USECS_PER_MSEC;
+
 // One warning per entity and property for the server's life, whoever sends it, and at most this many in all
 std::mutex tooBigWarningsMutex;
 std::set<std::pair<QUuid, int>> tooBigWarnings;
@@ -464,13 +469,12 @@ void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropert
                 return;
             }
         }
-        const int MEASURING_ROOM = 2 * MAX_APPENDED_VALUE_LENGTH + 4096;
-        const int needed = probe.bytesToStreamAlone(property, MEASURING_ROOM, true);
+        const int needed = probe.streamRoomNeededAlone(property, true);
         qCWarning(entities).noquote() << "User [" + (senderNode ? senderNode->getUUID() : QUuid()).toString() + "]"
             << (isAdd ? "add of" : "edit of") << "entity" << entityID.toString()
             << "(" + EntityTypes::getEntityTypeName(probe.getType()) + ")" << "refused: property"
             << EntityItem::propertyName(property) << "needs"
-            << (needed < 0 ? QString("more than %1").arg(MEASURING_ROOM) : QString::number(needed))
+            << (needed < 0 ? QString("more than %1").arg(2 * MAX_APPENDED_VALUE_LENGTH) : QString::number(needed))
             << "bytes alone, more than the" << EntityItem::streamSectionRoom() - STREAM_HEADER_GROWTH
             << "a stream packet holds for it";
     }
@@ -479,9 +483,15 @@ void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropert
 // A refused edit is taken back on its sender's screen too: the client shows its own edit at once, and takes the server's
 // copy only if it was edited later. So the entity goes out again (all of it, as ever), last edited after the refused
 // edit. Physics updates aren't sent back: they come many times a second, and are refused as before.
-void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused) {
+// `lead` above 1 us puts the new time that far after the refused edit, counted from no later than now (so at most
+// `lead` ahead of this server's clock, whatever time the sender wrote): the sender then takes the server's copy
+// even when its clock-offset estimate has moved by less than that since it sent the edit. A client takes a time
+// ahead of its own clock as now (EntityItem::readEntityDataFromBuffer).
+void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused, quint64 lead) {
     if (getIsServer()) {
-        entity->setLastEdited(std::max(usecTimestampNow(), refused.getLastEdited() + 1));
+        const quint64 now = usecTimestampNow();
+        const quint64 edited = lead > 1 ? std::min(refused.getLastEdited(), now) : refused.getLastEdited();
+        entity->setLastEdited(std::max(now, edited + lead));
         entity->markAsChangedOnServer();
     }
 }
@@ -1887,7 +1897,9 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                         QWriteLocker locker(&_recentlyDeletedEntitiesLock);
                         _recentlyDeletedEntityItemIDs.insert(usecTimestampNow(), entityItemID);
                     } else if (!isPhysics) {
-                        sendBackRefusedEdit(existingEntity, properties);
+                        // sent back a little ahead: with no lead, about a third of these were lost to the sender's
+                        // clock-offset estimate on one machine, and the sender kept a value the server never took
+                        sendBackRefusedEdit(existingEntity, properties, REFUSED_TOO_BIG_LEAD);
                     }
                     validEditPacket = false;
                 }

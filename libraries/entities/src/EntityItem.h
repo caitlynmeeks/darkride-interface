@@ -160,6 +160,10 @@ public:
     // entity's type, -1 if it needs more than `room`.
     int bytesToStreamAlone(EntityPropertyList property, int room,
                            bool destinationNodeCanGetAndSetPrivateUserData = false) const;
+    // The smallest room in which `property` of this entity streams alone, for log lines: a few bytes more than
+    // bytesToStreamAlone's size, since the encoder writes the property flags at full width before trimming them.
+    // 0 if the stream doesn't send that property for this entity's type, -1 if it needs more than any string can.
+    int streamRoomNeededAlone(EntityPropertyList property, bool destinationNodeCanGetAndSetPrivateUserData = false) const;
     // Which of `properties` could never be streamed: each doesn't fit an empty stream packet even alone. `margin`
     // takes bytes off the room, for an entity whose header may grow (the time deltas) before it is streamed.
     EntityPropertyFlags propertiesTooBigToStream(const EntityPropertyFlags& properties, int margin = 0,
