@@ -12,6 +12,7 @@
 #include <AudioConstants.h>
 #include <MixedProcessedAudioStream.h>
 #include <plugins/CodecPlugin.h>
+#include <ReceivedMessage.h>
 #include <udt/PacketHeaders.h>
 
 QTEST_MAIN(MixedProcessedAudioStreamTests)
@@ -70,8 +71,8 @@ private:
 
 class TestStream : public MixedProcessedAudioStream {
 public:
-    TestStream(Codec codec) : MixedProcessedAudioStream(100) {
-        outputFormatChanged(AudioConstants::SAMPLE_RATE, AudioConstants::STEREO);
+    TestStream(Codec codec, int outputRate = AudioConstants::SAMPLE_RATE) : MixedProcessedAudioStream(100) {
+        outputFormatChanged(outputRate, AudioConstants::STEREO);
         if (codec != Codec::None) {
             setupCodec(std::make_shared<TestCodec>(codec), "test", AudioConstants::STEREO);
         }
@@ -97,6 +98,20 @@ struct Received {
         });
     }
 };
+
+// a SilentAudioFrame as the audio mixer's sendSilentPacket writes it: the sequence number, the codec's name, then the
+// silence's length in samples of both channels (written as an int; the stream reads its first two bytes)
+QByteArray silentPacket(quint16 sequence) {
+    const QByteArray codec("test");
+    const quint32 codecSize = codec.size();
+    const int silentSamples = AudioConstants::NETWORK_FRAME_SAMPLES_STEREO;
+    QByteArray packet;
+    packet.append(reinterpret_cast<const char*>(&sequence), sizeof(sequence));
+    packet.append(reinterpret_cast<const char*>(&codecSize), sizeof(codecSize));
+    packet.append(codec);
+    packet.append(reinterpret_cast<const char*>(&silentSamples), sizeof(silentSamples));
+    return packet;
+}
 
 QByteArray loudFrame(int bytes) {
     QByteArray frame(bytes, Qt::Uninitialized);
@@ -179,4 +194,34 @@ void MixedProcessedAudioStreamTests::lostFrames() {
     for (const QByteArray& handedOn : received.processed) {
         QCOMPARE(handedOn, QByteArray(FRAME_BYTES, 0));
     }
+}
+
+void MixedProcessedAudioStreamTests::silentPackets_data() {
+    QTest::addColumn<int>("outputRate");
+    QTest::newRow("48 kHz output") << 48000;
+    QTest::newRow("24 kHz output, the network's rate") << AudioConstants::SAMPLE_RATE;
+}
+
+// a silent packet from the mixer adds one frame of silence (10 ms), as a mixed packet adds one frame of sound. Counted
+// twice, the buffer overfilled in silence, was cut back to two frames and ran dry, and each time a concealed frame played
+void MixedProcessedAudioStreamTests::silentPackets() {
+    QFETCH(int, outputRate);
+
+    TestStream stream(Codec::Opus, outputRate);
+    const int frameSamples = AudioConstants::NETWORK_FRAME_SAMPLES_STEREO * outputRate / AudioConstants::SAMPLE_RATE;
+    // what AudioClient::processReceivedSamples hands back for one network frame: one frame at the output's rate
+    QObject::connect(&stream, &MixedProcessedAudioStream::processSamples,
+                     [frameSamples](const QByteArray& inputBuffer, QByteArray& outputBuffer) {
+        outputBuffer.fill(0, frameSamples * (int)sizeof(int16_t));
+    });
+
+    const quint16 SILENT_PACKETS = 5;
+    for (quint16 sequence = 0; sequence < SILENT_PACKETS; sequence++) {
+        ReceivedMessage message(silentPacket(sequence), PacketType::SilentAudioFrame,
+                                versionForPacketType(PacketType::SilentAudioFrame), HifiSockAddr());
+        stream.parseData(message);
+        QCOMPARE(stream.getSamplesAvailable(), (sequence + 1) * frameSamples);
+    }
+    stream.parseAudioData(PacketType::MixedAudio, loudFrame(FRAME_BYTES));
+    QCOMPARE(stream.getSamplesAvailable(), (SILENT_PACKETS + 1) * frameSamples);
 }
