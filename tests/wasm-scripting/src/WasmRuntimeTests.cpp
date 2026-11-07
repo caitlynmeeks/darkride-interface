@@ -9,6 +9,7 @@
 #include "WasmRuntimeTests.h"
 
 #include <atomic>
+#include <chrono>
 #include <thread>
 
 #include <QtCore/QElapsedTimer>
@@ -406,10 +407,12 @@ void WasmRuntimeTests::testStopAfterEndsAtOnceWhenWorldLeft() {
     for (WasmInstance* raw : { epoch.get(), cooperative.get() }) {
         const bool asks = raw == cooperative.get();
         const int world = ScriptCaller::newWorld();
-        std::thread stopper([raw, world] {
+        std::chrono::steady_clock::time_point left;   // when the world was left (written before the call can end)
+        std::thread stopper([raw, world, &left] {
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             raw->requestStopAfter(after(10000), world);
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            left = std::chrono::steady_clock::now();
             ScriptCaller::retireWorld(world);
         });
         std::vector<WasmValue> results;
@@ -417,9 +420,16 @@ void WasmRuntimeTests::testStopAfterEndsAtOnceWhenWorldLeft() {
         QElapsedTimer timer;
         timer.start();
         raw->call(asks ? "until_told" : "forever", {}, results, error);
+        const auto ended = std::chrono::steady_clock::now();
         const qint64 elapsed = timer.elapsed();
         stopper.join();
-        QVERIFY2(elapsed >= 55 && elapsed < 500, qPrintable(QString("took %1 ms").arg(elapsed)));
+        // the call ran until the world was left (not before), and ended soon after that, far from the 10 s deadline:
+        // the time is taken from the leaving, not from the start, and the bound leaves room for a loaded Mac or
+        // efficiency cores (the start-to-end time reached 553 ms under a parallel build on 11-07, against 500 then)
+        const qint64 sinceLeft = std::chrono::duration_cast<std::chrono::milliseconds>(ended - left).count();
+        QVERIFY2(elapsed >= 55, qPrintable(QString("took %1 ms").arg(elapsed)));
+        QVERIFY2(sinceLeft >= 0 && sinceLeft < 2000,
+                 qPrintable(QString("ended %1 ms after the world was left (%2 ms in all)").arg(sinceLeft).arg(elapsed)));
         QVERIFY(raw->isStopRequested());
     }
 }
