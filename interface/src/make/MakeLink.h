@@ -159,6 +159,9 @@ public:
 
 signals:
     void stateChanged();
+    /// Claude Code's version is known: its hello arrives after the connection (and after stateChanged for it), so the
+    /// dock's "Update Claude Code" line re-reads claudeVersion() on this.
+    void claudeVersionChanged();
     /// What Claude is doing now, in plain words ("adding “Awning”").
     void activity(int request, const QString& line);
     /// The person must allow this first (security C10): `what` in plain words, `exactly` what it would do.

@@ -130,6 +130,9 @@ signals:
     void connectedChanged(bool connected);
     /// A connection was refused: another user's program, or a second Claude Code while one is connected.
     void connectionRefused(const QString& why);
+    /// Claude Code's hello (initialize) arrived, after the connection: clientName() and clientVersion() are known from
+    /// here on (before it they are empty).
+    void clientIdentified();
     /// A checked call is about to run (after its gate), and when it has been answered.
     void callStarted(int call, const QString& tool, const QJsonObject& inputs);
     void callFinished(int call, const QString& tool, bool ok, const QString& message);

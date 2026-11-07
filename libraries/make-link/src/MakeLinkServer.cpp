@@ -532,6 +532,7 @@ void MakeLinkServer::handle(const QJsonObject& message) {
         const QJsonObject clientInfo = params.value("clientInfo").toObject();
         _clientName = clientInfo.value("name").toString().left(60);
         _clientVersion = clientInfo.value("version").toString().left(40);
+        emit clientIdentified();
         // "claude/channel" makes this a channel to Claude Code: the person's own words typed in Make's panel reach the
         // Claude Code in Terminal as notifications/claude/channel (sendChannelEvent). Nothing else under experimental:
         // never "claude/channel/permission", not even as false (security C1; before Claude Code 2.1.234 false counted

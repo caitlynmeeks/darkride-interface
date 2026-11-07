@@ -325,10 +325,17 @@ void MakeLinkTests::testInitializeAndList() {
     QString error;
     QVERIFY(server.listen(socketFolder(dir), error));
     QSignalSpy connected(&server, &MakeLinkServer::connectedChanged);
+    QSignalSpy identified(&server, &MakeLinkServer::clientIdentified);
     Client client;
     QVERIFY(client.connectTo(server.socketPath()));
+    // the hello comes after the connection: name and version are empty until then, and clientIdentified says when
+    QTRY_COMPARE(connected.count(), 1);
+    QCOMPARE(identified.count(), 0);
+    QVERIFY(server.clientVersion().isEmpty());
     const QJsonObject init = client.ask(1, "initialize", QJsonObject {
         { "protocolVersion", "2025-06-18" }, { "clientInfo", QJsonObject { { "name", "claude-code" }, { "version", "2" } } } });
+    QCOMPARE(identified.count(), 1);
+    QCOMPARE(server.clientVersion(), QString("2"));
     const QJsonObject result = init.value("result").toObject();
     QCOMPARE(result.value("protocolVersion").toString(), QString("2025-06-18"));
     QCOMPARE(result.value("serverInfo").toObject().value("name").toString(), QString("darkride"));
