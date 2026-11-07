@@ -111,6 +111,9 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
             }
         }
         if (!forceDownload) {
+            // a rule given for this fetch has nothing to rule: the copy is the cache's (a caller that must have a
+            // ruled download asks for a fresh one, as ScriptOpener does)
+            _fetchRules.remove(url);
             lock.unlock();
             qCDebug(scriptengine) << "Found script in cache:" << url.fileName();
             if (contentAvailable) {
@@ -135,6 +138,12 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
         lock.unlock();
 
         if (alreadyWaiting) {
+            // the running download carries its own rule (the record's); a rule given for this call isn't left for
+            // the next, unrelated fetch of the address
+            {
+                Lock dropLock(_containerLock);
+                _fetchRules.remove(url);
+            }
             qCDebug(scriptengine) << QString("Already downloading script at: %1 (retry: %2; scriptusers: %3)")
                 .arg(url.toString()).arg(scriptRequest.numRetries).arg(scriptRequest.scriptUsers.size());
         } else {
