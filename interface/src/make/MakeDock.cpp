@@ -69,15 +69,17 @@ namespace {
 
     // under private/: a world script's Settings can neither read nor write them (ScriptSettingsInterface's protected
     // prefixes; security R1, 11-07). The keys before that, under Make/, are dropped once, never read.
-    // the Claude plan in Terminal unless the person chose the key: the first row, the default (Caity 19:19 11-07, mary 19:24)
+    // the Claude plan in Terminal unless the person chose the key: the first row, the default (Caity 19:19 11-07,
+    // mary 19:24)
     Setting::Handle<QString> routeSetting { QStringList { "private", "Make", "route" }, QString("terminal") };
     Setting::Handle<QString> allowedSetupSetting { QStringList { "private", "Make", "allowedSetup" }, QString() };
-    // the Claude-plan route's chat in the panel (true, the "chat here" choice) or typing in Terminal (false, the
-    // default: Caity 19:19 11-07, "happy with the Terminal route as it is"; chat is offered beside it); private as the rest
+    // the Claude-plan route's chat in the panel (true, the "in Darkride" choice) or typing in Terminal (false, the
+    // default: Caity 19:19 11-07, "happy with the Terminal route as it is"; chat is offered beside it); private as the
+    // rest
     Setting::Handle<bool> chatSetting { QStringList { "private", "Make", "chat" }, false };
-    // whether the connect screen offers "chat here" at all: off until scripting's route test shows the chat line
-    // working with real Claude Code (pm 19:21 11-07: not in front of Caity before that); a kit turns chat on for its own
-    // run only (Test.makeDockConnect("chat"))
+    // whether the connect screen offers "in Darkride" (chat) at all: off until scripting's route test shows the chat
+    // line working with real Claude Code (pm 19:21 11-07: not in front of Caity before that); a kit turns chat on for
+    // its own run only (Test.makeDockConnect("chat"))
     const bool CHAT_OFFERED = false;
     const int NOT_GOT_IT_MS = 30000;   // the first message of a Connect not taken up by Claude this long: not got
     const QString SENT_TO_CLAUDE = QStringLiteral("sent to Claude");   // MakeLink's activity when an event goes out
@@ -657,7 +659,10 @@ bool MakeDock::connectNow() {
         emit stateChanged();
         return false;
     }
-    allowedSetupSetting.set(allowHash());   // what the person allowed, as written
+    // what the person allowed, as written. A test's Connect allows nothing: it keeps a hash that never matches, so the
+    // next Connect asks with the whole card, and the kit still finds a hash under private/ (security 19:27 11-07)
+    allowedSetupSetting.set(_testRefusesAsks ? hashOf(QStringLiteral("a test's Connect\n") + allowHash())
+                                             : allowHash());
     if (_route == "key") {
         QString why;
         if (link->claude()->isRunning()) {
@@ -695,6 +700,7 @@ bool MakeDock::setRoute(const QString& route) {
     if (chatChanged) {
         chatSetting.set(route == "chat");
     }
+    _testChat = false;   // the person's own choice from now on, not a test's run
     if (plan != _route || chatChanged) {
         _route = plan;
         routeSetting.set(plan);
@@ -743,6 +749,11 @@ int MakeDock::send(const QString& text, const QStringList& pictureIds) {
     // the key route; or the Claude-plan route's chat, while a Claude Code started with the chat line is connected
     const bool chatting = _route == "terminal" && chat() && state() == "connected" && channelFlag() != "off";
     if ((_route != "key" && !chatting) || text.trimmed().isEmpty() || _working) {
+        return 0;
+    }
+    // the key route's typing goes only to the app's own Claude Code: once that has ended, MakeLink::send would fall
+    // through to a connected Terminal Claude Code's channel (security 19:27 11-07)
+    if (_route == "key" && !DependencyManager::get<MakeLink>()->claude()->isRunning()) {
         return 0;
     }
     if (!takeRealInput("send")) {
