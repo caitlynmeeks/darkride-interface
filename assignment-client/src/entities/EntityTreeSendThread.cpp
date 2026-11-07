@@ -502,8 +502,7 @@ bool EntityTreeSendThread::traverseTreeAndBuildNextPacketPayload(EncodeBitstream
                     if (appendEntityState == OctreeElement::NONE && _numEntities == 0 &&
                         (int)_packetData.getTargetSize() >= EntityItem::streamSectionRoom()) {
                         // Nothing more of this entity fits even an empty packet, so it never will. Drop what's left of
-                        // it for this viewer and go on, rather than keep it at the head of the queue for good with
-                        // everything ranked after it waiting. Its first pass already sent every property that fit.
+                        // it for this viewer and go on; its first pass already sent every property that fit.
                         dropUnsendableProperties(*entity, entityNode->getCanGetAndSetPrivateUserData());
                         if (entityPreviouslyMatchedFilter && !entityMatchesFilters) {
                             entityNodeData->removeSentFilteredEntity(entityID);
