@@ -81,7 +81,7 @@ public:
     // before it queues the first goToStartingLocation, because at a launch the default scripts (worldLoading.js, which
     // sets the wait for a hop) start in the same moment and lost the race (physics on before the script ran: the
     // first ride's car corrected by up to 1.2 m, physics 11-07). worldLoading.js takes the wait over when it starts
-    // (its setArrivalWaitsForNearby); if nothing takes it over, it ends LAUNCH_HOLD_LIMIT after the connect.
+    // (its setArrivalWaitsForNearby); if nothing takes it over, it ends 8 s after the connect (LAUNCH_HOLD_LIMIT_SECONDS).
     void holdFirstArrival();
     void setOverrideEntry() { _overrideEntry = true; }   // the first run goes to the address given, not to the entry
     // A link the app is opened with: macOS hands a world link clicked while Darkride isn't running to the app as it
@@ -173,7 +173,9 @@ private:
     void setArrivalWait(bool wait);    // the wait itself (the flag and SafeLanding's), whoever asks
     void updateFirstArrivalHold();     // once a frame, before the gate: the launch hold's time limit
     struct FirstArrivalHold {
-        bool held { false };            // the start-up's own wait, not yet taken over by a script
+        // the start-up's own wait, not yet taken over by a script; atomic: a script's setArrivalWaitsForNearby runs on
+        // its engine's thread, the frame on the main thread (performance's item)
+        std::atomic<bool> held { false };
         quint64 connectedAt { 0 };      // when the domain (or a world file) was first there while held
     } _firstArrivalHold;
     std::atomic<uint32_t> _fullSceneReceivedCounter{ 0 };  // how many times have we received a full-scene octree stats packet
