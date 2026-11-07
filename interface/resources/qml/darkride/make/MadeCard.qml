@@ -48,11 +48,14 @@ Card {
         }
     }
 
-    // a model's sheet, square at the card's width, each view named in its corner; a tile shows the front alone
+    // a model's sheet, square, at most 240 points a side so the timeline keeps its words in sight, each view named in
+    // its corner; a tile shows the front alone, across the tile
     Rectangle {
         id: sheetBox
-        Layout.fillWidth: true
-        Layout.preferredHeight: card.tile ? 96 * Theme.unit : width
+        readonly property real side: Math.min(parent ? parent.width : 0, 240 * Theme.unit)
+        Layout.fillWidth: card.tile
+        Layout.preferredWidth: card.tile ? -1 : side
+        Layout.preferredHeight: card.tile ? 96 * Theme.unit : side
         visible: card.kind === "model" || card.tile   // in a tile, a script or a thing gets the same box, with its mark
         radius: 8 * Theme.unit
         color: Theme.background
@@ -72,7 +75,7 @@ Card {
             source: card.kind !== "model" ? "" : card.tile ? card.thumb : card.sheet
             fillMode: card.tile ? Image.PreserveAspectCrop : Image.PreserveAspectFit
             asynchronous: true
-            sourceSize.width: card.tile ? 256 : 1024
+            sourceSize.width: card.tile ? 256 : 512   // 240 points at 2x; the sheet's 1024 px would be 4 MB a card
             Accessible.role: Accessible.Graphic
             Accessible.name: card.tile ? card.title : card.title + ": front, side, back and top"
         }
