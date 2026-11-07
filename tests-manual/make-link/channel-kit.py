@@ -51,16 +51,20 @@ seconds = float(option("--seconds", "10"))
 
 if line in ("chat", "plain") and not os.environ.get("CHANNEL_KIT_RERUN"):
     # become a process whose arguments are Make's line (argv[0] "claude" too): the app reads them from the system
+    # the app's line check allows only Make's options (security's MUST 21:22 11-07), so python's own -I and -c can't
+    # be on the line: the script runs by path, the first operand (prompt text to the check, never a subcommand name),
+    # and -I's isolation comes from the environment instead (no PYTHONPATH or PYTHONHOME, no user site, safe path)
     env = dict(os.environ, CHANNEL_KIT_RERUN="1", CHANNEL_KIT_FOLDER=folder, CHANNEL_KIT_MODE=mode,
                CHANNEL_KIT_LINE=line, CHANNEL_KIT_VERSION=version, CHANNEL_KIT_SECONDS=str(seconds),
-               CHANNEL_KIT_SCRIPT=os.path.abspath(sys.argv[0]))
-    argv = ["claude", "--restricted", "--strict-mcp-config", "--mcp-config", os.path.join(folder, ".darkride-mcp.json"),
+               PYTHONSAFEPATH="1", PYTHONNOUSERSITE="1")
+    for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE"):
+        env.pop(name, None)
+    argv = ["claude", os.path.abspath(sys.argv[0]),
+            "--restricted", "--strict-mcp-config", "--mcp-config", os.path.join(folder, ".darkride-mcp.json"),
             "--settings", os.path.join(folder, ".claude", "settings.json"), "--tools", ""]
     if line == "chat":
         argv += [CHANNEL_FLAG, CHANNEL_ENTRY]
-    # python reads the script from CHANNEL_KIT_SCRIPT through -c, so argv stays exactly the line
-    os.execve(sys.executable, [argv[0], "-I", "-c", "import os,runpy; runpy.run_path(os.environ['CHANNEL_KIT_SCRIPT'], run_name='__main__')"]
-              + argv[1:], env)
+    os.execve(sys.executable, argv, env)
 
 if os.environ.get("CHANNEL_KIT_RERUN"):
     folder = os.environ["CHANNEL_KIT_FOLDER"]
