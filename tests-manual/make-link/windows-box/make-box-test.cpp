@@ -107,12 +107,80 @@ bool grant(const fs::path& path, PSID sid, DWORD access) {
     return ok;
 }
 
-// the job's UI limits, strictest first: run 2 found Blender failing to start (0xC0000142, a DLL's start-up) under the
-// full set, so each run tries the ladder and keeps the strictest one Blender starts under
+// the job's UI limits: all of them, always (security, 11-07); the box gets a desktop of its own instead
 const DWORD UI_FULL = JOB_OBJECT_UILIMIT_DESKTOP | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS | JOB_OBJECT_UILIMIT_EXITWINDOWS |
                       JOB_OBJECT_UILIMIT_GLOBALATOMS | JOB_OBJECT_UILIMIT_HANDLES | JOB_OBJECT_UILIMIT_READCLIPBOARD |
                       JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS | JOB_OBJECT_UILIMIT_WRITECLIPBOARD;
-const DWORD UI_NO_DESKTOP_HANDLES = UI_FULL & ~(JOB_OBJECT_UILIMIT_DESKTOP | JOB_OBJECT_UILIMIT_HANDLES);
+
+// a window station and desktop of the box's own, so the job keeps ALL its UI limits and Blender never shares the
+// person's desktop (security, 11-07: Chromium's alternate desktop); opened to the container's SID only
+const DWORD DESKTOP_EVERYTHING = DESKTOP_CREATEMENU | DESKTOP_CREATEWINDOW | DESKTOP_ENUMERATE | DESKTOP_HOOKCONTROL |
+                                 DESKTOP_JOURNALPLAYBACK | DESKTOP_JOURNALRECORD | DESKTOP_READOBJECTS |
+                                 DESKTOP_SWITCHDESKTOP | DESKTOP_WRITEOBJECTS | READ_CONTROL | WRITE_DAC;
+
+bool grantObject(HANDLE object, PSID sid, DWORD access) {
+    PACL oldDacl = nullptr;
+    PACL newDacl = nullptr;
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (GetSecurityInfo(object, SE_WINDOW_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &oldDacl, nullptr,
+                        &descriptor) != ERROR_SUCCESS) {
+        return false;
+    }
+    EXPLICIT_ACCESSW entry {};
+    entry.grfAccessPermissions = access;
+    entry.grfAccessMode = GRANT_ACCESS;
+    entry.grfInheritance = NO_INHERITANCE;
+    entry.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    entry.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    entry.Trustee.ptstrName = static_cast<LPWSTR>(sid);
+    bool ok = SetEntriesInAclW(1, &entry, oldDacl, &newDacl) == ERROR_SUCCESS &&
+              SetSecurityInfo(object, SE_WINDOW_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, newDacl, nullptr) ==
+                  ERROR_SUCCESS;
+    LocalFree(newDacl);
+    LocalFree(descriptor);
+    return ok;
+}
+
+struct OwnDesktop {
+    HWINSTA station = nullptr;
+    HDESK desktop = nullptr;
+    std::wstring name;  // "<window station>\\<desktop>", for STARTUPINFO.lpDesktop
+    DWORD error = 0;
+    OwnDesktop(const OwnDesktop&) = delete;
+    OwnDesktop() = default;
+    ~OwnDesktop() {
+        if (desktop) {
+            CloseDesktop(desktop);
+        }
+        if (station) {
+            CloseWindowStation(station);
+        }
+    }
+};
+
+void makeOwnDesktop(OwnDesktop& own, PSID sid) {
+    HWINSTA original = GetProcessWindowStation();
+    own.station = CreateWindowStationW(nullptr, 0, WINSTA_ALL_ACCESS | READ_CONTROL | WRITE_DAC, nullptr);
+    if (!own.station || !SetProcessWindowStation(own.station)) {
+        own.error = GetLastError();
+        return;
+    }
+    own.desktop = CreateDesktopW(L"DarkrideMakeBox", nullptr, nullptr, 0, DESKTOP_EVERYTHING, nullptr);
+    own.error = own.desktop ? 0 : GetLastError();
+    SetProcessWindowStation(original);
+    if (!own.desktop) {
+        return;
+    }
+    wchar_t station[256] {};
+    DWORD size = 0;
+    GetUserObjectInformationW(own.station, UOI_NAME, station, sizeof station, &size);
+    own.name = std::wstring(station) + L"\\DarkrideMakeBox";
+    if (!grantObject(own.station, sid, WINSTA_ALL_ACCESS) ||
+        !grantObject(own.desktop, sid, DESKTOP_EVERYTHING & ~(READ_CONTROL | WRITE_DAC))) {
+        own.error = GetLastError();
+        own.name.clear();
+    }
+}
 
 HANDLE makeJob(DWORD uiLimits) {
     HANDLE job = CreateJobObjectW(nullptr, nullptr);
@@ -181,12 +249,16 @@ struct Started {
 // Blender boxed: an AppContainer token with no capabilities (LPAC: also out of "ALL APPLICATION PACKAGES"), child
 // processes restricted, in the job from its first instruction (started suspended, the job given at creation)
 Started startBoxed(const fs::path& blender, const fs::path& probe, const fs::path& job, const fs::path& test,
-                   const wchar_t* mode, PSID sid, bool lpac, DWORD uiLimits) {
+                   const wchar_t* mode, PSID sid, bool lpac, DWORD uiLimits, const std::wstring& desktop,
+                   bool container = true, bool useJob = true, bool ownEnvironment = true) {
+    // container, useJob and ownEnvironment off: the controls (run 3 found every box form failing at start)
     Started started;
-    started.job = makeJob(uiLimits);
-    if (!started.job) {
-        started.error = GetLastError();
-        return started;
+    if (useJob) {
+        started.job = makeJob(uiLimits);
+        if (!started.job) {
+            started.error = GetLastError();
+            return started;
+        }
     }
     SIZE_T size = 0;
     InitializeProcThreadAttributeList(nullptr, 4, 0, &size);
@@ -200,15 +272,21 @@ Started startBoxed(const fs::path& blender, const fs::path& probe, const fs::pat
     DWORD optOut = PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT;
     DWORD childPolicy = PROCESS_CREATION_CHILD_PROCESS_RESTRICTED;
     HANDLE jobs[1] = { started.job };
-    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &capabilities, sizeof capabilities,
-                              nullptr, nullptr);
-    if (lpac) {
-        UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY, &optOut, sizeof optOut,
+    if (container) {
+        UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &capabilities,
+                                  sizeof capabilities, nullptr, nullptr);
+        if (lpac) {
+            UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY, &optOut,
+                                      sizeof optOut, nullptr, nullptr);
+        }
+    }
+    if (container || useJob) {
+        UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, &childPolicy, sizeof childPolicy,
                                   nullptr, nullptr);
     }
-    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY, &childPolicy, sizeof childPolicy,
-                              nullptr, nullptr);
-    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, jobs, sizeof jobs, nullptr, nullptr);
+    if (useJob) {
+        UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST, jobs, sizeof jobs, nullptr, nullptr);
+    }
 
     wchar_t profile[MAX_PATH] {};
     DWORD profileSize = MAX_PATH;
@@ -224,9 +302,12 @@ Started startBoxed(const fs::path& blender, const fs::path& probe, const fs::pat
     STARTUPINFOEXW startup {};
     startup.StartupInfo.cb = sizeof startup;
     startup.lpAttributeList = attributes;
+    std::wstring desktopName = desktop;  // empty: the person's own desktop (only the diagnosis steps)
+    startup.StartupInfo.lpDesktop = desktopName.empty() ? nullptr : desktopName.data();
     if (!CreateProcessW(blender.c_str(), command.data(), nullptr, nullptr, FALSE,
-                        EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-                        environment.data(), job.c_str(), &startup.StartupInfo, &started.process)) {
+                        EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW |
+                            (ownEnvironment ? CREATE_UNICODE_ENVIRONMENT : 0),
+                        ownEnvironment ? environment.data() : nullptr, job.c_str(), &startup.StartupInfo, &started.process)) {
         started.error = GetLastError();
     } else {
         ResumeThread(started.process.hThread);
@@ -324,9 +405,13 @@ bool waitForFile(const fs::path& path, int seconds) {
 
 // the kill case's parent: a boxed Blender that loops, its job's pids written, then it waits to be ended
 int runParent(const fs::path& blender, const fs::path& probe, const fs::path& job, const fs::path& test, bool lpac,
-              DWORD uiLimits) {
+              DWORD uiLimits, bool ownDesktop) {
     PSID sid = containerSid();
-    Started started = startBoxed(blender, probe, job, test, L"runaway", sid, lpac, uiLimits);
+    OwnDesktop own;
+    if (ownDesktop) {
+        makeOwnDesktop(own, sid);
+    }
+    Started started = startBoxed(blender, probe, job, test, L"runaway", sid, lpac, uiLimits, own.name);
     if (started.error || !waitForFile(job / L"runaway-started.txt", 120)) {
         return 2;
     }
@@ -343,9 +428,9 @@ int runParent(const fs::path& blender, const fs::path& probe, const fs::path& jo
 
 int wmain(int argc, wchar_t** argv) {
     const fs::path self = argv[0];
-    if (argc == 8 && std::wstring(argv[1]) == L"--parent") {
+    if (argc == 9 && std::wstring(argv[1]) == L"--parent") {
         return runParent(argv[2], argv[3], argv[4], argv[5], std::wstring(argv[6]) == L"lpac",
-                         static_cast<DWORD>(std::wcstoul(argv[7], nullptr, 10)));
+                         static_cast<DWORD>(std::wcstoul(argv[7], nullptr, 10)), std::wstring(argv[8]) == L"own");
     }
     if (argc != 3) {
         std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder>\n";
@@ -392,22 +477,40 @@ int wmain(int argc, wchar_t** argv) {
     std::string form;
     bool lpacChosen = false;
     DWORD uiChosen = 0;
+    bool ownDesktopChosen = false;
     DWORD exitCode = 0;
     std::string results = "null";
     std::ostringstream starts;
     {
         TestCredential credential;
-        struct Step { bool lpac; DWORD ui; const char* name; };
-        const Step ladder[] = { { true, UI_FULL, "lpac, all UI limits" },
-                                { true, UI_NO_DESKTOP_HANDLES, "lpac, UI limits but desktop and handles" },
-                                { true, 0, "lpac, no UI limits" },
-                                { false, UI_FULL, "plain, all UI limits" },
-                                { false, UI_NO_DESKTOP_HANDLES, "plain, UI limits but desktop and handles" },
-                                { false, 0, "plain, no UI limits" } };
+        OwnDesktop own;
+        makeOwnDesktop(own, sid);
+        std::cout << "own desktop: " << (own.name.empty() ? "not made, error " + std::to_string(own.error) : "made") << "\n";
+        // controls take one piece away at a time; only box steps (control false) are kept for the probe
+        struct Step { bool container; bool lpac; bool job; DWORD ui; bool ownDesktop; bool ownEnv; bool control; const char* name; };
+        const Step ladder[] = {
+            { false, false, false, 0, false, false, true, "control: Blender unboxed, its usual environment" },
+            { false, false, false, 0, false, true, true, "control: Blender unboxed, the box's environment" },
+            { false, false, true, UI_FULL, false, true, true, "control: the job only, all UI limits" },
+            { true, false, false, 0, false, true, true, "control: the plain AppContainer only, no job" },
+            { true, true, false, 0, false, true, true, "control: the LPAC AppContainer only, no job" },
+            { true, false, false, 0, true, true, true, "control: the plain AppContainer only, own desktop" },
+            { true, true, true, UI_FULL, true, true, false, "lpac, own desktop, all UI limits" },
+            { true, false, true, UI_FULL, true, true, false, "plain, own desktop, all UI limits" },
+            { true, true, true, UI_FULL, false, true, false, "lpac, all UI limits" },
+            { true, false, true, UI_FULL, false, true, false, "plain, all UI limits" } };
+        bool ownChosen = false;
         bool first = true;
         for (const Step& step : ladder) {
+            if (step.ownDesktop && own.name.empty()) {
+                starts << (first ? "" : ", ") << "{\"step\": " << jsonString(step.name) << ", \"started\": false, \"desktop_error\": "
+                       << own.error << "}";
+                first = false;
+                continue;
+            }
             fs::remove(job / L"started.txt", ignored);
-            Started started = startBoxed(blender, scripts / L"probe.py", job, test, L"start", sid, step.lpac, step.ui);
+            Started started = startBoxed(blender, scripts / L"probe.py", job, test, L"start", sid, step.lpac, step.ui,
+                                         step.ownDesktop ? own.name : std::wstring(), step.container, step.job, step.ownEnv);
             DWORD code = started.error;
             if (!started.error) {
                 WaitForSingleObject(started.process.hProcess, 120000);
@@ -421,15 +524,18 @@ int wmain(int argc, wchar_t** argv) {
                    << ", \"" << (started.error ? "start_error" : "exit") << "\": " << code << "}";
             first = false;
             std::cout << step.name << ": " << (ran ? "started" : "didn't start") << " (" << code << ")\n";
-            if (ran && form.empty()) {
+            if (ran && form.empty() && !step.control) {
                 form = step.name;
                 lpacChosen = step.lpac;
                 uiChosen = step.ui;
+                ownChosen = step.ownDesktop;
+                ownDesktopChosen = step.ownDesktop;
             }
         }
         if (!form.empty()) {
             fs::remove(job / L"probe-results.json", ignored);
-            Started started = startBoxed(blender, scripts / L"probe.py", job, test, L"probe", sid, lpacChosen, uiChosen);
+            Started started = startBoxed(blender, scripts / L"probe.py", job, test, L"probe", sid, lpacChosen, uiChosen,
+                                         ownChosen ? own.name : std::wstring());
             if (!started.error) {
                 WaitForSingleObject(started.process.hProcess, BLENDER_WAIT_MS);
                 GetExitCodeProcess(started.process.hProcess, &exitCode);
@@ -455,7 +561,8 @@ int wmain(int argc, wchar_t** argv) {
         fs::remove(job / L"job-pids.txt", ignored);
         std::wstring command = L"\"" + fs::absolute(self).wstring() + L"\" --parent \"" + blender.wstring() + L"\" \"" +
                                (scripts / L"probe.py").wstring() + L"\" \"" + job.wstring() + L"\" \"" + test.wstring() +
-                               L"\" " + (lpacChosen ? L"lpac" : L"plain") + L" " + std::to_wstring(uiChosen);
+                               L"\" " + (lpacChosen ? L"lpac" : L"plain") + L" " + std::to_wstring(uiChosen) + L" " +
+                               (ownDesktopChosen ? L"own" : L"shared");
         STARTUPINFOW startup { sizeof startup };
         PROCESS_INFORMATION parent {};
         if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &parent) &&
