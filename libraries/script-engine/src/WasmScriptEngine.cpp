@@ -17,6 +17,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QMetaMethod>
 #include <QtCore/QMetaEnum>
 #include <QtCore/QPointer>
 #include <QtCore/QRegularExpression>
@@ -287,6 +288,72 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
     }
 }
 
+void WasmScriptEngine::registerAppObject(const QString& name, QObject* object) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, name, object] { registerAppObject(name, object); });
+        return;
+    }
+    // before the engine starts (security's conditions for Make): the member gate (makeInstance) reads the classes
+    // once, as the instance is made, and nothing joins a running script
+    static const QRegularExpression NAME("^[A-Z][A-Za-z]{2,40}$");
+    if (!object || _isInitialized || isRunning() || !NAME.match(name).hasMatch()) {
+        qCWarning(scriptengine) << "WasmScriptEngine: the app object" << name
+                                << "is refused: none, a name that isn't plain, or the engine has started";
+        return;
+    }
+    _appClasses.insert(object->metaObject());
+    _appObjects.append({ name, object });
+}
+
+// The app's objects go in last, after the engine's and the app's own globals: a name already given, one the script
+// API uses (ScriptApiPolicy's globals) or one of JavaScript's own is refused, so an app object never stands in for a
+// global the policy rules.
+void WasmScriptEngine::installAppObjects() {
+    static const QStringList JAVASCRIPT { "Object", "Function", "Array", "String", "Number", "Boolean", "Symbol", "BigInt",
+                                          "Math", "JSON", "Date", "RegExp", "Promise", "Reflect", "Proxy", "Map", "Set",
+                                          "WeakMap", "WeakSet", "WeakRef", "ArrayBuffer", "DataView", "Intl", "Atomics",
+                                          "Iterator", "FinalizationRegistry", "XMLHttpRequest", "WebSocket", "Script",
+                                          "Entities", "MyAvatar", "Settings", "Messages", "Assets", "Account" };
+    for (const auto& entry : _appObjects) {
+        const QString& name = entry.first;
+        if (!entry.second || _objects->global(name) != ObjectTable::NULL_HANDLE || ScriptApiPolicy::allowsGlobal(name) ||
+            JAVASCRIPT.contains(name) || name.endsWith("Array") || name.endsWith("Error")) {
+            qCWarning(scriptengine) << "WasmScriptEngine: the app object" << name << "is refused: the name is taken";
+            _appClasses.remove(entry.second ? entry.second->metaObject() : nullptr);
+            continue;
+        }
+        _objects->registerGlobal(name, entry.second);
+    }
+    _appObjects.clear();
+}
+
+namespace {
+
+// an app object's class's own members (registerAppObject): from its offsets on, none of QObject's (deleteLater,
+// destroyed, objectName), and no method that returns a pointer
+bool isOwnMethod(const QMetaObject* meta, const QByteArray& name, QMetaMethod::MethodType wanted) {
+    for (int i = meta->methodOffset(); i < meta->methodCount(); ++i) {
+        const QMetaMethod method = meta->method(i);
+        if (method.name() != name) {
+            continue;
+        }
+        const bool callable = wanted == QMetaMethod::Signal ? method.methodType() == QMetaMethod::Signal
+                                                            : method.methodType() == QMetaMethod::Method ||
+                                                                  method.methodType() == QMetaMethod::Slot;
+        if (callable && !QByteArray(method.typeName()).endsWith('*')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isOwnProperty(const QMetaObject* meta, const QByteArray& name) {
+    const int index = meta->indexOfProperty(name.constData());
+    return index >= meta->propertyOffset() && !QByteArray(meta->property(index).typeName()).endsWith('*');
+}
+
+}  // namespace
+
 void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& value) {
     if (QThread::currentThread() != thread()) {
         QMetaObject::invokeMethod(this, [this, name, value] { registerGlobalValue(name, value); });
@@ -391,6 +458,7 @@ void WasmScriptEngine::run() {
         registerStandardGlobals();
     }
     registerEngineGlobals();
+    installAppObjects();
 
     _isRunning = true;
     emit runningStateChanged();
@@ -474,6 +542,30 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
         gate.allowsAfterWorldLeft = &ScriptApiPolicy::allowsAfterWorldLeft;
+        if (!_appClasses.isEmpty()) {
+            // the app's own objects for this engine (registerAppObject): exactly their classes, all members
+            const QSet<const QMetaObject*> own = _appClasses;
+            gate.allowsClass = [own](const QMetaObject* meta) {
+                return own.contains(meta) || ScriptApiPolicy::allowsClass(meta);
+            };
+            gate.deniesMethod = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnMethod(meta, name, QMetaMethod::Method)
+                                          : ScriptApiPolicy::deniesMethod(meta, name);
+            };
+            gate.deniesPropertyWrite = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnProperty(meta, name) : ScriptApiPolicy::deniesPropertyWrite(meta, name);
+            };
+            gate.deniesPropertyRead = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnProperty(meta, name) : ScriptApiPolicy::deniesPropertyRead(meta, name);
+            };
+            gate.deniesSignal = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnMethod(meta, name, QMetaMethod::Signal)
+                                          : ScriptApiPolicy::deniesSignal(meta, name);
+            };
+            gate.checksDelivery = [own](const QMetaObject* meta, const QByteArray& name) {
+                return !own.contains(meta) && ScriptApiPolicy::checksDelivery(meta, name);
+            };
+        }
         instance->host->setMemberGate(std::move(gate));
     }
     instance->host->setLogger([this](int level, const QString& text) {

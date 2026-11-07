@@ -34,6 +34,9 @@
 
 #include <QtCore/QByteArray>
 #include <QtCore/QHash>
+#include <QtCore/QPair>
+#include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QVariantMap>
 
 #include <ValueCodec.h>
@@ -99,6 +102,7 @@ public:
 
     // The ScriptEngine hooks the hosts call.
     void registerGlobalObject(const QString& name, QObject* object) override;
+    void registerAppObject(const QString& name, QObject* object) override;
     void registerGlobalValue(const QString& name, const QVariant& value) override;
     void loadURL(const QUrl& scriptURL, bool reload) override;
     bool hasValidScriptSuffix(const QString& scriptFileName) override;
@@ -215,6 +219,9 @@ private:
     WasmInstance::Limits _limits;
     std::unique_ptr<ObjectTable> _objects;
     QVariantMap _globalValues;  // registerGlobalValue's
+    QSet<const QMetaObject*> _appClasses;  // registerAppObject's: past the script API policy
+    QList<QPair<QString, QPointer<QObject>>> _appObjects;  // registerAppObject's, put in after every other global
+    void installAppObjects();
     SignalRelay* _relay { nullptr };  // a child, so it moves to the engine's thread with it
     HttpRequestFactory* _http { nullptr };
     WebSocketFactory* _sockets { nullptr };

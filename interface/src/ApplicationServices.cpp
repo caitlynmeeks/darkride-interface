@@ -109,6 +109,7 @@
 #include "ui/StandAloneJSConsole.h"
 #include "ui/TabletScriptingInterface.h"
 #include "ui/ToolbarScriptingInterface.h"
+#include "make/MakeLink.h"
 
 // the controller's state names (Application's state device reads them too)
 const QString STATE_IN_HMD = "InHMD";
@@ -290,6 +291,8 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
     // Bookmarks and snapshots, the resource manager, selection, the editor and its impostor baker, text to speech,
     // chat, the disk cache API.
     DependencyManager::set<AvatarBookmarks>();
+    // Make's link to the builder's Claude Code: nothing listens or runs until the person connects
+    DependencyManager::set<MakeLink>();
     DependencyManager::set<LocationBookmarks>();
     DependencyManager::set<Snapshot>();
     DependencyManager::set<ResourceManager>();

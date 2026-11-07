@@ -1,0 +1,1191 @@
+{
+  "$comment": "Copyright 2026 Darkride. Distributed under the MIT License. The tools Make offers to a model over MCP, one definition each: the app checks every call against it (libraries/make-link, MakeToolList), and the docs and tests read it. A change to a tool's name, inputs or result raises version; adding a tool or an optional input doesn't. Each tool's needs: none, world or app (needs_values). world_content names the result fields holding the world's own text, which the app keeps short and labels as the world's; asks_first_when says when the person is asked first.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "darkride-make-tools",
+  "version": 1,
+  "needs_values": {
+    "none": "Runs anywhere; no world, no app (the Blender tool, the guide, the API lookup).",
+    "world": "Needs the signed-in account present in a world: a person's app, or an AI resident's or bot's body.",
+    "app": "Needs a visitor's app: its renderer, its visitor-side (client) scripts, or the Make panel. A body answers not_available_here."
+  },
+  "error_codes": {
+    "not_available_here": "This tool, or this form of it, needs something this place doesn't have (an app, a sandbox for Blender on this OS).",
+    "refused": "The signed-in account may not do this here (the world's rights, the account's own switches or caps, the allow-list).",
+    "not_found": "No thing, picture or model with that id.",
+    "bad_input": "The inputs don't fit the schema or the thing (a wrong property, a script that fails, a model the format guard refuses).",
+    "busy": "Another request of this account is still running (one make at a time).",
+    "timeout": "It didn't finish in its time limit; nothing half-done is left behind."
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "description": "A thing's id, as scene returns it."
+    },
+    "vec3": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ]
+    },
+    "properties": {
+      "type": "object",
+      "description": "A thing's properties as for Entities.addEntity / Entities.editEntity. Metres; y is up; a thing's front is -z. rotationDegrees {x, y, z} (pitch, yaw, roll) is accepted in place of rotation. Scripts go in only through set_script, and add makes only the world's own things (seen by everyone there): script, serverScripts, entityHostType, clientOnly, avatarEntity, owningAvatarID and locked are answered with 'refused' (checked by the app's allow-list, not only here)."
+    },
+    "made_by": {
+      "type": "object",
+      "description": "Who made a thing, a script or a model. Stamped by the tool, never taken from the model's inputs.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "person",
+            "ai_resident",
+            "bot"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "The signed-in account's name."
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The model that wrote it (e.g. claude-opus-5-5, qwen3.8-27b), as the MCP client reports it; null when unknown."
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "model"
+      ]
+    },
+    "image": {
+      "type": "object",
+      "description": "Returned as MCP image content.",
+      "properties": {
+        "mimeType": {
+          "type": "string",
+          "enum": [
+            "image/png",
+            "image/jpeg",
+            "image/webp"
+          ]
+        },
+        "data": {
+          "type": "string",
+          "contentEncoding": "base64"
+        }
+      },
+      "required": [
+        "mimeType",
+        "data"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "not_available_here",
+            "refused",
+            "not_found",
+            "bad_input",
+            "busy",
+            "timeout"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "guide",
+      "group": "look",
+      "needs": "none",
+      "description": "How building and scripting work in Darkride, with patterns and rules. Read it once before building.",
+      "inputs": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "errors": []
+    },
+    {
+      "name": "api",
+      "group": "look",
+      "needs": "none",
+      "description": "Look up the exact scripting API by name, e.g. 'Entities.editEntity', 'playSound', 'Quat.'.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 60
+          },
+          "more": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "matches",
+          "more"
+        ]
+      },
+      "errors": [
+        "bad_input"
+      ]
+    },
+    {
+      "name": "scene",
+      "group": "look",
+      "needs": "world",
+      "description": "The things near the signed-in account's avatar (or matching part of a name): id, name, type, position, size, turn, parent, which scripts it has, who made it. Also where the avatar stands.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "radius": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 20,
+            "description": "Metres."
+          },
+          "name": {
+            "type": "string",
+            "description": "Part of a name."
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "here": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "$ref": "#/$defs/vec3"
+              },
+              "yawDegrees": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "position"
+            ]
+          },
+          "things": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/id"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "position": {
+                  "$ref": "#/$defs/vec3"
+                },
+                "dimensions": {
+                  "$ref": "#/$defs/vec3"
+                },
+                "rotationDegrees": {
+                  "$ref": "#/$defs/vec3"
+                },
+                "parentID": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "scripts": {
+                  "type": "object",
+                  "properties": {
+                    "client": {
+                      "type": "boolean"
+                    },
+                    "server": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "made_by": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/made_by"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "mine": {
+                  "type": "boolean",
+                  "description": "The signed-in account made it (what a resident may change)."
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "type",
+                "position",
+                "dimensions"
+              ]
+            }
+          }
+        },
+        "required": [
+          "here",
+          "things"
+        ]
+      },
+      "world_content": [
+        "things[].name"
+      ],
+      "errors": [
+        "bad_input"
+      ]
+    },
+    {
+      "name": "get",
+      "group": "look",
+      "needs": "world",
+      "description": "One thing's properties, its scripts' text included.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "props": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra property names to include."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "properties": {
+            "$ref": "#/$defs/properties"
+          },
+          "scripts": {
+            "type": "object",
+            "properties": {
+              "client": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "server": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "made_by": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/made_by"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "properties",
+          "scripts"
+        ]
+      },
+      "world_content": [
+        "properties.name",
+        "properties.description",
+        "properties.text",
+        "properties.userData",
+        "scripts.client",
+        "scripts.server"
+      ],
+      "errors": [
+        "not_found",
+        "bad_input"
+      ]
+    },
+    {
+      "name": "picture",
+      "group": "look",
+      "needs": "app",
+      "description": "A picture from the app: of a thing (id) from a good angle, or what the avatar sees. Use it to check the result looks right.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "from": {
+            "type": "string",
+            "enum": [
+              "front",
+              "side",
+              "above"
+            ],
+            "default": "front"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "$ref": "#/$defs/image"
+          }
+        },
+        "required": [
+          "image"
+        ]
+      },
+      "errors": [
+        "not_found",
+        "timeout"
+      ]
+    },
+    {
+      "name": "log",
+      "group": "look",
+      "needs": "world",
+      "description": "Script prints and errors since the last look: the world's server scripts, and the app's visitor-side scripts where there is an app (client is null in a body).",
+      "inputs": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 120
+          },
+          "client": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 120
+          }
+        },
+        "required": [
+          "server",
+          "client"
+        ]
+      },
+      "world_content": [
+        "server[]",
+        "client[]"
+      ],
+      "errors": [
+        "refused"
+      ]
+    },
+    {
+      "name": "add",
+      "group": "build",
+      "needs": "world",
+      "description": "Add a thing to the world (everyone there sees it), with the signed-in account's rights. Returns its id. Undo removes it.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "properties": {
+            "$ref": "#/$defs/properties"
+          }
+        },
+        "required": [
+          "properties"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "made_by": {
+            "$ref": "#/$defs/made_by"
+          }
+        },
+        "required": [
+          "id",
+          "made_by"
+        ]
+      },
+      "creates": true,
+      "asks_first_when": [
+        "the world isn't the account's own"
+      ],
+      "errors": [
+        "refused",
+        "bad_input"
+      ]
+    },
+    {
+      "name": "edit",
+      "group": "build",
+      "needs": "world",
+      "description": "Change a thing's properties, with the signed-in account's rights. Returns the new values. Undo puts the old ones back.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "properties": {
+            "$ref": "#/$defs/properties"
+          }
+        },
+        "required": [
+          "id",
+          "properties"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "properties": {
+            "$ref": "#/$defs/properties"
+          }
+        },
+        "required": [
+          "id",
+          "properties"
+        ]
+      },
+      "world_content": [
+        "properties.name",
+        "properties.description",
+        "properties.text",
+        "properties.userData"
+      ],
+      "asks_first_when": [
+        "the world isn't the account's own"
+      ],
+      "errors": [
+        "refused",
+        "not_found",
+        "bad_input"
+      ]
+    },
+    {
+      "name": "remove",
+      "group": "build",
+      "needs": "world",
+      "description": "Delete a thing, with the signed-in account's rights. Undo brings it back.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "removed": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "removed"
+        ]
+      },
+      "asks_first_when": [
+        "many things in one request",
+        "the world isn't the account's own"
+      ],
+      "errors": [
+        "refused",
+        "not_found"
+      ]
+    },
+    {
+      "name": "set_script",
+      "group": "build",
+      "needs": "world",
+      "description": "Put a script into a thing, as text. side 'server' runs once in the world's server (shared state); 'client' runs on every visitor's computer (clicks, what one visitor sees). Replaces that side's script; source '' removes it. A readable copy is saved, marked with made_by.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "client",
+              "server"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 200000
+          }
+        },
+        "required": [
+          "id",
+          "side",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "client",
+              "server"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "Where the script is served from."
+          },
+          "saved_copy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The readable copy's path in the Make project folder; null where there is none (a body)."
+          },
+          "made_by": {
+            "$ref": "#/$defs/made_by"
+          }
+        },
+        "required": [
+          "id",
+          "side",
+          "url",
+          "made_by"
+        ]
+      },
+      "creates": true,
+      "asks_first_when": [
+        "the script uses the web (XMLHttpRequest, WebSocket, any address)",
+        "the world isn't the account's own"
+      ],
+      "errors": [
+        "refused",
+        "not_found",
+        "bad_input"
+      ]
+    },
+    {
+      "name": "undo",
+      "group": "build",
+      "needs": "world",
+      "description": "Undo the signed-in account's last changes made through these tools in this world (add, edit, remove, set_script, upload_model's placement), newest first.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "undone": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string"
+                },
+                "id": {
+                  "$ref": "#/$defs/id"
+                }
+              },
+              "required": [
+                "tool",
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "undone"
+        ]
+      },
+      "errors": [
+        "refused"
+      ]
+    },
+    {
+      "name": "click",
+      "group": "test",
+      "needs": "app",
+      "description": "Click a thing as a visitor would (its client script's clickDownOnEntity, clickReleaseOnEntity, mousePressOnEntity and mouseReleaseOnEntity).",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "clicked": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "clicked"
+        ]
+      },
+      "errors": [
+        "not_found"
+      ]
+    },
+    {
+      "name": "call",
+      "group": "test",
+      "needs": "world",
+      "description": "Call a method in a thing's script. side 'server': the server script (the method must be in its remotelyCallable list); side 'client': this app's copy of the client script (needs an app; a body answers not_available_here).",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "client",
+              "server"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "method",
+          "side"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "sent": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "sent"
+        ]
+      },
+      "errors": [
+        "not_available_here",
+        "not_found",
+        "refused",
+        "bad_input"
+      ]
+    },
+    {
+      "name": "walk",
+      "group": "test",
+      "needs": "world",
+      "description": "Move the signed-in account's avatar: onto or next to a thing (id), or to a position (give one of the two). Walking into a thing fires its enterEntity.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "position": {
+            "$ref": "#/$defs/vec3"
+          },
+          "onto": {
+            "type": "boolean",
+            "default": false,
+            "description": "Stand inside or on it, not in front of it."
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "$ref": "#/$defs/vec3"
+          },
+          "arrived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "position",
+          "arrived"
+        ]
+      },
+      "errors": [
+        "not_found",
+        "timeout",
+        "bad_input"
+      ]
+    },
+    {
+      "name": "watch",
+      "group": "test",
+      "needs": "world",
+      "description": "Watch things for a few seconds and report what changed: moved, turned, resized, recoloured, text, visibility.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/id"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "seconds": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 15,
+            "default": 3
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/id"
+                },
+                "moved": {
+                  "type": "boolean"
+                },
+                "turned": {
+                  "type": "boolean"
+                },
+                "resized": {
+                  "type": "boolean"
+                },
+                "recoloured": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "visible": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "changes"
+        ]
+      },
+      "world_content": [
+        "changes[].text"
+      ],
+      "errors": [
+        "not_found",
+        "bad_input"
+      ]
+    },
+    {
+      "name": "make_with_blender",
+      "group": "make",
+      "needs": "none",
+      "description": "Run a Blender Python script (bpy) in a sandbox (no network, a fresh scratch folder, time and memory limits; --background --factory-startup --disable-autoexec), then our fixed export: a size-capped .glb, four views of it as Darkride draws it, and Blender's report. Nothing is placed: upload_model does that. kind 'room' bakes its lighting into a lightmap.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "script": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000,
+            "description": "Python for Blender: builds the model only; no files, rendering or export (the fixed step does those)."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60,
+            "description": "A short name for the model."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "object",
+              "room"
+            ],
+            "default": "object"
+          },
+          "textures": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "properties": {
+                "picture_id": {
+                  "type": "string",
+                  "description": "A reference picture the signed-in account added (re-encoded, no metadata)."
+                },
+                "as": {
+                  "type": "string",
+                  "description": "The file name the script loads it by."
+                }
+              },
+              "required": [
+                "picture_id",
+                "as"
+              ]
+            }
+          }
+        },
+        "required": [
+          "script"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "For upload_model; kept until the request ends."
+          },
+          "views": {
+            "$ref": "#/$defs/image"
+          },
+          "report": {
+            "type": "object",
+            "properties": {
+              "size_m": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "triangles": {
+                "type": "integer"
+              },
+              "parts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
+                    "triangles": {
+                      "type": "integer"
+                    },
+                    "materials": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "dropped": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "lights": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "lightmap": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "size_m",
+              "triangles",
+              "warnings"
+            ]
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "seconds": {
+            "type": "number"
+          },
+          "made_by": {
+            "$ref": "#/$defs/made_by"
+          }
+        },
+        "required": [
+          "model_id",
+          "views",
+          "report",
+          "bytes",
+          "seconds",
+          "made_by"
+        ]
+      },
+      "creates": true,
+      "errors": [
+        "not_available_here",
+        "bad_input",
+        "busy",
+        "timeout",
+        "not_found"
+      ]
+    },
+    {
+      "name": "upload_model",
+      "group": "make",
+      "needs": "world",
+      "description": "Put a model from make_with_blender into the world's own files, with the signed-in account's rights, through the model-format guard. Returns its address for add's modelURL.",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "model_id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "made_by": {
+            "$ref": "#/$defs/made_by"
+          }
+        },
+        "required": [
+          "url",
+          "bytes",
+          "made_by"
+        ]
+      },
+      "creates": true,
+      "asks_first_when": [
+        "the world isn't the account's own"
+      ],
+      "errors": [
+        "refused",
+        "not_found",
+        "bad_input",
+        "busy"
+      ]
+    },
+    {
+      "name": "reply",
+      "group": "talk",
+      "needs": "app",
+      "description": "Answer in Darkride's Make panel: plain words, two or three sentences. (A resident speaks with its own say, in the world's chat.)",
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "shown": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "shown"
+        ]
+      },
+      "errors": [
+        "not_available_here"
+      ]
+    }
+  ],
+  "$comment_needs": "Every tool whose needs isn't 'none' may also answer not_available_here when its need isn't met here; its errors list names only the other codes it can give."
+}
