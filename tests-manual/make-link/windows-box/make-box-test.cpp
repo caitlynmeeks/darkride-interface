@@ -305,7 +305,9 @@ Started startBoxed(const fs::path& blender, const fs::path& probe, const fs::pat
     std::wstring desktopName = desktop;  // empty: the person's own desktop (only the diagnosis steps)
     startup.StartupInfo.lpDesktop = desktopName.empty() ? nullptr : desktopName.data();
     if (!CreateProcessW(blender.c_str(), command.data(), nullptr, nullptr, FALSE,
-                        EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW |
+                        // DETACHED_PROCESS, not CREATE_NO_WINDOW: blender.exe is a console program, and a console means a
+                        // conhost.exe child, which the box's child-process policy refuses (run 4: 0xC0000142 at start)
+                        EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | DETACHED_PROCESS |
                             (ownEnvironment ? CREATE_UNICODE_ENVIRONMENT : 0),
                         ownEnvironment ? environment.data() : nullptr, job.c_str(), &startup.StartupInfo, &started.process)) {
         started.error = GetLastError();
