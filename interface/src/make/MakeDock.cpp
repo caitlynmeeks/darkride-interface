@@ -133,7 +133,7 @@ namespace {
                 file = dock->servedFile(what, which);
             }
             auto response = new MakeImageResponse(file, what == "thumb", requestedSize);
-            QThreadPool::globalInstance()->start(response);
+            QThreadPool::globalInstance()->start(response, -1);   // after the engine's loading jobs (performance)
             return response;
         }
     };
@@ -790,7 +790,7 @@ void MakeDock::cleanPictures(const QStringList& files) {
                 emit self->picturesAdded(list);
             }
         }, Qt::QueuedConnection);
-    });
+    }, -1);   // below the default: a waiting texture or mesh job goes first (performance)
 }
 
 // ---- the timeline ----
