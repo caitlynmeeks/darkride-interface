@@ -71,12 +71,15 @@ MakeClaude::~MakeClaude() {
 }
 
 bool MakeClaude::start(const Settings& settings, QString& why) {
-    const QByteArray key = MakeKey::readForChild();
+    QByteArray key = MakeKey::readForChild();
     if (key.isEmpty()) {
         why = "There's no API key kept for Make.";
         return false;
     }
-    return startWithKey(settings, key, why);
+    const bool started = startWithKey(settings, key, why);
+    // our copy wiped once the child's environment is built (Qt's own copies there can't be; security, 11-07)
+    key.fill('\0');
+    return started;
 }
 
 bool MakeClaude::startWithKey(const Settings& settings, const QByteArray& key, QString& why) {
