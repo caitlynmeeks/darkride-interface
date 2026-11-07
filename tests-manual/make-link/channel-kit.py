@@ -6,7 +6,7 @@
 #  Make's channel to Claude Code, from the Claude Code side, with no Claude and nothing spent: a scripted MCP client
 #  speaks to a running test client's Make through the darkride-mcp helper, as a Claude Code started with Make's chat
 #  line would. Prints one line per check or event and "CHANNEL KIT PASS" or "CHANNEL KIT FAIL n".
-#    python3 -I channel-kit.py <the test client's Make folder> [--mode check|chat|silent] [--line chat|plain|none]
+#    python3 -I channel-kit.py <the test client's Make folder> [--mode check|chat|silent] [--line chat|plain|edited|none]
 #                              [--version 2.1.319] [--seconds 10]
 #  --mode check  (default) what a channel client must see: the initialize reply (the protocol held at 2025-11-25 when
 #                2026-07-28 is asked, "claude/channel" the only experimental capability, never the permission relay),
@@ -20,6 +20,9 @@
 #  --line chat   the kit re-runs itself with exactly Make's chat line as its arguments (its own settings kept in the
 #                environment), so the app, reading the helper's parent, sees channelFlag "on"; --line plain gives
 #                the plain line ("off"); none (default) leaves the kit's own arguments ("unknown": allowed).
+#  --line edited Make's chat line plus one option its line check refuses (`--add-dir /tmp`, or the arguments in
+#                CHANNEL_KIT_EXTRA): the app drops the helper as it connects and the dock shows the refused words
+#                (C9, editor-ui's kit 6); the kit expects no answer to initialize and ends with PASS on that.
 #  --version     what the kit says as clientInfo.version (an old one proves the dock's "Update Claude Code" line).
 #  Kits 1 and 2 of the plan (the dock's Send makes one event; nothing else does) are editor-ui's dock kit, which
 #  reads MakeLink::channelEventCount(); this kit is the other end of them.
@@ -29,7 +32,7 @@
 #  Distributed under the MIT License.
 #
 
-import json, os, select, subprocess, sys, time
+import json, os, select, shlex, subprocess, sys, time
 
 CHANNEL_FLAG = "--dangerously-load-development-channels"
 CHANNEL_ENTRY = "server:darkride"
@@ -49,7 +52,7 @@ line = option("--line", "none")
 version = option("--version", "2.1.319")
 seconds = float(option("--seconds", "10"))
 
-if line in ("chat", "plain") and not os.environ.get("CHANNEL_KIT_RERUN"):
+if line in ("chat", "plain", "edited") and not os.environ.get("CHANNEL_KIT_RERUN"):
     # become a process whose arguments are Make's line (argv[0] "claude" too): the app reads them from the system
     # the app's line check allows only Make's options (security's MUST 21:22 11-07), so python's own -I and -c can't
     # be on the line: the script runs by path, the first operand (prompt text to the check, never a subcommand name),
@@ -62,8 +65,10 @@ if line in ("chat", "plain") and not os.environ.get("CHANNEL_KIT_RERUN"):
     argv = ["claude", os.path.abspath(sys.argv[0]),
             "--restricted", "--strict-mcp-config", "--mcp-config", os.path.join(folder, ".darkride-mcp.json"),
             "--settings", os.path.join(folder, ".claude", "settings.json"), "--tools", ""]
-    if line == "chat":
+    if line in ("chat", "edited"):
         argv += [CHANNEL_FLAG, CHANNEL_ENTRY]
+    if line == "edited":
+        argv += shlex.split(os.environ.get("CHANNEL_KIT_EXTRA") or "--add-dir /tmp")
     os.execve(sys.executable, argv, env)
 
 if os.environ.get("CHANNEL_KIT_RERUN"):
@@ -127,6 +132,27 @@ def check(name, ok, detail=""):
         failures += 1
     say(name, "PASS" if ok else "FAIL", detail)
 
+
+if line == "edited":
+    # the app judges the line as the helper connects and drops it (the dock shows the refused words): the helper
+    # closes, or nothing answers; an initialize result would mean the edited line was taken
+    say("line edited:", " ".join(sys.argv[1:]))
+    try:
+        answer = ask("initialize", {"protocolVersion": "2026-07-28",
+                                    "clientInfo": {"name": "make-channel-kit", "version": version}})
+        taken = "result" in answer
+        detail = json.dumps(answer)[:200]
+    except (SystemExit, OSError) as ended:
+        taken = False
+        detail = str(ended)[:200]
+    check("the edited line was refused: the helper was dropped before any answer", not taken, detail)
+    say("PASS" if failures == 0 else "FAIL %d" % failures)
+    try:
+        helper.stdin.close()
+        helper.wait(5)
+    except (OSError, subprocess.TimeoutExpired):
+        helper.kill()
+    sys.exit(1 if failures else 0)
 
 init = ask("initialize", {"protocolVersion": "2026-07-28",
                           "clientInfo": {"name": "make-channel-kit", "version": version}})["result"]
