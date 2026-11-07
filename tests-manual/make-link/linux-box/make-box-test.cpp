@@ -150,7 +150,7 @@ const int PROBE_WAIT_MS = 8 * 60 * 1000;
 const int START_WAIT_MS = 3 * 60 * 1000;
 const int CPU_CAP_TEST_S = 5;
 
-std::string quoted(const std::string& s) {
+std::string jsonString(const std::string& s) {
     std::string out = "\"";
     for (char c : s) {
         if (c == '"' || c == '\\') {
@@ -829,7 +829,7 @@ Run runBlender(const Paths& paths, const std::string& mode, const Box& box, cons
 std::string runJson(const Run& run) {
     std::ostringstream out;
     out.precision(1);
-    out << std::fixed << "\"end\": " << quoted(run.error.empty() ? run.end : "not started: " + run.error)
+    out << std::fixed << "\"end\": " << jsonString(run.error.empty() ? run.end : "not started: " + run.error)
         << ", \"seconds\": " << run.seconds << ", \"exec_gate\": {\"allowed\": " << run.gateAllowed
         << ", \"refused\": " << run.gateRefused << "}";
     return out.str();
@@ -973,15 +973,15 @@ bool openTargets(Targets& t, const Paths& p, std::string& error) {
     }
     t.loop = std::thread(acceptLoop, &t);
     std::ostringstream json;
-    json << "{\"token\": " << quoted(t.token) << ", \"loopback\": " << addressJson(tcp) << ", \"udp\": " << addressJson(udp)
-         << ", \"own_closed\": " << addressJson(own) << ", \"unix_path\": " << quoted(t.unixPathName)
-         << ", \"unix_abstract\": " << quoted(t.abstractName)
-         << ", \"session_bus\": " << (t.sessionBus.empty() ? "null" : quoted(t.sessionBus))
-         << ", \"runtime\": " << (t.runtime.empty() ? "null" : quoted(t.runtime))
-         << ", \"home\": " << quoted(getenv("HOME") ? getenv("HOME") : "/nonexistent")
-         << ", \"outside\": " << quoted(p.outside) << ", \"blender_dir\": " << quoted(p.blenderDir)
-         << ", \"scripts\": " << quoted(p.scripts) << ", \"loader\": " << quoted(p.loader)
-         << ", \"parent_pid\": " << getpid() << ", \"tmp_name\": " << quoted("darkride-box-test-" + t.token.substr(12, 16))
+    json << "{\"token\": " << jsonString(t.token) << ", \"loopback\": " << addressJson(tcp) << ", \"udp\": " << addressJson(udp)
+         << ", \"own_closed\": " << addressJson(own) << ", \"unix_path\": " << jsonString(t.unixPathName)
+         << ", \"unix_abstract\": " << jsonString(t.abstractName)
+         << ", \"session_bus\": " << (t.sessionBus.empty() ? "null" : jsonString(t.sessionBus))
+         << ", \"runtime\": " << (t.runtime.empty() ? "null" : jsonString(t.runtime))
+         << ", \"home\": " << jsonString(getenv("HOME") ? getenv("HOME") : "/nonexistent")
+         << ", \"outside\": " << jsonString(p.outside) << ", \"blender_dir\": " << jsonString(p.blenderDir)
+         << ", \"scripts\": " << jsonString(p.scripts) << ", \"loader\": " << jsonString(p.loader)
+         << ", \"parent_pid\": " << getpid() << ", \"tmp_name\": " << jsonString("darkride-box-test-" + t.token.substr(12, 16))
          << "}";
     t.json = json.str();
     return true;
@@ -1085,7 +1085,7 @@ std::string killCase(const Paths& p, bool ownProc) {
         }
     }
     return std::string("{\"pass\": ") + (ended ? "true" : "false") + ", \"detail\": " +
-           quoted(ended ? "Blender ended with its parent" : "Blender was still running 5 s after its parent was killed") +
+           jsonString(ended ? "Blender ended with its parent" : "Blender was still running 5 s after its parent was killed") +
            "}";
 }
 
@@ -1097,7 +1097,7 @@ std::string cpuCase(const Paths& p, Box box, int abi, bool keepLogs, bool& passe
     Launch launch = start(p, "runaway", box, "blender-cpu-case.log", abi);
     if (!launch.error.empty()) {
         passed = false;
-        return "{\"pass\": false, \"detail\": " + quoted("not started: " + launch.error) + "}";
+        return "{\"pass\": false, \"detail\": " + jsonString("not started: " + launch.error) + "}";
     }
     const Ended ended = waitFor(launch.pid, 90000);
     launch.gate->finish();
@@ -1110,7 +1110,7 @@ std::string cpuCase(const Paths& p, Box box, int abi, bool keepLogs, bool& passe
     std::ostringstream out;
     out.precision(1);
     out << std::fixed << "{\"pass\": " << (passed ? "true" : "false") << ", \"started\": " << (started ? "true" : "false")
-        << ", \"end\": " << quoted(describe(ended)) << ", \"seconds\": " << seconds << "}";
+        << ", \"end\": " << jsonString(describe(ended)) << ", \"seconds\": " << seconds << "}";
     return out.str();
 }
 
@@ -1196,7 +1196,7 @@ int main(int argc, char** argv) {
     for (const Step& step : ladder) {
         ++stepNumber;
         if (step.box.landlock && abi < 1) {
-            starts << (stepNumber > 1 ? ", " : "") << "{\"step\": " << quoted(step.name)
+            starts << (stepNumber > 1 ? ", " : "") << "{\"step\": " << jsonString(step.name)
                    << ", \"started\": false, \"end\": \"not run: no Landlock on this kernel\"}";
             std::cout << step.name << ": not run (no Landlock)\n";
             continue;
@@ -1207,7 +1207,7 @@ int main(int argc, char** argv) {
         const Run run = runBlender(p, "start", step.box, log, abi, START_WAIT_MS);
         keepLog(p, keepLogs, log);
         const bool rendered = readFile(p.job + "/started.txt", "") == "rendered";
-        starts << (stepNumber > 1 ? ", " : "") << "{\"step\": " << quoted(step.name)
+        starts << (stepNumber > 1 ? ", " : "") << "{\"step\": " << jsonString(step.name)
                << ", \"started\": " << (rendered ? "true" : "false") << ", " << runJson(run) << "}";
         std::cout << step.name << ": " << (rendered ? "rendered" : "didn't render") << " ("
                   << (run.error.empty() ? run.end : run.error) << ")\n";
@@ -1296,17 +1296,17 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < lines.size(); ++i) {
         text << lines[i] << "\n";
         std::cout << lines[i] << "\n";
-        summaryJson << (i ? ", " : "") << quoted(lines[i]);
+        summaryJson << (i ? ", " : "") << jsonString(lines[i]);
     }
     text.close();
     std::ofstream out(p.test + "/results.json");
-    out << "{\"kernel\": " << quoted(system.release) << ", \"landlock_abi\": " << abi
-        << ", \"lsm\": " << quoted(lsm.empty() ? "unknown" : lsm) << ", \"cores\": " << std::thread::hardware_concurrency()
+    out << "{\"kernel\": " << jsonString(system.release) << ", \"landlock_abi\": " << abi
+        << ", \"lsm\": " << jsonString(lsm.empty() ? "unknown" : lsm) << ", \"cores\": " << std::thread::hardware_concurrency()
         << ", \"session_bus\": " << (targets.sessionBus.empty() ? "false" : "true")
         << ", \"runtime_folder\": " << (targets.runtime.empty() ? "false" : "true")
         << ", \"control\": {" << runJson(control) << ", \"results\": " << controlResults << "}"
         << ", \"counts_after_control\": " << countsAfterControl << ", \"starts\": [" << starts.str() << "]"
-        << ", \"box\": " << quoted(chosen ? chosen->name : "none rendered")
+        << ", \"box\": " << jsonString(chosen ? chosen->name : "none rendered")
         << ", \"probe\": {" << (chosen ? runJson(probe) : std::string("\"end\": \"not run\"")) << ", \"results\": " << probeResults
         << "}, \"counts_after_probe\": " << countsAfterProbe
         << ", \"exec_escaped\": {\"direct\": " << (escapedDirect ? "true" : "false") << ", \"loader\": "
