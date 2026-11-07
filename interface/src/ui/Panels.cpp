@@ -9,6 +9,7 @@
 
 #include "Panels.h"
 
+#include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
@@ -326,9 +327,14 @@ void Panels::change(const QString& name, Change how) {
         return;
     }
     panel->show();
-    // in front of the other windows when floating; docked among others as tabs, the tab in front
-    panel->raise();
-    if (panel->isFloating()) {
+    // in front of the other windows when floating; docked among others as tabs, the tab in front. Raising or activating
+    // a floating window brings the whole app to the front on the Mac, so a floating one only while Darkride is the app
+    // in use (a click on the bar is), never from a script while Darkride is behind (a background test client took the
+    // focus from the person's app, 11-07)
+    if (!panel->isFloating()) {
+        panel->raise();
+    } else if (QGuiApplication::applicationState() == Qt::ApplicationActive) {
+        panel->raise();
         panel->activateWindow();
     }
 }
