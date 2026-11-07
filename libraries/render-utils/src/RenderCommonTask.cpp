@@ -117,7 +117,7 @@ void DrawLayered3D::run(const RenderContextPointer& renderContext, const Inputs&
 
     const auto& inItems = inputs.get0();
     const auto& lightingModel = inputs.get1();
-    const auto& hazeFrame = inputs.get2();
+    // inputs.get2() is the frame's haze list; the layered pass reads the default haze from the stage instead
     const auto jitter = inputs.get3();
     
     config->setNumDrawn((int)inItems.size());
