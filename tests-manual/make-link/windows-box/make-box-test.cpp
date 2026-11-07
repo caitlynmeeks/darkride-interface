@@ -17,6 +17,7 @@
 //  Writes <test folder>\results.json (each check's pass and refused/opened, counts) and deletes the job folder, the
 //  container profile and its throwaway test credential afterwards.
 //    make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port] [--lan-listener]
+//                      [--public-name <name>]
 //  Run 6 (security, 11-07): every network check runs twice, boxed and as an UNBOXED control (the same Blender, the
 //  box's environment, no container, no job), so a refusal in the box means something. The checks: the program's own
 //  loopback listener, a closed port on the laptop's own LAN address, the laptop's own computer name (resolved or not,
@@ -28,6 +29,10 @@
 //                            On a Windows with the firewall's notifications on, opening it shows the firewall's
 //                            "Allow access?" alert (a window): pass it only where that can't happen, or with the
 //                            person's OK for that alert
+//    --public-name <name>    run 7: a public name looked up from the box and from the control (resolved or not,
+//                            nothing kept; letters, digits, dots and hyphens only)
+//  Run 7 (security, 11-07 after run 6): the closed port, the own computer name and the public name are recorded in the
+//  box as INFO, not scored (probe.py's top says why).
 //  The installer proof kit (installer-kit.ps1 beside this file) runs the box in Make's real profile, where the
 //  installer's firewall rules apply, and makes and deletes that profile as Make does:
 //    --profile Darkride.MakeBlender  the box in Make's profile (default: the test's own Darkride.MakeBoxTest)
@@ -403,7 +408,21 @@ struct Options {
     bool systemPort = false;   // --system-port
     bool lanListener = false;  // --lan-listener
     bool keepProfile = false;  // --keep-profile: the profile stays for the kit's own delete step
+    std::string publicName;    // --public-name <name> (run 7)
 };
+
+// a host name only: letters, digits, dots and hyphens, as DNS allows; nothing that could reach the JSON or a shell
+bool hostName(const std::string& name) {
+    if (name.empty() || name.size() > 253 || name.front() == '.' || name.front() == '-') {
+        return false;
+    }
+    for (char c : name) {
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-')) {
+            return false;
+        }
+    }
+    return true;
+}
 
 bool parseOptions(int argc, wchar_t** argv, Options& options) {
     for (int i = 3; i < argc; ++i) {
@@ -414,6 +433,11 @@ bool parseOptions(int argc, wchar_t** argv, Options& options) {
             options.lanListener = true;
         } else if (arg == L"--keep-profile") {
             options.keepProfile = true;
+        } else if (arg == L"--public-name" && i + 1 < argc) {
+            options.publicName = narrow(argv[++i]);
+            if (!hostName(options.publicName)) {
+                return false;
+            }
         } else if (arg == L"--profile" && i + 1 < argc) {
             boxProfile = argv[++i];
             if (!knownContainer(boxProfile)) {
@@ -560,7 +584,8 @@ void openTargets(Targets& targets, const Options& options) {
          << ", \"lan_closed\": " << addressJson(lanText, closedPort)
          << ", \"lan_listener\": " << (lanListenerPort ? addressJson(lanText, lanListenerPort) : "null")
          << ", \"system_port\": " << (options.systemPort ? addressJson(lanText, 135) : "null")
-         << ", \"mac\": " << (options.macPort ? addressJson(options.macAddress.c_str(), options.macPort) : "null") << "}";
+         << ", \"mac\": " << (options.macPort ? addressJson(options.macAddress.c_str(), options.macPort) : "null")
+         << ", \"public_name\": " << (options.publicName.empty() ? "null" : jsonString(options.publicName)) << "}";
     targets.json = json.str();
 }
 
@@ -672,7 +697,8 @@ int wmain(int argc, wchar_t** argv) {
     Options options;
     if (argc < 3 || !parseOptions(argc, argv, options)) {
         std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port]"
-                      L" [--lan-listener] [--profile Darkride.MakeBoxTest|Darkride.MakeBlender] [--keep-profile]\n"
+                      L" [--lan-listener] [--public-name <name>] [--profile Darkride.MakeBoxTest|Darkride.MakeBlender]"
+                      L" [--keep-profile]\n"
                       L"       make-box-test.exe --profile-create | --profile-delete   (Make's profile, the installer kit)\n";
         return 2;
     }
@@ -706,7 +732,7 @@ int wmain(int argc, wchar_t** argv) {
     std::ofstream(job / L"targets.json") << targets.json;
     std::cout << "targets: mac " << (options.macPort ? "yes" : "no") << ", system port " << (options.systemPort ? "yes" : "no")
               << ", lan listener " << (options.lanListener ? (targets.lan.socket != INVALID_SOCKET ? "open" : "not opened") : "no")
-              << "\n";
+              << ", public name " << (options.publicName.empty() ? "no" : "yes") << "\n";
     std::string form;
     bool lpacChosen = false;
     DWORD uiChosen = 0;
@@ -847,7 +873,7 @@ int wmain(int argc, wchar_t** argv) {
         << ", \"profile_kept\": " << (options.keepProfile ? "true" : "false")
         << ", \"targets\": {\"mac\": " << (options.macPort ? "true" : "false") << ", \"system_port\": "
         << (options.systemPort ? "true" : "false") << ", \"lan_listener\": " << (options.lanListener ? "true" : "false")
-        << "}, \"control_exit\": " << controlExit << ", \"control\": " << control
+        << ", \"public_name\": " << (options.publicName.empty() ? "false" : "true") << "}, \"control_exit\": " << controlExit << ", \"control\": " << control
         << ", \"accepted_after_control\": " << acceptedAfterControl << ", \"accepted_after_probe\": " << acceptedAfterProbe
         << ", \"starts\": [" << starts.str() << "], \"blender_exit\": " << exitCode << ", \"probe\": " << results << ", \"kill_the_parent_ends_blender\": " << killed
         << "}\n";

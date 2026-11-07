@@ -15,7 +15,11 @@
 #  Network targets (targets.json): the test's loopback listener, a closed port on the LAN address, the laptop's own
 #  computer name, a name under .invalid, and when the test was given them: a listener on the Mac, Windows' own port
 #  135 on the LAN address (a bare connect, closed at once, nothing sent or read), a listener of the test's own on the
-#  LAN address. Details keep an exception's type and number only, never an address or a message.
+#  LAN address, and (run 7) a public name given with --public-name (resolved or not, nothing kept). Details keep an
+#  exception's type and number only, never an address or a message.
+#  Scoring (security, 11-07 after run 6): the closed port, the own computer name and the public name are INFO in the
+#  box ("pass": null, "score": "info"): their reached/not is recorded, never a pass or a fail. A closed port's RST is
+#  the laptop's own network stack with nothing listening, and whether names may resolve in the box is Caity's call.
 #    blender --background --factory-startup --disable-autoexec -noaudio --python probe.py --
 #            <job folder> <probe|net-control|start|runaway> <profile folder> <test folder>
 #
@@ -55,7 +59,8 @@ def open_folder(path):
 
 
 targets = json.load(open(os.path.join(job, "targets.json")))
-# {"token": str, "loopback", "lan_closed", "lan_listener", "system_port", "mac": [address, port] or null}
+# {"token": str, "loopback", "lan_closed", "lan_listener", "system_port", "mac": [address, port] or null,
+#  "public_name": str or null}
 
 
 def failure(e):
@@ -113,17 +118,24 @@ def network_checks(boxed):
     if targets.get("mac"):
         # the Mac's listener only accepts and closes: a bare connect, nothing sent or read
         checks.append(("the Mac's listener (off the laptop)", lambda: connect(targets["mac"], None, False), "connected"))
+    if targets.get("public_name"):
+        checks.append(("a public name (DNS)", lambda: resolve(targets["public_name"]), "reached"))
+    # recorded, not scored, in the box (security, 11-07 after run 6; see the top)
+    info = ("a closed port on this laptop's LAN address", "this laptop's own computer name (DNS)", "a public name (DNS)")
     for name, action, control_needs in checks:
         reached, detail = action()
         if boxed:
-            passed = not reached
+            passed = None if name in info else not reached
         elif control_needs == "connected":
             passed = reached and detail.startswith("connected")
         elif control_needs == "reached":
             passed = reached
         else:
             passed = None
-        results.append({"check": "network: " + name, "reached": reached, "pass": passed, "detail": detail})
+        entry = {"check": "network: " + name, "reached": reached, "pass": passed, "detail": detail}
+        if boxed and name in info:
+            entry["score"] = "info"
+        results.append(entry)
 
 
 if mode == "net-control":
