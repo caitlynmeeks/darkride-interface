@@ -12,6 +12,8 @@
 #include "EntityItem.h"
 #include "EntityContentAddresses.h"
 
+#include <mutex>
+
 #include <QtCore/QObject>
 #include <QtEndian>
 #include <QJsonDocument>
@@ -416,6 +418,122 @@ OctreeElement::AppendState EntityItem::appendEntityData(
     }
 
     return appendState;
+}
+
+int EntityItem::streamSectionRoom() {
+    // As the entity server fills it: an empty EntityData packet (OctreeQueryNode's), less the octree packet's own
+    // header (flags, sequence number, sent time; OctreeQueryNode::resetOctreePacket) and the section's size field
+    // (OctreeSendThread::packetDistributor). It is the same for every viewer.
+    static const int room = NLPacket::maxPayloadSize(PacketType::EntityData) - (int)OCTREE_PACKET_EXTRA_HEADERS_SIZE
+        - (int)sizeof(OCTREE_PACKET_INTERNAL_SECTION_SIZE);
+    return room;
+}
+
+// The start of a stream packet's section, as EntityTreeSendThread::traverseTreeAndBuildNextPacketPayload writes it:
+// the root element's octal code, colors, children-in-tree and children-in-buffer masks, then the entity count.
+static void appendStreamSectionHeader(OctreePacketData& packetData) {
+    const uint8_t zeroByte = 0;
+    packetData.appendValue(zeroByte);
+    packetData.appendValue(zeroByte);
+    packetData.appendValue(zeroByte);
+    packetData.appendValue(zeroByte);
+    packetData.appendValue((uint16_t)0);
+}
+
+// The properties the stream sends for this entity's type: appendEntityData's own list, less the ones it never sends.
+static EntityPropertyFlags streamedProperties(const EntityItem& entity, EncodeBitstreamParams& params) {
+    EntityPropertyFlags streamed = entity.getEntityProperties(params);
+    streamed -= PROP_ENTITY_HOST_TYPE;
+    streamed -= PROP_OWNING_AVATAR_ID;
+    streamed -= PROP_VISIBLE_IN_SECONDARY_CAMERA;
+    streamed -= PROP_LOCALLY_VISIBLE;
+    return streamed;
+}
+
+int EntityItem::bytesToStreamAlone(EntityPropertyList property, int room,
+                                   bool destinationNodeCanGetAndSetPrivateUserData) const {
+    EncodeBitstreamParams params; // its trackSend does nothing
+    if (!streamedProperties(*this, params).getHasProperty(property)) {
+        return 0;
+    }
+    OctreePacketData scratch(false, room);
+    appendStreamSectionHeader(scratch);
+    EntityTreeElementExtraEncodeDataPointer alone { new EntityTreeElementExtraEncodeData() };
+    EntityPropertyFlags only;
+    only += property;
+    alone->entities.insert(getEntityItemID(), only);
+    if (appendEntityData(&scratch, params, alone, destinationNodeCanGetAndSetPrivateUserData) != OctreeElement::COMPLETED) {
+        return -1;
+    }
+    return scratch.getUncompressedSize();
+}
+
+int EntityItem::streamRoomNeededAlone(EntityPropertyList property, bool destinationNodeCanGetAndSetPrivateUserData) const {
+    // the size it ends at, in a room big enough for any string; the room it needs is at most the full-width
+    // property flags more, so the smallest that fits is found between the two by halving
+    const int MEASURING_ROOM = 2 * MAX_APPENDED_VALUE_LENGTH + 4096;
+    const int FLAGS_AT_FULL_WIDTH = 256;
+    int fits = bytesToStreamAlone(property, MEASURING_ROOM, destinationNodeCanGetAndSetPrivateUserData);
+    if (fits <= 0) {
+        return fits;
+    }
+    int tooSmall = fits - 1;
+    fits = std::min(fits + FLAGS_AT_FULL_WIDTH, MEASURING_ROOM);
+    if (bytesToStreamAlone(property, fits, destinationNodeCanGetAndSetPrivateUserData) < 0) {
+        return -1;
+    }
+    while (fits - tooSmall > 1) {
+        const int room = tooSmall + (fits - tooSmall) / 2;
+        if (bytesToStreamAlone(property, room, destinationNodeCanGetAndSetPrivateUserData) < 0) {
+            tooSmall = room;
+        } else {
+            fits = room;
+        }
+    }
+    return fits;
+}
+
+EntityPropertyFlags EntityItem::propertiesTooBigToStream(const EntityPropertyFlags& properties, int margin,
+                                                         bool destinationNodeCanGetAndSetPrivateUserData) const {
+    EntityPropertyFlags tooBig;
+    EncodeBitstreamParams params; // its trackSend does nothing
+    EntityPropertyFlags candidates = streamedProperties(*this, params) & properties;
+    int room = streamSectionRoom() - margin;
+
+    // First everything at once, as the stream's first pass does: only what doesn't fit then is tried alone.
+    OctreePacketData scratch(false, room);
+    appendStreamSectionHeader(scratch);
+    EntityTreeElementExtraEncodeDataPointer pass { new EntityTreeElementExtraEncodeData() };
+    pass->entities.insert(getEntityItemID(), candidates);
+    if (appendEntityData(&scratch, params, pass, destinationNodeCanGetAndSetPrivateUserData) == OctreeElement::COMPLETED) {
+        return tooBig;
+    }
+    EntityPropertyFlags leftover = pass->entities.value(getEntityItemID());
+    for (int flag = (int)leftover.firstFlag(); flag <= (int)leftover.lastFlag(); flag++) {
+        EntityPropertyList property = (EntityPropertyList)flag;
+        if (leftover.getHasProperty(property) &&
+            bytesToStreamAlone(property, room, destinationNodeCanGetAndSetPrivateUserData) < 0) {
+            tooBig += property;
+        }
+    }
+    return tooBig;
+}
+
+QString EntityItem::propertyName(EntityPropertyList property) {
+    // from the properties' own name table, turned round once
+    static std::once_flag once;
+    static QHash<int, QString> names;
+    std::call_once(once, [] {
+        EntityItemProperties all;
+        all.markAllChanged();
+        for (const QString& name : all.listChangedProperties()) {
+            EntityPropertyInfo info;
+            if (EntityItemProperties::getPropertyInfo(name, info)) {
+                names.insert((int)info.propertyEnum, name);
+            }
+        }
+    });
+    return names.value((int)property, QString("property %1").arg((int)property));
 }
 
 // TODO: My goal is to get rid of this concept completely. The old code (and some of the current code) used this

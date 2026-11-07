@@ -23,6 +23,12 @@
 class OctreeEditPacketSender :  public PacketSender {
     Q_OBJECT
 public:
+    // The most one edit message can take: an edit packet's payload less the sequence number and sent time this sender
+    // writes at its start (initializePacket). A longer message wouldn't fit even an empty packet.
+    static int maxEditMessageSize(PacketType type) {
+        return NLPacket::maxPayloadSize(type) - (int)(sizeof(quint16) + sizeof(quint64));
+    }
+
     OctreeEditPacketSender();
     ~OctreeEditPacketSender();
 

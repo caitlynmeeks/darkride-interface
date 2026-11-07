@@ -518,6 +518,10 @@ bool OctreePacketData::appendValue(bool value) {
 bool OctreePacketData::appendValue(const QString& string) {
     // TODO: make this a ByteCountCoded leading byte
     QByteArray utf8Array = string.toUtf8();
+    // The length goes in 16 bits: a longer value doesn't fit, rather than being stored cut to its length mod 65,536.
+    if (utf8Array.length() > MAX_APPENDED_VALUE_LENGTH) {
+        return false;
+    }
     uint16_t length = utf8Array.length(); // no NULL
     bool success = appendValue(length);
     if (success) {
@@ -542,6 +546,10 @@ bool OctreePacketData::appendValue(const QUuid& uuid) {
 
 bool OctreePacketData::appendValue(const QByteArray& bytes) {
     // TODO: make this a ByteCountCoded leading byte
+    // The length goes in 16 bits, as for strings above.
+    if (bytes.size() > MAX_APPENDED_VALUE_LENGTH) {
+        return false;
+    }
     uint16_t length = bytes.size();
     bool success = appendValue(length);
     if (success) {
