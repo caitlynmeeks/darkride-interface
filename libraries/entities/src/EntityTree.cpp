@@ -1853,7 +1853,21 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
             // stream of everyone who should see it. An add or an edit carrying one is refused; a refused edit is sent
             // back, so the sender's client drops what it tried, as for the refusals below. Only an edit at least
             // streamCheckSize() long can carry one, so nothing shorter (a vehicle's motion, say) is measured.
-            if (validEditPacket && !isClone && processedBytes >= streamCheckSize()) {
+            // Only for a sender whose add or edit would go through: anyone else's is refused (an add) or kept to
+            // simulation properties (an edit) further on, so it needn't cost a stand-in, a warning slot or a send-back.
+            // As the add's rights check below, and updateEntity's for an edit.
+            auto senderMayWrite = [&] {
+                if (!senderNode) {
+                    return true;
+                }
+                if (isAdd) {
+                    bool certified = !properties.getCertificateID().isEmpty();
+                    return certified ? (senderNode->getCanRezCertified() || senderNode->getCanRezTmpCertified())
+                                     : (senderNode->getCanRez() || senderNode->getCanRezTmp());
+                }
+                return senderMayChange(senderNode, existingEntity);
+            };
+            if (validEditPacket && !isClone && processedBytes >= streamCheckSize() && senderMayWrite()) {
                 EntityTypes::EntityType type = isAdd ? properties.getType() : existingEntity->getType();
                 // a stand-in of the same type, with a new id: the stream's own encoder measures it, and nothing else sees it
                 EntityItemPointer probe = EntityTypes::constructEntityItem(type, QUuid::createUuid(), properties);
