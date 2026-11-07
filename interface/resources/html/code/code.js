@@ -84,6 +84,15 @@
             "editorIndentGuide.activeBackground1": "#4a4a4a",
             "editorBracketMatch.background": "#2c5d8755",
             "editorBracketMatch.border": "#00000000",
+            // brackets in the delimiters' grey at every depth (a model's own colouring would otherwise draw them in
+            // gold, orchid and blue)
+            "editorBracketHighlight.foreground1": "#a6a6a6",
+            "editorBracketHighlight.foreground2": "#a6a6a6",
+            "editorBracketHighlight.foreground3": "#a6a6a6",
+            "editorBracketHighlight.foreground4": "#a6a6a6",
+            "editorBracketHighlight.foreground5": "#a6a6a6",
+            "editorBracketHighlight.foreground6": "#a6a6a6",
+            "editorBracketHighlight.unexpectedBracket.foreground": "#ff6b6b",
             "editorError.foreground": "#ff6b6b",
             "editorWarning.foreground": "#d8a657",
             "editorWidget.background": "#383838",
@@ -184,8 +193,17 @@
     var languageElement = document.getElementById("language");
     var linesElement = document.getElementById("lines");
     var savedElement = document.getElementById("saved");
+    var readOnlyElement = document.getElementById("readonly");
+    var sizeElement = document.getElementById("size");
+    var hashElement = document.getElementById("hash");
 
-    var model = monaco.editor.createModel("", "javascript");
+    // a model colours its brackets by depth unless told not to: the editor's own option doesn't reach it
+    function plainModel(value, language) {
+        var made = monaco.editor.createModel(value, language);
+        made.updateOptions({ bracketColorizationOptions: { enabled: false, independentColorPoolPerBracketType: false } });
+        return made;
+    }
+    var model = plainModel("", "javascript");
     var editor = monaco.editor.create(editorElement, {
         model: model,
         theme: "darkride",
@@ -221,21 +239,45 @@
         dirty: false,
         savedText: "",           // the status strip's "Saved 22:04", given by the panel
         note: "",                // a save's answer or why it's read only, from the panel (setNote)
+        savedHash: "",           // a short hash of the text as opened or last saved: two versions told apart
         noteIsProblem: false
     };
 
     var LANGUAGE_NAMES = { javascript: "JavaScript", glsl: "GLSL" };
+
+    // a short hash of a text, 12 hex digits (cyrb53: quick, not for security; it only tells two versions apart)
+    function shortHash(value) {
+        var h1 = 0xdeadbeef;
+        var h2 = 0x41c6ce57;
+        for (var i = 0; i < value.length; i++) {
+            var c = value.charCodeAt(i);
+            h1 = Math.imul(h1 ^ c, 2654435761);
+            h2 = Math.imul(h2 ^ c, 1597334677);
+        }
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        var hex = (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+        return ("00000000000000" + hex).slice(-14).slice(0, 12);
+    }
+
+    function sizeText(length) {
+        return length >= 1048576 ? (length / 1048576).toFixed(1) + " MB" : (length / 1024).toFixed(1) + " KB";
+    }
 
     function lineCount() {
         return model.getLineCount();
     }
 
     function showStatus() {
+        readOnlyElement.textContent = state.readOnly && !state.streaming ? "Read only" : "";
         var position = editor.getPosition();
         positionElement.textContent = position ? "Ln " + position.lineNumber + ", Col " + position.column : "";
         languageElement.textContent = LANGUAGE_NAMES[state.language] || "";
         var lines = lineCount();
         linesElement.textContent = lines + (lines === 1 ? " line" : " lines");
+        sizeElement.textContent = sizeText(model.getValueLength());
+        // the saved version's: hidden while the text shown is a change of it
+        hashElement.textContent = state.savedHash !== "" && !state.dirty && !state.streaming ? "hash " + state.savedHash : "";
         if (state.streaming) {
             savedElement.textContent = "Claude is writing…";
             savedElement.className = "";
@@ -350,6 +392,7 @@
             state.savedText = text(doc.savedText);
             monaco.editor.setModelLanguage(model, state.language);
             model.setValue(text(doc.text));
+            state.savedHash = shortHash(model.getValue());
             editor.setScrollTop(0);
             editor.setPosition({ lineNumber: 1, column: 1 });
             markClean();
@@ -373,6 +416,7 @@
         setReadOnly: function (readOnly) {
             state.readOnly = readOnly !== false;
             applyReadOnly();
+            showStatus();
         },
         // the script stopped with an error (the Inspector's status): its first line, at the line it points to
         showError: function (line, message) {
@@ -382,6 +426,7 @@
         // the panel saved it: "Saved 22:04"
         saved: function (savedText) {
             state.savedText = text(savedText);
+            state.savedHash = shortHash(model.getValue());
             markClean();
             showStatus();
         },
@@ -421,6 +466,7 @@
             if (typeof finalText === "string") {
                 model.setValue(text(finalText));
             }
+            state.savedHash = shortHash(model.getValue());   // what Claude wrote is what's in the world now
             state.streaming = false;
             markClean();
             applyReadOnly();
@@ -447,8 +493,8 @@
             }
             var old = diffEditor.getModel();
             diffEditor.setModel({
-                original: monaco.editor.createModel(text(oldText), state.language),
-                modified: monaco.editor.createModel(text(newText), state.language)
+                original: plainModel(text(oldText), state.language),
+                modified: plainModel(text(newText), state.language)
             });
             if (old) {
                 old.original.dispose();

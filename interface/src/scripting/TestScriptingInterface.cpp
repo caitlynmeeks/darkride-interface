@@ -25,6 +25,7 @@
 
 #include <SpringBones.h>
 
+#include <QtCore/QAbstractItemModel>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QElapsedTimer>
@@ -1008,14 +1009,29 @@ QVariantMap TestScriptingInterface::codePanel() {
         return result;
     }
     auto code = DependencyManager::get<CodeEditor>();
+    // the list's rows as it shows them
+    QVariantList rows;
+    if (auto model = qobject_cast<QAbstractItemModel*>(code->nearby())) {
+        const auto roles = model->roleNames();
+        for (int i = 0; i < model->rowCount(); ++i) {
+            QVariantMap row;
+            for (auto role = roles.begin(); role != roles.end(); ++role) {
+                row.insert(QString::fromUtf8(role.value()), model->data(model->index(i, 0), role.key()));
+            }
+            rows.append(row);
+        }
+    }
     return {
+        { "rows", rows },
         { "hasDocument", code->hasDocument() }, { "pageReady", code->isPageReady() }, { "fileName", code->fileName() },
         { "kind", code->kind() }, { "where", code->where() }, { "canSave", code->canSave() },
         { "readOnlyReason", code->readOnlyReason() }, { "problem", code->problem() }, { "saving", code->isSaving() },
         { "savedText", code->savedText() }, { "note", code->note() }, { "status", code->status() },
         { "statusState", code->statusState() }, { "errorLine", code->errorLine() }, { "errorText", code->errorText() },
         { "claudeWriting", code->isClaudeWriting() }, { "showingChange", code->isShowingChange() },
-        { "nearby", code->nearby()->property("count") },
+        { "nearby", code->nearby()->property("count") }, { "path", code->path() }, { "usedBy", code->usedBy() },
+        { "sharedBy", code->sharedBy() }, { "isShader", code->isShader() }, { "language", code->language() },
+        { "openKey", code->openKey() }, { "loading", code->isLoading() }, { "drafts", code->draftKeys().size() },
     };
 }
 
@@ -1053,6 +1069,22 @@ bool TestScriptingInterface::saveCodeMenuPicture(const QString& which, const QSt
         return result;
     }
     return DependencyManager::get<CodeEditor>()->saveMenuPicture(which, path);
+}
+
+void TestScriptingInterface::codeOpenRow(const QUuid& id, const QString& which) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeOpenRow", Q_ARG(QUuid, id), Q_ARG(QString, which));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testOpenRow(id, which);
+}
+
+void TestScriptingInterface::codeShowList(bool shown) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeShowList", Q_ARG(bool, shown));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testShowList(shown);
 }
 
 void TestScriptingInterface::codeShowNearby() {

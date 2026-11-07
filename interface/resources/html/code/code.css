@@ -76,6 +76,14 @@ body {
     margin-left: auto;
 }
 
+#status span:empty {
+    display: none;
+}
+
+#status #readonly {
+    color: #d8a657;
+}
+
 #status #saved.changed {
     color: var(--changed);
 }

@@ -34,6 +34,7 @@
 
 #include <QtCore/QHash>
 #include <QtCore/QObject>
+#include <QtCore/QSharedPointer>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
@@ -45,6 +46,7 @@
 
 class CallbackTarget;
 class CodeNearby;
+class NetworkShader;
 class QMenu;
 
 class CodeEditor : public QObject, public Dependency {
@@ -73,6 +75,15 @@ class CodeEditor : public QObject, public Dependency {
     Q_PROPERTY(bool claudeWriting READ isClaudeWriting NOTIFY claudeChanged)
     Q_PROPERTY(bool showingChange READ isShowingChange NOTIFY claudeChanged)
     Q_PROPERTY(QObject* nearby READ nearby CONSTANT)
+    // the list on the left (Caity 11-07, mockups/code-panel-list): the open file's key (its row), its path for the
+    // header's first line, what uses it and how far for its second, and how many things use it (a save changes them all)
+    Q_PROPERTY(QString openKey READ openKey NOTIFY documentChanged)
+    Q_PROPERTY(QString path READ path NOTIFY documentChanged)
+    Q_PROPERTY(bool isShader READ isShader NOTIFY documentChanged)
+    Q_PROPERTY(QString usedBy READ usedBy NOTIFY usedByChanged)
+    Q_PROPERTY(int sharedBy READ sharedBy NOTIFY usedByChanged)
+    // the files with an unsaved change kept (the person moved to another file): their rows say Edited
+    Q_PROPERTY(QStringList draftKeys READ draftKeys NOTIFY draftsChanged)
 
 public:
     CodeEditor();
@@ -82,7 +93,8 @@ public:
     static bool isAvailable();
 
     // from the Inspector, the Hierarchy, Code near you and Make's cards: opens the panel on that entity's script
-    // ("script" or "serverScripts"); answers false for an entity that isn't there or a script it doesn't have
+    // ("script" or "serverScripts") or shader ("fragmentShader" or "vertexShader", read only: its address read from the
+    // entity itself, never given); answers false for an entity that isn't there or a script it doesn't have
     Q_INVOKABLE bool open(const QUuid& entityId, const QString& which);
 
     bool hasDocument() const { return !_entity.isNull(); }
@@ -91,7 +103,13 @@ public:
     QString kind() const;
     QString where() const;
     QString entityName() const { return _entityName; }
-    QString language() const { return QStringLiteral("javascript"); }
+    QString language() const { return isShader() ? QStringLiteral("glsl") : QStringLiteral("javascript"); }
+    bool isShader() const;
+    QString openKey() const;
+    QString path() const;
+    QString usedBy() const { return _usedBy; }
+    int sharedBy() const { return _sharedBy; }
+    QStringList draftKeys() const { return _drafts.keys(); }
     QString problem() const { return _problem; }
     bool hasLink() const { return _place == Place::WorldFiles || _place == Place::Web; }
     bool canSave() const { return _canSave; }
@@ -114,11 +132,11 @@ public:
     Q_INVOKABLE QStringList change() const { return _showingChange ? QStringList{ _changeOld, _changeNew } : QStringList(); }
     // the page's text differs from it (the page tells the panel; Undo of a save doesn't replace typing)
     Q_INVOKABLE void setDirty(bool dirty) { _dirty = dirty; }
-    // the person's unsaved change, kept while the panel is closed and shown again when it opens; gone on a save or
-    // when another script opens
-    Q_INVOKABLE void setDraft(const QString& text, bool has) { _draft = has ? text : QString(); _hasDraft = has; }
-    Q_INVOKABLE bool hasDraft() const { return _hasDraft; }
-    Q_INVOKABLE QString draft() const { return _draft; }
+    // the person's unsaved change to the open file, kept while the panel is closed or another file is open, and shown
+    // again when it opens; gone on a save (one per file, for this run of the app)
+    Q_INVOKABLE void setDraft(const QString& text, bool has);
+    Q_INVOKABLE bool hasDraft() const { return hasDocument() && _drafts.contains(openKey()); }
+    Q_INVOKABLE QString draft() const { return _drafts.value(openKey()); }
     // the person's Save or Cmd+S, with the page's text
     Q_INVOKABLE void save(const QString& text);
     // Script: everyone's client loads it again; Server Script: the script server does (the Inspector's Reload)
@@ -127,19 +145,15 @@ public:
     Q_INVOKABLE void showInInspector();
     // the script's address on the clipboard
     Q_INVOKABLE void copyLink();
-    // whether this script is the open one (Code near you's highlighted row)
-    Q_INVOKABLE bool isOpenScript(const QUuid& entity, const QString& which) const {
-        return hasDocument() && entity == _entity && which == _which;
-    }
     // Esc in the editor: the keyboard back to the 3D view
     Q_INVOKABLE void giveBackKeyboard();
-    // the panel's two menus, the app's own (as Create's and the Entities list's), at (x, y) on the screen: ••• (Show in
-    // Inspector, Copy Link), and the name's: the code near you, nearest first, the open one ticked, then Show All Code
-    // Near You (the list in the panel; `listShown`: it's showing)
+    // the panel's ••• menu, the app's own (as Create's and the Entities list's), at (x, y) on the screen: Show in
+    // Inspector, Copy Link
     Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
-    Q_INVOKABLE void showNearbyMenu(qreal x, qreal y, bool listShown);
-    // a test's picture of one of those menus ("more" or "nearby"), drawn without showing it
+    // a test's picture of that menu ("more"), drawn without showing it
     bool saveMenuPicture(const QString& which, const QString& path);
+    // the list's Refresh: a look at the world now
+    Q_INVOKABLE void refreshNearby();
     // the panel open or closed: the status is asked for only while it's open
     Q_INVOKABLE void setPanelOpen(bool open);
     // Code near you (ui/CodeNearby.h), and whether it's unfolded: it looks at the world only while the panel is open
@@ -174,6 +188,10 @@ public:
     void testSave() { emit testRequest("save", QString(), 0); }
     // the panel open on Code near you alone, unfolded, no script (performance's ride row)
     void testShowNearby();
+    // a row of the list clicked, through the panel's own click (which keeps unsaved typing first)
+    void testOpenRow(const QUuid& entityId, const QString& which) { emit testOpenRowRequested(entityId, which); }
+    // the list unfolded or folded, as its sidebar button does
+    void testShowList(bool shown) { emit testRequest("list", shown ? "open" : "fold", 0); }
 
 signals:
     void documentChanged();   // a new document, or the same one's text replaced (Undo of a save): the page shows text()
@@ -183,6 +201,7 @@ signals:
     void noteChanged();
     void statusChanged();
     void testRequest(const QString& what, const QString& source, int run);   // Test only: the panel runs it
+    void testOpenRowRequested(const QUuid& entityId, const QString& which);   // Test only
     void claudeChanged();
     // to the page, through the panel
     void streamBegan();
@@ -190,12 +209,13 @@ signals:
     void streamEnded(const QString& text);
     void changeShown(const QString& oldText, const QString& newText);
     void changeClosed();
-    void nearbyUnfoldRequested();
-    void nearbyFoldRequested();
+    void usedByChanged();
+    void draftsChanged();
 
 private:
     QMenu* makeMoreMenu();
-    QMenu* makeNearbyMenu(bool listShown);
+    void updateUsedBy();
+    void fetchShader();
 
     enum class Place { None, WrittenIn, WorldFiles, Web };
 
@@ -220,8 +240,11 @@ private:
     QString _fileName;
     QString _entityName;
     QString _text;
-    QString _draft;
-    bool _hasDraft { false };
+    QHash<QString, QString> _drafts;   // by openKey()
+    QString _usedBy;
+    int _sharedBy { 0 };
+    QSharedPointer<NetworkShader> _shader;   // a shader on its way from the shader cache
+    QMetaObject::Connection _shaderConnection;
     QString _problem;
     bool _loading { false };
     bool _dirty { false };
