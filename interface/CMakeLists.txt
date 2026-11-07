@@ -225,7 +225,7 @@ if (NOT ANDROID)
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:darkride-mcp>" "$<TARGET_FILE_DIR:${TARGET_NAME}>/")
 endif ()
 # and the parent of Make's Blender (tools/darkride-make-watch), beside it: it ends Blender when the app is gone
-if (APPLE)
+if (UNIX)
   add_subdirectory("${CMAKE_SOURCE_DIR}/tools/darkride-make-watch" "${CMAKE_BINARY_DIR}/tools/darkride-make-watch")
   add_dependencies(${TARGET_NAME} darkride-make-watch)
   add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
