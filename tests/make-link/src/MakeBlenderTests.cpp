@@ -174,6 +174,8 @@ QString programOf(qint64 pid) {
     if (proc_pidpath(static_cast<pid_t>(pid), path, sizeof(path)) > 0) {
         return QString::fromUtf8(path);
     }
+#elif defined(Q_OS_LINUX)
+    return QFile::symLinkTarget(QString("/proc/%1/exe").arg(pid));
 #endif
     return QString();
 }
@@ -183,6 +185,17 @@ qint64 parentOf(qint64 pid) {
     proc_bsdinfo info;
     if (proc_pidinfo(static_cast<pid_t>(pid), PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)) {
         return info.pbi_ppid;
+    }
+#elif defined(Q_OS_LINUX)
+    // /proc/<pid>/stat: the parent's id is the second field after the command's closing parenthesis
+    QFile stat(QString("/proc/%1/stat").arg(pid));
+    if (stat.open(QIODevice::ReadOnly)) {
+        const QByteArray text = stat.read(4096);
+        const int command = text.lastIndexOf(')');
+        const QList<QByteArray> fields = text.mid(command + 2).split(' ');
+        if (command >= 0 && fields.size() >= 2) {
+            return fields.at(1).toLongLong();
+        }
     }
 #endif
     return 0;
@@ -619,6 +632,9 @@ void MakeBlenderTests::testWatcherPassesTheExitOn() {
 #ifdef Q_OS_WIN
     QSKIP("the watcher is macOS and Linux's");
 #else
+#ifndef Q_OS_MAC
+    QSKIP("the watcher's Mac line (sandbox-exec); the Linux box needs Blender and a work folder");
+#endif
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -646,6 +662,9 @@ void MakeBlenderTests::testWatcherEndsItsChild() {
 #ifdef Q_OS_WIN
     QSKIP("the watcher is macOS and Linux's");
 #else
+#ifndef Q_OS_MAC
+    QSKIP("the watcher's Mac line (sandbox-exec); the Linux box needs Blender and a work folder");
+#endif
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -698,6 +717,9 @@ void MakeBlenderTests::testWatcherRefuses() {
 #ifdef Q_OS_WIN
     QSKIP("the watcher is macOS and Linux's");
 #else
+#ifndef Q_OS_MAC
+    QSKIP("the watcher's Mac line (sandbox-exec); testLinuxWatcherRefusesOtherLines is the Linux one");
+#endif
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -915,4 +937,66 @@ int main(int argc, char** argv) {
     MakeBlenderTests tests;
     QTEST_SET_MAIN_SOURCE_PATH
     return QTest::qExec(&tests, argc, argv);
+}
+
+void MakeBlenderTests::testLinuxParsesAndCaps() {
+    // the version the unpacked tarball's folder name says, else Blender's own "5.2" folder inside; nothing else
+    QCOMPARE(MakeBlender::versionFromTarball("/home/me/blender-5.2.3-linux-x64"), QString("5.2.3"));
+    QCOMPARE(MakeBlender::versionFromTarball("/opt/blender-5.10-linux-x64"), QString("5.10"));
+    QCOMPARE(MakeBlender::versionFromTarball("/opt/Blender-4.1.0-linux-x64"), QString("4.1.0"));
+    QCOMPARE(MakeBlender::versionFromTarball("/home/me/Downloads/blender5.3.0-linux-x64"), QString("5.3.0"));
+    QVERIFY(MakeBlender::versionFromTarball("/nonexistent/folder").isEmpty());
+    QTemporaryDir dir;
+    QVERIFY(QDir(dir.path()).mkpath("blender/5.2"));
+    QVERIFY(QDir(dir.path()).mkpath("blender/4.2"));
+    QVERIFY(QDir(dir.path()).mkpath("blender/datafiles"));
+    QCOMPARE(MakeBlender::versionFromTarball(dir.filePath("blender")), QString("5.2"));
+    QVERIFY(MakeBlender::versionFromTarball(dir.path()).isEmpty());
+    QVERIFY(!MakeBlender::versionIsEnough(MakeBlender::versionFromTarball("/opt/blender-4.1.0-linux-x64")));
+    QVERIFY(MakeBlender::versionIsEnough(MakeBlender::versionFromTarball("/opt/blender-5.2.0-linux-x64")));
+    // the resident memory line of /proc/<pid>/status, in bytes
+    QCOMPARE(MakeBlender::vmRssBytes("Name:\tblender\nVmPeak:\t 1000 kB\nVmRSS:\t   12345 kB\nThreads:\t4\n"),
+             qint64(12345) * 1024);
+    QCOMPARE(MakeBlender::vmRssBytes("VmRSS:\t4194304 kB\n"), qint64(4194304) * 1024);
+    QCOMPARE(MakeBlender::vmRssBytes("Name:\tblender\n"), qint64(-1));
+    QCOMPARE(MakeBlender::vmRssBytes("VmRSS:\tnone\n"), qint64(-1));
+    QCOMPARE(MakeBlender::vmRssBytes(QByteArray()), qint64(-1));
+    // the work folder's size cap the watcher is given: above a capped model and its views, well below a disk
+    QVERIFY(MakeBlender::FOLDER_CAP_BYTES >= 256LL * 1024 * 1024);
+    QVERIFY(MakeBlender::FOLDER_CAP_BYTES <= 16LL * 1024 * 1024 * 1024);
+    QVERIFY(MakeBlender::FOLDER_CAP_BYTES > 4 * MakeBlender::MAX_GLB_BYTES);
+    QCOMPARE(MakeBlender::FOLDER_CAP_BYTES % (1024 * 1024), qint64(0));  // the watcher takes whole megabytes
+}
+
+void MakeBlenderTests::testLinuxWatcherRefusesOtherLines() {
+#ifndef Q_OS_LINUX
+    QSKIP("the watcher's Linux line");
+#else
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    // the Linux watcher takes only its own line: a work and a fixed folder, absolute, then "--" and an absolute
+    // program; the Mac line, a relative program, a missing folder or a bad --env name are refused before anything runs
+    QTemporaryDir dir;
+    const QString pid = dir.filePath("a.pid");
+    const QString work = dir.filePath("work");
+    const QString fixed = dir.filePath("fixed");
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(fixed));
+    const QString marker = dir.filePath("ran");
+    for (const QStringList& line : QList<QStringList> {
+             { "60", pid, "--", "/usr/bin/sandbox-exec", "-p", OPEN_BOX, "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--", "usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--", "/usr/bin/touch", marker },
+             { "60", pid, "--fixed", fixed, "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", "work", "--fixed", fixed, "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--env", "lower=1", "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--folder-cap", "0", "--", "/usr/bin/touch", marker },
+             { "0", pid, "--job", work, "--fixed", fixed, "--", "/usr/bin/touch", marker } }) {
+        const Watched watched = watch(line);
+        QVERIFY2(watched.exit == 125, qPrintable(line.join(' ') + " -> " + QString::number(watched.exit)));
+        QVERIFY2(watched.said.contains("usage"), watched.said.constData());
+        QVERIFY(!QFileInfo::exists(marker));
+    }
+    QVERIFY(!QFileInfo::exists(pid));
+#endif
 }

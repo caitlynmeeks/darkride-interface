@@ -43,6 +43,8 @@ private slots:
     void testSelfTestAnswers();
     void testBlenderIdentityRules();
     void testBlenderIsBlenderLive();
+    void testLinuxParsesAndCaps();
+    void testLinuxWatcherRefusesOtherLines();
 };
 
 #endif // hifi_MakeBlenderTests_h

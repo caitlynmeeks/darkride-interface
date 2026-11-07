@@ -9,7 +9,9 @@
 //  nothing of the app's), and it is killed at its time and memory limits. Its parent is darkride-make-watch, beside
 //  the app's program, which kills it when the app stops it or is gone. On Windows the box is an AppContainer with no
 //  capabilities inside a job object (MakeBox), the job its keeper, and the tools are offered only when the box's live
-//  self-test at Connect shows the installer's firewall rules hold (selfTest). On Linux it isn't available yet.
+//  self-test at Connect shows the installer's firewall rules hold (selfTest). On Linux the watcher is the box as well:
+//  its child takes its own session, the limits, Landlock (the no-/proc form) and seccomp with the exec gate before
+//  Blender starts, and the watcher also caps the work folder's size; Blender is the blender.org tarball's program.
 //
 //  What comes back is treated as untrusted, because the script runs in the same Python as our export and could change
 //  it: the .glb is size-capped and its structure checked (glTF 2.0 binary, everything inside it, no outside address),
@@ -70,6 +72,9 @@ public:
     static const qint64 MAX_GLB_BYTES;
     static const int TIME_LIMIT_MS;
     static const qint64 MEMORY_LIMIT_BYTES;
+    /// Linux: the work folder's size cap (the watcher's --folder-cap, and each file's RLIMIT_FSIZE in the box): Blender
+    /// may fill its work folder, never the disk.
+    static const qint64 FOLDER_CAP_BYTES;
     /// Blender's threads (its --threads): a make's CPU time can then be capped close to its time limit.
     static const int THREADS;
     /// The kernel's cap on Blender's CPU time, in seconds (RLIMIT_CPU, set in the child before exec, so Blender's
@@ -131,6 +136,11 @@ public:
     /// in Downloads is refused by this.
     static bool isBlendersOwnFolder(const QString& folder, const QString& version, const QStringList& forbidden,
                                     QString& why);
+    /// Linux: Blender's version from the unpacked tarball's folder ("blender-5.2.3-linux-x64" gives "5.2.3"), else from
+    /// the "5.2" folder Blender keeps its own files in beside the program; empty when neither says.
+    static QString versionFromTarball(const QString& folder);
+    /// Linux: the resident memory a /proc/<pid>/status text reports (its VmRSS line), in bytes; -1 when it has none.
+    static qint64 vmRssBytes(const QByteArray& status);
 
     void setBlender(const QString& app) { _blender = app; }
     /// The watcher program (defaultWatcher() unless set, for tests).
