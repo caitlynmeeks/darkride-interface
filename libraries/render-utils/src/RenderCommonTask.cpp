@@ -47,6 +47,34 @@ void EndGPURangeTimer::run(const render::RenderContextPointer& renderContext, co
     config->setGPUBatchRunTime(timer->getGPUAverage(), timer->getBatchAverage());
 }
 
+void WarmPipelines::run(const RenderContextPointer& renderContext) {
+    if (_done || !_shapePlumber) {
+        return;
+    }
+    const auto& pipelines = _shapePlumber->getFilteredPipelines();
+    if (_next >= pipelines.size()) {
+        _done = true;
+        qCDebug(renderutils) << "WarmPipelines: done," << _warmed << "programs warmed of" << pipelines.size() << "pipelines";
+        return;
+    }
+    gpu::doInBatch("WarmPipelines", renderContext->args->_context, [&](gpu::Batch& batch) {
+        // binding a pipeline compiles its program the first time (the backend's sync); nothing is drawn
+        for (int n = 0; n < _perFrame && _next < pipelines.size(); ++_next) {
+            const auto& pipeline = pipelines[_next].pipeline;
+            if (pipeline && pipeline->pipeline) {
+                batch.setPipeline(pipeline->pipeline);
+                ++n;
+                ++_warmed;
+            }
+        }
+    });
+    auto config = std::static_pointer_cast<Config>(renderContext->jobConfig);
+    if (config) {
+        config->warmed = _warmed;
+        config->left = (int)(pipelines.size() - _next);
+    }
+}
+
 DrawLayered3D::DrawLayered3D(bool opaque) :
     _shapePlumber(std::make_shared<ShapePlumber>()),
     _opaquePass(opaque) {

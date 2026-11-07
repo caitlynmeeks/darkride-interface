@@ -41,6 +41,44 @@ public:
 protected:
 };
 
+// Entry 29 step 2a: while the loading screen is up, the shape plumber's programs are compiled ahead of their first
+// draw, one a frame, on the thread that executes the frame (on a Mac every program compiles from source at its first
+// bind, 5-130 ms each, and a ride met them as content came into view). Off when the world is presented (the
+// interstitial mode's end turns it off); whatever was not reached compiles at first use as before.
+class WarmPipelinesConfig : public render::Job::Config {
+    Q_OBJECT
+    Q_PROPERTY(int perFrame MEMBER perFrame NOTIFY dirty)
+    Q_PROPERTY(int warmed READ getWarmed NOTIFY dirty)
+    Q_PROPERTY(int left READ getLeft NOTIFY dirty)
+public:
+    WarmPipelinesConfig() : render::Job::Config(true) {}   // enableable, on until the world is presented
+    int perFrame { 1 };   // programs compiled per frame
+    int getWarmed() const { return warmed; }
+    int getLeft() const { return left; }
+    int warmed { 0 };
+    int left { 0 };
+signals:
+    void dirty();
+};
+
+class WarmPipelines {
+public:
+    using Config = WarmPipelinesConfig;
+    using JobModel = render::Job::Model<WarmPipelines, Config>;
+
+    WarmPipelines(const render::ShapePlumberPointer& shapePlumber) : _shapePlumber(shapePlumber) {}
+
+    void configure(const Config& config) { _perFrame = config.perFrame; }
+    void run(const render::RenderContextPointer& renderContext);
+
+protected:
+    render::ShapePlumberPointer _shapePlumber;
+    int _perFrame { 1 };
+    size_t _next { 0 };       // the next filtered pipeline to warm
+    int _warmed { 0 };
+    bool _done { false };
+};
+
 class DrawLayered3DConfig : public render::Job::Config {
     Q_OBJECT
         Q_PROPERTY(int numDrawn READ getNumDrawn NOTIFY numDrawnChanged)
