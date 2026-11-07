@@ -51,7 +51,8 @@ public:
     };
     struct Judgement {
         Verdict verdict { Verdict::Unknown };
-        QString why;   // the rule for the log ("no --restricted", "a second channel entry", ...)
+        QString why;   // the rule for the log ("no --restricted", "a permission flag: --allowedTools", ...): a rule
+                       // and an option's name, never a value
     };
     /// The judgement of a line against Make's own: the MCP file and the settings file it wrote.
     static Judgement judge(const Line& line, const QString& mcpConfig, const QString& settingsFile);
