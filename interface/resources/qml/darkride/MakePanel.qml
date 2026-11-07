@@ -149,8 +149,7 @@ Rectangle {
                 Text {
                     Layout.fillWidth: true
                     text: root.notGotIt
-                        ? "Claude didn't get your message. On a Team or Enterprise plan an Owner turns on Channels "
-                          + "(Organization settings > Claude Code > Channels). Or use your API key, or type in Terminal."
+                        ? "Claude didn't get your message. Your Claude account may not allow chat here."
                         : root.plainClaude
                         ? "This Claude was started without the chat. Type in Terminal, or start it with Make's line again."
                         : "Update Claude Code: in Terminal, claude update"

@@ -37,13 +37,35 @@ Rectangle {
     readonly property bool atLimit: dock ? dock.state === "limit" : false
     readonly property bool working: dock ? dock.working : false
     readonly property bool terminalRoute: dock ? dock.route === "terminal" : false
-    // the Claude-plan route chats here too when the person chose "chat here" (the channel), not "in Terminal"
+    // the Claude-plan route chats here too when the person chose "in Darkride" (the channel), not "in Terminal"
     readonly property bool typesHere: !terminalRoute || (!!dock && dock.chat === true)
     readonly property bool canSend: connected && !working && (input.text.trim() !== "" || pictures.length > 0) &&
         (!terminalRoute || (!!dock && dock.channelFlag !== "off"))
 
+    // the "in Darkride" choice: the last message sent, until Claude takes it up; if Claude never gets it (the 30 s
+    // notice) it comes back into the empty box, to copy into Terminal instead of retyping (mary 19:27 11-07)
+    property string notYetTaken: ""
+
     implicitHeight: column.implicitHeight + 16
     color: BuildTheme.panel
+
+    Connections {
+        target: composer.dock
+        function onChannelChanged() {
+            if (!composer.dock || composer.notYetTaken === "") {
+                return;
+            }
+            if (composer.dock.notGotIt === true) {
+                if (input.text === "") {
+                    input.text = composer.notYetTaken;   // not the keyboard: they may be walking by now
+                    input.cursorPosition = input.length;
+                }
+                composer.notYetTaken = "";
+            } else if (composer.dock.sentWaiting !== true) {
+                composer.notYetTaken = "";   // taken up
+            }
+        }
+    }
 
     function prefill(text) {
         input.text = text;
@@ -55,7 +77,9 @@ Rectangle {
             return;
         }
         // the request's number, or 0 when MakeDock refused it: then the text and the pictures stay
-        if (dock.send(input.text.trim(), pictures) > 0) {
+        var text = input.text.trim();
+        if (dock.send(text, pictures) > 0) {
+            notYetTaken = terminalRoute && dock.chat === true ? text : "";
             input.text = "";
             pictures = [];
             pictureNote = "";
