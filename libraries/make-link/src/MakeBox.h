@@ -70,8 +70,9 @@ QString fileVersion(const QString& path);
 /// Whether a path is under Program Files (where the box may read already).
 bool underProgramFiles(const QString& path);
 
-/// The name Blender's Windows builds are signed with: the signer certificate's subject, read as its simple display
-/// name (CertGetNameStringW with CERT_NAME_SIMPLE_DISPLAY_TYPE, the common name) and matched whole, case-sensitively.
+/// The subject Blender's Windows builds are signed with, whole: "CN=…, O=…, L=…, S=…, C=…" as the signer
+/// certificate's attributes read one by one (CertGetNameStringW with CERT_NAME_ATTR_TYPE), matched whole and
+/// case-sensitively.
 extern const char* const BLENDER_SIGNER;
 /// Whether `exe` is Blender, before any folder is opened to the box and before any make: a file named blender.exe,
 /// its version resource's ProductName "Blender", and its Authenticode signature verifying (WinVerifyTrust, no UI, no

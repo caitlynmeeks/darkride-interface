@@ -308,8 +308,30 @@ QString productName(const std::wstring& file) {
     return QString();
 }
 
-// the file's Authenticode signature verified (no UI, no revocation check, nothing fetched) and its signer's subject
-// name, as its simple display name (the common name); false with `why` when it doesn't verify
+// the signer certificate's subject, attribute by attribute (CertGetNameStringW with CERT_NAME_ATTR_TYPE), written
+// as "CN=…, O=…, L=…, S=…, C=…", so one exact comparison covers the whole subject and not only its common name (a
+// bare name is one another organisation in another country could hold; security, 11-07)
+QString subjectOf(PCCERT_CONTEXT certificate, bool& ok) {
+    const struct {
+        const char* label;
+        const char* oid;
+    } attributes[] = { { "CN", szOID_COMMON_NAME }, { "O", szOID_ORGANIZATION_NAME }, { "L", szOID_LOCALITY_NAME },
+                       { "S", szOID_STATE_OR_PROVINCE_NAME }, { "C", szOID_COUNTRY_NAME } };
+    QStringList parts;
+    for (const auto& attribute : attributes) {
+        wchar_t value[256] {};
+        if (CertGetNameStringW(certificate, CERT_NAME_ATTR_TYPE, 0, const_cast<char*>(attribute.oid), value, 256) <= 1) {
+            ok = false;
+            return QString();
+        }
+        parts.append(QString::fromLatin1(attribute.label) + "=" + QString::fromWCharArray(value));
+    }
+    ok = true;
+    return parts.join(", ");
+}
+
+// the file's Authenticode signature verified (no UI, no revocation check, nothing fetched) and its signer's whole
+// subject as subjectOf() writes it; false with `why` when it doesn't verify
 bool signerOf(const std::wstring& file, QString& signer, QString& why) {
     WINTRUST_FILE_INFO fileInfo {};
     fileInfo.cbStruct = sizeof fileInfo;
@@ -331,11 +353,7 @@ bool signerOf(const std::wstring& file, QString& signer, QString& why) {
         CRYPT_PROVIDER_SGNR* chain = data ? WTHelperGetProvSignerFromChain(data, 0, FALSE, 0) : nullptr;
         CRYPT_PROVIDER_CERT* cert = chain ? WTHelperGetProvCertFromChain(chain, 0) : nullptr;
         if (cert && cert->pCert) {
-            wchar_t subject[512] {};
-            if (CertGetNameStringW(cert->pCert, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, nullptr, subject, 512) > 1) {
-                signer = QString::fromWCharArray(subject);
-                ok = true;
-            }
+            signer = subjectOf(cert->pCert, ok);
         }
         if (!ok) {
             why = "That program's signer couldn't be read.";
@@ -709,11 +727,10 @@ QString fileVersion(const QString& path) {
     return QString("%1.%2.%3").arg(major).arg(minor).arg(patch);
 }
 
-// the signer certificate's subject of Blender's Windows builds, its common name as CertGetNameStringW gives it with
-// CERT_NAME_SIMPLE_DISPLAY_TYPE, matched whole and case-sensitively (a near name never passes). Read from a real
-// Blender 5.2 blender.exe on the Windows lab laptop (11-07): the signature is valid and the subject is
-// "CN=Blender Foundation, O=Blender Foundation, L=Amsterdam, S=Noord-Holland, C=NL", so the name is exactly this.
-const char* const BLENDER_SIGNER = "Blender Foundation";
+// the signer certificate's whole subject of Blender's Windows builds, as subjectOf() writes it, matched whole and
+// case-sensitively (a near name, or the same name held elsewhere, never passes). Read from a real Blender 5.2
+// blender.exe on the Windows lab laptop (11-07): the signature is valid and this is its subject.
+const char* const BLENDER_SIGNER = "CN=Blender Foundation, O=Blender Foundation, L=Amsterdam, S=Noord-Holland, C=NL";
 
 bool isBlender(const QString& exe, QString& why) {
     const QFileInfo info(exe);
