@@ -56,6 +56,17 @@
 #                                    the test); CLIENT_MIC=1 keeps the microphone for a test that needs it.
 #                                    When the client has quit, the macOS helper services it left running are stopped
 #                                    (stop_client_helpers), whichever way it was launched.
+#                                    The window, checked twice (editor-ui's kit check, 11-07): before the start, the size
+#                                    the client was given (WindowGeometry in each Interface.json under XDG_CONFIG_HOME,
+#                                    which wall writes) must be 800 x 600 to 1100 x 800, or it refuses to start ("WINDOW
+#                                    REFUSED", status 1): under 800 x 600 the client throws the size away and opens on
+#                                    the whole main screen, behind the user's apps. After it quits, the client's own
+#                                    "main window at the start" line must say it opened where it was asked, or it ends
+#                                    "WINDOW FAIL" (status 4). The 1100 x 800 limit is for clients in the background: a
+#                                    run in front (CLIENT_FOREGROUND=1, with the lock --front) has its size as part of
+#                                    the test, and CLIENT_BIG=1 lifts it for a background one (on Caity's word only).
+#                                    Caity's own clients (label "Darkride - Caity - ...") aren't checked.
+#   window_asked                     the size check alone: prints the rects asked, or why not (status 1)
 #   stop_client_helpers <pid> <since>
 #                                    stops the VT decoder and encoder services and the Safari helper whose own logs
 #                                    name client <pid> since <since> ("YYYY-mm-dd HH:MM:SS"), and nothing else
@@ -210,6 +221,46 @@ client_exit_line() {
     esac
 }
 
+window_asked() {
+    [ -n "${XDG_CONFIG_HOME:-}" ] || { echo "no XDG_CONFIG_HOME: the client has no config of the test's own, so no window size"; return 1; }
+    # the upper limit is for background clients: CLIENT_BIG=1 (her word) or a run in front lifts it
+    _big=${CLIENT_BIG:-}; [ -z "${CLIENT_FOREGROUND:-}" ] || _big=1
+    python3 -I - "$XDG_CONFIG_HOME" "$_big" <<'EOF'
+import glob, json, re, sys
+xdg, big = sys.argv[1], sys.argv[2] == "1"
+files = sorted(glob.glob(glob.escape(xdg) + "/*/Interface.json"))
+if not files:
+    print("no Interface.json in", xdg, "(the client would open on the whole main screen)"); sys.exit(1)
+rects = []
+for f in files:
+    try:
+        geom = json.load(open(f)).get("WindowGeometry", "")
+    except Exception as e:
+        print("can't read", f, e); sys.exit(1)
+    m = re.fullmatch(r"@Rect\((-?\d+) (-?\d+) (\d+) (\d+)\)", geom if isinstance(geom, str) else "")
+    if not m:
+        print(f, "has no WindowGeometry \"@Rect(x y w h)\" (the client would open on the whole main screen)"); sys.exit(1)
+    x, y, w, h = map(int, m.groups())
+    if w < 800 or h < 600:
+        print("%s asks %d x %d: under 800 x 600, the client would open on the whole main screen" % (f, w, h)); sys.exit(1)
+    if not big and (w > 1100 or h > 800):
+        print("%s asks %d x %d: over 1100 x 800, too big for a client in the background (CLIENT_BIG=1 only on Caity's word)" % (f, w, h)); sys.exit(1)
+    rects.append("%d %d %d %d" % (x, y, w, h))
+print(", ".join(rects))
+EOF
+}
+
+# after the client has quit: did it open where it was asked? Its log says so (builds from b3180e2ea3 on)
+window_check_after() {
+    [ -n "$_asked" ] || return 0
+    _opened=$(grep -a -h -m1 "main window at the start" "$_log" 2>/dev/null | sed 's/.*main window at the start: //')
+    case "$_opened" in
+        *"where it was left"*) echo "client_start: window as asked ($_asked)" ;;
+        "") echo "client_start: window unchecked (no \"main window at the start\" line in $_log: a build before b3180e2ea3, or it never opened)" >&2 ;;
+        *) echo "client_start: WINDOW FAIL: asked $_asked, the client opened $_opened" >&2; _status=4 ;;
+    esac
+}
+
 client_start() {
     _log=$1; shift
     case "$BIN" in
@@ -227,6 +278,20 @@ client_start() {
         _app=$(cd "$_app" 2>/dev/null && pwd) || { echo "client_start: no app at $BIN" >&2; return 1; }
     fi
     case "$_log" in /*) ;; *) _log="$(pwd)/$_log" ;; esac
+    # the window it was given (see the header); not Caity's own clients
+    _caity=""; _prev=""
+    case "${DARKRIDE_CLIENT_LABEL:-}" in "Darkride - Caity - "*) _caity=1 ;; esac
+    for _a in "$@"; do
+        if [ "$_prev" = --clientLabel ]; then case "$_a" in "Darkride - Caity - "*) _caity=1 ;; esac; fi
+        _prev=$_a
+    done
+    _asked=""
+    if [ -z "$_caity" ]; then
+        _asked=$(window_asked) || {
+            echo "client_start: WINDOW REFUSED: $_asked. Not starting (800 x 600 to 1100 x 800 in the background; bigger in front, CLIENT_FOREGROUND=1, or with CLIENT_BIG=1 on Caity's word)" >&2
+            return 1
+        }
+    fi
     # --noAudioInput: the client opens no microphone, so a rebuilt (ad-hoc signed) build raises no macOS microphone
     # prompt in front of the test; CLIENT_MIC=1 for a test that needs the microphone. Older builds list the option as
     # unknown and go on
@@ -249,6 +314,7 @@ client_start() {
         wait $_cpid
         _status=$?
         [ "$(uname)" != Darwin ] || stop_client_helpers "$_cpid" "$_since"
+        window_check_after
         return $_status
     fi
     # -DarkrideTestRun <log> marks this client's command line (an AppKit default nothing reads), so its pid can be
@@ -332,6 +398,7 @@ client_start() {
             [ -n "${KEEP_KTX:-}" ] || find "$_wallhome" -type d -name ktx_cache -prune -exec rm -rf {} +
         fi
     fi
+    window_check_after
     return $_status
 }
 
