@@ -336,6 +336,14 @@ void MakeLinkTests::testInitializeAndList() {
                 .value("result").toObject().value("protocolVersion").toString().startsWith("20"));
     const QJsonArray tools = client.ask(3, "tools/list").value("result").toObject().value("tools").toArray();
     QCOMPARE(tools.size(), 2);  // only the tools with a handler, and only from the list
+    // a tool withdrawn (Make's Blender tools where Blender can't run sealed): not listed, and a call is refused
+    server.removeHandler("guide");
+    const QJsonArray left = client.ask(6, "tools/list").value("result").toObject().value("tools").toArray();
+    QCOMPARE(left.size(), 1);
+    QCOMPARE(left.first().toObject().value("name").toString(), QString("scene"));
+    const QJsonObject withdrawn = client.ask(7, "tools/call", QJsonObject { { "name", "guide" }, { "arguments", QJsonObject() } });
+    QVERIFY(resultIsError(withdrawn));
+    QCOMPARE(errorCode(withdrawn), MakeError::REFUSED);
     QCOMPARE(client.ask(4, "ping").value("result").toObject(), QJsonObject());
     QCOMPARE(client.ask(5, "resources/read").value("error").toObject().value("code").toInt(), -32601);
 }

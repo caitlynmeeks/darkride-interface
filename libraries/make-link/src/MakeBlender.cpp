@@ -205,6 +205,23 @@ QString MakeBlender::defaultWatcher() {
     return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(WATCHER);
 }
 
+bool MakeBlender::available(QString& why) const {
+#ifndef Q_OS_MAC
+    why = "Make's Blender runs only on macOS for now, where it can be kept in a sealed box";
+    return false;
+#else
+    if (!QFileInfo(QStringLiteral("/usr/bin/sandbox-exec")).isExecutable()) {
+        why = "this Mac can't seal Blender in its box";
+        return false;
+    }
+    if (!QFileInfo(_watch.isEmpty() ? defaultWatcher() : _watch).isExecutable()) {
+        why = "Make's Blender watcher is missing from the app";
+        return false;
+    }
+    return !findBlender(why, _blender).isEmpty();
+#endif
+}
+
 QString MakeBlender::findBlender(QString& why, const QString& app) {
 #ifndef Q_OS_MAC
     Q_UNUSED(app);

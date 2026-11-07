@@ -394,6 +394,41 @@ bool MakeLink::writeFolder(QString& error) {
     return true;
 }
 
+bool MakeLink::blenderOffered() const {
+    if (_state == State::Off || _state == State::Failed) {
+        QString why;
+        return _blender->available(why);
+    }
+    return _blenderOffered;
+}
+
+QString MakeLink::blenderWhy() const {
+    if (_state == State::Off || _state == State::Failed) {
+        QString why;
+        return _blender->available(why) ? QString() : why;
+    }
+    return _blenderWhy;
+}
+
+void MakeLink::offerBlender() {
+    _blenderWhy.clear();
+    _blenderOffered = _blender->available(_blenderWhy);
+    if (_blenderOffered) {
+        _blenderWhy.clear();
+        _server.setHandler("make_with_blender", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
+            makeWithBlender(inputs, reply);
+        });
+        // a model comes only from make_with_blender, so without Blender there's nothing to upload
+        _server.setHandler("upload_model", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
+            uploadModel(inputs, reply);
+        });
+    } else {
+        _server.removeHandler("make_with_blender");
+        _server.removeHandler("upload_model");
+    }
+    qCInfo(makelog) << "Make's Blender tools" << (_blenderOffered ? QString("offered") : "not offered: " + _blenderWhy);
+}
+
 bool MakeLink::connectLink() {
     if (_state == State::Listening || _state == State::Connected) {
         return true;
@@ -405,6 +440,7 @@ bool MakeLink::connectLink() {
             setState(State::Failed, error);
             return false;
         }
+        offerBlender();
         newRequest();
         setState(_server.isConnected() ? State::Connected : State::Listening);
         return true;
@@ -413,6 +449,7 @@ bool MakeLink::connectLink() {
         setState(State::Failed, error);
         return false;
     }
+    offerBlender();
     startToolsEngine();
     if (!_serverLogOn) {
         // the log tool's lines, only while Make is on: the world's client scripts here, and its server scripts (the
@@ -697,12 +734,7 @@ void MakeLink::setHandlers() {
     _server.setHandler("set_script", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
         saveScript(inputs, reply);
     });
-    _server.setHandler("make_with_blender", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
-        makeWithBlender(inputs, reply);
-    });
-    _server.setHandler("upload_model", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
-        uploadModel(inputs, reply);
-    });
+    // make_with_blender and upload_model: offered by offerBlender() at each Connect, only when Blender can run sealed
     _server.setHandler("picture", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
         picture(inputs, reply);
     });

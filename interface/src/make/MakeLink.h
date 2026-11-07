@@ -90,6 +90,12 @@ public:
     QString stateName() const;
     /// Why it's Failed, or what's missing (Blender), or the Limit line, in plain words.
     QString reason() const { return _reason; }
+    /// Whether Make offers its Blender tools (make_with_blender, upload_model): Blender found AND its sealed box works
+    /// here. Decided at each Connect, and the same answer while connected, so the dock's words and the tool list
+    /// agree; while off, the answer Connect would give now. False: the tools aren't offered and a call is refused.
+    bool blenderOffered() const;
+    /// Why not, in plain words (empty when offered).
+    QString blenderWhy() const;
     /// The key route's cap for one Connect, in dollars (Claude Code's --max-budget-usd holds for its whole run).
     double limitUsd() const { return claudeSettings().maxBudgetUsd; }
 
@@ -157,6 +163,8 @@ private:
     void startToolsEngine();
     void stopToolsEngine();
     void setHandlers();
+    /// Decides blenderOffered() for this Connect and offers or withdraws the Blender tools by it.
+    void offerBlender();
     void toEngine(const QString& tool);
     void gate(const QString& tool, const QJsonObject& inputs, const std::function<void(bool, const QString&)>& proceed);
     QString ask(const QString& what, const QString& exactly, const std::function<void(bool)>& decided);
@@ -182,6 +190,8 @@ private:
 
     State _state { State::Off };
     QString _reason;
+    bool _blenderOffered { false };
+    QString _blenderWhy;
     QString _folder;
     QString _model;
 

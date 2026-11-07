@@ -55,6 +55,12 @@ int playTheApp(int argc, char** argv) {
     blender.setTimeLimit(10 * 60 * 1000);
     blender.setCpuLimit(10 * 60);
     blender.make("while True:\n    pass\n", "object", {}, [](const MakeBlender::Made&) { QCoreApplication::exit(3); });
+    // Blender's id is the watcher's to write: wait for it
+    QElapsedTimer waited;
+    waited.start();
+    while (blender.processId() == 0 && waited.elapsed() < 10000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
     std::printf("BLENDER_PID %lld WATCHER_PID %lld\n", static_cast<long long>(blender.processId()),
                 static_cast<long long>(blender.watcherId()));
     std::fflush(stdout);
@@ -134,6 +140,17 @@ bool haveBlender(MakeBlender& blender) {
     blender.setBlender(app);
     blender.setWatcher(WATCH_PROGRAM);
     return true;
+}
+
+// the program a process runs now (its path), empty when there's none
+QString programOf(qint64 pid) {
+#ifdef Q_OS_MAC
+    char path[PROC_PIDPATHINFO_MAXSIZE];
+    if (proc_pidpath(static_cast<pid_t>(pid), path, sizeof(path)) > 0) {
+        return QString::fromUtf8(path);
+    }
+#endif
+    return QString();
 }
 
 qint64 parentOf(qint64 pid) {
@@ -282,6 +299,20 @@ void MakeBlenderTests::testFindBlender() {
     const QStringList version = MakeBlender::blenderVersion(app).split('.');
     QVERIFY(version.value(0).toInt() > 5 || (version.value(0).toInt() == 5 && version.value(1).toInt() >= 2));
     QVERIFY(MakeBlender::findBlender(why, "/nonexistent/Blender.app").isEmpty());
+
+    // available: only sealed. Without its watcher, or with a Blender that isn't there, it says no and why
+    QTemporaryDir dir;
+    MakeBlender blender(dir.path());
+    blender.setWatcher(dir.filePath("no-watcher"));
+    QVERIFY(!blender.available(why));
+    QVERIFY(why.contains("watcher"));
+    if (!WATCH_PROGRAM.isEmpty()) {
+        blender.setWatcher(WATCH_PROGRAM);
+        QVERIFY2(blender.available(why), qPrintable(why));
+        blender.setBlender("/nonexistent/Blender.app");
+        QVERIFY(!blender.available(why));
+        QVERIFY(!why.isEmpty());
+    }
 }
 
 void MakeBlenderTests::testMakeAModel() {
@@ -493,7 +524,7 @@ void MakeBlenderTests::testWatcherPassesTheExitOn() {
     // Blender's exit code comes back; its standard input is /dev/null; it has only 0, 1 and 2 of this side's files
     Watched watched = watch(boxLine(dir.filePath("a.pid"), { "/bin/sh", "-c",
         "read line; echo READ=$?; for fd in 3 4 5 6 7 8 9 10 11 12; do if [ -e /dev/fd/$fd ]; then echo OPEN=$fd; fi; "
-        "done; exit 7" }), [](QProcess& process) { process.write("not for the child\n"); });
+        "done; exit 7" }), [](QProcess& process) { process.write("not for the child, and no line"); });
     QCOMPARE(watched.exit, 7);
     QVERIFY2(watched.said.contains("READ=1"), watched.said.constData());
     // the shell's own [ -e ] test may open one; nothing of ours may be there
@@ -611,6 +642,11 @@ void MakeBlenderTests::testWatcherIsBlendersParent() {
     }
     QVERIFY(pid > 1);
     QVERIFY(pid != blender.watcherId());
+    // once it is Blender (sandbox-exec becomes it in the same process), still the watcher's child
+    while (!programOf(pid).endsWith("/Contents/MacOS/Blender") && timer.elapsed() < 15000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    QVERIFY2(programOf(pid).endsWith("/Contents/MacOS/Blender"), qPrintable(programOf(pid)));
     QCOMPARE(parentOf(pid), blender.watcherId());
     QCOMPARE(parentOf(blender.watcherId()), static_cast<qint64>(getpid()));
     const QStringList jobs = QDir(dir.filePath("jobs")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);

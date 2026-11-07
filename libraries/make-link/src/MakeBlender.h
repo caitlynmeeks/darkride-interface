@@ -86,6 +86,10 @@ public:
     /// Blender's parent, darkride-make-watch, beside the app's program.
     static QString defaultWatcher();
 
+    /// Whether a make can run here, sealed: macOS with its sandbox and the watcher beside the app, and a Blender found
+    /// (the person's choice, else the usual places). False with a plain `why` otherwise: Blender never runs unsealed.
+    bool available(QString& why) const;
+
     void setBlender(const QString& app) { _blender = app; }
     /// The watcher program (defaultWatcher() unless set, for tests).
     void setWatcher(const QString& program) { _watch = program; }

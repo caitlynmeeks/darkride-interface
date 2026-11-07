@@ -77,6 +77,8 @@ public:
     const MakeToolList& toolList() const { return _tools; }
     /// The tool `name` (from the list) runs `handler`; until it has one it isn't offered.
     void setHandler(const QString& name, Handler handler);
+    /// `name` isn't offered any more: not in tools/list, and a call of it is refused as no such tool.
+    void removeHandler(const QString& name) { _handlers.remove(name); }
     void setGate(Gate gate) { _gate = std::move(gate); }
     /// What Claude Code is told about the server when it connects (MCP's instructions): the app's own words only,
     /// never anything from a world.
