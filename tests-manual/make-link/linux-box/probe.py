@@ -310,10 +310,12 @@ if mode == "control":
     engine = eevee()
     renders.append(render(engine, 64, 0, ["front"]) if engine else {"render": "EEVEE", "pass": False, "detail": "no engine"})
     write_results()
-    check("a new user namespace (unshare)", user_namespace)  # last: unboxed, it moves this process into one
+    # Blender has threads, so the kernel refuses this with EINVAL even unboxed (run 1, 22.04): no control is possible
+    # here; the box's EPERM is the filter's. make-box-test records what user namespaces do on the machine itself.
+    check("a new user namespace (unshare)", user_namespace, control=False)
     write_results()
     raise SystemExit(0)
-check("a new user namespace (unshare)", user_namespace)
+check("a new user namespace (unshare)", user_namespace, control=False)
 
 # probe: the verdicts against the control, then the renders, then the exec checks
 try:

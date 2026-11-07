@@ -32,7 +32,9 @@
 //      views with EEVEE and Cycles, then the exec gate's two checks);
 //    - the CPU cap: a looping Blender under a 5 s cap must end by itself;
 //    - kill the parent: a parent copy of this program starts a boxed Blender that loops; this program kills the parent
-//      (SIGKILL); Blender must end with it (its own pid and start time, never a name).
+//      (SIGKILL); Blender must end with it (its own pid and start time, never a name);
+//    - information only: what user namespaces do on this machine, unboxed (release, 11-07), from a single-threaded
+//      child of this program (the kernel refuses them to a threaded process such as Blender).
 //  Writes <test folder>/results.json and summary.txt, prints the summary, and deletes the job folder and everything
 //  the control wrote. Exit 0 only when the whole summary passes.
 //    g++ -std=c++17 -O2 -Wall -Wextra -pthread -o make-box-test make-box-test.cpp
@@ -78,6 +80,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -1114,6 +1117,52 @@ std::string cpuCase(const Paths& p, Box box, int abi, bool keepLogs, bool& passe
     return out.str();
 }
 
+// what user namespaces do on this machine, unboxed (release, 11-07: Ubuntu 24.04 restricts them; the box uses none).
+// Information only. A single-threaded child (the kernel refuses a threaded process, as Blender is) makes a user
+// namespace, maps its own user, then tries a mount namespace inside it (which needs the namespace's own capabilities);
+// it exits with the step reached: 0 all three, 10+errno the user namespace refused, 20 the map refused, 30+errno the
+// mount namespace refused
+std::string userNamespaces() {
+    char uidMap[64];
+    char gidMap[64];
+    std::snprintf(uidMap, sizeof uidMap, "%u %u 1\n", static_cast<unsigned>(getuid()), static_cast<unsigned>(getuid()));
+    std::snprintf(gidMap, sizeof gidMap, "%u %u 1\n", static_cast<unsigned>(getgid()), static_cast<unsigned>(getgid()));
+    const pid_t child = fork();
+    if (child < 0) {
+        return "\"fork failed\"";
+    }
+    if (child == 0) {  // system calls only from here
+        if (unshare(CLONE_NEWUSER) != 0) {
+            _exit(10 + (errno < 10 ? errno : 9));
+        }
+        auto put = [](const char* path, const char* text) {
+            const int fd = open(path, O_WRONLY | O_CLOEXEC);
+            const ssize_t length = static_cast<ssize_t>(std::strlen(text));
+            const bool written = fd >= 0 && write(fd, text, std::strlen(text)) == length;
+            if (fd >= 0) {
+                close(fd);
+            }
+            return written;
+        };
+        if (!put("/proc/self/setgroups", "deny") || !put("/proc/self/uid_map", uidMap) || !put("/proc/self/gid_map", gidMap)) {
+            _exit(20);
+        }
+        if (unshare(CLONE_NEWNS) != 0) {
+            _exit(30 + (errno < 10 ? errno : 9));
+        }
+        _exit(0);
+    }
+    const Ended ended = waitFor(child, 5000);
+    const int code = ended.byItself && WIFEXITED(ended.status) ? WEXITSTATUS(ended.status) : -1;
+    const std::string what = code == 0    ? "made, mapped, and a mount namespace inside it"
+                             : code >= 30 ? "made and mapped; a mount namespace inside it refused (errno " +
+                                                std::to_string(code - 30) + ")"
+                             : code == 20 ? "made; mapping its own user refused"
+                             : code >= 10 ? "refused (errno " + std::to_string(code - 10) + ")"
+                                          : "unknown (" + describe(ended) + ")";
+    return jsonString(what);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1151,6 +1200,8 @@ int main(int argc, char** argv) {
     std::string lsm = firstLine("/sys/kernel/security/lsm");
     std::cout << "kernel " << system.release << ", Landlock ABI " << abi << ", LSMs " << (lsm.empty() ? "unknown" : lsm)
               << "\n";
+    const std::string userNs = userNamespaces();  // unboxed, information only (the box uses none)
+    std::cout << "user namespaces here (unboxed): " << userNs << "\n";
 
     Targets targets;
     if (!openTargets(targets, p, error)) {
@@ -1252,6 +1303,7 @@ int main(int argc, char** argv) {
     // the whole summary: the probe's lines, then the cases only this program can see
     std::vector<std::string> lines;
     auto line = [&](bool pass, const std::string& text) { lines.push_back(std::string(pass ? "PASS  " : "FAIL  ") + text); };
+    lines.push_back("INFO  user namespaces on this machine, unboxed (the box uses none): " + userNs);
     if (!chosen) {
         lines.push_back("FAIL  no box form rendered: Blender would be withdrawn on this machine");
     } else {
@@ -1261,7 +1313,11 @@ int main(int argc, char** argv) {
         while (std::getline(probeLines, probeLine)) {
             if (probeLine.rfind("PROBE:", 0) == 0) {
                 probeSummary = true;
-                line(probeLine == "PROBE: PASS", "the probe (" + probeLine + ")");
+                if (probeLine.rfind("PROBE: INCOMPLETE", 0) == 0) {
+                    lines.push_back("INFO  the probe (" + probeLine + ")");  // its UNKNOWN lines are above, counted
+                } else {
+                    line(probeLine == "PROBE: PASS", "the probe (" + probeLine + ")");
+                }
             } else if (!probeLine.empty()) {
                 lines.push_back(probeLine);
             }
@@ -1303,7 +1359,7 @@ int main(int argc, char** argv) {
     out << "{\"kernel\": " << jsonString(system.release) << ", \"landlock_abi\": " << abi
         << ", \"lsm\": " << jsonString(lsm.empty() ? "unknown" : lsm) << ", \"cores\": " << std::thread::hardware_concurrency()
         << ", \"session_bus\": " << (targets.sessionBus.empty() ? "false" : "true")
-        << ", \"runtime_folder\": " << (targets.runtime.empty() ? "false" : "true")
+        << ", \"runtime_folder\": " << (targets.runtime.empty() ? "false" : "true") << ", \"user_namespaces\": " << userNs
         << ", \"control\": {" << runJson(control) << ", \"results\": " << controlResults << "}"
         << ", \"counts_after_control\": " << countsAfterControl << ", \"starts\": [" << starts.str() << "]"
         << ", \"box\": " << jsonString(chosen ? chosen->name : "none rendered")
