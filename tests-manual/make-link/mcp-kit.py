@@ -118,6 +118,9 @@ check("click", not clicked["error"] and clicked["value"]["clicked"])
 time.sleep(1)
 log = tool("log")
 check("log has the click", not log["error"] and any("MAKE KIT CLICKED" in line for line in log["value"]["client"]), log["text"][:300])
+# the person's own scripts stay out of the log (the kit client's script prints "MAKE KIT RUNNING" lines by then)
+check("log leaves out the person's own scripts", not log["error"] and not any("MAKE KIT RUNNING" in line or "MAKE KIT CLIENT" in line
+      for line in log["value"]["client"]))
 
 edited = tool("edit", {"id": box_id, "properties": {"rotationDegrees": {"x": 0, "y": 45, "z": 0}}})
 check("edit", not edited["error"])
@@ -151,6 +154,8 @@ undone = tool("undo", {"steps": 50})
 check("undo", not undone["error"] and len(undone["value"]["undone"]) >= 3, undone["text"][:300])
 gone = tool("scene", {"radius": 30, "name": "Make kit"})
 check("undo took them all back", not gone["error"] and len(gone["value"]["things"]) == 0, gone["text"][:300])
+# the kit client's script quits when it sees this (a throwaway world)
+tool("add", {"properties": {"type": "Box", "name": "Make kit done", "dimensions": {"x": 0.1, "y": 0.1, "z": 0.1}}})
 
 print("MCP KIT", "PASS" if failures == 0 else "FAIL %d" % failures)
 helper.stdin.close()
