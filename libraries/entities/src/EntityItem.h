@@ -170,6 +170,9 @@ public:
                                                  bool destinationNodeCanGetAndSetPrivateUserData = false) const;
     // A property's name as scripts know it ("userData"), for log lines
     static QString propertyName(EntityPropertyList property);
+    // What a live entity's stream header can take beyond a stand-in's: its two time deltas (ByteCountCoded) can each
+    // grow by up to 9 bytes between the edit and the stream, so a stand-in is measured in a room this much smaller.
+    static constexpr int STREAM_HEADER_GROWTH = 20;
 
     virtual void appendSubclassData(OctreePacketData* packetData, EncodeBitstreamParams& params,
                                     EntityTreeElementExtraEncodeDataPointer entityTreeElementExtraEncodeData,

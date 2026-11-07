@@ -11,6 +11,8 @@
 
 #include "EntityScriptingInterface.h"
 
+#include "EntitySizeCheck.h"
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/transform.hpp>
 
@@ -471,6 +473,15 @@ QUuid EntityScriptingInterface::addEntityInternal(const EntityItemProperties& pr
     propertiesWithSimID.setDimensionsInitialized(properties.dimensionsChanged());
     synchronizeEditedGrabProperties(propertiesWithSimID, QString());
 
+    // a value too big for the world: refused before the entity is made, here as on the entity server
+    if (entityHostType == entity::HostType::DOMAIN) {
+        EntitySizeProblem problem = EntitySizeCheck::findProblem(propertiesWithSimID.getType(), propertiesWithSimID);
+        if (!problem.isEmpty()) {
+            EntitySizeCheck::reportRefusal(problem, QUuid(), true);
+            return QUuid();
+        }
+    }
+
     EntityItemID id;
     // If we have a local entity tree set, then also update it.
     bool success = addLocalEntityCopy(propertiesWithSimID, id);
@@ -871,6 +882,16 @@ QUuid EntityScriptingInterface::editEntity(const QUuid& id, const EntityItemProp
     properties = convertPropertiesFromScriptSemantics(properties, properties.getScalesWithParent());
     synchronizeEditedGrabProperties(properties, previousUserdata);
     properties.setLastEditedBy(sessionID);
+
+    // a value too big for the world: the whole edit is refused before any of it is applied, here as on the entity
+    // server, so the sender's own copy never shows what no one else will
+    if (entity && entity->getEntityHostType() == entity::HostType::DOMAIN) {
+        EntitySizeProblem problem = EntitySizeCheck::findProblem(entity->getType(), properties);
+        if (!problem.isEmpty()) {
+            EntitySizeCheck::reportRefusal(problem, entityID, false);
+            return QUuid();
+        }
+    }
 
     // done reading and modifying properties --> start write
     bool updatedEntity = false;
