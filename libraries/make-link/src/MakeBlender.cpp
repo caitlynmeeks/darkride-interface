@@ -229,7 +229,7 @@ bool MakeBlender::available(QString& why) const {
     return false;
 #else
     if (!QFileInfo(QStringLiteral("/usr/bin/sandbox-exec")).isExecutable()) {
-        why = "this Mac can't seal Blender in its box";
+        why = "Make can't close Blender off from the internet and your files on this Mac";
         return false;
     }
     if (!QFileInfo(_watch.isEmpty() ? defaultWatcher() : _watch).isExecutable()) {
