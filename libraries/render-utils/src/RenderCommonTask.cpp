@@ -127,9 +127,12 @@ void DrawLayered3D::run(const RenderContextPointer& renderContext, const Inputs&
 
     graphics::HazePointer haze;
     const auto& hazeStage = renderContext->args->_scene->getStage<HazeStage>();
-    if (hazeStage && hazeFrame->_hazes.size() > 0) {
-        // We use _hazes.back() here because the last haze object will always have haze disabled.
-        haze = hazeStage->getHaze(hazeFrame->_hazes.back());
+    if (hazeStage) {
+        // The layered pass wants the engine's default haze, which has haze disabled: read it by the index the stage
+        // recorded for it (null until it exists, then no haze). Until 2026-11-07 this took the frame's last pushed haze
+        // as "always the disabled default", which held only while SetupZones pushed index 0 last and index 0 was the
+        // default's; a zone drawn before the default existed held index 0 and its haze was taken for the whole session.
+        haze = hazeStage->getHaze(hazeStage->getDefaultHaze());
     }
 
     // Clear the framebuffer without stereo
