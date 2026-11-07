@@ -44,89 +44,92 @@ int vectorSize(bool changed, const QVector<T>& values) {
     return changed ? (int)values.size() * (int)sizeof(T) : -1;
 }
 
-#define TEXT_VALUE(PROP, CHANGED, VALUE) \
-    { PROP, [](const EntityItemProperties& p, bool exact) { return textSize(p.CHANGED, p.VALUE, exact); } }
-#define VECTOR_VALUE(PROP, CHANGED, VALUE) \
-    { PROP, [](const EntityItemProperties& p, bool) { return vectorSize(p.CHANGED, p.VALUE); } }
+#define TEXT_VALUE(PROP, NAME, CHANGED, VALUE) \
+    { PROP, NAME, [](const EntityItemProperties& p, bool exact) { return textSize(p.CHANGED, p.VALUE, exact); } }
+#define VECTOR_VALUE(PROP, NAME, CHANGED, VALUE) \
+    { PROP, NAME, [](const EntityItemProperties& p, bool) { return vectorSize(p.CHANGED, p.VALUE); } }
 
+// `property` alone doesn't name a value: properties of different entity types share numbers (a Model's modelURL and a
+// Text's text), so each value carries its own name as scripts know it.
 struct LongValue {
     EntityPropertyList property;
+    const char* name;
     ValueSize size;
 };
 
 // Every value whose size the sender chooses: text, bytes and lists. Fixed-size values (numbers, vectors, colors) are
 // never too big.
 const LongValue LONG_VALUES[] = {
-    TEXT_VALUE(PROP_NAME, nameChanged(), getName()),
-    TEXT_VALUE(PROP_USER_DATA, userDataChanged(), getUserData()),
-    TEXT_VALUE(PROP_PRIVATE_USER_DATA, privateUserDataChanged(), getPrivateUserData()),
-    TEXT_VALUE(PROP_HREF, hrefChanged(), getHref()),
-    TEXT_VALUE(PROP_DESCRIPTION, descriptionChanged(), getDescription()),
-    TEXT_VALUE(PROP_COLLISION_SOUND_URL, collisionSoundURLChanged(), getCollisionSoundURL()),
-    { PROP_ACTION_DATA, [](const EntityItemProperties& p, bool) {
+    TEXT_VALUE(PROP_NAME, "name", nameChanged(), getName()),
+    TEXT_VALUE(PROP_USER_DATA, "userData", userDataChanged(), getUserData()),
+    TEXT_VALUE(PROP_PRIVATE_USER_DATA, "privateUserData", privateUserDataChanged(), getPrivateUserData()),
+    TEXT_VALUE(PROP_HREF, "href", hrefChanged(), getHref()),
+    TEXT_VALUE(PROP_DESCRIPTION, "description", descriptionChanged(), getDescription()),
+    TEXT_VALUE(PROP_COLLISION_SOUND_URL, "collisionSoundURL", collisionSoundURLChanged(), getCollisionSoundURL()),
+    { PROP_ACTION_DATA, "actionData", [](const EntityItemProperties& p, bool) {
         return p.actionDataChanged() ? (int)p.getActionData().size() : -1; } },
-    TEXT_VALUE(PROP_SCRIPT, scriptChanged(), getScript()),
-    TEXT_VALUE(PROP_SERVER_SCRIPTS, serverScriptsChanged(), getServerScripts()),
-    TEXT_VALUE(PROP_ITEM_NAME, itemNameChanged(), getItemName()),
-    TEXT_VALUE(PROP_ITEM_DESCRIPTION, itemDescriptionChanged(), getItemDescription()),
-    TEXT_VALUE(PROP_ITEM_CATEGORIES, itemCategoriesChanged(), getItemCategories()),
-    TEXT_VALUE(PROP_ITEM_ARTIST, itemArtistChanged(), getItemArtist()),
-    TEXT_VALUE(PROP_ITEM_LICENSE, itemLicenseChanged(), getItemLicense()),
-    TEXT_VALUE(PROP_MARKETPLACE_ID, marketplaceIDChanged(), getMarketplaceID()),
-    TEXT_VALUE(PROP_CERTIFICATE_ID, certificateIDChanged(), getCertificateID()),
-    TEXT_VALUE(PROP_CERTIFICATE_TYPE, certificateTypeChanged(), getCertificateType()),
-    TEXT_VALUE(PROP_COMPOUND_SHAPE_URL, compoundShapeURLChanged(), getCompoundShapeURL()),
-    TEXT_VALUE(PROP_TEXTURES, texturesChanged(), getTextures()),
-    TEXT_VALUE(PROP_MODEL_URL, modelURLChanged(), getModelURL()),
-    TEXT_VALUE(PROP_BLENDSHAPE_COEFFICIENTS, blendshapeCoefficientsChanged(), getBlendshapeCoefficients()),
-    TEXT_VALUE(PROP_TEXT, textChanged(), getText()),
-    TEXT_VALUE(PROP_FONT, fontChanged(), getFont()),
-    TEXT_VALUE(PROP_FILTER_URL, filterURLChanged(), getFilterURL()),
-    TEXT_VALUE(PROP_SOURCE_URL, sourceUrlChanged(), getSourceUrl()),
-    TEXT_VALUE(PROP_SCRIPT_URL, scriptURLChanged(), getScriptURL()),
-    TEXT_VALUE(PROP_TRACK_PROFILE, trackProfileChanged(), getTrackProfile()),
-    TEXT_VALUE(PROP_SHAPE, shapeChanged(), getShape()),
-    TEXT_VALUE(PROP_MATERIAL_URL, materialURLChanged(), getMaterialURL()),
-    TEXT_VALUE(PROP_PARENT_MATERIAL_NAME, parentMaterialNameChanged(), getParentMaterialName()),
-    TEXT_VALUE(PROP_MATERIAL_DATA, materialDataChanged(), getMaterialData()),
-    TEXT_VALUE(PROP_IMAGE_URL, imageURLChanged(), getImageURL()),
-    TEXT_VALUE(PROP_TERRAIN_URL, terrainURLChanged(), getTerrainURL()),
-    TEXT_VALUE(PROP_TERRAIN_LAYERS, terrainLayersChanged(), getTerrainLayers()),
-    TEXT_VALUE(PROP_ANIMATION_URL, getAnimation().urlChanged(), getAnimation().getURL()),
-    TEXT_VALUE(PROP_SKYBOX_URL, getSkybox().urlChanged(), getSkybox().getURL()),
-    TEXT_VALUE(PROP_AMBIENT_LIGHT_URL, getAmbientLight().ambientURLChanged(), getAmbientLight().getAmbientURL()),
-    TEXT_VALUE(PROP_GRAB_EQUIPPABLE_INDICATOR_URL, getGrab().equippableIndicatorURLChanged(),
-               getGrab().getEquippableIndicatorURL()),
-    TEXT_VALUE(PROP_VEHICLE_TYPE, getVehicle().typeChanged(), getVehicle().getType()),
-    TEXT_VALUE(PROP_VEHICLE_WHEELS, getVehicle().wheelsChanged(), getVehicle().getWheels()),
-    TEXT_VALUE(PROP_VEHICLE_SEATS, getVehicle().seatsChanged(), getVehicle().getSeats()),
-    TEXT_VALUE(PROP_VEHICLE_GEAR_RATIOS, getVehicle().gearRatiosChanged(), getVehicle().getGearRatios()),
-    TEXT_VALUE(PROP_VEHICLE_DRIVE_TYPE, getVehicle().driveTypeChanged(), getVehicle().getDriveType()),
-    TEXT_VALUE(PROP_VEHICLE_WHEEL, getVehicle().wheelChanged(), getVehicle().getWheel()),
-    TEXT_VALUE(PROP_VEHICLE_AXLE, getVehicle().axleChanged(), getVehicle().getAxle()),
-    VECTOR_VALUE(PROP_JOINT_ROTATIONS_SET, jointRotationsSetChanged(), getJointRotationsSet()),
-    VECTOR_VALUE(PROP_JOINT_ROTATIONS, jointRotationsChanged(), getJointRotations()),
-    VECTOR_VALUE(PROP_JOINT_TRANSLATIONS_SET, jointTranslationsSetChanged(), getJointTranslationsSet()),
-    VECTOR_VALUE(PROP_JOINT_TRANSLATIONS, jointTranslationsChanged(), getJointTranslations()),
-    VECTOR_VALUE(PROP_TRACK_POINTS, trackPointsChanged(), getTrackPoints()),
-    VECTOR_VALUE(PROP_TRACK_BANK, trackBankChanged(), getTrackBank()),
-    VECTOR_VALUE(PROP_TRACK_DWELL, trackDwellChanged(), getTrackDwell()),
-    VECTOR_VALUE(PROP_LINE_POINTS, linePointsChanged(), getLinePoints()),
-    VECTOR_VALUE(PROP_STROKE_WIDTHS, strokeWidthsChanged(), getStrokeWidths()),
-    VECTOR_VALUE(PROP_STROKE_NORMALS, normalsChanged(), getNormals()),
-    VECTOR_VALUE(PROP_STROKE_COLORS, strokeColorsChanged(), getStrokeColors()),
+    TEXT_VALUE(PROP_SCRIPT, "script", scriptChanged(), getScript()),
+    TEXT_VALUE(PROP_SERVER_SCRIPTS, "serverScripts", serverScriptsChanged(), getServerScripts()),
+    TEXT_VALUE(PROP_ITEM_NAME, "itemName", itemNameChanged(), getItemName()),
+    TEXT_VALUE(PROP_ITEM_DESCRIPTION, "itemDescription", itemDescriptionChanged(), getItemDescription()),
+    TEXT_VALUE(PROP_ITEM_CATEGORIES, "itemCategories", itemCategoriesChanged(), getItemCategories()),
+    TEXT_VALUE(PROP_ITEM_ARTIST, "itemArtist", itemArtistChanged(), getItemArtist()),
+    TEXT_VALUE(PROP_ITEM_LICENSE, "itemLicense", itemLicenseChanged(), getItemLicense()),
+    TEXT_VALUE(PROP_MARKETPLACE_ID, "marketplaceID", marketplaceIDChanged(), getMarketplaceID()),
+    TEXT_VALUE(PROP_CERTIFICATE_ID, "certificateID", certificateIDChanged(), getCertificateID()),
+    TEXT_VALUE(PROP_CERTIFICATE_TYPE, "certificateType", certificateTypeChanged(), getCertificateType()),
+    TEXT_VALUE(PROP_COMPOUND_SHAPE_URL, "compoundShapeURL", compoundShapeURLChanged(), getCompoundShapeURL()),
+    TEXT_VALUE(PROP_TEXTURES, "textures", texturesChanged(), getTextures()),
+    TEXT_VALUE(PROP_MODEL_URL, "modelURL", modelURLChanged(), getModelURL()),
+    TEXT_VALUE(PROP_BLENDSHAPE_COEFFICIENTS, "blendshapeCoefficients", blendshapeCoefficientsChanged(), getBlendshapeCoefficients()),
+    TEXT_VALUE(PROP_TEXT, "text", textChanged(), getText()),
+    TEXT_VALUE(PROP_FONT, "font", fontChanged(), getFont()),
+    TEXT_VALUE(PROP_FILTER_URL, "filterURL", filterURLChanged(), getFilterURL()),
+    TEXT_VALUE(PROP_SOURCE_URL, "sourceUrl", sourceUrlChanged(), getSourceUrl()),
+    TEXT_VALUE(PROP_SCRIPT_URL, "scriptURL", scriptURLChanged(), getScriptURL()),
+    TEXT_VALUE(PROP_TRACK_PROFILE, "trackProfile", trackProfileChanged(), getTrackProfile()),
+    TEXT_VALUE(PROP_SHAPE, "shape", shapeChanged(), getShape()),
+    TEXT_VALUE(PROP_MATERIAL_URL, "materialURL", materialURLChanged(), getMaterialURL()),
+    TEXT_VALUE(PROP_PARENT_MATERIAL_NAME, "parentMaterialName", parentMaterialNameChanged(), getParentMaterialName()),
+    TEXT_VALUE(PROP_MATERIAL_DATA, "materialData", materialDataChanged(), getMaterialData()),
+    TEXT_VALUE(PROP_IMAGE_URL, "imageURL", imageURLChanged(), getImageURL()),
+    TEXT_VALUE(PROP_TERRAIN_URL, "terrainURL", terrainURLChanged(), getTerrainURL()),
+    TEXT_VALUE(PROP_TERRAIN_LAYERS, "terrainLayers", terrainLayersChanged(), getTerrainLayers()),
+    TEXT_VALUE(PROP_ANIMATION_URL, "animation.url", getAnimation().urlChanged(), getAnimation().getURL()),
+    TEXT_VALUE(PROP_SKYBOX_URL, "skybox.url", getSkybox().urlChanged(), getSkybox().getURL()),
+    TEXT_VALUE(PROP_AMBIENT_LIGHT_URL, "ambientLight.ambientURL", getAmbientLight().ambientURLChanged(), getAmbientLight().getAmbientURL()),
+    TEXT_VALUE(PROP_GRAB_EQUIPPABLE_INDICATOR_URL, "grab.equippableIndicatorURL", getGrab().equippableIndicatorURLChanged(), getGrab().getEquippableIndicatorURL()),
+    TEXT_VALUE(PROP_VEHICLE_TYPE, "vehicle.type", getVehicle().typeChanged(), getVehicle().getType()),
+    TEXT_VALUE(PROP_VEHICLE_WHEELS, "vehicle.wheels", getVehicle().wheelsChanged(), getVehicle().getWheels()),
+    TEXT_VALUE(PROP_VEHICLE_SEATS, "vehicle.seats", getVehicle().seatsChanged(), getVehicle().getSeats()),
+    TEXT_VALUE(PROP_VEHICLE_GEAR_RATIOS, "vehicle.gearRatios", getVehicle().gearRatiosChanged(), getVehicle().getGearRatios()),
+    TEXT_VALUE(PROP_VEHICLE_DRIVE_TYPE, "vehicle.driveType", getVehicle().driveTypeChanged(), getVehicle().getDriveType()),
+    TEXT_VALUE(PROP_VEHICLE_WHEEL, "vehicle.wheel", getVehicle().wheelChanged(), getVehicle().getWheel()),
+    TEXT_VALUE(PROP_VEHICLE_AXLE, "vehicle.axle", getVehicle().axleChanged(), getVehicle().getAxle()),
+    VECTOR_VALUE(PROP_JOINT_ROTATIONS_SET, "jointRotationsSet", jointRotationsSetChanged(), getJointRotationsSet()),
+    VECTOR_VALUE(PROP_JOINT_ROTATIONS, "jointRotations", jointRotationsChanged(), getJointRotations()),
+    VECTOR_VALUE(PROP_JOINT_TRANSLATIONS_SET, "jointTranslationsSet", jointTranslationsSetChanged(), getJointTranslationsSet()),
+    VECTOR_VALUE(PROP_JOINT_TRANSLATIONS, "jointTranslations", jointTranslationsChanged(), getJointTranslations()),
+    VECTOR_VALUE(PROP_TRACK_POINTS, "trackPoints", trackPointsChanged(), getTrackPoints()),
+    VECTOR_VALUE(PROP_TRACK_BANK, "trackBank", trackBankChanged(), getTrackBank()),
+    VECTOR_VALUE(PROP_TRACK_DWELL, "trackDwell", trackDwellChanged(), getTrackDwell()),
+    VECTOR_VALUE(PROP_LINE_POINTS, "linePoints", linePointsChanged(), getLinePoints()),
+    VECTOR_VALUE(PROP_STROKE_WIDTHS, "strokeWidths", strokeWidthsChanged(), getStrokeWidths()),
+    VECTOR_VALUE(PROP_STROKE_NORMALS, "normals", normalsChanged(), getNormals()),
+    VECTOR_VALUE(PROP_STROKE_COLORS, "strokeColors", strokeColorsChanged(), getStrokeColors()),
 };
 
 #undef TEXT_VALUE
 #undef VECTOR_VALUE
 
-int exactSize(EntityPropertyList property, const EntityItemProperties& properties) {
+// The value `property` names in `properties`: the one of that number that is changed and long (numbers are shared)
+const LongValue* longValueFor(EntityPropertyList property, const EntityItemProperties& properties) {
     for (const LongValue& value : LONG_VALUES) {
-        if (value.property == property) {
-            return value.size(properties, true);
+        if (value.property == property && value.size(properties, false) > MEASURE_FROM_BYTES) {
+            return &value;
         }
     }
-    return -1;
+    return nullptr;
 }
 
 // "userData" -> "User Data", "modelURL" -> "Model URL", "animation.url" -> "Animation Url"
@@ -168,12 +171,12 @@ bool EntitySizeCheck::mayCarryTooBigValue(const EntityItemProperties& properties
     return false;
 }
 
-std::vector<EntityPropertyList> EntitySizeCheck::checkedProperties() {
-    std::vector<EntityPropertyList> properties;
+QStringList EntitySizeCheck::checkedPropertyNames() {
+    QStringList names;
     for (const LongValue& value : LONG_VALUES) {
-        properties.push_back(value.property);
+        names << value.name;
     }
-    return properties;
+    return names;
 }
 
 EntitySizeProblem EntitySizeCheck::findProblem(EntityTypes::EntityType type, const EntityItemProperties& properties) {
@@ -193,12 +196,13 @@ EntitySizeProblem EntitySizeCheck::findProblem(EntityTypes::EntityType type, con
         if (!tooBig.getHasProperty(property)) {
             continue;
         }
+        const LongValue* value = longValueFor(property, properties);
         problem.property = property;
-        problem.name = EntityItem::propertyName(property);
+        problem.name = value ? QString(value->name) : EntityItem::propertyName(property);
         problem.label = labelFor(problem.name);
         const int allowed = EntityItem::streamSectionRoom() - EntityItem::STREAM_HEADER_GROWTH;
         const int needed = probe->streamRoomNeededAlone(property, true);
-        problem.bytes = std::max(exactSize(property, properties), 0);
+        problem.bytes = value ? std::max(value->size(properties, true), 0) : 0;
         // what this value could be: its size less what it needs beyond the room; past what any value can take, the
         // room less the most an entity's header takes (as the server's streamCheckSize)
         const int HEADER_AT_MOST = 6 + 128;

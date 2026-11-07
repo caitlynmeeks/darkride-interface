@@ -64,8 +64,8 @@ void EntitySizeCheckTests::everyVariableSizePropertyIsChecked() {
     QVERIFY2(defined.size() > 30, qPrintable(QString("found only %1 definitions in %2")
         .arg(defined.size()).arg(entitiesSource().path())));
     QSet<QString> checked;
-    for (EntityPropertyList property : EntitySizeCheck::checkedProperties()) {
-        checked.insert(EntityItem::propertyName(property));
+    for (const QString& name : EntitySizeCheck::checkedPropertyNames()) {
+        checked.insert(name);
     }
     // a property defined in a group no entity carries has no name in the properties' table: nothing to check there
     QSet<QString> named;
