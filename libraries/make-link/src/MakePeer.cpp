@@ -227,13 +227,15 @@ MakePeer::Judgement MakePeer::judgeArguments(const QStringList& arguments, const
     QStringList channelEntries;
     QStringList mcpConfigs, settings, toolsValues;
     bool restricted = false, strict = false, toolsGiven = false, permissionFlag = false, print = false;
-    bool channelsFlag = false;
+    bool channelsFlag = false, widensFlag = false, promptFlag = false;
     const QSet<QString> takesValue { "--mcp-config", "--settings", "--tools", CHANNEL_FLAG, "--channels",
                                      "--permission-mode", "--model", "--allowedTools", "--allowed-tools",
                                      "--disallowedTools", "--disallowed-tools", "--setting-sources", "--add-dir",
                                      "--agent", "--max-turns", "--max-budget-usd", "--fallback-model", "--session-id",
                                      "--resume", "-r", "--system-prompt", "--append-system-prompt",
-                                     "--permission-prompt-tool", "--input-format", "--output-format", "--effort" };
+                                     "--permission-prompt-tool", "--input-format", "--output-format", "--effort",
+                                     "--plugin-dir", "--agents", "--system-prompt-file", "--append-system-prompt-file",
+                                     "--name", "-n", "--worktree", "-w", "--betas", "--mcp-debug" };
     for (int i = 0; i < arguments.size(); ++i) {
         QString flag = arguments[i];
         QString value;
@@ -258,16 +260,31 @@ MakePeer::Judgement MakePeer::judgeArguments(const QStringList& arguments, const
         } else if (flag == "--tools") {
             toolsGiven = true;
             toolsValues.append(hasValue ? value.trimmed() : QString("(none)"));
-        } else if (flag == CHANNEL_FLAG) {
-            for (const QString& entry : value.split(',', Qt::SkipEmptyParts)) {
-                channelEntries.append(entry.trimmed());
+        } else if (flag == CHANNEL_FLAG || flag == "--channels") {
+            // one flag may carry several entries, "server:darkride plugin:x@y" or comma-joined (security S2): every
+            // following server: or plugin: argument up to the next flag is one
+            QStringList entries = value.split(',', Qt::SkipEmptyParts);
+            while (i + 1 < arguments.size() && !arguments[i + 1].startsWith('-') &&
+                   (arguments[i + 1].startsWith("server:") || arguments[i + 1].startsWith("plugin:"))) {
+                entries.append(arguments[++i]);
             }
-        } else if (flag == "--channels") {
-            channelsFlag = true;
-        } else if (flag == "--dangerously-skip-permissions" || flag == "--allowedTools" || flag == "--allowed-tools" ||
-                   flag == "--permission-prompt-tool" ||
+            if (flag == "--channels") {
+                channelsFlag = true;
+            } else {
+                for (const QString& entry : entries) {
+                    channelEntries.append(entry.trimmed());
+                }
+            }
+        } else if (flag == "--dangerously-skip-permissions" || flag == "--allow-dangerously-skip-permissions" ||
+                   flag == "--allowedTools" || flag == "--allowed-tools" || flag == "--permission-prompt-tool" ||
                    (flag == "--permission-mode" && value != "dontAsk" && value != "default")) {
             permissionFlag = true;
+        } else if (flag == "--setting-sources" || flag == "--plugin-dir" || flag == "--agents" || flag == "--add-dir" ||
+                   flag == "--chrome" || flag == "--ide") {
+            widensFlag = true;   // other settings files, a plugin (hooks, servers), agents with tools, more files, more tools
+        } else if (flag == "--system-prompt" || flag == "--append-system-prompt" || flag == "--system-prompt-file" ||
+                   flag == "--append-system-prompt-file") {
+            promptFlag = true;   // what Claude is told: Make's instructions are fixed (C4)
         } else if (flag == "-p" || flag == "--print") {
             print = true;
         }
@@ -295,6 +312,12 @@ MakePeer::Judgement MakePeer::judgeArguments(const QStringList& arguments, const
     }
     if (permissionFlag) {
         return Judgement { Verdict::Mismatch, "a permission flag" };
+    }
+    if (widensFlag) {
+        return Judgement { Verdict::Mismatch, "a flag that widens what Claude may do" };
+    }
+    if (promptFlag) {
+        return Judgement { Verdict::Mismatch, "a system prompt flag" };
     }
     // -p ignores the development-channels flag: no channel then, whatever the line says
     if (channelEntries.isEmpty() || print) {

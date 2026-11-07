@@ -46,6 +46,7 @@
 #include <ScriptCaller.h>
 #include <ScriptEngine.h>
 #include <ScriptEngines.h>
+#include <MakeText.h>
 
 #include "Application.h"
 #include "SecondaryCamera.h"
@@ -79,9 +80,12 @@ const QStringList ENGINE_TOOLS { "scene", "get", "add", "edit", "remove", "undo"
 
 // what Claude Code may do in the Make folder: Darkride's tools, nothing of its own that reaches the computer or the web
 // (security C9 and 19: deny beats any allow, also the person's own, in every mode)
-const QStringList DENIED_TOOLS { "Bash", "BashOutput", "KillShell", "Read", "Edit", "Write", "MultiEdit", "NotebookEdit",
-                                 "NotebookRead", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "Agent", "Task", "Skill",
-                                 "SlashCommand" };
+// the built-in tools denied by name, the second wall behind --tools "" (security): the names Claude Code 2.1.319 has
+// (MultiEdit and NotebookRead are gone from it, and a name it doesn't know is warned about at every start)
+// the built-in tools of Claude Code 2.1.319 (a name that is no tool any more makes it print "Deny rule X matches no
+// tool, check for typos" on the builder's screen: MultiEdit, NotebookRead, LS and SlashCommand were dropped 11-07)
+const QStringList DENIED_TOOLS { "Bash", "BashOutput", "KillShell", "Read", "Edit", "Write", "NotebookEdit",
+                                 "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task", "Skill" };
 
 QString plainName(const QString& text, int most) {
     QString name = text.toLower();
@@ -592,24 +596,12 @@ QString pictureFile(const QString& folder, const QString& id) {
     return QString();
 }
 
-// the person's words as plain text for a channel event (security C2, the link's own wall beside the dock's): no
-// control characters but line breaks and tabs, no direction marks or invisible characters, at most 4,000 characters
+// the person's words as plain text for a channel event (security C2: the link's own wall beside the dock's, one
+// rule for both, MakeText::plain): no control characters but line breaks, no direction marks, separators, invisible
+// or tag characters, at most 4,000 code points
 const int MAX_CHANNEL_CHARS = 4000;
 QString plainWords(const QString& text) {
-    QString out;
-    out.reserve(text.size());
-    for (const QChar c : text) {
-        const ushort u = c.unicode();
-        if ((u < 0x20 && u != '\n' && u != '\t') || u == 0x7F || (u >= 0x200B && u <= 0x200F) ||
-            (u >= 0x202A && u <= 0x202E) || (u >= 0x2066 && u <= 0x2069) || u == 0xFEFF) {
-            continue;
-        }
-        out.append(c);
-        if (out.size() >= MAX_CHANNEL_CHARS) {
-            break;
-        }
-    }
-    return out;
+    return MakeText::plain(text, MAX_CHANNEL_CHARS);
 }
 
 }  // namespace
