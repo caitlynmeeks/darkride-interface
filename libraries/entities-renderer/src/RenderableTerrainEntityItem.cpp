@@ -135,23 +135,64 @@ gpu::PipelinePointer mapPipeline() {
 
 // A top surface tile (TopSurface::fillTile): heights in grid voxels, two floats a texel (the top, the sheltered
 // floor), gathered four columns at a time.
+// The tiles are resource textures (entry 29 step 2b): the backend's transfer engine uploads them on its own thread,
+// and a chunk item takes a tile once it is resident (tileResident), as it takes its vertex buffer; a strict texture
+// was uploaded whole on the thread that first drew it, hundreds of them in the second a cut brought new columns.
+// A resource texture on GL 4.1 copies its two smallest mips on the thread that first meets it and the rest on the
+// transfer thread, so a tile carries a full mip chain (each level the 2 x 2 average of the one above, never sampled:
+// the tiles' samplers take mip 0 only); the synchronous part is then a 2 x 2 and a 1 x 1 texel.
+template <typename T, int CHANNELS>
+static void assignMipChain(const gpu::TexturePointer& texture, int size, const std::vector<T>& level0) {
+    texture->assignStoredMip(0, level0.size() * sizeof(T), (const gpu::Byte*)level0.data());
+    std::vector<T> above = level0;
+    int aboveSize = size;
+    for (uint16_t level = 1; aboveSize > 1; ++level) {
+        const int mipSize = aboveSize / 2;
+        std::vector<T> mip((size_t)mipSize * mipSize * CHANNELS);
+        for (int y = 0; y < mipSize; ++y) {
+            for (int x = 0; x < mipSize; ++x) {
+                for (int c = 0; c < CHANNELS; ++c) {
+                    const size_t a = ((size_t)(2 * y) * aboveSize + 2 * x) * CHANNELS + c;
+                    const size_t b = a + CHANNELS;
+                    const size_t d = a + (size_t)aboveSize * CHANNELS;
+                    mip[((size_t)y * mipSize + x) * CHANNELS + c] = (T)((above[a] + above[b] + above[d] + above[d + CHANNELS]) / 4);
+                }
+            }
+        }
+        texture->assignStoredMip(level, mip.size() * sizeof(T), (const gpu::Byte*)mip.data());
+        above.swap(mip);
+        aboveSize = mipSize;
+    }
+}
+
 gpu::TexturePointer makeTopTileTexture(int size, const std::vector<float>& heights, const char* name) {
     const gpu::Element format(gpu::VEC2, gpu::FLOAT, gpu::XY);
-    auto texture = gpu::Texture::createStrict(format, (uint16_t)size, (uint16_t)size, gpu::Texture::SINGLE_MIP,
-                                              gpu::Sampler(gpu::Sampler::FILTER_MIN_MAG_LINEAR, gpu::Sampler::WRAP_CLAMP));
+    auto texture = gpu::Texture::create2D(format, (uint16_t)size, (uint16_t)size, gpu::Texture::MAX_NUM_MIPS,
+                                          gpu::Sampler(gpu::Sampler::FILTER_MIN_MAG_LINEAR, gpu::Sampler::WRAP_CLAMP));
     texture->setSource(name);
     texture->setStoredMipFormat(format);
-    texture->assignStoredMip(0, heights.size() * sizeof(float), (const gpu::Byte*)heights.data());
+    assignMipChain<float, 2>(texture, size, heights);
     return texture;
 }
 
 gpu::TexturePointer makeTileTexture(int size, const std::vector<uint8_t>& rgba, const char* name) {
-    auto texture = gpu::Texture::createStrict(gpu::Element::COLOR_RGBA_32, (uint16_t)size, (uint16_t)size, gpu::Texture::SINGLE_MIP,
-                                              gpu::Sampler(gpu::Sampler::FILTER_MIN_MAG_LINEAR, gpu::Sampler::WRAP_CLAMP));
+    auto texture = gpu::Texture::create2D(gpu::Element::COLOR_RGBA_32, (uint16_t)size, (uint16_t)size, gpu::Texture::MAX_NUM_MIPS,
+                                          gpu::Sampler(gpu::Sampler::FILTER_MIN_MAG_LINEAR, gpu::Sampler::WRAP_CLAMP));
     texture->setSource(name);
     texture->setStoredMipFormat(gpu::Element::COLOR_RGBA_32);
-    texture->assignStoredMip(0, rgba.size(), rgba.data());
+    assignMipChain<uint8_t, 4>(texture, size, rgba);
     return texture;
+}
+
+// A tile is resident once the transfer engine has populated it (the backend stamps the texture as it transfers: a
+// stamp of 0 is a texture the backend has not met, a resident mip of 0 is one it has filled); a texture that is not
+// a resource texture (the 1 x 1 built-ins) is resident at once.
+static bool tileResident(const gpu::TexturePointer& texture) {
+    return !texture || texture->getUsageType() != gpu::TextureUsageType::RESOURCE ||
+           (texture->getResidencyStamp() != 0 && texture->getResidentMip() == 0);
+}
+static bool paintTileResident(const TerrainPaintTile::Pointer& tile) {
+    return !tile || (tileResident(tile->layers0to3) && tileResident(tile->layers4to7));
 }
 
 // The main pass asks for the chunks' pipeline through their custom shape key; shadow passes draw them with the
@@ -1297,6 +1338,9 @@ void TerrainUploadPayload::render(RenderArgs* args) {
     for (const gpu::BufferPointer& buffer : _buffers) {
         batch.setInputBuffer(0, buffer, 0, sizeof(TerrainVertex));
     }
+    for (const gpu::TexturePointer& texture : _textures) {
+        batch.setResourceTexture(0, texture);   // met by the backend here; filled by its transfer engine on its thread
+    }
     uint64_t fed = _fed->load(std::memory_order_relaxed);
     while (fed < _serial && !_fed->compare_exchange_weak(fed, _serial, std::memory_order_release, std::memory_order_relaxed)) {
     }
@@ -1431,15 +1475,17 @@ void TerrainEntityRenderer::postUploads(const ScenePointer& scene, Transaction& 
     const bool arriving = _firstDrawn == std::chrono::steady_clock::time_point() ||
         std::chrono::duration<float>(std::chrono::steady_clock::now() - _firstDrawn).count() < LOD_UPLOAD_ARRIVAL_SECONDS;
     entity->getUploadsDue(arriving ? LOD_UPLOAD_BYTES_ARRIVAL : LOD_UPLOAD_BYTES_MAX, due, serial);
-    if (serial == _uploadsPosted) {
-        return;   // the same share as last time (not through yet), or nothing due
+    if (serial == _uploadsPosted && _pendingTiles == _pendingTilesPosted) {
+        return;   // the same share and the same tiles as last time (not through yet), or nothing due
     }
     _uploadsPosted = serial;
+    _pendingTilesPosted = _pendingTiles;
     std::vector<gpu::BufferPointer> buffers;
     buffers.reserve(due.size());
     for (const TerrainMeshBuffer::Pointer& buffer : due) {
         buffers.push_back(buffer->buffer);
     }
+    const std::vector<gpu::TexturePointer> textures = _pendingTiles;
     ItemKey::Builder keyBuilder = ItemKey::Builder::opaqueShape().withTagBits(getTagMask()).withLayer(getHifiRenderLayer()).withShadowCaster();
     if (!_visible) {
         keyBuilder.withInvisible();
@@ -1449,14 +1495,16 @@ void TerrainEntityRenderer::postUploads(const ScenePointer& scene, Transaction& 
     if (_uploadItem == Item::INVALID_ITEM_ID) {
         auto payload = std::make_shared<TerrainUploadPayload>(_uploadsFed);
         payload->setBuffers(std::move(buffers), serial);
+        payload->setTextures(textures);
         payload->setKey(key);
         payload->setBound(bound);
         _uploadItem = scene->allocateID();
         transaction.resetItem(_uploadItem, std::make_shared<Payload<TerrainUploadPayload>>(payload));
         return;
     }
-    transaction.updateItem<TerrainUploadPayload>(_uploadItem, [buffers, serial, key, bound](TerrainUploadPayload& payload) {
+    transaction.updateItem<TerrainUploadPayload>(_uploadItem, [buffers, textures, serial, key, bound](TerrainUploadPayload& payload) {
         payload.setBuffers(buffers, serial);
+        payload.setTextures(textures);
         payload.setKey(key);
         payload.setBound(bound);
     });
@@ -1585,9 +1633,20 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
     postUploads(scene, transaction, entity);
     const uint64_t drawnVersion = entity->getDrawnVersion();
     if (_drawnOnce && drawnVersion == _drawnVersion && !placementChanged && !keyChanged && !layersChanged && lostTiles.empty() &&
-            !allTilesLost && lostTopTiles.empty() && !allTopTilesLost) {
+            !allTilesLost && lostTopTiles.empty() && !allTopTilesLost && !_tilesPending) {
         return;
     }
+    // the tiles chunk items wait for, gathered again on every pass (entry 29 step 2b)
+    _pendingTiles.clear();
+    _tilesPending = false;
+    auto waitForTiles = [&](const TerrainPaintTile::Pointer& paintTile, const gpu::TexturePointer& topTile) {
+        if (paintTile) {
+            if (!tileResident(paintTile->layers0to3)) { _pendingTiles.push_back(paintTile->layers0to3); }
+            if (!tileResident(paintTile->layers4to7)) { _pendingTiles.push_back(paintTile->layers4to7); }
+        }
+        if (!tileResident(topTile)) { _pendingTiles.push_back(topTile); }
+        _tilesPending = true;
+    };
     _drawnOnce = true;
     _drawnVersion = drawnVersion;
     _lastTransform = model;
@@ -1660,6 +1719,11 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
                 ++itemsWaiting;   // marked wanted by the entity's update (the drawn set's pass), not here
                 continue;
             }
+            if (!paintTileResident(paintTile) || !tileResident(topTile)) {
+                ++itemsWaiting;   // its tiles are still on their way (step 2b): the upload item carries them
+                waitForTiles(paintTile, topTile);
+                continue;
+            }
             uint32_t vertexCount = 0;
             const gpu::BufferPointer vertices = takeVertexBuffer(chunk, vertexCount);
             auto payload = std::make_shared<TerrainChunkPayload>();
@@ -1675,6 +1739,8 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
             ChunkItem item;
             item.id = scene->allocateID();
             item.meshVersion = chunk.version;
+            item.paintTile = paintTile;
+            item.topTile = topTile;
             transaction.resetItem(item.id, std::make_shared<Payload<TerrainChunkPayload>>(payload));
             _chunkItems[chunk.key] = item;
             ++itemsMade;
@@ -1685,13 +1751,26 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
             continue;
         }
         const bool meshChanged = found->second.meshVersion != chunk.version;
-        const bool paintChanged = allTilesLost || lostTiles.count(tileKey) > 0;
-        const bool topChanged = allTopTilesLost ||
-            (chunk.key.level >= 0 && lostTopTiles.count(glm::ivec2(chunk.key.getSlot().x, chunk.key.getSlot().z)) > 0);
+        // A tile the item does not show yet is taken once resident; until then the item keeps the one it shows (a
+        // brush stroke's new tile must not blink) and the upload item carries the new one to the backend (step 2b).
+        TerrainPaintTile::Pointer paintTileNow = paintTile;
+        gpu::TexturePointer topTileNow = topTile;
+        if (paintTileNow != found->second.paintTile && !paintTileResident(paintTileNow)) {
+            waitForTiles(paintTileNow, nullptr);
+            paintTileNow = found->second.paintTile;
+        }
+        if (topTileNow != found->second.topTile && !tileResident(topTileNow)) {
+            waitForTiles(nullptr, topTileNow);
+            topTileNow = found->second.topTile;
+        }
+        const bool paintChanged = paintTileNow != found->second.paintTile;
+        const bool topChanged = topTileNow != found->second.topTile;
         if (!meshChanged && !placementChanged && !keyChanged && !layersChanged && !paintChanged && !topChanged) {
             continue;
         }
         found->second.meshVersion = chunk.version;
+        found->second.paintTile = paintTileNow;
+        found->second.topTile = topTileNow;
         ++itemsUpdated;
         // The buffer comes ready from the pool with the mesh (or is built here, failing one) and is handed over: the
         // update runs later on the render thread.
@@ -1702,7 +1781,7 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
                                       << "gets a new mesh of" << vertexCount / 3 << "triangles, mesh version" << chunk.version;
         }
         transaction.updateItem<TerrainChunkPayload>(found->second.id,
-                [vertices, vertexCount, placement, key, wireframe, layerSet, worldToTerrain, paintTile, topTile](TerrainChunkPayload& payload) {
+                [vertices, vertexCount, placement, key, wireframe, layerSet, worldToTerrain, paintTile = paintTileNow, topTile = topTileNow](TerrainChunkPayload& payload) {
             if (vertices) {
                 payload.setBuffers(vertices, vertexCount);
             }
@@ -1727,7 +1806,8 @@ void TerrainEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& s
                                   << "built here in" << buildMs << "ms," << (qulonglong)buildBytes << "bytes;" << itemsMade << "made,"
                                   << itemsUpdated << "updated," << itemsRemoved << "removed," << itemsWaiting << "waiting; uploads pending"
                                   << (qulonglong)entity->getUploadsWanted() << "wanted (" << (qulonglong)entity->getUploadsWantedBytes() << "bytes ),"
-                                  << (qulonglong)(entity->getUploadsPending() - entity->getUploadsWanted()) << "unwanted; section"
+                                  << (qulonglong)(entity->getUploadsPending() - entity->getUploadsWanted()) << "unwanted; tiles pending"
+                                  << (qulonglong)_pendingTiles.size() << "; section"
                                   << std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - drawnStart).count() << "ms";
     }
     if (terrainDebug && (itemsMade || itemsRemoved || itemsUpdated)) {
