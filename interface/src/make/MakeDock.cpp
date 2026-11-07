@@ -448,7 +448,7 @@ bool MakeDock::takeRealInput(const char* call) {
         _inputUnused = false;
         return true;
     }
-    qCInfo(interfaceapp) << "Make: refused" << call << "(no real click or key in the dock just now)";
+    qCWarning(interfaceapp) << "Make: refused" << call << "(no real click or key in the dock just now)";
     return false;
 }
 
@@ -709,7 +709,7 @@ bool MakeDock::dropPictures(const QVariantList& urls) {
         given == _droppedUrls;
     _droppedUrls.clear();   // each drop is used once
     if (!real) {
-        qCInfo(interfaceapp) << "Make: refused dropPictures (no real drop of these in the dock just now)";
+        qCWarning(interfaceapp) << "Make: refused dropPictures (no real drop of these in the dock just now)";
         return false;
     }
     QStringList files;
