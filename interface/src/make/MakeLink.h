@@ -106,9 +106,21 @@ public:
     /// What Connect writes there, for the dock to show first (security A5): the MCP line and the settings.
     QString mcpConfigText() const;
     QString settingsText() const;
-    /// The line the builder pastes into Terminal (the Terminal route; PowerShell on Windows): Claude Code in its project
-    /// folder with only Darkride's MCP server, Make's settings and no built-in tools.
-    QString startLine() const;
+    /// The line the builder pastes into Terminal (the Claude-plan route; PowerShell on Windows): Claude Code in its
+    /// project folder with only Darkride's MCP server, Make's settings and no built-in tools. With `chat`, the same
+    /// line with Claude Code's development-channels flag for Make's own server, so the person types in Make's panel
+    /// and their words reach that Claude Code as channel events (send()); without it, the plain line: they type in
+    /// Terminal and the panel shows the work.
+    QString startLine(bool chat = false) const;
+    /// Which of the two lines the connected Claude Code was started with, read from its process when it connected
+    /// (MakePeer, security C9): "on" (the chat line), "off" (the plain line, or nothing connected, or the app's own
+    /// Claude Code of the key route), "unknown" (a tree the app couldn't read: allowed). A line that isn't Make's is
+    /// refused at once (reason() says so while Listening).
+    QString channelFlag() const { return _channelFlag; }
+    /// The connected Claude Code's version, as it said at initialize ("2.1.319"); empty before.
+    QString claudeVersion() const { return _server.clientVersion(); }
+    /// Channel events sent since this Connect (0 after Disconnect), for the dock's checks.
+    int channelEventCount() const { return _server.channelEventCount(); }
     /// The key route's Claude Code settings: its folder, MCP line and settings file.
     MakeClaude::Settings claudeSettings() const;
 
@@ -137,9 +149,12 @@ public:
     /// False with `why` when there's no Claude Code or no key. Its words and its end come through claude()'s signals.
     bool startClaude(QString& why);
     MakeClaude* claude() { return &_claude; }
-    /// The key route's Send (the dock's own text box, real input): a new request, the person's words and the pictures
-    /// they dropped, by the ids of the dock's clean copies (<Make folder>/pictures/<id>.png or .jpg; never a path or
-    /// bytes from the dock). The request's number, or 0 when Claude Code isn't running.
+    /// The dock's Send (its own text box, real input only; security C2): a new request, the person's words and the
+    /// pictures they dropped, by the ids of the dock's clean copies (<Make folder>/pictures/<id>.png or .jpg; never a
+    /// path or bytes from the dock). On the key route they go to the Claude Code the app runs; on the plan route to
+    /// the Claude Code in Terminal as a channel event (its meta: msg_id = the request's number, pictures = the
+    /// numbers Make gives the pictures this Connect, which the picture tool's `reference` reads back). The request's
+    /// number, or 0 when no Claude Code can take it (none running, none connected, or one started with the plain line).
     int send(const QString& text, const QStringList& pictureIds);
 
 signals:
@@ -163,6 +178,8 @@ private:
     void startToolsEngine();
     void stopToolsEngine();
     void setHandlers();
+    /// A Claude Code connected: its start line judged (MakePeer); not Make's = refused, else channelFlag() set.
+    void judgeConnection();
     /// Decides blenderOffered() for this Connect and offers or withdraws the Blender tools by it.
     void offerBlender();
     void toEngine(const QString& tool);
@@ -197,6 +214,9 @@ private:
     QString _folder;
     QString _pipeName;  // Windows: this Connect's pipe (MakeLinkServer::newPipeName)
     QString _model;
+    QString _channelFlag { "off" };
+    QHash<int, QString> _pictureNumbers;   // the plan route: Make's number for a picture -> the dock's id, this Connect
+    int _nextPictureNumber { 1 };
 
     int _request { 0 };
     QElapsedTimer _sinceCall;

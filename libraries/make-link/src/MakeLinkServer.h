@@ -34,6 +34,7 @@
 #include <QtCore/QVector>
 #include <QtNetwork/QLocalSocket>
 
+#include "MakePeer.h"
 #include "MakeToolList.h"
 
 class QLocalServer;
@@ -103,8 +104,18 @@ public:
     bool isConnected() const { return _client != nullptr; }
     /// Closes Claude Code's connection and goes on listening (the person's Disconnect).
     void disconnectClient();
-    /// The MCP client's own name and version, as it said when it connected ("claude-code").
+    /// The MCP client's own name and version, as it said when it connected ("claude-code", "2.1.319").
     QString clientName() const { return _clientName; }
+    QString clientVersion() const { return _clientVersion; }
+    /// The program on the socket and the Claude Code it was started by, read when it connected (MakePeer; C9).
+    MakePeer::Line peer() const { return _peer; }
+
+    /// A message of the person's own typing for the connected Claude Code, as a channel event (Claude Code's
+    /// notifications/claude/channel, which this server declares at initialize): `content` is the words, `meta` the
+    /// app's own keys with values it assigned (msg_id, pictures), never a world's. False when nothing is connected.
+    bool sendChannelEvent(const QString& content, const QJsonObject& meta);
+    /// Channel events sent to the connected Claude Code; 0 again when it goes.
+    int channelEventCount() const { return _channelEvents; }
 
     /// Answers every running call with "the person pressed Stop" and refuses new calls until resume().
     void stop();
@@ -157,6 +168,10 @@ private:
     QPointer<QLocalSocket> _client;
     QByteArray _buffer;
     QString _clientName;
+    QString _clientVersion;
+    MakePeer::Line _peer;
+    MakePeer::Line _connecting;   // read in accept(), before adopt() takes the socket
+    int _channelEvents { 0 };
 
     QHash<int, Call> _calls;
     int _nextCall { 1 };

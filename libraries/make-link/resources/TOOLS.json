@@ -386,7 +386,7 @@
       "name": "picture",
       "group": "look",
       "needs": "app",
-      "description": "A picture from the app: of a thing (id) from a good angle, or what the avatar sees. Use it to check the result looks right.",
+      "description": "A picture from the app: of a thing (id) from a good angle, or what the avatar sees; or, with reference, a picture the person attached to their panel message (the <channel> tag's pictures=\"2,3\"). Use it to check the result looks right.",
       "inputs": {
         "type": "object",
         "properties": {
@@ -401,6 +401,12 @@
               "above"
             ],
             "default": "front"
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 3,
+            "description": "One number from the <channel> tag's pictures: that attached picture is returned (id and from are ignored then)."
           }
         },
         "additionalProperties": false
@@ -1155,7 +1161,7 @@
       "name": "reply",
       "group": "talk",
       "needs": "app",
-      "description": "Answer in Darkride's Make panel: plain words, two or three sentences. (A resident speaks with its own say, in the world's chat.)",
+      "description": "Answer in Darkride's Make panel: plain words, two or three sentences. When the person's message came as a <channel source=\"darkride\" msg_id=\"…\"> event, pass its msg_id. (A resident speaks with its own say, in the world's chat.)",
       "inputs": {
         "type": "object",
         "properties": {
@@ -1163,6 +1169,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "msg_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 9,
+            "description": "The msg_id of the panel message you're answering, from its <channel> tag; the newest one when left out."
           }
         },
         "required": [

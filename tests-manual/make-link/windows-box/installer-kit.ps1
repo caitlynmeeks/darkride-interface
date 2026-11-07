@@ -16,10 +16,12 @@
 #  installed:   1. the rules check (darkride-firewall-rules.exe check) is 0;
 #               2. Make's profile made as Make makes it, its SID the rules' SID; the rules check still 0;
 #               3. the box in Make's profile: the unboxed control reaches Windows' port 135 on the LAN address and gets
-#                  an answer at a closed port there; the box reaches NEITHER; the rest of the probe passes;
+#                  an answer at a closed port there; the box doesn't reach port 135; the closed port is recorded only
+#                  (security, 11-07: its answer is the laptop's own network stack); the rest of the probe passes;
 #               4. Make's profile deleted as Make deletes it; the rules check still 0 (both rules unchanged).
 #  uninstalled: 5. the rules check is 7 (no rule of ours left);
-#               6. the box in Make's profile reaches the LAN address again (so step 3's refusal was the rules').
+#               6. the box in Make's profile, now without the rules, STILL doesn't reach port 135: the box holds on its
+#                  own (runs 6 and 7, 11-07), the rules are an extra layer; the closed port is recorded only.
 #
 #  Copyright 2026 Darkride.
 #
@@ -29,11 +31,15 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('installed', 'uninstalled')][string]$Phase,
     [Parameter(Mandatory = $true)][string]$Out,
     [string]$Blender = 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe',
-    [string]$BoxTest = (Join-Path $PSScriptRoot 'build\make-box-test.exe'),
+    [string]$BoxTest = '',  # default: build\make-box-test.exe beside this script (worked out below, for PowerShell 5.1)
     [string]$Helper = (Join-Path $env:ProgramFiles 'Darkride\setup\darkride-firewall-rules.exe'),
     [string]$Mac = ''  # optional: <address>:<port> of a listener on another machine, as in run 6
 )
 $ErrorActionPreference = 'Continue'  # native programs' stderr must not stop the kit; every step is checked itself
+if (-not $BoxTest) {
+    # not $PSScriptRoot in the param() default: Windows PowerShell 5.1 can leave it empty there
+    $BoxTest = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'build\make-box-test.exe'
+}
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $log = Join-Path $Out "kit-$Phase.txt"
 $script:fails = 0
@@ -113,7 +119,8 @@ if ($Phase -eq 'installed') {
     Expect '3b. unboxed control: port 135 on the LAN address connects' (($null -ne $control135) -and ($control135.pass -eq $true)) "$($control135.detail)"
     Expect '3c. unboxed control: the closed port on the LAN address answers' (($null -ne $controlClosed) -and ($controlClosed.pass -eq $true)) "$($controlClosed.detail)"
     Expect '3d. the box does NOT reach port 135 on the LAN address' (($null -ne $box135) -and ($box135.reached -eq $false)) "$($box135.detail)"
-    Expect '3e. the box does NOT reach the closed port on the LAN address' (($null -ne $boxClosed) -and ($boxClosed.reached -eq $false)) "$($boxClosed.detail)"
+    # recorded only (security, 11-07): a closed port's answer is the laptop's own network stack with nothing listening
+    Say "INFO  3e. in the box, the closed port on the LAN address: reached $($boxClosed.reached) ($($boxClosed.detail))"
     if ($null -ne $r) {
         # the DNS checks are reported, not scored: run 6 shows what the box does there, security rules on it
         $failed = @($r.probe.results | Where-Object { ($_.pass -eq $false) -and ($_.check -notlike '*(DNS)*') })
@@ -150,8 +157,9 @@ if ($Phase -eq 'installed') {
     $box135 = CheckNamed $r.probe '*port 135*'
     $boxClosed = CheckNamed $r.probe '*closed port*'
     Expect '6a. unboxed control: port 135 on the LAN address connects' (($null -ne $control135) -and ($control135.pass -eq $true)) "$($control135.detail)"
-    Expect '6b. the box reaches port 135 on the LAN address again' (($null -ne $box135) -and ($box135.reached -eq $true)) "$($box135.detail)"
-    Expect '6c. the box reaches the closed port on the LAN address again' (($null -ne $boxClosed) -and ($boxClosed.reached -eq $true)) "$($boxClosed.detail)"
+    # without the rules the box still holds (runs 6 and 7, 11-07): the AppContainer itself keeps it off port 135
+    Expect '6b. without the rules, the box still does NOT reach port 135 on the LAN address' (($null -ne $box135) -and ($box135.reached -eq $false)) "$($box135.detail)"
+    Say "INFO  6c. in the box, the closed port on the LAN address: reached $($boxClosed.reached) ($($boxClosed.detail))"
 }
 
 if ($script:fails -gt 0) { Say "INSTALLER KIT ${Phase}: FAIL ($script:fails)"; exit 1 }
