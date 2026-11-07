@@ -255,6 +255,7 @@ void DomainSession::resetPhysicsReadyInformation() {
     _fullSceneCounterAtLastPhysicsCheck = 0;
     _gpuTextureMemSizeStabilityCount = 0;
     _gpuTextureMemSizeAtLastCheck = 0;
+    _gpuTextureMemSizeStableSince = 0;
     _physicsEnabled = false;
     _octreeProcessor.stopSafeLanding();
     endWorldLoading();
@@ -656,17 +657,33 @@ bool DomainSession::gpuTextureMemSizeStable() {
     qint64 texturePopulatedGPUMemSize = renderStats->textureResourcePopulatedGPUMemSize;
     qint64 textureTransferSize = renderStats->texturePendingGPUTransferSize;
 
-    if (_gpuTextureMemSizeAtLastCheck == textureResourceGPUMemSize) {
+    // A check runs once per present (the Idle event is posted from the present callback). Until 2026-11-07 the gate
+    // was 30 consecutive unchanged checks alone, 0.5 s at the loading screen's 60 presents a second: under the shader
+    // warm-up's compiles (4 programs a present, 3-115 ms each) the loading screen presents 6-19 times a second and the
+    // 30 checks took 1.5-5 s (item 53). The settle is a time now, with a small floor of checks so a few slow presents
+    // cannot pass it on two readings; the populated-size and pending-transfer tests below still hold uploads in flight.
+    const quint64 now = usecTimestampNow();
+    if (_gpuTextureMemSizeStableSince != 0 && _gpuTextureMemSizeAtLastCheck == textureResourceGPUMemSize) {
         _gpuTextureMemSizeStabilityCount++;
     } else {
         _gpuTextureMemSizeStabilityCount = 0;
+        _gpuTextureMemSizeStableSince = now;
     }
     _gpuTextureMemSizeAtLastCheck = textureResourceGPUMemSize;
 
-    if (_gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount) {
+    if (_gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount &&
+        now - _gpuTextureMemSizeStableSince >= _gpuTextureMemSettleUsecs) {
         return (textureResourceGPUMemSize == texturePopulatedGPUMemSize) && (textureTransferSize == 0);
     }
     return false;
+}
+
+void DomainSession::setMinimumGPUTextureMemStabilityCount(int stabilityCount) {
+    // the Test API's count, read as the 60-presents-a-second loading screen the count was written for: 30 = 500 ms
+    static const int DEFAULT_CHECK_FLOOR = 5;
+    stabilityCount = std::max(0, stabilityCount);
+    _gpuTextureMemSettleUsecs = (quint64)stabilityCount * USECS_PER_SECOND / 60;
+    _minimumGPUTextureMemSizeStabilityCount = std::min(stabilityCount, DEFAULT_CHECK_FLOOR);
 }
 
 int DomainSession::processOctreeStats(ReceivedMessage& message, SharedNodePointer sendingNode) {

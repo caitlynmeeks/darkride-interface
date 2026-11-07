@@ -74,7 +74,9 @@ public:
     NodeToOctreeSceneStats* octreeSceneStats() { return &_octreeServerSceneStats; }   // the stats per entity server
     int getMaxOctreePacketsPerSecond() const;
     void setMaxOctreePacketsPerSecond(int maxOctreePPS);
-    void setMinimumGPUTextureMemStabilityCount(int stabilityCount) { _minimumGPUTextureMemSizeStabilityCount = stabilityCount; }
+    // the Test API's: the texture gate's settle as a count of checks at the loading screen's 60 presents a second
+    // (30 = the default 500 ms); the check floor follows it, up to the default's
+    void setMinimumGPUTextureMemStabilityCount(int stabilityCount);
     bool gpuTextureMemSizeStable();
     void setArrivalWaitsForNearby(bool wait);   // a loading screen waits for what is near the avatar, even where the zone allows moving at once
     // The first arrival after start-up waits for what is near the avatar, as a hop does: set by the sign-in gate just
@@ -180,9 +182,14 @@ private:
     } _firstArrivalHold;
     std::atomic<uint32_t> _fullSceneReceivedCounter{ 0 };  // how many times have we received a full-scene octree stats packet
     uint32_t _fullSceneCounterAtLastPhysicsCheck{ 0 };     // _fullSceneReceivedCounter last time we checked physics ready
-    qint64 _gpuTextureMemSizeStabilityCount{ 0 };
+    // the texture gate (gpuTextureMemSizeStable): the GPU texture memory size unchanged for a settle time, with a small
+    // floor of checks; a check runs once per present. Until 2026-11-07 the gate was a count of 30 checks alone, which a
+    // slowly presenting loading screen stretched from 0.5 s to several seconds (the shader warm-up's compiles, item 53)
     qint64 _gpuTextureMemSizeAtLastCheck{ 0 };
-    int _minimumGPUTextureMemSizeStabilityCount{ 30 };
+    qint64 _gpuTextureMemSizeStabilityCount{ 0 };     // consecutive checks that read the same size
+    quint64 _gpuTextureMemSizeStableSince{ 0 };       // when the size last changed (usecTimestampNow); 0 = no check yet
+    quint64 _gpuTextureMemSettleUsecs{ 500 * 1000 };  // 500 ms = 30 checks at 60 presents a second, the old gate in front
+    int _minimumGPUTextureMemSizeStabilityCount{ 5 };  // at least this many checks (a few slow presents cannot pass on two readings)
     bool _domainLoadingInProgress{ false };   // the "Scene Loading" profile range is open
 
     // Whole-world loading, per arrival (reset with the physics-ready information). The choice is the domain's
