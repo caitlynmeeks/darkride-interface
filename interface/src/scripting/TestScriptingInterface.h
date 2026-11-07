@@ -551,6 +551,16 @@ public slots:
     Q_INVOKABLE bool makeDockMouse(const QString& name, double fromX, double fromY, double toX, double toY);
 
     /**jsdoc
+     * Shows the Make badge (the view's bottom right) in one state without a connected Make, whatever the Make panel,
+     * for a timing run or a picture; <code>""</code> gives it back to Make.
+     * @function Test.makeBadge
+     * @param {string} state - <code>"working"</code>, <code>"answer"</code>, <code>"done"</code>,
+     *     <code>"failed"</code>, <code>"off"</code> (hidden) or <code>""</code>.
+     * @returns {string} The badge's state now, or <code>"unavailable"</code> without the Make dock.
+     */
+    Q_INVOKABLE QString makeBadge(const QString& state);
+
+    /**jsdoc
      * Copy as the Make dock's Copy does (MakeDock.copyLine), without its real-input check: writes the system's clipboard,
      * which is the person's, so only in a run that has a clipboard slot.
      * @function Test.makeDockCopy

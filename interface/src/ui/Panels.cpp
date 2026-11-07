@@ -29,6 +29,7 @@
 #include "WindowLayout.h"
 #include "chat/ChatWindow.h"
 #include "editor/Editor.h"
+#include "make/MakeBadge.h"
 #include "make/MakeDock.h"
 
 namespace {
@@ -217,6 +218,12 @@ QDockWidget* Panels::dock(const QString& name) {
             // MakeDock on the Make dock's own context alone; it watches the dock's window for real input and gives
             // the engine its picture provider once the view is made
             made->setContextObject("MakeDock", DependencyManager::get<MakeDock>().data());
+            // the Make badge shows only while this panel is out of sight (closed, or a tab behind another)
+            connect(made, &QDockWidget::visibilityChanged, this, [](bool visible) {
+                if (auto dock = DependencyManager::get<MakeDock>()) {
+                    dock->badge()->setPanelInSight(visible);
+                }
+            });
             connect(made, &QmlDock::contentMade, this, [made] {
                 if (auto dock = DependencyManager::get<MakeDock>()) {
                     dock->watchWindow(qobject_cast<QQuickWindow*>(made->contentWindow()),

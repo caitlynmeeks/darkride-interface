@@ -11,6 +11,7 @@
 //
 
 #include "MakeDock.h"
+#include "MakeBadge.h"
 
 #include <string>
 
@@ -248,6 +249,7 @@ bool MakeDock::isAvailable() {
 }
 
 MakeDock::MakeDock() {
+    _badge = new MakeBadge(this);
     // nothing looked up until the dock first opens (watchWindow): no Keychain, Claude Code or Blender look-ups at start
     oldRouteSetting.remove();
     oldAllowedSetupSetting.remove();
@@ -305,6 +307,7 @@ MakeDock::MakeDock() {
             return;
         }
         _askTimes.insert(id, QDateTime::currentMSecsSinceEpoch());
+        emit questionsChanged();
         _askTimeouts.start();
         addRow(row);
     });
@@ -377,12 +380,18 @@ MakeDock::MakeDock() {
             addRow(row);
         }
         requestDone(request, _costSoFar);
+        if (_working && !_stopRequested) {
+            emit requestEnded(!error);   // the Make badge: Done, or Couldn't finish
+        }
         setWorking(false);
     });
     QObject::connect(claude, &MakeClaude::ended, this, [this](const QString& why) {
         _starting = false;
         if (!why.isEmpty()) {
             _reason = clean(MakeClaude::redact(why)).left(300);
+        }
+        if (_working && !_stopRequested) {
+            emit requestEnded(false);   // Claude Code ended mid-request: the Make badge's Couldn't finish
         }
         setWorking(false);
         emit stateChanged();
@@ -403,11 +412,15 @@ MakeDock::MakeDock() {
     QObject::connect(&_terminalQuiet, &QTimer::timeout, this, [this] {
         const int request = DependencyManager::get<MakeLink>()->currentRequest();
         requestDone(request, -1.0);
+        if (_working && !_stopRequested) {
+            emit requestEnded(true);   // Terminal went quiet: the Make badge's Done
+        }
         setWorking(false);
     });
     _askTimeouts.setInterval(5000);
     QObject::connect(&_askTimeouts, &QTimer::timeout, this, [this] {
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        bool timedOut = false;
         for (auto it = _askTimes.begin(); it != _askTimes.end();) {
             if (now - it.value() > ASK_TIMEOUT_MS) {
                 const QString id = QString::number(it.key());
@@ -415,9 +428,13 @@ MakeDock::MakeDock() {
                                                                             row.answered.isEmpty(); },
                                  [](MakeDockRows::Row& row) { row.answered = "timed out"; });
                 it = _askTimes.erase(it);
+                timedOut = true;
             } else {
                 ++it;
             }
+        }
+        if (timedOut) {
+            emit questionsChanged();
         }
         if (_askTimes.isEmpty()) {
             _askTimeouts.stop();
@@ -559,6 +576,9 @@ void MakeDock::linkStateChanged() {
     }
     if (DependencyManager::get<MakeLink>()->stateName() == "off") {
         _starting = false;
+        if (_working && !_stopRequested) {
+            emit requestEnded(false);   // the link dropped mid-request: the Make badge's Couldn't finish
+        }
         setWorking(false);
     }
     emit stateChanged();
@@ -681,6 +701,7 @@ bool MakeDock::connectNow() {
 }
 
 void MakeDock::disconnect() {
+    _stopRequested = true;   // the person's own: never shown as Couldn't finish
     DependencyManager::get<MakeLink>()->disconnectLink();
     _starting = false;
     _terminalQuiet.stop();
@@ -794,12 +815,14 @@ bool MakeDock::answer(const QString& askId, bool allow) {
     }
     DependencyManager::get<MakeLink>()->answer(id, allow);
     _askTimes.remove(id);
+    emit questionsChanged();
     _timeline.update([&](const MakeDockRows::Row& row) { return row.kind == "question" && row.itemId == askId; },
                      [&](MakeDockRows::Row& row) { row.answered = allow ? "allowed" : "refused"; });
     return true;
 }
 
 void MakeDock::stop() {
+    _stopRequested = true;   // the person's own: never shown as Couldn't finish
     DependencyManager::get<MakeLink>()->stop();
     if (_route == "terminal") {
         _terminalQuiet.stop();
@@ -1104,6 +1127,9 @@ void MakeDock::requestDone(int request, double cost) {
 
 void MakeDock::setWorking(bool working) {
     if (working != _working) {
+        if (working) {
+            _stopRequested = false;   // a new request
+        }
         _working = working;
         emit workingChanged();
     }

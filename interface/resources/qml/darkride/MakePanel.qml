@@ -32,6 +32,13 @@ Rectangle {
     property var dock: typeof MakeDock !== "undefined" ? MakeDock : null
     property string tab: "now"   // "now" or "made"
 
+    // the Make badge was clicked (MakeBadge.open): the panel opens on Now
+    Connections {
+        target: root.dock
+        ignoreUnknownSignals: true
+        function onShowNow() { root.tab = "now"; }
+    }
+
     readonly property string linkState: dock ? dock.state : "off"
     readonly property bool showConnect: linkState === "off" || linkState === "failed"
     readonly property bool terminalRoute: dock ? dock.route === "terminal" : false

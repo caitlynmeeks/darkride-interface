@@ -80,6 +80,7 @@
 #include "editor/ui/PropertyEditors.h"
 #include "editor/ui/ScriptEditor.h"
 #include "ui/CodeEditor.h"
+#include "make/MakeBadge.h"
 #include "make/MakeDock.h"
 #include "make/MakeLink.h"
 #include <QtGui/QKeyEvent>
@@ -1256,6 +1257,21 @@ QString TestScriptingInterface::makeDockCopy(const QString& which) {
         return result;
     }
     return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testCopyLine(which) : QString();
+}
+
+QString TestScriptingInterface::makeBadge(const QString& state) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeBadge", Q_RETURN_ARG(QString, result), Q_ARG(QString, state));
+        return result;
+    }
+    static const QStringList STATES { "", "working", "answer", "done", "failed", "off" };
+    if (!MakeDock::isAvailable() || !STATES.contains(state)) {
+        return "unavailable";
+    }
+    auto badge = DependencyManager::get<MakeDock>()->badge();
+    badge->testForce(state);
+    return badge->state();
 }
 
 QString TestScriptingInterface::makeDockServed(const QString& what, const QString& id) {

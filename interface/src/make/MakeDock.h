@@ -43,6 +43,8 @@ class QQuickWindow;
 class QFileDialog;
 
 /// One list of the dock's rows: the timeline (oldest first) or the Made tab (newest first). Every row has every role.
+class MakeBadge;
+
 class MakeDockRows : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
@@ -151,6 +153,10 @@ public:
     bool isSetupChanged() const;
     QString startLine() const;
     bool isWorking() const { return _working; }
+    /// A question waits for the person's answer (the Make badge's "answer").
+    bool hasQuestion() const { return !_askTimes.isEmpty(); }
+    /// The Make badge: the desktop's only Make object (MakeBadge.h).
+    MakeBadge* badge() const { return _badge; }
     double costSoFar() const { return _costSoFar; }
     QObject* timeline() { return &_timeline; }
     QObject* made() { return &_made; }
@@ -231,6 +237,13 @@ signals:
     void setupTextChanged();
     void workingChanged();
     void channelChanged();
+    /// a question was asked, answered or timed out
+    void questionsChanged();
+    /// a request came to its end by itself: finished (true) or couldn't finish (false); never after the person's Stop
+    /// or Disconnect
+    void requestEnded(bool finished);
+    /// the Make badge was clicked: MakePanel.qml shows Now
+    void showNow();
     void picturesAdded(const QVariantList& ids);
     void pictureRefused(const QString& reason);
 
@@ -292,6 +305,8 @@ private:
     void channelTakenUp(int request);
     void resetChannel();
     QHash<QString, QString> _sheets;  // model id -> its sheet file in the Make folder
+    MakeBadge* _badge { nullptr };     // the Make badge, a child of this
+    bool _stopRequested { false };     // the person's Stop or Disconnect since the request began: no "couldn't finish"
     QHash<int, qint64> _askTimes;     // question id -> when it was asked (MakeLink refuses after 100 s)
     QTimer _askTimeouts;
 };

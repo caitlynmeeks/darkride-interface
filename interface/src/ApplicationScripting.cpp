@@ -79,6 +79,8 @@
 #include "avatar/AvatarThumbnails.h"
 #include "ui/MetaverseRequests.h"
 #include "ui/Panels.h"
+#include "make/MakeBadge.h"
+#include "make/MakeDock.h"
 #include "ui/RadioSkinPicker.h"
 #include "chat/FriendsScriptingInterface.h"
 #include "ui/Skins.h"
@@ -225,6 +227,14 @@ void Application::onDesktopRootItemCreated(QQuickItem* rootItem) {
     offscreenUi->show(qml, "AvatarInputsBar");
     // build mode's scene gizmo and view strip; hidden until build mode is on
     offscreenUi->show(PathUtils::qmlUrl("editor/ViewportOverlay.qml"), "EditorViewportOverlay");
+    // the Make badge (the view's bottom right while Make works with its panel out of sight); only its own small object
+    // on this context, never MakeDock (which stays on the Make dock's own)
+    if (MakeDock::isAvailable()) {
+        if (auto make = DependencyManager::get<MakeDock>()) {
+            surfaceContext->setContextProperty("MakeBadge", make->badge());
+            offscreenUi->show(PathUtils::qmlUrl("darkride/make/Badge.qml"), "MakeBadge");
+        }
+    }
 #endif
 }
 
