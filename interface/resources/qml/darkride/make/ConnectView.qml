@@ -147,7 +147,7 @@ Rectangle {
                 RouteRow {
                     chosen: view.route === "key"
                     name: "With your API key"
-                    detail: "You type here and pay per use; each ask shows its cost."
+                    detail: "Pay as you go; each ask shows its cost."
                     onPicked: if (view.dock) view.dock.setRoute("key")
                 }
                 // the key: a field until one is saved, then only that it's saved
@@ -221,9 +221,27 @@ Rectangle {
                 }
                 RouteRow {
                     chosen: view.route === "terminal"
-                    name: "In Terminal, with your Claude plan"
-                    detail: "You type in Terminal; the work shows here."
+                    name: "With your Claude plan"
+                    detail: view.dock && view.dock.chat === false ? "You type in Terminal; the work shows here."
+                        : "Start Claude in Terminal once, then type here."
                     onPicked: if (view.dock) view.dock.setRoute("terminal")
+                }
+                // the fallback, and back: chat in the panel (the channel) or type in Terminal (MAKE-CHANNEL-PLAN.md)
+                Text {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 22
+                    visible: view.route === "terminal"
+                    text: view.dock && view.dock.chat === false ? "Chat here instead" : "Type in Terminal instead"
+                    textFormat: Text.PlainText
+                    color: BuildTheme.minorText
+                    font.pixelSize: BuildTheme.noteSize
+                    Accessible.role: Accessible.Button
+                    Accessible.name: text
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: if (view.dock) view.dock.setChat(!(view.dock.chat === true))
+                    }
                 }
             }
 

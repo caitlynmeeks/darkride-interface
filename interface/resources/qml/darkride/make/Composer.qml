@@ -37,7 +37,10 @@ Rectangle {
     readonly property bool atLimit: dock ? dock.state === "limit" : false
     readonly property bool working: dock ? dock.working : false
     readonly property bool terminalRoute: dock ? dock.route === "terminal" : false
-    readonly property bool canSend: connected && !working && (input.text.trim() !== "" || pictures.length > 0)
+    // the Claude-plan route chats here too, over the channel, unless the person chose to type in Terminal
+    readonly property bool typesHere: !terminalRoute || (!!dock && dock.chat === true)
+    readonly property bool canSend: connected && !working && (input.text.trim() !== "" || pictures.length > 0) &&
+        (!terminalRoute || (!!dock && dock.channelFlag !== "off"))
 
     implicitHeight: column.implicitHeight + 16
     color: BuildTheme.panel
@@ -134,7 +137,7 @@ Rectangle {
         // the pictures going with the next request, as thumbnails (MakeDock.pictureView), each with its ×
         Flow {
             Layout.fillWidth: true
-            visible: !composer.terminalRoute && !composer.atLimit && composer.pictures.length > 0
+            visible: composer.typesHere && !composer.atLimit && composer.pictures.length > 0
             spacing: 6
             Repeater {
                 model: composer.pictures
@@ -209,10 +212,10 @@ Rectangle {
             }
         }
 
-        // your API key route: the text box, add a picture, send
+        // the text box, add a picture, send: the API key route, and the Claude-plan route's chat
         RowLayout {
             Layout.fillWidth: true
-            visible: !composer.terminalRoute && !composer.atLimit
+            visible: composer.typesHere && !composer.atLimit
             spacing: 8
 
             Rectangle {
@@ -272,7 +275,7 @@ Rectangle {
         }
         Text {
             Layout.fillWidth: true
-            visible: !composer.terminalRoute && !composer.atLimit && (composer.pictures.length > 0 || composer.pictureNote !== "")
+            visible: composer.typesHere && !composer.atLimit && (composer.pictures.length > 0 || composer.pictureNote !== "")
             text: composer.pictureNote !== "" ? composer.pictureNote : "Pictures you add are sent to Claude to guide the build."
             textFormat: Text.PlainText
             color: BuildTheme.dimText
@@ -280,10 +283,10 @@ Rectangle {
             wrapMode: Text.Wrap
         }
 
-        // the Terminal route: you talk to Claude there
+        // typing in Terminal (the fallback): you talk to Claude there
         Text {
             Layout.fillWidth: true
-            visible: composer.terminalRoute && !composer.atLimit
+            visible: !composer.typesHere && !composer.atLimit
             text: "Ask Claude in Terminal. Its work shows here."
             textFormat: Text.PlainText
             color: BuildTheme.mutedText

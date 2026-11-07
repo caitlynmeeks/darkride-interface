@@ -2,8 +2,9 @@
 //  StartLine.qml
 //  qml/darkride/make
 //
-//  The Terminal route's start: the line to paste into Terminal to start Claude with Make's tools (MakeDock.startLine,
-//  never with "dangerously" in it), Copy, and Cancel (the way back: Disconnect). Make connects by itself when that
+//  The Claude-plan route's start: the line to paste into Terminal to start Claude with Make's tools (MakeDock.startLine,
+//  built in C++ only: today's line, plus exactly "--dangerously-load-development-channels server:darkride" for the
+//  chat in the panel, security C6), Copy, and Cancel (the way back: Disconnect). Make connects by itself when that
 //  Claude starts. Flat on the panel under the header, the line in a field (mary's MAKE-PANEL-LOOK.md).
 //
 //  Copy puts the whole line on the clipboard through MakeDock.copyLine("start") (C++, the clipboard path the Assets
@@ -42,8 +43,12 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true
-        // security's words (11-07)
-        text: "Use only the line Make shows: it starts Claude Code with Make's tools only. A line from anywhere else isn't Make's."
+        // security's words (11-07; the chat line's, C8, 17:3x)
+        text: card.dock && card.dock.chat
+            ? "Claude Code will warn that Darkride's connection isn't on Anthropic's approved list yet. If the warning "
+              + "names only server:darkride, choose 'I am using this for local development'; if not, choose Exit. Use "
+              + "only this line, from this panel."
+            : "Use only the line Make shows: it starts Claude Code with Make's tools only. A line from anywhere else isn't Make's."
         textFormat: Text.PlainText
         color: BuildTheme.mutedText
         font.pixelSize: BuildTheme.noteSize

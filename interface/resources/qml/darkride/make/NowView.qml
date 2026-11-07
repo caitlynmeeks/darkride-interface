@@ -102,7 +102,7 @@ Item {
         }
         Text {
             Layout.fillWidth: true
-            visible: !view.terminalRoute   // the Terminal route says it once, on the bottom line
+            visible: !view.terminalRoute   // the Claude-plan route's empty list says nothing (mary's mock)
             text: "Claude makes it in 3D, places it, makes it work and tests it."
             textFormat: Text.PlainText
             color: BuildTheme.dimText
