@@ -361,6 +361,7 @@ void MakeLinkServer::accept() {
             return;
         }
         QString refused;
+        _connecting = MakePeer::Line();
 #ifndef Q_OS_WIN
         // who connected, before anything is read from it
         uid_t uid = 0;
@@ -368,6 +369,9 @@ void MakeLinkServer::accept() {
         const int fd = static_cast<int>(socket->socketDescriptor());
         if (fd < 0 || getpeereid(fd, &uid, &gid) != 0 || uid != getuid()) {
             refused = "a program of another user tried to connect";
+        } else {
+            // and how its Claude Code was started (MakePeer: the relay's parents, read from the system; C9)
+            _connecting = MakePeer::read(fd);
         }
 #endif
         adopt(socket, refused);
@@ -387,6 +391,11 @@ void MakeLinkServer::adoptPipe(void* pipe) {
     }
     auto socket = new QLocalSocket(this);
     socket->setSocketDescriptor(reinterpret_cast<qintptr>(pipe));
+    _connecting = MakePeer::Line();
+    ULONG clientPid = 0;
+    if (GetNamedPipeClientProcessId(pipe, &clientPid)) {
+        _connecting.peerPid = clientPid;   // its Claude Code's line isn't read on Windows yet (C9: later)
+    }
     adopt(socket, QString());
 #else
     Q_UNUSED(pipe);
@@ -407,6 +416,10 @@ void MakeLinkServer::adopt(QLocalSocket* socket, QString refused) {
     _client = socket;
     _buffer.clear();
     _clientName.clear();
+    _clientVersion.clear();
+    _peer = _connecting;
+    _connecting = MakePeer::Line();
+    _channelEvents = 0;
     connect(socket, &QLocalSocket::readyRead, this, &MakeLinkServer::readClient);
     connect(socket, &QLocalSocket::disconnected, this, [this, socket] {
         if (_client == socket) {
@@ -432,6 +445,8 @@ void MakeLinkServer::dropClient() {
     QLocalSocket* socket = _client;
     _client = nullptr;
     _buffer.clear();
+    _channelEvents = 0;
+    _peer = MakePeer::Line();
     socket->disconnect(this);
     socket->abort();
     socket->deleteLater();
@@ -488,6 +503,12 @@ void MakeLinkServer::handle(const QJsonObject& message) {
         return;
     }
     if (!isRequest) {
+        if (method == "notifications/claude/channel/permission_request") {
+            // Make relays no permission prompts (security C1: the capability isn't declared, so none should come; one
+            // that does is left to Terminal, unanswered)
+            qCInfo(makelink) << "a permission request from Claude Code was ignored: Make doesn't relay them";
+            return;
+        }
         if (method == "notifications/cancelled") {
             const QJsonValue cancelled = params.value("requestId");
             for (auto it = _calls.begin(); it != _calls.end(); ++it) {
@@ -508,10 +529,18 @@ void MakeLinkServer::handle(const QJsonObject& message) {
     }
     if (method == "initialize") {
         const QString asked = params.value("protocolVersion").toString();
-        _clientName = params.value("clientInfo").toObject().value("name").toString().left(60);
+        const QJsonObject clientInfo = params.value("clientInfo").toObject();
+        _clientName = clientInfo.value("name").toString().left(60);
+        _clientVersion = clientInfo.value("version").toString().left(40);
+        // "claude/channel" makes this a channel to Claude Code: the person's own words typed in Make's panel reach the
+        // Claude Code in Terminal as notifications/claude/channel (sendChannelEvent). Nothing else under experimental:
+        // never "claude/channel/permission", not even as false (security C1; before Claude Code 2.1.234 false counted
+        // as declared). The protocol stays at 2025-11-25 or older (PROTOCOL_VERSIONS): a channel that agrees to
+        // 2026-07-28 doesn't register on Claude Code 2.1.292 and later.
         answer(id, QJsonObject {
             { "protocolVersion", PROTOCOL_VERSIONS.contains(asked) ? asked : PROTOCOL_VERSIONS.first() },
-            { "capabilities", QJsonObject { { "tools", QJsonObject { { "listChanged", false } } } } },
+            { "capabilities", QJsonObject { { "tools", QJsonObject { { "listChanged", false } } },
+                                            { "experimental", QJsonObject { { "claude/channel", QJsonObject() } } } } },
             { "serverInfo", QJsonObject { { "name", "darkride" }, { "title", "Darkride Make" }, { "version", "1" } } },
             { "instructions", _instructions },
         });
@@ -644,6 +673,17 @@ void MakeLinkServer::send(const QJsonObject& message) {
     QByteArray line = QJsonDocument(message).toJson(QJsonDocument::Compact);
     line.append('\n');
     _client->write(line);
+}
+
+bool MakeLinkServer::sendChannelEvent(const QString& content, const QJsonObject& meta) {
+    if (!_client) {
+        return false;
+    }
+    send(QJsonObject { { "jsonrpc", "2.0" },
+                       { "method", "notifications/claude/channel" },
+                       { "params", QJsonObject { { "content", content }, { "meta", meta } } } });
+    ++_channelEvents;
+    return true;
 }
 
 void MakeLinkServer::answer(const QJsonValue& requestId, const QJsonObject& result) {

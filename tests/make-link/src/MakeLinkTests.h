@@ -4,7 +4,9 @@
 //
 //  Make's link: the tool list and its checks (schemas, refused properties, web addresses, the world's text kept short
 //  and labelled), the socket only this user can open, MCP over it (initialize, tools/list, tools/call, the gate, Stop,
-//  time limits, one client at a time), and the darkride-mcp helper carrying it from standard input and output.
+//  time limits, one client at a time), the darkride-mcp helper carrying it from standard input and output, the channel
+//  to Claude Code (the capability, its events, the protocol held at 2025-11-25) and the judgement of a connected
+//  Claude Code's start line (MakePeer).
 //
 //  Copyright 2026 Darkride.
 //
@@ -36,6 +38,9 @@ private slots:
     void testHelperRefusesAnOpenSocket();
     void testKeyHiddenInClaudeCodeErrors();
     void testClaudeStartedOncePerRun();
+    void testChannelCapabilityAndEvents();
+    void testPeerLineJudgement();
+    void testPeerOfThisProcess();
 };
 
 #endif // hifi_MakeLinkTests_h

@@ -9,6 +9,7 @@
 
 #include "MakeLinkTests.h"
 
+#include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QProcess>
@@ -20,7 +21,10 @@
 
 #include <MakeClaude.h>
 #include <MakeLinkServer.h>
+#include <MakePeer.h>
 #include <MakeToolList.h>
+
+#include <unistd.h>
 
 QTEST_MAIN(MakeLinkTests)
 
@@ -607,4 +611,177 @@ void MakeLinkTests::testClaudeStartedOncePerRun() {
     QCOMPARE(turns.at(1).at(0).toDouble(), 2.5);
     QCOMPARE(turns.at(0).at(3).toString(), QString("success"));  // the result's kind: MakeLink's limit is told by it
     claude.end();
+}
+
+// the Client helper waits for an answer by id; a notification has none, so the channel test reads the socket itself
+namespace {
+
+QJsonObject nextMessage(Client& client, int waitMs = 2000) {
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < waitMs) {
+        const int end = client.buffer.indexOf('\n');
+        if (end >= 0) {
+            const QJsonObject message = QJsonDocument::fromJson(client.buffer.left(end)).object();
+            client.buffer.remove(0, end + 1);
+            return message;
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        if (client.socket.bytesAvailable() || client.socket.waitForReadyRead(20)) {
+            client.buffer.append(client.socket.readAll());
+        }
+    }
+    return QJsonObject();
+}
+
+}  // namespace
+
+void MakeLinkTests::testChannelCapabilityAndEvents() {
+    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    MakeLinkServer server;
+    server.setInstructions("Build with Darkride's tools.");
+    QString error;
+    QVERIFY(server.listen(socketFolder(dir), error));
+    QCOMPARE(server.channelEventCount(), 0);
+    // nothing connected: no event goes anywhere
+    QVERIFY(!server.sendChannelEvent("hello", QJsonObject { { "msg_id", "1" } }));
+
+    Client client;
+    QVERIFY(client.connectTo(server.socketPath()));
+    // a client asking for the revision that doesn't register channels (2026-07-28) gets 2025-11-25; the capability is
+    // claude/channel alone, never the permission relay, not even as false (security C1)
+    const QJsonObject init = client.ask(1, "initialize", QJsonObject {
+        { "protocolVersion", "2026-07-28" },
+        { "clientInfo", QJsonObject { { "name", "claude-code" }, { "version", "2.1.319" } } } });
+    const QJsonObject result = init.value("result").toObject();
+    QCOMPARE(result.value("protocolVersion").toString(), QString("2025-11-25"));
+    const QJsonObject experimental = result.value("capabilities").toObject().value("experimental").toObject();
+    QCOMPARE(experimental.keys(), QStringList { "claude/channel" });
+    QVERIFY(experimental.value("claude/channel").isObject());
+    QVERIFY(!experimental.contains("claude/channel/permission"));
+    QCOMPARE(server.clientVersion(), QString("2.1.319"));
+
+    // an event: the person's words, with Make's own meta, as one notification line
+    QVERIFY(server.sendChannelEvent("add a red box", QJsonObject { { "msg_id", "7" }, { "pictures", "2,3" } }));
+    QCOMPARE(server.channelEventCount(), 1);
+    const QJsonObject event = nextMessage(client);
+    QCOMPARE(event.value("method").toString(), QString("notifications/claude/channel"));
+    QVERIFY(!event.contains("id"));
+    const QJsonObject params = event.value("params").toObject();
+    QCOMPARE(params.value("content").toString(), QString("add a red box"));
+    QCOMPARE(params.value("meta").toObject().value("msg_id").toString(), QString("7"));
+    QCOMPARE(params.value("meta").toObject().value("pictures").toString(), QString("2,3"));
+
+    // a permission request from the client is ignored: no answer, the connection stays
+    client.socket.write(line(QJsonObject { { "jsonrpc", "2.0" },
+                                           { "method", "notifications/claude/channel/permission_request" },
+                                           { "params", QJsonObject { { "request_id", "abcde" }, { "tool_name", "Bash" } } } }));
+    client.socket.flush();
+    wait(100);
+    QVERIFY(server.isConnected());
+    QCOMPARE(client.ask(2, "ping").value("result").toObject(), QJsonObject());
+
+    // Disconnect (C7): no events after, and the count starts again
+    server.disconnectClient();
+    QVERIFY(!server.sendChannelEvent("still there?", QJsonObject()));
+    QCOMPARE(server.channelEventCount(), 0);
+    QVERIFY(server.peer().peerPid == 0);
+}
+
+void MakeLinkTests::testPeerLineJudgement() {
+    const QString mcp = "/Users/me/Library/Application Support/Darkride/Make/claude-code/.darkride-mcp.json";
+    const QString settings = "/Users/me/Library/Application Support/Darkride/Make/claude-code/.claude/settings.json";
+    const QStringList plain { "--restricted", "--strict-mcp-config", "--mcp-config", mcp, "--settings", settings,
+                              "--tools", "" };
+    QStringList chat = plain;
+    chat << MakePeer::CHANNEL_FLAG << MakePeer::CHANNEL_ENTRY;
+    using V = MakePeer::Verdict;
+    auto verdict = [&](const QStringList& arguments) { return MakePeer::judgeArguments(arguments, mcp, settings).verdict; };
+
+    QCOMPARE(verdict(chat), V::ChatLine);
+    QCOMPARE(verdict(plain), V::PlainLine);
+    // order doesn't matter; a flag the app doesn't know is allowed (a wrapper's --verbose); the joined form too
+    QStringList shuffled { MakePeer::CHANNEL_FLAG, MakePeer::CHANNEL_ENTRY, "--tools", "", "--settings", settings,
+                           "--verbose", "--mcp-config", mcp, "--strict-mcp-config", "--restricted" };
+    QCOMPARE(verdict(shuffled), V::ChatLine);
+    QStringList joined { "--restricted", "--strict-mcp-config", "--mcp-config=" + mcp, "--settings=" + settings, "--tools=",
+                         MakePeer::CHANNEL_FLAG + "=" + MakePeer::CHANNEL_ENTRY };
+    QCOMPARE(verdict(joined), V::ChatLine);
+
+    // what matters, each refused (security 17:1x 11-07)
+    QStringList second = chat;
+    second << MakePeer::CHANNEL_FLAG << "server:other";
+    QCOMPARE(verdict(second), V::Mismatch);
+    QStringList plugin = plain;
+    plugin << MakePeer::CHANNEL_FLAG << "plugin:x@y";
+    QCOMPARE(verdict(plugin), V::Mismatch);
+    QStringList both = plain;
+    both << MakePeer::CHANNEL_FLAG << MakePeer::CHANNEL_ENTRY + ",server:other";
+    QCOMPARE(verdict(both), V::Mismatch);
+    QStringList channels = chat;
+    channels << "--channels" << "plugin:telegram@claude-plugins-official";
+    QCOMPARE(verdict(channels), V::Mismatch);
+    QStringList unrestricted = chat;
+    unrestricted.removeAll("--restricted");
+    QCOMPARE(verdict(unrestricted), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(unrestricted, mcp, settings).why, QString("no --restricted"));
+    QStringList loose = chat;
+    loose.removeAll("--strict-mcp-config");
+    QCOMPARE(verdict(loose), V::Mismatch);
+    QStringList otherMcp = chat;
+    otherMcp[otherMcp.indexOf(mcp)] = "/tmp/other.json";
+    QCOMPARE(verdict(otherMcp), V::Mismatch);
+    QStringList otherSettings = chat;
+    otherSettings[otherSettings.indexOf(settings)] = "/tmp/settings.json";
+    QCOMPARE(verdict(otherSettings), V::Mismatch);
+    QStringList tools = chat;
+    tools[tools.indexOf("") ] = "Bash";
+    QCOMPARE(verdict(tools), V::Mismatch);
+    QStringList noTools = chat;
+    noTools.removeAll("--tools");
+    noTools.removeAll("");
+    QCOMPARE(verdict(noTools), V::Mismatch);
+    QStringList bypass = chat;
+    bypass << "--dangerously-skip-permissions";
+    QCOMPARE(verdict(bypass), V::Mismatch);
+    QStringList mode = chat;
+    mode << "--permission-mode" << "bypassPermissions";
+    QCOMPARE(verdict(mode), V::Mismatch);
+    QStringList allowed = chat;
+    allowed << "--allowedTools" << "Bash";
+    QCOMPARE(verdict(allowed), V::Mismatch);
+    // -p ignores the flag: no channel, whatever the line says
+    QStringList print = chat;
+    print << "-p";
+    QCOMPARE(verdict(print), V::PlainLine);
+    // a line that couldn't be read: unknown, allowed
+    MakePeer::Line unread;
+    QCOMPARE(MakePeer::judge(unread, mcp, settings).verdict, V::Unknown);
+}
+
+void MakeLinkTests::testPeerOfThisProcess() {
+    // a client from this very process: the server learns its pid from the socket (macOS and Linux); its parents
+    // (the test runner, a shell) aren't a claude, so the line is unknown, never a refusal
+    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    MakeLinkServer server;
+    QString error;
+    QVERIFY(server.listen(socketFolder(dir), error));
+    Client client;
+    QVERIFY(client.connectTo(server.socketPath()));
+    wait(50);
+    QVERIFY(server.isConnected());
+    const MakePeer::Line peer = server.peer();
+#ifdef Q_OS_WIN
+    QCOMPARE(peer.peerPid, qint64(0));
+#else
+    QCOMPARE(peer.peerPid, qint64(getpid()));
+#endif
+    QVERIFY(!peer.readable || QFileInfo(peer.program).fileName().toLower().startsWith("claude") ||
+            peer.arguments.contains("--mcp-config"));
+    const MakePeer::Judgement judged = MakePeer::judge(peer, "/x/.darkride-mcp.json", "/x/settings.json");
+    QVERIFY(judged.verdict == MakePeer::Verdict::Unknown || judged.verdict == MakePeer::Verdict::Mismatch);
+    // the walk itself, from this process: a parent exists and is read (the runner), within the hop limit
+    const MakePeer::Line walked = MakePeer::readFrom(getpid(), 1);
+    QCOMPARE(walked.peerPid, qint64(getpid()));
+    QVERIFY(walked.hops <= 1);
 }
