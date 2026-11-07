@@ -965,8 +965,13 @@ void MakeLinkTests::testPeerOfThisProcess() {
 #else
     QCOMPARE(peer.peerPid, qint64(getpid()));
 #endif
+    bool joinedOption = false;   // the joined forms count as Make's line too (security 21:48 11-07)
+    for (const QString& argument : peer.arguments) {
+        joinedOption = joinedOption || argument.startsWith("--mcp-config=") ||
+                       argument.startsWith(MakePeer::CHANNEL_FLAG + "=");
+    }
     QVERIFY(!peer.readable || QFileInfo(peer.program).fileName().toLower().startsWith("claude") ||
-            peer.arguments.contains("--mcp-config"));
+            peer.arguments.contains("--mcp-config") || peer.arguments.contains(MakePeer::CHANNEL_FLAG) || joinedOption);
     const MakePeer::Judgement judged = MakePeer::judge(peer, "/x/.darkride-mcp.json", "/x/settings.json");
     QVERIFY(judged.verdict == MakePeer::Verdict::Unknown || judged.verdict == MakePeer::Verdict::Mismatch);
     // the walk itself, from this process: a parent exists and is read (the runner), within the hop limit

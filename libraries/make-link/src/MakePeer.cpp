@@ -38,8 +38,19 @@ namespace {
 // the process whose line is Claude Code's: named claude, or started with Make's MCP file (a wrapper that re-runs
 // claude with the same arguments still names the file)
 bool looksLikeClaude(const QString& program, const QStringList& arguments) {
+    // Claude Code by name, or by Make's own options on the line (a renamed binary, a wrapper), in the spaced or the
+    // joined form, so such a line is judged rather than read as unknown (security 21:48 11-07)
     const QString name = QFileInfo(program).fileName().toLower();
-    return name == "claude" || name == "claude.exe" || arguments.contains("--mcp-config");
+    if (name == "claude" || name == "claude.exe") {
+        return true;
+    }
+    for (const QString& argument : arguments) {
+        if (argument == "--mcp-config" || argument.startsWith("--mcp-config=") || argument == MakePeer::CHANNEL_FLAG ||
+            argument.startsWith(MakePeer::CHANNEL_FLAG + "=")) {
+            return true;
+        }
+    }
+    return false;
 }
 
 #if defined(Q_OS_MAC)
