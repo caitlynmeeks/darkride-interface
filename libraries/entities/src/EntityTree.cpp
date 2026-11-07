@@ -476,7 +476,8 @@ void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropert
             << EntityItem::propertyName(property) << "needs"
             << (needed < 0 ? QString("more than %1").arg(2 * MAX_APPENDED_VALUE_LENGTH) : QString::number(needed))
             << "bytes alone, more than the" << EntityItem::streamSectionRoom() - STREAM_HEADER_GROWTH
-            << "a stream packet holds for it";
+            << "the server allows for it (a stream packet's" << EntityItem::streamSectionRoom()
+            << "less" << STREAM_HEADER_GROWTH << "for its header to grow)";
     }
 }
 
