@@ -146,6 +146,23 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.margins: 10
                 spacing: 8
+                // mary's order and words (19:24 11-07): the default first, the two plan rows together, then the key
+                // the Claude plan, typing in Terminal: today's route and line, the default (Caity 19:19 11-07)
+                RouteRow {
+                    chosen: view.route === "terminal" && !view.chat
+                    name: "With your Claude plan, in Terminal"
+                    detail: "You type there; the work shows here."
+                    onPicked: if (view.dock) view.dock.setRoute("terminal")
+                }
+                // the Claude plan, typing here over a Claude Code channel (MAKE-CHANNEL-PLAN.md): offered beside the
+                // others once scripting's route test passes with real Claude Code (MakeDock CHAT_OFFERED)
+                RouteRow {
+                    visible: view.chatOffered
+                    chosen: view.route === "terminal" && view.chat
+                    name: "With your Claude plan, in Darkride"
+                    detail: "Start Claude in Terminal once, then type here."
+                    onPicked: if (view.dock) view.dock.setRoute("chat")
+                }
                 RouteRow {
                     chosen: view.route === "key"
                     name: "With your API key"
@@ -220,22 +237,6 @@ Rectangle {
                         font.pixelSize: BuildTheme.noteSize
                         wrapMode: Text.WordWrap
                     }
-                }
-                // the Claude plan, typing in Terminal: today's route and line, the default (Caity 19:19 11-07)
-                RouteRow {
-                    chosen: view.route === "terminal" && !view.chat
-                    name: "With your Claude plan, in Terminal"
-                    detail: "Type in Terminal; the work shows here."
-                    onPicked: if (view.dock) view.dock.setRoute("terminal")
-                }
-                // the Claude plan, typing here over a Claude Code channel (MAKE-CHANNEL-PLAN.md): offered beside the
-                // others once scripting's route test passes with real Claude Code (MakeDock CHAT_OFFERED)
-                RouteRow {
-                    visible: view.chatOffered
-                    chosen: view.route === "terminal" && view.chat
-                    name: "With your Claude plan, chat here"
-                    detail: "Start Claude in Terminal once, then type here."
-                    onPicked: if (view.dock) view.dock.setRoute("chat")
                 }
             }
 
@@ -362,7 +363,7 @@ Rectangle {
                     Layout.fillWidth: true
                     visible: !view.claudeFound || (view.route === "key" && !view.hasKey)
                     text: !view.claudeFound ? "Make needs Claude Code on this computer."
-                        : "Save your API key, or choose Terminal."
+                        : "Save your API key, or choose your Claude plan."
                     textFormat: Text.PlainText
                     color: BuildTheme.mutedText
                     font.pixelSize: BuildTheme.noteSize
@@ -439,7 +440,7 @@ Rectangle {
         }
     }
 
-    // one of the ways to reach Claude (the key, the plan in Terminal, the plan chatting here): a radio, its name and
+    // one of the ways to reach Claude (the plan in Terminal, the plan in Darkride, the key): a radio, its name and
     // what it means; the whole row picks it
     component RouteRow: RowLayout {
         id: routeRow

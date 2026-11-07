@@ -69,7 +69,8 @@ namespace {
 
     // under private/: a world script's Settings can neither read nor write them (ScriptSettingsInterface's protected
     // prefixes; security R1, 11-07). The keys before that, under Make/, are dropped once, never read.
-    Setting::Handle<QString> routeSetting { QStringList { "private", "Make", "route" }, QString("key") };
+    // the Claude plan in Terminal unless the person chose the key: the first row, the default (Caity 19:19 11-07, mary 19:24)
+    Setting::Handle<QString> routeSetting { QStringList { "private", "Make", "route" }, QString("terminal") };
     Setting::Handle<QString> allowedSetupSetting { QStringList { "private", "Make", "allowedSetup" }, QString() };
     // the Claude-plan route's chat in the panel (true, the "chat here" choice) or typing in Terminal (false, the
     // default: Caity 19:19 11-07, "happy with the Terminal route as it is"; chat is offered beside it); private as the rest
@@ -247,7 +248,7 @@ MakeDock::MakeDock() {
     // nothing looked up until the dock first opens (watchWindow): no Keychain, Claude Code or Blender look-ups at start
     oldRouteSetting.remove();
     oldAllowedSetupSetting.remove();
-    _route = routeSetting.get() == "terminal" ? QString("terminal") : QString("key");
+    _route = routeSetting.get() == "key" ? QString("key") : QString("terminal");
 
     auto link = DependencyManager::get<MakeLink>();
     QObject::connect(link.data(), &MakeLink::stateChanged, this, &MakeDock::linkStateChanged);
