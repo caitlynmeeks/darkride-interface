@@ -2005,7 +2005,14 @@ bool AudioClient::switchInputToAudioDevice(const HifiAudioDeviceInfo inputDevice
             if (!_isStereoInput || _inputFormat.channelCount() == 2) {
                 _audioInput = new hifi::audio::Source(_inputDeviceInfo.getDevice(), _inputFormat, this);
                 _numInputCallbackBytes = calculateNumberOfInputCallbackBytes(_inputFormat);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                // Qt 6's buffer size is the whole buffer between the device and us, not Qt 5's size of one delivery:
+                // ours (5 to 10 ms) is no bigger than one delivery from the device, and what doesn't fit is lost. Qt's
+                // default (250 ms) holds any delivery, and handleMicAudioInput empties it on every readyRead, so it adds
+                // no delay.
+#else
                 _audioInput->setBufferSize(_numInputCallbackBytes);
+#endif
                 // different audio input devices may have different volumes
                 emit inputVolumeChanged(_audioInput->volume());
 
