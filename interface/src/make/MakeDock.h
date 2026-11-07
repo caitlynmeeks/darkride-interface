@@ -193,6 +193,8 @@ public:
     /// Tests only (Test.makeDockItem): an item of the dock's view by objectName: found, visible, its place, text and
     /// selectedText.
     QVariantMap testItem(const QString& objectName) const;
+    /// Tests only (Test.makeDockCopy): copyLine without the real-input check; the text it put on the clipboard, or "".
+    QString testCopyLine(const QString& which);
     /// Tests only (Test.makeDockMouse): a left press, a drag in steps and a release over that item, at fractions of its
     /// size, sent as Qt events (not spontaneous, so takeRealInput refuses whatever they lead to).
     bool testMouse(const QString& objectName, const QPointF& from, const QPointF& to);

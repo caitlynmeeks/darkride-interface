@@ -785,6 +785,19 @@ bool MakeDock::copyLine(const QString& which) {
     return true;
 }
 
+QString MakeDock::testCopyLine(const QString& which) {
+    // tests only (Test.makeDockCopy, with --testScript): copyLine's own clipboard write without the real-input check,
+    // so a kit can compare the system's clipboard with the start line, byte for byte (security C6); only in pm's
+    // clipboard slot, as the clipboard is the person's
+    const QString text = which == "start" ? startLine() : which == "setup" ? setupText() : QString();
+    if (text.isEmpty()) {
+        return QString();
+    }
+    qCWarning(interfaceapp) << "Make: a test copied" << which << "to the clipboard";
+    QGuiApplication::clipboard()->setText(text);
+    return text;
+}
+
 void MakeDock::showMoreMenu(qreal x, qreal y) {
     auto menu = new QMenu(qApp->getWindow());
     menu->setAttribute(Qt::WA_DeleteOnClose);

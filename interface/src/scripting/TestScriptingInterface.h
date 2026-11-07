@@ -550,6 +550,15 @@ public slots:
     Q_INVOKABLE bool makeDockMouse(const QString& name, double fromX, double fromY, double toX, double toY);
 
     /**jsdoc
+     * Copy as the Make dock's Copy does (MakeDock.copyLine), without its real-input check: writes the system's clipboard,
+     * which is the person's, so only in a run that has a clipboard slot.
+     * @function Test.makeDockCopy
+     * @param {string} which - <code>"start"</code> (the start line) or <code>"setup"</code>.
+     * @returns {string} The text put on the clipboard, or <code>""</code>.
+     */
+    Q_INVOKABLE QString makeDockCopy(const QString& which);
+
+    /**jsdoc
      * Saves a picture of the Code panel's menu, drawn as it would show but without showing it.
      * @function Test.saveCodeMenuPicture
      * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu).

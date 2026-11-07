@@ -1249,6 +1249,15 @@ bool TestScriptingInterface::makeDockMouse(const QString& name, double fromX, do
         DependencyManager::get<MakeDock>()->testMouse(name, QPointF(fromX, fromY), QPointF(toX, toY));
 }
 
+QString TestScriptingInterface::makeDockCopy(const QString& which) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeDockCopy", Q_RETURN_ARG(QString, result), Q_ARG(QString, which));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testCopyLine(which) : QString();
+}
+
 QString TestScriptingInterface::makeDockServed(const QString& what, const QString& id) {
     if (QThread::currentThread() != thread()) {
         QString result;
