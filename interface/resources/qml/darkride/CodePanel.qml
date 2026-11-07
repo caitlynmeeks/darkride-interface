@@ -185,9 +185,10 @@ Rectangle {
             if (!root.dirty) {
                 return;
             }
-            var key = CodeEditor.openKey;   // the answer comes later: only for the file it was asked about
+            // the answer comes later: kept only for the same document (and world) it was asked about
+            var stamp = CodeEditor.openStamp;
             root.call("text", [], function (text) {
-                if (typeof text === "string" && root.dirty && CodeEditor.openKey === key) {
+                if (typeof text === "string" && root.dirty && stamp !== "" && CodeEditor.openStamp === stamp) {
                     CodeEditor.setDraft(text, true);
                 }
             });
@@ -199,6 +200,21 @@ Rectangle {
         function onDocumentChanged() {
             root.dirty = false;
             root.showDocument();
+        }
+        // arriving in another world: the unsaved typing goes into the old world's drafts before the document goes
+        function onKeepBeforeLeaving() {
+            draftTimer.stop();
+            var stamp = CodeEditor.openStamp;
+            if (root.dirty && root.pageReady) {
+                root.call("text", [], function (text) {
+                    if (typeof text === "string" && CodeEditor.openStamp === stamp) {
+                        CodeEditor.setDraft(text, true);
+                    }
+                    CodeEditor.leaveDocument(stamp);
+                });
+            } else {
+                CodeEditor.leaveDocument(stamp);
+            }
         }
         function onRightsChanged() {
             root.call("setReadOnly", [!CodeEditor.canSave]);
@@ -332,9 +348,9 @@ Rectangle {
         }
         draftTimer.stop();
         if (root.dirty && root.pageReady) {
-            var key = CodeEditor.openKey;
+            var stamp = CodeEditor.openStamp;
             call("text", [], function (text) {
-                if (typeof text === "string" && CodeEditor.openKey === key) {
+                if (typeof text === "string" && stamp !== "" && CodeEditor.openStamp === stamp) {
                     CodeEditor.setDraft(text, true);
                 }
                 CodeEditor.open(entity, which);

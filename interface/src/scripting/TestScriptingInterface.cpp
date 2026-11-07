@@ -1031,7 +1031,7 @@ QVariantMap TestScriptingInterface::codePanel() {
         { "claudeWriting", code->isClaudeWriting() }, { "showingChange", code->isShowingChange() },
         { "nearby", code->nearby()->property("count") }, { "path", code->path() }, { "usedBy", code->usedBy() },
         { "sharedBy", code->sharedBy() }, { "isShader", code->isShader() }, { "language", code->language() },
-        { "openKey", code->openKey() }, { "loading", code->isLoading() }, { "drafts", code->draftKeys().size() },
+        { "openKey", code->openKey() }, { "loading", code->isLoading() }, { "drafts", code->draftKeys().size() }, { "allDrafts", code->allDraftCount() },
     };
 }
 
@@ -1085,6 +1085,14 @@ void TestScriptingInterface::codeShowList(bool shown) {
         return;
     }
     DependencyManager::get<CodeEditor>()->testShowList(shown);
+}
+
+void TestScriptingInterface::codeSetWorld(const QString& name) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeSetWorld", Q_ARG(QString, name));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testSetWorld(name);
 }
 
 void TestScriptingInterface::codeShowNearby() {

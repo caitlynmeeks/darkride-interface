@@ -460,6 +460,14 @@ public slots:
     Q_INVOKABLE void codeShowList(bool shown);
 
     /**jsdoc
+     * Makes the Code panel act as if in another world (<code>""</code>: the real one again), as arriving there does:
+     * the open document is cleared, and unsaved changes are kept per world.
+     * @function Test.codeSetWorld
+     * @param {string} name - A name for the stand-in world, or <code>""</code>.
+     */
+    Q_INVOKABLE void codeSetWorld(const QString& name);
+
+    /**jsdoc
      * Saves a picture of the Code panel's menu, drawn as it would show but without showing it.
      * @function Test.saveCodeMenuPicture
      * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu).

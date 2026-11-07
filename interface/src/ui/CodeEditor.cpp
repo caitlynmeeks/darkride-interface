@@ -133,6 +133,30 @@ CodeEditor::CodeEditor() {
     connect(nodeList.data(), &LimitedNodeList::canWriteAssetsChanged, this, &CodeEditor::updateRights);
     connect(nodeList.data(), &LimitedNodeList::canRezCertifiedChanged, this, &CodeEditor::updateRights);
     connect(nodeList.data(), &LimitedNodeList::isAllowedEditorChanged, this, &CodeEditor::updateRights);
+    // unsaved changes are kept per world: the same atp: path, or an entity id copied with a world, in another world is
+    // another file, and arriving there clears the open document, whose entity isn't that world's (security 11-07)
+    auto& domainHandler = nodeList->getDomainHandler();
+    connect(&domainHandler, &DomainHandler::domainURLChanged, this, [this](QUrl url) {
+        const QString address = url.adjusted(QUrl::RemoveQuery | QUrl::RemoveFragment).toString();
+        if (address != _worldAddress) {
+            _worldAddress = address;
+            _worldID = QUuid();
+            enterWorld();
+        }
+    });
+    connect(&domainHandler, &DomainHandler::connectedToDomain, this, [this] {
+        const QUuid id = DependencyManager::get<NodeList>()->getDomainHandler().getUUID();
+        if (id == _worldID) {
+            return;   // the same domain again (a reconnect)
+        }
+        const bool another = !_worldID.isNull();   // another domain at the same address
+        _worldID = id;
+        if (another) {
+            enterWorld();
+        } else {
+            emit draftsChanged();
+        }
+    });
 }
 
 CodeEditor::~CodeEditor() {
@@ -169,11 +193,85 @@ QString CodeEditor::path() const {
     return CodeNearby::pathOf(_url.toString());
 }
 
+QString CodeEditor::worldKey() const {
+    if (!_testWorld.isEmpty()) {
+        return "test:" + _testWorld;
+    }
+    return _worldAddress + QLatin1Char('|') + _worldID.toString(QUuid::WithoutBraces);
+}
+
+QStringList CodeEditor::draftKeys() const {
+    const QString prefix = worldKey() + QLatin1Char('\n');
+    QStringList keys;
+    for (auto it = _drafts.cbegin(); it != _drafts.cend(); ++it) {
+        if (it.key().startsWith(prefix)) {
+            keys.append(it.key().mid(prefix.size()));
+        }
+    }
+    return keys;
+}
+
+QString CodeEditor::openStamp() const {
+    return hasDocument() ? QString::number(_generation) + QLatin1Char('\n') + docDraftKey() : QString();
+}
+
+bool CodeEditor::hasDraft() const {
+    return hasDocument() && _drafts.contains(docDraftKey());
+}
+
+QString CodeEditor::draft() const {
+    return hasDocument() ? _drafts.value(docDraftKey()) : QString();
+}
+
+void CodeEditor::enterWorld() {
+    emit draftsChanged();   // the list's Edited marks are this world's
+    if (!hasDocument() || _leaving) {
+        return;
+    }
+    if (_dirty && _pageReady) {
+        // the person's typing since the last kept draft goes into the old world's drafts before the document goes
+        // (security 11-07); nothing is saved meanwhile, and the document goes anyway if the page doesn't answer
+        static const int LEAVE_WAIT_MS = 1500;
+        _leaving = true;
+        updateRights();
+        const int generation = _generation;
+        emit keepBeforeLeaving();
+        QTimer::singleShot(LEAVE_WAIT_MS, this, [this, generation] {
+            if (_leaving && generation == _generation) {
+                qCWarning(interfaceapp) << "Code: the page didn't answer before leaving the world; its last draft is kept";
+                finishLeaving();
+            }
+        });
+    } else {
+        finishLeaving();
+    }
+}
+
+void CodeEditor::leaveDocument(const QString& stamp) {
+    if (_leaving && stamp == openStamp()) {
+        finishLeaving();
+    }
+}
+
+void CodeEditor::finishLeaving() {
+    clear();
+    emit documentChanged();
+    emit rightsChanged();
+    emit draftsChanged();
+}
+
+void CodeEditor::testSetWorld(const QString& name) {
+    if (name != _testWorld) {
+        _testWorld = name;
+        enterWorld();
+    }
+}
+
 void CodeEditor::setDraft(const QString& text, bool has) {
     if (!hasDocument()) {
         return;
     }
-    const QString key = openKey();
+    const QString key = docDraftKey();
     const bool had = _drafts.contains(key);
     if (has) {
         _drafts.insert(key, text);
@@ -262,6 +360,7 @@ bool CodeEditor::open(const QUuid& entityId, const QString& which) {
         return false;
     }
     clear();
+    _docWorld = worldKey();
     _entity = entityId;
     _which = which;
     QString value;
@@ -368,6 +467,8 @@ void CodeEditor::fetchShader() {
 
 void CodeEditor::clear() {
     ++_generation;
+    _leaving = false;
+    _docWorld.clear();
     _entity = QUuid();
     _which.clear();
     _value.clear();
@@ -428,6 +529,10 @@ void CodeEditor::updateRights() {
         // a server script's rights decide whether it opens at all (open()), so they're read before the place is known
         canSave = mayEdit && !isShader() && (_place != Place::Web) &&
             (_place != Place::WorldFiles || nodeList->getThisNodeCanWriteAssets());
+        if (_leaving) {
+            canSave = false;
+            reason = "You've left this world: your change is kept for when you're back.";
+        }
     }
     if (canSave != _canSave || reason != _readOnlyReason) {
         _canSave = canSave;
@@ -451,7 +556,7 @@ void CodeEditor::setSaving(bool saving) {
 
 void CodeEditor::save(const QString& text) {
     updateRights();
-    if (!hasDocument() || !_problem.isEmpty() || _saving || _claudeWriting) {
+    if (!hasDocument() || !_problem.isEmpty() || _saving || _claudeWriting || _leaving) {
         return;
     }
     if (!_canSave) {
@@ -472,7 +577,7 @@ void CodeEditor::save(const QString& text) {
 void CodeEditor::finishSave(const QString& text) {
     _text = text;
     _dirty = false;
-    if (_drafts.remove(openKey()) > 0) {
+    if (_drafts.remove(docDraftKey()) > 0) {
         emit draftsChanged();
     }
     _savedText = clockText();
