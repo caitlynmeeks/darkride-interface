@@ -80,12 +80,21 @@ const QStringList ENGINE_TOOLS { "scene", "get", "add", "edit", "remove", "undo"
 
 // what Claude Code may do in the Make folder: Darkride's tools, nothing of its own that reaches the computer or the web
 // (security C9 and 19: deny beats any allow, also the person's own, in every mode)
-// the built-in tools denied by name, the second wall behind --tools "" (security): the names Claude Code 2.1.319 has
-// (MultiEdit and NotebookRead are gone from it, and a name it doesn't know is warned about at every start)
-// the built-in tools of Claude Code 2.1.319 (a name that is no tool any more makes it print "Deny rule X matches no
-// tool, check for typos" on the builder's screen: MultiEdit, NotebookRead, LS and SlashCommand were dropped 11-07)
+// the built-in tools denied by name, the second wall behind --tools "" (security): the names Claude Code 2.1.319 has,
+// the ones that reach other Claude sessions, other machines or scheduled work included (security 19:36 11-07). A name
+// it has no tool for makes it print "Deny rule X matches no tool, check for typos" on the builder's screen (MultiEdit,
+// NotebookRead, LS and SlashCommand were dropped for that 11-07; the route kit fails on any such line). ToolSearch is
+// not denied: Claude Code loads a server's tools through it when they are many.
 const QStringList DENIED_TOOLS { "Bash", "BashOutput", "KillShell", "Read", "Edit", "Write", "NotebookEdit",
-                                 "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task", "Skill" };
+                                 "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "Task", "Skill",
+                                 "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "EnterWorktree", "ExitWorktree",
+                                 "TaskStop", "Monitor", "ScheduleWakeup", "Workflow",
+                                 "SendMessage", "ListAgents", "ReadNotifications", "FetchInboxMessage",
+                                 "CronCreate", "CronDelete", "CronList", "RemoteTrigger", "PushNotification",
+                                 "SendUserFile", "SendToProject", "SendToProjectContext",
+                                 "Artifact", "ArtifactComments", "ArtifactData", "DesignSync", "ReportFindings",
+                                 "EndConversation", "LSP",
+                                 "ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool" };
 
 QString plainName(const QString& text, int most) {
     QString name = text.toLower();
@@ -364,7 +373,9 @@ void MakeLink::judgeConnection() {
             setState(State::Listening, MakePeer::REFUSED_WORDS);
             return;
     }
-    qCInfo(makelog) << "Make: Claude Code" << _server.clientVersion() << "connected, channel" << _channelFlag;
+    // the channel hello carries no version string; the line says so instead of printing ""
+    const QString version = _server.clientVersion().isEmpty() ? QStringLiteral("(no version)") : _server.clientVersion();
+    qCInfo(makelog) << "Make: Claude Code" << version << "connected, channel" << _channelFlag;
 }
 
 MakeClaude::Settings MakeLink::claudeSettings() const {

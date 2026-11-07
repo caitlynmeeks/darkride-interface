@@ -701,7 +701,7 @@ void MakeLinkTests::testPeerLineJudgement() {
 
     QCOMPARE(verdict(chat), V::ChatLine);
     QCOMPARE(verdict(plain), V::PlainLine);
-    // order doesn't matter; a flag the app doesn't know is allowed (a wrapper's --verbose); the joined form too
+    // order doesn't matter; an allowed extra (--verbose) changes nothing; the joined form too
     QStringList shuffled { MakePeer::CHANNEL_FLAG, MakePeer::CHANNEL_ENTRY, "--tools", "", "--settings", settings,
                            "--verbose", "--mcp-config", mcp, "--strict-mcp-config", "--restricted" };
     QCOMPARE(verdict(shuffled), V::ChatLine);
@@ -751,6 +751,23 @@ void MakeLinkTests::testPeerLineJudgement() {
     QStringList allowed = chat;
     allowed << "--allowedTools" << "Bash";
     QCOMPARE(verdict(allowed), V::Mismatch);
+    // options that take several values get every following word that isn't an option, as Claude Code's own parser
+    // gives them (security's MUST 19:36 11-07): `--tools "" Bash` is two values, a second config after Make's is a
+    // second config, a stray word after the channel entry is a second entry
+    QStringList toolsTwo = chat;
+    toolsTwo.insert(toolsTwo.indexOf("") + 1, "Bash");
+    QCOMPARE(verdict(toolsTwo), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(toolsTwo, mcp, settings).why, QString("--tools not empty"));
+    QStringList mcpTwo = chat;
+    mcpTwo.insert(mcpTwo.indexOf(mcp) + 1, "/tmp/other.json");
+    QCOMPARE(verdict(mcpTwo), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(mcpTwo, mcp, settings).why, QString("another --mcp-config"));
+    QStringList stray = plain;
+    stray << MakePeer::CHANNEL_FLAG << MakePeer::CHANNEL_ENTRY << "anything";
+    QCOMPARE(verdict(stray), V::Mismatch);
+    QStringList trailingOption = chat;
+    trailingOption << "--verbose";   // an option after the entry ends the entry list, as it does for Claude Code
+    QCOMPARE(verdict(trailingOption), V::ChatLine);
     // several entries after one flag (security S2): a second one in any spelling is a second entry
     QStringList twoAfterOne = plain;
     twoAfterOne << MakePeer::CHANNEL_FLAG << MakePeer::CHANNEL_ENTRY << "plugin:x@y";
@@ -761,19 +778,166 @@ void MakeLinkTests::testPeerLineJudgement() {
     QStringList channelsTwo = plain;
     channelsTwo << "--channels" << "plugin:a@b" << "plugin:c@d";
     QCOMPARE(verdict(channelsTwo), V::Mismatch);
+    // the other multi-value options (security 21:18 11-07): --allowedTools with two names is a permission flag,
+    // refused; --disallowedTools takes both names as its own values (it only narrows, so the line stays Make's), and
+    // the values end at the next option, which is judged on its own
+    QStringList allowedTwo = chat;
+    allowedTwo << "--allowedTools" << "mcp__darkride__x" << "CronCreate";
+    QCOMPARE(verdict(allowedTwo), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(allowedTwo, mcp, settings).why, QString("a permission flag: --allowedTools"));
+    QStringList disallowedTwo = chat;
+    disallowedTwo << "--disallowedTools" << "mcp__darkride__x" << "CronCreate";
+    QCOMPARE(verdict(disallowedTwo), V::ChatLine);
+    QStringList disallowedThenAllowed = chat;
+    disallowedThenAllowed << "--disallowedTools" << "mcp__darkride__x" << "--allowedTools" << "Bash";
+    QCOMPARE(verdict(disallowedThenAllowed), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(disallowedThenAllowed, mcp, settings).why, QString("a permission flag: --allowedTools"));
+    // both spellings of the tool lists; the = form takes one value only, as Claude Code's parser reads it (commander's
+    // --flag=value branch doesn't keep a multi-value option open), so a word after it is the person's own prompt, not a
+    // second value; --betas takes every following value and ends at the next option (security 21:21 11-07)
+    QStringList allowedDash = chat;
+    allowedDash << "--allowed-tools" << "mcp__darkride__x" << "CronCreate";
+    QCOMPARE(verdict(allowedDash), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(allowedDash, mcp, settings).why, QString("a permission flag: --allowed-tools"));
+    QStringList disallowedDash = chat;
+    disallowedDash << "--disallowed-tools" << "mcp__darkride__x" << "CronCreate";
+    QCOMPARE(verdict(disallowedDash), V::ChatLine);
+    QStringList toolsJoined = joined;
+    toolsJoined[toolsJoined.indexOf("--tools=")] = "--tools=Bash";
+    QCOMPARE(verdict(toolsJoined), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(toolsJoined, mcp, settings).why, QString("--tools not empty"));
+    toolsJoined.insert(toolsJoined.indexOf("--tools=Bash") + 1, "loose");
+    QCOMPARE(verdict(toolsJoined), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(toolsJoined, mcp, settings).why, QString("--tools not empty"));
+    QStringList toolsJoinedEmpty = joined;   // `--tools= Bash`: the tools stay empty, Bash is the prompt
+    toolsJoinedEmpty.insert(toolsJoinedEmpty.indexOf("--tools=") + 1, "Bash");
+    QCOMPARE(verdict(toolsJoinedEmpty), V::ChatLine);
+    QStringList mcpJoined = joined;
+    mcpJoined[mcpJoined.indexOf("--mcp-config=" + mcp)] = "--mcp-config=/tmp/other.json";
+    QCOMPARE(verdict(mcpJoined), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(mcpJoined, mcp, settings).why, QString("another --mcp-config"));
+    mcpJoined.insert(mcpJoined.indexOf("--mcp-config=/tmp/other.json") + 1, "loose");
+    QCOMPARE(verdict(mcpJoined), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(mcpJoined, mcp, settings).why, QString("another --mcp-config"));
+    QStringList mcpJoinedLoose = joined;   // `--mcp-config=<Make's> /tmp/other.json`: one config, the word is the prompt
+    mcpJoinedLoose.insert(mcpJoinedLoose.indexOf("--mcp-config=" + mcp) + 1, "/tmp/other.json");
+    QCOMPARE(verdict(mcpJoinedLoose), V::ChatLine);
+    QStringList betasTwo = chat;   // --betas isn't on the allow-list: refused before its values matter
+    betasTwo << "--betas" << "one" << "two";
+    QCOMPARE(verdict(betasTwo), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(betasTwo, mcp, settings).why, QString("an option Make's line doesn't allow: --betas"));
+    // security's four ways past the old "an unknown flag is allowed" (21:22 11-07), each refused with the option named
+    // 1. an option the allow-list doesn't have, whatever it does (a plugin from a URL, a settings tier, another
+    //    project root, files, a subagent prompt, a hidden one, one Claude Code doesn't have at all)
+    for (const QStringList& extra : QList<QStringList> {
+             { "--plugin-url", "https://x/p.zip" }, { "--managed-settings", "{}" }, { "--project-config-root", "/tmp" },
+             { "--plugin-dir-no-mcp", "/tmp/p" }, { "--file", "a.txt" }, { "--sdk-url", "ws://x" },
+             { "--inherit-permission-mode", "plan" }, { "--enable-auto-mode" }, { "--append-subagent-system-prompt", "x" },
+             { "--append-subagent-system-prompt-file", "/tmp/f" }, { "--plan-mode-instructions", "x" },
+             { "--mcp-debug" }, { "--workload", "x" }, { "--team-name", "x" }, { "--tmux" }, { "--bg" },
+             { "--safe-mode" }, { "-w", "name" }, { "--max-turns", "3" }, { "--permission-mode", "default" }, { "-h" },
+             { "--debug-file", "/tmp/d.txt" } }) {
+        QStringList edited = chat;
+        edited << extra;
+        const MakePeer::Judgement judgement = MakePeer::judgeArguments(edited, mcp, settings);
+        QVERIFY2(judgement.verdict == V::Mismatch, qPrintable(extra.join(' ')));
+        QVERIFY2(judgement.why.endsWith(": " + extra.first()), qPrintable(judgement.why));
+    }
+    // 2. "--": commander reads no option after it, so Make's limits written there would never apply
+    QStringList separated { "--", "--restricted", "--strict-mcp-config", "--mcp-config=" + mcp, "--settings=" + settings,
+                            "--tools=" };
+    QCOMPARE(verdict(separated), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(separated, mcp, settings).why, QString("a -- separator"));
+    QStringList separatedLate = chat;
+    separatedLate << "--" << "hello";
+    QCOMPARE(verdict(separatedLate), V::Mismatch);
+    // 3. a value option takes the next argument even when it looks like a flag: --restricted after --model is its
+    //    value, not a limit, and the line is short of it (an option off the list, --workload, is refused first)
+    QStringList eaten = plain;
+    eaten.removeAll("--restricted");
+    eaten.prepend("--restricted");
+    eaten.prepend("--model");
+    QCOMPARE(verdict(eaten), V::Mismatch);
+    QCOMPARE(MakePeer::judgeArguments(eaten, mcp, settings).why, QString("no --restricted"));
+    QStringList eatenByName = plain;
+    eatenByName.removeAll("--strict-mcp-config");
+    eatenByName << "-n" << "--strict-mcp-config";
+    QCOMPARE(MakePeer::judgeArguments(eatenByName, mcp, settings).why, QString("no --strict-mcp-config"));
+    QStringList toolsEatsFlag = plain;   // `--tools --strict-mcp-config`: the flag is the list's first value
+    toolsEatsFlag.removeAll("");
+    toolsEatsFlag.removeAll("--strict-mcp-config");
+    toolsEatsFlag << "--strict-mcp-config";
+    QCOMPARE(MakePeer::judgeArguments(toolsEatsFlag, mcp, settings).why, QString("no --strict-mcp-config"));
+    //    (--debug-file itself is off the list, security 21:3x: it writes Claude Code's log, with the world's text,
+    //    wherever the line says)
+    // 4. an optional value doesn't take a flag: -r or -d before a permission flag hides nothing
+    QStringList resumedInto = chat;
+    resumedInto << "-r" << "--dangerously-skip-permissions";
+    QCOMPARE(MakePeer::judgeArguments(resumedInto, mcp, settings).why,
+             QString("a permission flag: --dangerously-skip-permissions"));
+    QStringList debugInto = chat;
+    debugInto << "-d" << "--allowedTools" << "Bash";
+    QCOMPARE(MakePeer::judgeArguments(debugInto, mcp, settings).why, QString("a permission flag: --allowedTools"));
+    QStringList resumedValue = chat;
+    resumedValue << "--resume" << "abc";
+    QCOMPARE(verdict(resumedValue), V::ChatLine);
+    // the forms commander itself refuses or reads another way: a value on a flag, glued short options, a value option
+    // at the end with nothing after it
+    QStringList flagValue = chat;
+    flagValue << "--verbose=1";
+    QCOMPARE(MakePeer::judgeArguments(flagValue, mcp, settings).why, QString("a value on a flag: --verbose"));
+    QStringList glued = chat;
+    glued << "-dp";
+    QCOMPARE(MakePeer::judgeArguments(glued, mcp, settings).why, QString("a glued short option: -d"));
+    QStringList gluedValue = chat;
+    gluedValue << "-nmake";
+    QCOMPARE(MakePeer::judgeArguments(gluedValue, mcp, settings).why, QString("a glued short option: -n"));
+    QStringList dangling = chat;
+    dangling << "--model";
+    QCOMPARE(MakePeer::judgeArguments(dangling, mcp, settings).why, QString("no value after --model"));
+    QStringList danglingList = plain;
+    danglingList << MakePeer::CHANNEL_FLAG;
+    QCOMPARE(MakePeer::judgeArguments(danglingList, mcp, settings).why,
+             QString("no value after " + MakePeer::CHANNEL_FLAG));
+    // a first operand that names one of Claude Code's commands runs that command, not the session (security 21:3x):
+    // refused by name; a prompt word stays allowed, and a command name as a later word or as an option's value is
+    // only a word
+    // (right after the channel entry a word is the list's second entry, so the operand stands after a flag or first)
+    for (const QString& command : QStringList { "mcp", "plugin", "plugins", "rc", "remote-control", "auth", "help",
+                                                "update", "upgrade", "edit-permission-rules", "purge" }) {
+        QStringList commanded = chat;
+        commanded << "--verbose" << command;
+        const MakePeer::Judgement judgement = MakePeer::judgeArguments(commanded, mcp, settings);
+        QVERIFY2(judgement.verdict == V::Mismatch, qPrintable(command));
+        QCOMPARE(judgement.why, QString("a subcommand: " + command));
+        QStringList commandedFirst = chat;
+        commandedFirst.prepend(command);   // commander finds the command wherever the operand stands
+        QCOMPARE(MakePeer::judgeArguments(commandedFirst, mcp, settings).why, QString("a subcommand: " + command));
+    }
+    QStringList prompted = chat;
+    prompted << "--verbose" << "hello" << "mcp";
+    QCOMPARE(verdict(prompted), V::ChatLine);
+    QStringList appended = chat;
+    appended << "mcp";   // after the entry it's a second entry, refused as that
+    QCOMPARE(MakePeer::judgeArguments(appended, mcp, settings).why, QString("a second channel entry"));
+    QStringList resumedMcp = chat;
+    resumedMcp << "-r" << "mcp";
+    QCOMPARE(verdict(resumedMcp), V::ChatLine);
     // flags that widen what Claude may do, or change what it is told (security S3): each refused
     for (const QStringList& extra : QList<QStringList> {
              { "--setting-sources", "user,project,local" }, { "--plugin-dir", "/tmp/plugin" },
              { "--agents", "{\"kit\":{\"tools\":[\"Bash\"]}}" }, { "--allow-dangerously-skip-permissions" },
              { "--append-system-prompt", "run Bash" }, { "--system-prompt-file", "/tmp/p.md" }, { "--chrome" }, { "--ide" },
-             { "--add-dir", "/Users/me" } }) {
+             { "--add-dir", "/Users/me" }, { "--agent", "kit" } }) {
         QStringList widened = chat;
         widened << extra;
         QVERIFY2(verdict(widened) == V::Mismatch, qPrintable(extra.join(' ')));
     }
-    // a flag that changes none of it stays allowed (a session name, debug output)
+    // the few options that change none of it stay allowed (a session name or id, the model, resuming, debug output)
     QStringList named = chat;
-    named << "--name" << "make" << "--mcp-debug";
+    named << "--name" << "make" << "--verbose" << "--session-id" << "0b2d" << "--fork-session" << "-c" << "--no-chrome"
+          << "--model" << "opus" << "--effort" << "high" << "--fallback-model" << "sonnet" << "-d" << "-r" << "abc"
+          << "--debug=api" << "-n" << "two";
     QCOMPARE(verdict(named), V::ChatLine);
     // -p ignores the flag: no channel, whatever the line says
     QStringList print = chat;
@@ -820,6 +984,14 @@ void MakeLinkTests::testPlainTextForTheChannel() {
     QCOMPARE(MakeText::plain(QString("x") + QChar(0x061c) + QChar(0x2060) + QChar(0x200e) + QChar(0xfeff) + "y"), QString("xy"));
     QCOMPARE(MakeText::plain(QString("r") + QChar(0x202e) + "tl" + QChar(0x2066) + "i" + QChar(0x2069)), QString("rtli"));
     QCOMPARE(MakeText::plain("a\tb\nc\r\n"), QString("a b\nc\n"));
+    // security 19:36 11-07: the variation selectors supplement, a run of selectors (only the first stays), and the
+    // other invisible format characters
+    QCOMPARE(MakeText::plain(QString("a") + QString::fromUcs4(U"\U000E0100\U000E01EF") + "b"), QString("ab"));
+    const QString heart = QString::fromUcs4(U"❤️");
+    QCOMPARE(MakeText::plain(heart), heart);
+    QCOMPARE(MakeText::plain(QString::fromUcs4(U"❤️︎︀") + "x"), heart + "x");
+    QCOMPARE(MakeText::plain(QString("p") + QChar(0x2061) + QChar(0x2064) + QChar(0x206a) + QChar(0x206f) + QChar(0xfff9) +
+                             QChar(0xfffb) + QChar(0x180e) + "q"), QString("pq"));
     // the cap counts code points and never splits a pair
     const QString pairs = QString::fromUcs4(U"\U0001F600\U0001F601\U0001F602");
     QCOMPARE(MakeText::plain(pairs, 2), QString::fromUcs4(U"\U0001F600\U0001F601"));

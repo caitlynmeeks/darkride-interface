@@ -220,108 +220,202 @@ MakePeer::Judgement MakePeer::judge(const Line& line, const QString& mcpConfig, 
     return judgeArguments(line.arguments, mcpConfig, settingsFile);
 }
 
+namespace {
+    // How Claude Code's own parser (commander, read from 2.1.319) takes each kind of option: a flag takes nothing; a
+    // value option takes the next argument whatever it is, even one that starts with '-'; an optional value takes the
+    // next argument only when it doesn't start with '-'; a list takes the next argument whatever it is and then every
+    // following one that doesn't start with '-'. The joined --option=value form gives a value option exactly one value
+    // and keeps no list open: a word after it is prompt text.
+    enum class Takes { Nothing, Value, OptionalValue, Values };
+    struct AllowedOption { const char* name; Takes takes; };
+    // The options a line may carry and still be Make's (security's MUST, 21:22 11-07): Make's own, and a few that
+    // change nothing Claude may do (which model, a session name or id, resuming, debug output, no Chrome). Every other
+    // argument that starts with '-' is refused, named: Claude Code 2.1.319 has 130-odd main options, many hidden,
+    // and an unknown one could carry a limit away as its value or add a plugin, a settings tier or a prompt.
+    const AllowedOption ALLOWED_OPTIONS[] = {
+        // Make's own line
+        { "--restricted", Takes::Nothing },   { "--strict-mcp-config", Takes::Nothing },
+        { "--mcp-config", Takes::Values },    { "--settings", Takes::Value },
+        { "--tools", Takes::Values },         { "-p", Takes::Nothing },  { "--print", Takes::Nothing },
+        // narrows only
+        { "--disallowedTools", Takes::Values }, { "--disallowed-tools", Takes::Values },
+        // which model, how hard
+        { "--model", Takes::Value },  { "--effort", Takes::Value },  { "--fallback-model", Takes::Value },
+        // the session: its name, id, resuming
+        { "-n", Takes::Value },  { "--name", Takes::Value },  { "--session-id", Takes::Value },
+        { "-c", Takes::Nothing },  { "--continue", Takes::Nothing },
+        { "-r", Takes::OptionalValue },  { "--resume", Takes::OptionalValue },  { "--fork-session", Takes::Nothing },
+        // debug output, no Chrome
+        { "--verbose", Takes::Nothing },  { "-d", Takes::OptionalValue },  { "--debug", Takes::OptionalValue },
+        { "--no-chrome", Takes::Nothing },
+        // not --debug-file: it writes Claude Code's log, tool results and so the world's text in it, to any path the
+        // line names (security 21:3x 11-07); -d writes to Claude Code's own folder
+    };
+    // Options Claude Code has that are refused with the rule they break, so the log says which (everything else says
+    // "an option Make's line doesn't allow")
+    struct RefusedOption { const char* name; const char* why; };
+    const char* const PERMISSION = "a permission flag";
+    const char* const WIDENS = "a flag that widens what Claude may do";
+    const char* const PROMPT = "a system prompt flag";
+    const RefusedOption REFUSED_OPTIONS[] = {
+        { "--dangerously-skip-permissions", PERMISSION }, { "--allow-dangerously-skip-permissions", PERMISSION },
+        { "--allowedTools", PERMISSION }, { "--allowed-tools", PERMISSION }, { "--permission-mode", PERMISSION },
+        { "--inherit-permission-mode", PERMISSION }, { "--permission-prompt-tool", PERMISSION },
+        { "--permission-prompts", PERMISSION }, { "--enable-auto-mode", PERMISSION },
+        { "--setting-sources", WIDENS }, { "--plugin-dir", WIDENS }, { "--plugin-dir-no-mcp", WIDENS },
+        { "--plugin-url", WIDENS }, { "--agents", WIDENS }, { "--add-dir", WIDENS }, { "--file", WIDENS },
+        { "--project-config-root", WIDENS }, { "--managed-settings", WIDENS }, { "--client-data-url", WIDENS },
+        { "--sdk-url", WIDENS }, { "--chrome", WIDENS }, { "--ide", WIDENS }, { "--desktop", WIDENS },
+        { "-w", WIDENS }, { "--worktree", WIDENS },
+        { "--system-prompt", PROMPT }, { "--append-system-prompt", PROMPT }, { "--system-prompt-file", PROMPT },
+        { "--append-system-prompt-file", PROMPT }, { "--append-subagent-system-prompt", PROMPT },
+        { "--append-subagent-system-prompt-file", PROMPT }, { "--plan-mode-instructions", PROMPT },
+        { "--system-prompt-snapshot", PROMPT }, { "--exclude-dynamic-system-prompt-sections", PROMPT },
+        { "--agent", PROMPT }, { "--prefill", PROMPT }, { "--prefill-b64", PROMPT },
+        { "--channels", "a --channels entry" },
+    };
+    // Claude Code 2.1.319's own commands, with their aliases and the hidden ones (the root's .command list, read from
+    // the binary): when the first operand is one of them Claude Code runs that command, not the session the line was
+    // judged as, so it isn't prompt text (security 21:3x 11-07)
+    const char* const SUBCOMMANDS[] = {
+        "agents", "auth", "auto-mode", "doctor", "gateway", "help", "import", "import-conversations", "install", "mcp",
+        "plugin", "plugins", "remote-control", "rc", "sandbox", "setup-token", "ultrareview", "update", "upgrade",
+        "design-login", "drop-worktree-registrations", "edit-chrome-settings", "edit-hook", "edit-memory-settings",
+        "edit-permission-rules", "edit-sandbox-settings", "edit-skill-overrides", "project", "purge",
+    };
+}
+
 MakePeer::Judgement MakePeer::judgeArguments(const QStringList& arguments, const QString& mcpConfig,
                                              const QString& settingsFile) {
-    // the arguments read as a set of flags, each with the value that follows it (or is joined with '='): the order
-    // doesn't matter, a flag the app doesn't know is allowed, and only what changes what Claude may do is judged
+    // the arguments read as Claude Code reads them (the tables above): the order doesn't matter, an option the
+    // allow-list doesn't have refuses the line, and Make's own options are then judged by their values
+    using V = Verdict;
     QStringList channelEntries;
     QStringList mcpConfigs, settings, toolsValues;
-    bool restricted = false, strict = false, toolsGiven = false, permissionFlag = false, print = false;
-    bool channelsFlag = false, widensFlag = false, promptFlag = false;
-    const QSet<QString> takesValue { "--mcp-config", "--settings", "--tools", CHANNEL_FLAG, "--channels",
-                                     "--permission-mode", "--model", "--allowedTools", "--allowed-tools",
-                                     "--disallowedTools", "--disallowed-tools", "--setting-sources", "--add-dir",
-                                     "--agent", "--max-turns", "--max-budget-usd", "--fallback-model", "--session-id",
-                                     "--resume", "-r", "--system-prompt", "--append-system-prompt",
-                                     "--permission-prompt-tool", "--input-format", "--output-format", "--effort",
-                                     "--plugin-dir", "--agents", "--system-prompt-file", "--append-system-prompt-file",
-                                     "--name", "-n", "--worktree", "-w", "--betas", "--mcp-debug" };
+    bool restricted = false, strict = false, toolsGiven = false, print = false, operandSeen = false;
+    const auto looksLikeOption = [](const QString& argument) { return argument.size() > 1 && argument.startsWith('-'); };
     for (int i = 0; i < arguments.size(); ++i) {
-        QString flag = arguments[i];
-        QString value;
-        bool hasValue = false;
-        const int equals = flag.startsWith("--") ? flag.indexOf('=') : -1;
-        if (equals > 0) {
-            value = flag.mid(equals + 1);
-            flag = flag.left(equals);
-            hasValue = true;
-        } else if (takesValue.contains(flag) && i + 1 < arguments.size()) {
-            value = arguments[++i];
-            hasValue = true;
+        const QString& argument = arguments[i];
+        if (!looksLikeOption(argument)) {
+            // an operand: the person's own prompt text (Claude Code's [prompt]), none of the line's limits, unless the
+            // first one names one of Claude Code's commands, which then runs instead of the session
+            if (!operandSeen) {
+                operandSeen = true;
+                for (const char* command : SUBCOMMANDS) {
+                    if (argument == QLatin1String(command)) {
+                        return Judgement { V::Mismatch, "a subcommand: " + argument };
+                    }
+                }
+            }
+            continue;
         }
+        if (argument == "--") {
+            // commander stops reading options there: a limit written after it is prompt text, never applied
+            return Judgement { V::Mismatch, "a -- separator" };
+        }
+        QString flag = argument;
+        QStringList values;
+        bool joined = false;
+        if (flag.startsWith("--")) {
+            const int equals = flag.indexOf('=');
+            if (equals > 0) {
+                values.append(flag.mid(equals + 1));
+                flag = flag.left(equals);
+                joined = true;
+            }
+        } else if (flag.size() > 2) {
+            // -dp or -nvalue: several short options, or a short one with its value glued on; the name only, no value
+            return Judgement { V::Mismatch, "a glued short option: " + flag.left(2) };
+        }
+        for (const RefusedOption& refused : REFUSED_OPTIONS) {
+            if (flag == QLatin1String(refused.name)) {
+                return Judgement { V::Mismatch, QString(refused.why) + ": " + flag };
+            }
+        }
+        Takes takes = Takes::Nothing;
+        bool allowed = false;
+        if (flag == CHANNEL_FLAG) {
+            takes = Takes::Values;
+            allowed = true;
+        } else {
+            for (const AllowedOption& option : ALLOWED_OPTIONS) {
+                if (flag == QLatin1String(option.name)) {
+                    takes = option.takes;
+                    allowed = true;
+                    break;
+                }
+            }
+        }
+        if (!allowed) {
+            return Judgement { V::Mismatch, "an option Make's line doesn't allow: " + flag };
+        }
+        if (joined) {
+            if (takes == Takes::Nothing) {
+                return Judgement { V::Mismatch, "a value on a flag: " + flag };
+            }
+            // one value, as commander gives it; a word after it is prompt text
+        } else if (takes == Takes::Value || takes == Takes::Values) {
+            if (i + 1 >= arguments.size()) {
+                return Judgement { V::Mismatch, "no value after " + flag };   // commander stops with an error there
+            }
+            values.append(arguments[++i]);   // whatever it is, as commander takes it
+            if (takes == Takes::Values) {
+                while (i + 1 < arguments.size() && !looksLikeOption(arguments[i + 1])) {
+                    values.append(arguments[++i]);
+                }
+            }
+        } else if (takes == Takes::OptionalValue) {
+            if (i + 1 < arguments.size() && !looksLikeOption(arguments[i + 1])) {
+                values.append(arguments[++i]);
+            }
+        }
+        // Make's own options, judged by their values once the line is read
         if (flag == "--restricted") {
             restricted = true;
         } else if (flag == "--strict-mcp-config") {
             strict = true;
         } else if (flag == "--mcp-config") {
-            mcpConfigs.append(value);
+            mcpConfigs.append(values);
         } else if (flag == "--settings") {
-            settings.append(value);
+            settings.append(values);
         } else if (flag == "--tools") {
             toolsGiven = true;
-            toolsValues.append(hasValue ? value.trimmed() : QString("(none)"));
-        } else if (flag == CHANNEL_FLAG || flag == "--channels") {
-            // one flag may carry several entries, "server:darkride plugin:x@y" or comma-joined (security S2): every
-            // following server: or plugin: argument up to the next flag is one
-            QStringList entries = value.split(',', Qt::SkipEmptyParts);
-            while (i + 1 < arguments.size() && !arguments[i + 1].startsWith('-') &&
-                   (arguments[i + 1].startsWith("server:") || arguments[i + 1].startsWith("plugin:"))) {
-                entries.append(arguments[++i]);
+            for (const QString& tool : values) {
+                toolsValues.append(tool.trimmed());
             }
-            if (flag == "--channels") {
-                channelsFlag = true;
-            } else {
-                for (const QString& entry : entries) {
+        } else if (flag == CHANNEL_FLAG) {
+            // one flag may carry several entries, "server:darkride plugin:x@y" or comma-joined (security S2): every
+            // value is one, whatever it says
+            for (const QString& given : values) {
+                for (const QString& entry : given.split(',', Qt::SkipEmptyParts)) {
                     channelEntries.append(entry.trimmed());
                 }
             }
-        } else if (flag == "--dangerously-skip-permissions" || flag == "--allow-dangerously-skip-permissions" ||
-                   flag == "--allowedTools" || flag == "--allowed-tools" || flag == "--permission-prompt-tool" ||
-                   (flag == "--permission-mode" && value != "dontAsk" && value != "default")) {
-            permissionFlag = true;
-        } else if (flag == "--setting-sources" || flag == "--plugin-dir" || flag == "--agents" || flag == "--add-dir" ||
-                   flag == "--chrome" || flag == "--ide") {
-            widensFlag = true;   // other settings files, a plugin (hooks, servers), agents with tools, more files, more tools
-        } else if (flag == "--system-prompt" || flag == "--append-system-prompt" || flag == "--system-prompt-file" ||
-                   flag == "--append-system-prompt-file") {
-            promptFlag = true;   // what Claude is told: Make's instructions are fixed (C4)
         } else if (flag == "-p" || flag == "--print") {
             print = true;
         }
     }
-    if (channelsFlag) {
-        return Judgement { Verdict::Mismatch, "a --channels entry" };
-    }
     if (!channelEntries.isEmpty() && (channelEntries.size() != 1 || channelEntries.first() != CHANNEL_ENTRY)) {
-        return Judgement { Verdict::Mismatch, "a second channel entry" };
+        return Judgement { V::Mismatch, "a second channel entry" };
     }
     if (!restricted) {
-        return Judgement { Verdict::Mismatch, "no --restricted" };
+        return Judgement { V::Mismatch, "no --restricted" };
     }
     if (!strict) {
-        return Judgement { Verdict::Mismatch, "no --strict-mcp-config" };
+        return Judgement { V::Mismatch, "no --strict-mcp-config" };
     }
     if (mcpConfigs.size() != 1 || !samePath(mcpConfigs.first(), mcpConfig)) {
-        return Judgement { Verdict::Mismatch, "another --mcp-config" };
+        return Judgement { V::Mismatch, "another --mcp-config" };
     }
     if (settings.size() != 1 || !samePath(settings.first(), settingsFile)) {
-        return Judgement { Verdict::Mismatch, "another --settings" };
+        return Judgement { V::Mismatch, "another --settings" };
     }
     if (!toolsGiven || toolsValues.size() != 1 || !toolsValues.first().isEmpty()) {
-        return Judgement { Verdict::Mismatch, "--tools not empty" };
-    }
-    if (permissionFlag) {
-        return Judgement { Verdict::Mismatch, "a permission flag" };
-    }
-    if (widensFlag) {
-        return Judgement { Verdict::Mismatch, "a flag that widens what Claude may do" };
-    }
-    if (promptFlag) {
-        return Judgement { Verdict::Mismatch, "a system prompt flag" };
+        return Judgement { V::Mismatch, "--tools not empty" };
     }
     // -p ignores the development-channels flag: no channel then, whatever the line says
     if (channelEntries.isEmpty() || print) {
-        return Judgement { Verdict::PlainLine, QString() };
+        return Judgement { V::PlainLine, QString() };
     }
-    return Judgement { Verdict::ChatLine, QString() };
+    return Judgement { V::ChatLine, QString() };
 }
