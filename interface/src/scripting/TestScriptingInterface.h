@@ -171,9 +171,11 @@ public slots:
     Q_INVOKABLE int getOtherAvatarsReplicaCount();
 
     /**jsdoc
-     * Set number of cycles texture size is required to be stable
+     * The arrival's texture gate's settle, as a count of checks at 60 a second (30 = 500 ms, the default); the gate also
+     * needs min(count, 5) consecutive checks. Until 2026-11-07 the count was consecutive presents, which a slowly
+     * presenting loading screen stretched.
      * @function Test.setMinimumGPUTextureMemStabilityCount
-     * @param {number} count - Number of cycles to wait
+     * @param {number} count - The settle as a count of checks at 60 a second
      */
     Q_INVOKABLE void setMinimumGPUTextureMemStabilityCount(int count);
 
