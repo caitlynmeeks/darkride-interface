@@ -115,6 +115,14 @@ class MakeDock : public QObject, public Dependency {
     Q_PROPERTY(QString setupText READ setupText NOTIFY setupTextChanged)
     Q_PROPERTY(bool setupChanged READ isSetupChanged NOTIFY setupTextChanged)
     Q_PROPERTY(QString startLine READ startLine NOTIFY setupTextChanged)
+    // the Claude-plan route's chat in the panel over a Claude Code channel (MAKE-CHANNEL-PLAN.md): on unless the
+    // person chose "Type in Terminal"; what the connected Claude Code said of the channel ("on", "off", "unknown");
+    // its version; a message sent and not yet taken up; the first message not taken up in 30 s
+    Q_PROPERTY(bool chat READ chat NOTIFY routeChanged)
+    Q_PROPERTY(QString channelFlag READ channelFlag NOTIFY stateChanged)
+    Q_PROPERTY(QString claudeVersion READ claudeVersion NOTIFY stateChanged)
+    Q_PROPERTY(bool sentWaiting READ sentWaiting NOTIFY channelChanged)
+    Q_PROPERTY(bool notGotIt READ notGotIt NOTIFY channelChanged)
     Q_PROPERTY(bool working READ isWorking NOTIFY workingChanged)
     Q_PROPERTY(double costSoFar READ costSoFar NOTIFY workingChanged)
     Q_PROPERTY(QObject* timeline READ timeline CONSTANT)
@@ -146,6 +154,11 @@ public:
     QObject* made() { return &_made; }
     /// The dock's window is watched for real input (watchWindow was given it).
     bool isWatching() const { return !_window.isNull(); }
+    bool chat() const;
+    QString channelFlag() const;
+    QString claudeVersion() const;
+    bool sentWaiting() const { return _sentWaiting; }
+    bool notGotIt() const { return _notGotIt; }
 
     // ---- the dock's calls (contract). "Real input" ones answer false when refused. ----
 
@@ -179,6 +192,9 @@ public:
     Q_INVOKABLE QString pictureView(const QString& id) const;
     /// The keyboard back to the world (Esc in the dock).
     Q_INVOKABLE void giveBackKeyboard();
+    /// The Claude-plan route: chat in the panel (true) or type in Terminal (false, the fallback where channels can't
+    /// work); kept in private/Make/chat; the start line changes, so the next Connect asks with the whole card. Real input.
+    Q_INVOKABLE bool setChat(bool chat);
     /// Copy onto the clipboard, from C++ (the Assets panel's path, not a QML text item's): the whole of the Terminal
     /// route's start line ("start") or of setupText ("setup"), read here, never a part. Real input.
     Q_INVOKABLE bool copyLine(const QString& which);
@@ -213,6 +229,7 @@ signals:
     void foundChanged();
     void setupTextChanged();
     void workingChanged();
+    void channelChanged();
     void picturesAdded(const QVariantList& ids);
     void pictureRefused(const QString& reason);
 
@@ -263,6 +280,15 @@ private:
     QList<QUrl> _droppedUrls;
     QPointer<QFileDialog> _chooser;
     QTimer _terminalQuiet;          // the Terminal route: a request is over after 45 s with no activity
+    // the channel: a message sent and not yet taken up by Claude (from the link's "sent to Claude" to the request's
+    // next activity or reply); the first message of a Connect not taken up in 30 s (not got: org policy, no flag)
+    bool _sentWaiting { false };
+    bool _notGotIt { false };
+    bool _channelProven { false };  // Claude has taken up a message this Connect
+    int _sentRequest { 0 };
+    QTimer _notGotItTimer;
+    void channelTakenUp(int request);
+    void resetChannel();
     QHash<QString, QString> _sheets;  // model id -> its sheet file in the Make folder
     QHash<int, qint64> _askTimes;     // question id -> when it was asked (MakeLink refuses after 100 s)
     QTimer _askTimeouts;

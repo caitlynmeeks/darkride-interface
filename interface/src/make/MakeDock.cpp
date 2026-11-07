@@ -71,11 +71,15 @@ namespace {
     // prefixes; security R1, 11-07). The keys before that, under Make/, are dropped once, never read.
     Setting::Handle<QString> routeSetting { QStringList { "private", "Make", "route" }, QString("key") };
     Setting::Handle<QString> allowedSetupSetting { QStringList { "private", "Make", "allowedSetup" }, QString() };
+    // the Claude-plan route's chat in the panel (true) or typing in Terminal (the fallback); private as the rest
+    Setting::Handle<bool> chatSetting { QStringList { "private", "Make", "chat" }, true };
+    const int NOT_GOT_IT_MS = 30000;   // the first message of a Connect not taken up by Claude this long: not got
+    const QString SENT_TO_CLAUDE = QStringLiteral("sent to Claude");   // MakeLink's activity when an event goes out
     Setting::Handle<QString> oldRouteSetting { QStringList { "Make", "route" }, QString() };
     Setting::Handle<QString> oldAllowedSetupSetting { QStringList { "Make", "allowedSetup" }, QString() };
     // the Allow's words as ConnectView shows them: a new version whenever they change, so changed words ask again
     // (security R2)
-    const QString ALLOW_WORDS = QStringLiteral("allow words 2026-11-07");
+    const QString ALLOW_WORDS = QStringLiteral("allow words 2026-11-07 channels");
     // the link's socket or pipe in the set-up text: a fresh pipe name at each Connect on Windows, so masked in the hash
     const QRegularExpression LINK_SOCKET(QStringLiteral("(\"--socket\",\\s*\")[^\"]*(\")"));
 
@@ -246,6 +250,16 @@ MakeDock::MakeDock() {
     QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
                      [this] { emit setupTextChanged(); });
     QObject::connect(link.data(), &MakeLink::activity, this, [this](int request, const QString& line) {
+        if (line == SENT_TO_CLAUDE) {
+            _sentWaiting = true;
+            _sentRequest = request;
+            if (!_channelProven && !_notGotItTimer.isActive()) {
+                _notGotItTimer.start();
+            }
+            emit channelChanged();
+        } else {
+            channelTakenUp(request);
+        }
         if (request > _doneRequest && _working == false) {
             _costSoFar = -1.0;
         }
@@ -322,6 +336,7 @@ MakeDock::MakeDock() {
         addMade(row);
     });
     QObject::connect(link.data(), &MakeLink::reply, this, [this](int request, const QString& text) {
+        channelTakenUp(request);
         MakeDockRows::Row row;
         row.kind = "reply";
         row.request = request;
@@ -364,6 +379,16 @@ MakeDock::MakeDock() {
         emit stateChanged();
     });
 
+    _notGotItTimer.setSingleShot(true);
+    _notGotItTimer.setInterval(NOT_GOT_IT_MS);
+    QObject::connect(&_notGotItTimer, &QTimer::timeout, this, [this] {
+        if (_sentWaiting && !_channelProven) {
+            _notGotIt = true;
+            qCWarning(interfaceapp) << "Make: Claude didn't take up the first message in" << NOT_GOT_IT_MS / 1000 << "s"
+                                    << "(channel" << channelFlag() << ")";
+            emit channelChanged();
+        }
+    });
     _terminalQuiet.setSingleShot(true);
     _terminalQuiet.setInterval(TERMINAL_QUIET_MS);
     QObject::connect(&_terminalQuiet, &QTimer::timeout, this, [this] {
@@ -415,6 +440,10 @@ QString MakeDock::reason() const {
     if (linkState == "failed" || linkState == "limit") {
         return clean(MakeClaude::redact(link->reason())).left(300);
     }
+    // listening after the link refused a Claude Code started with another line (security C9): its plain line
+    if (linkState == "listening" && !link->reason().isEmpty()) {
+        return clean(link->reason()).left(300);
+    }
     return _reason;
 }
 
@@ -458,7 +487,51 @@ QString MakeDock::lastAllowedSetupHash() const {
 }
 
 QString MakeDock::startLine() const {
-    return DependencyManager::get<MakeLink>()->startLine();
+    return DependencyManager::get<MakeLink>()->startLine(chat());
+}
+
+bool MakeDock::chat() const {
+    return chatSetting.get();
+}
+
+QString MakeDock::channelFlag() const {
+    return DependencyManager::get<MakeLink>()->channelFlag();
+}
+
+QString MakeDock::claudeVersion() const {
+    return clean(DependencyManager::get<MakeLink>()->claudeVersion()).left(40);
+}
+
+bool MakeDock::setChat(bool chat) {
+    if (!takeRealInput("setChat")) {
+        return false;
+    }
+    if (chat != chatSetting.get()) {
+        chatSetting.set(chat);
+        emit routeChanged();
+        emit setupTextChanged();   // another start line: the next Connect asks with the whole card (allowHash)
+    }
+    return true;
+}
+
+void MakeDock::channelTakenUp(int request) {
+    if (_sentWaiting && request >= _sentRequest) {
+        _sentWaiting = false;
+        _notGotIt = false;
+        _channelProven = true;
+        _notGotItTimer.stop();
+        emit channelChanged();
+    }
+}
+
+void MakeDock::resetChannel() {
+    _notGotItTimer.stop();
+    if (_sentWaiting || _notGotIt || _channelProven) {
+        _sentWaiting = false;
+        _notGotIt = false;
+        _channelProven = false;
+        emit channelChanged();
+    }
 }
 
 void MakeDock::readFound() {
@@ -479,6 +552,9 @@ void MakeDock::readFound() {
 
 void MakeDock::linkStateChanged() {
     readFound();   // while connected, blenderSealed is what that Connect decided
+    if (DependencyManager::get<MakeLink>()->stateName() != "connected") {
+        resetChannel();   // a new Claude Code proves its channel again
+    }
     if (DependencyManager::get<MakeLink>()->stateName() == "off") {
         _starting = false;
         setWorking(false);
@@ -655,7 +731,9 @@ bool MakeDock::forgetKey() {
 }
 
 int MakeDock::send(const QString& text, const QStringList& pictureIds) {
-    if (_route != "key" || text.trimmed().isEmpty() || _working) {
+    // the key route; or the Claude-plan route's chat, while a Claude Code started with the chat line is connected
+    const bool chatting = _route == "terminal" && chat() && state() == "connected" && channelFlag() != "off";
+    if ((_route != "key" && !chatting) || text.trimmed().isEmpty() || _working) {
         return 0;
     }
     if (!takeRealInput("send")) {
