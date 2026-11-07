@@ -12,3 +12,9 @@ endmacro ()
 
 # EntityContentAddressesTests: which entity content addresses name a file on this computer, and emptying them
 setup_hifi_testcase(Network)
+
+# EntitySizeCheckTests reads the property definitions in the entities library's headers
+if (TARGET entity-content-EntitySizeCheckTests)
+  target_compile_definitions(entity-content-EntitySizeCheckTests PRIVATE
+    ENTITIES_SOURCE_DIR="${CMAKE_SOURCE_DIR}/libraries/entities/src")
+endif ()

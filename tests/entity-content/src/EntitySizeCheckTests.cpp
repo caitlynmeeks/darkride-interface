@@ -12,7 +12,6 @@
 
 #include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QRegularExpression>
 #include <QSet>
 
@@ -24,13 +23,9 @@ QTEST_GUILESS_MAIN(EntitySizeCheckTests)
 
 namespace {
 
-// libraries/entities/src, found from this file's own place in the source tree
+// libraries/entities/src in the source tree (ENTITIES_SOURCE_DIR, from this test's CMakeLists)
 QDir entitiesSource() {
-    QDir dir = QFileInfo(QString(__FILE__)).absoluteDir();  // tests/entity-content/src
-    dir.cdUp();
-    dir.cdUp();
-    dir.cdUp();
-    return QDir(dir.filePath("libraries/entities/src"));
+    return QDir(QStringLiteral(ENTITIES_SOURCE_DIR));
 }
 
 // "userData" from EntityItemProperties.h, "animation.url" from AnimationPropertyGroup.h: every property defined with
@@ -96,11 +91,11 @@ void EntitySizeCheckTests::smallEditsAreNotMeasured() {
     QVERIFY(!EntitySizeCheck::mayCarryTooBigValue(move));
 
     EntityItemProperties shortText;
-    shortText.setUserData(QString(1000, 'x'));
+    shortText.setUserData(QString(400, 'x'));  // 400 UTF-16 units are 1,200 bytes at most: never measured
     QVERIFY(!EntitySizeCheck::mayCarryTooBigValue(shortText));
 
     EntityItemProperties longText;
-    longText.setUserData(QString(500, 'x'));  // 500 UTF-16 units can be 1,500 bytes: measured
+    longText.setUserData(QString(401, 'x'));  // could be 1,203 bytes: measured
     QVERIFY(EntitySizeCheck::mayCarryTooBigValue(longText));
 }
 
