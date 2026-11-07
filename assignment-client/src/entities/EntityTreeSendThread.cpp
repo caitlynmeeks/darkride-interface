@@ -12,6 +12,8 @@
 #include "EntityTreeSendThread.h"
 
 #include <functional>
+#include <mutex>
+#include <set>
 
 #include <QtCore/QProcessEnvironment>
 
@@ -146,7 +148,8 @@ bool EntityTreeSendThread::traverseTreeAndSendContents(SharedNodePointer node, O
                     << "views" << newView.viewFrustums.size() << views
                     << "lodScale" << newView.lodScaleFactor << "cards" << newView.impostorCards
                     << "queue" << _sendQueue.size() << "known" << _knownState.size()
-                    << "sentSinceLast" << _diagSentSinceLog;
+                    << "sentSinceLast" << _diagSentSinceLog
+                    << "droppedTooBig" << _diagDroppedProperties << "serverStreamChecks" << EntityTree::streamChecksRun();
                 _diagLastLog = now;
                 _diagSentSinceLog = 0;
             }
@@ -493,6 +496,23 @@ bool EntityTreeSendThread::traverseTreeAndBuildNextPacketPayload(EncodeBitstream
                 OctreeElement::AppendState appendEntityState = entity->appendEntityData(&_packetData, params, _extraEncodeData, entityNode->getCanGetAndSetPrivateUserData());
 
                 if (appendEntityState != OctreeElement::COMPLETED) {
+                    if (appendEntityState == OctreeElement::NONE && _numEntities == 0 &&
+                        (int)_packetData.getTargetSize() >= EntityItem::streamSectionRoom()) {
+                        // Nothing more of this entity fits even an empty packet, so it never will. Drop what's left of
+                        // it for this viewer and go on, rather than keep it at the head of the queue for good with
+                        // everything ranked after it waiting. Its first pass already sent every property that fit.
+                        dropUnsendableProperties(*entity, entityNode->getCanGetAndSetPrivateUserData());
+                        if (entityPreviouslyMatchedFilter && !entityMatchesFilters) {
+                            entityNodeData->removeSentFilteredEntity(entityID);
+                        }
+                        if (queuedItem.shouldForceRemove()) {
+                            _knownState.erase(entity.get());
+                        } else {
+                            _knownState[entity.get()] = sendTime;
+                        }
+                        _sendQueue.pop();
+                        continue;
+                    }
                     if (appendEntityState == OctreeElement::PARTIAL) {
                         ++_numEntities;
                     }
@@ -531,6 +551,71 @@ bool EntityTreeSendThread::traverseTreeAndBuildNextPacketPayload(EncodeBitstream
     _packetData.updatePriorBytes(_numEntitiesOffset, (const unsigned char*)&_numEntities, sizeof(_numEntities));
     OctreeServer::trackEncodeTime((float)(usecTimestampNow() - encodeStart));
     return true;
+}
+
+namespace {
+
+// An entity's name for a log line: it is world text, so at most 64 characters, without control, format (bidi) or
+// line-separator characters, and quoted, so it can't break the line or pass for another one.
+QString loggableName(const QString& name) {
+    const int MAX_NAME_CHARACTERS = 64;
+    QString out;
+    for (const QChar& c : name) {
+        if (out.size() >= MAX_NAME_CHARACTERS || (c.isHighSurrogate() && out.size() >= MAX_NAME_CHARACTERS - 1)) {
+            out += QStringLiteral("...");
+            break;
+        }
+        const QChar::Category category = c.category();
+        if (category == QChar::Other_Control || category == QChar::Other_Format ||
+            category == QChar::Separator_Line || category == QChar::Separator_Paragraph) {
+            continue;
+        }
+        out += (c == QChar('"') || c == QChar('\\')) ? QChar('\'') : c;
+    }
+    return QStringLiteral("\"") + out + QStringLiteral("\"");
+}
+
+// One warning per entity and property for the server's life, whatever the viewers, and at most this many in all
+std::mutex unsendableWarningsMutex;
+std::set<std::pair<QUuid, int>> unsendableWarnings;
+const size_t MAX_UNSENDABLE_WARNINGS = 1000;
+
+}
+
+void EntityTreeSendThread::dropUnsendableProperties(const EntityItem& entity, bool destinationCanGetAndSetPrivateUserData) {
+    const EntityItemID entityID = entity.getEntityItemID();
+    const EntityPropertyFlags leftover = _extraEncodeData->entities.value(entityID);
+    _extraEncodeData->entities.remove(entityID);
+    ++_diagDroppedProperties;
+
+    for (int flag = (int)leftover.firstFlag(); flag <= (int)leftover.lastFlag(); flag++) {
+        const EntityPropertyList property = (EntityPropertyList)flag;
+        if (!leftover.getHasProperty(property)) {
+            continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(unsendableWarningsMutex);
+            if (unsendableWarnings.size() > MAX_UNSENDABLE_WARNINGS) {
+                return;
+            }
+            if (!unsendableWarnings.insert({ entityID, flag }).second) {
+                continue;
+            }
+            if (unsendableWarnings.size() > MAX_UNSENDABLE_WARNINGS) {
+                qCWarning(entities) << "stream: more properties too big to send; no more of these warnings until the"
+                    << "entity server restarts";
+                return;
+            }
+        }
+        // the size it would need, measured once by the stream's own encoder in a room big enough for any string
+        const int MEASURING_ROOM = 2 * MAX_APPENDED_VALUE_LENGTH + 4096;
+        const int needed = entity.bytesToStreamAlone(property, MEASURING_ROOM, destinationCanGetAndSetPrivateUserData);
+        qCWarning(entities).noquote() << "stream: entity" << entityID.toString() << loggableName(entity.getName())
+            << "(" + EntityTypes::getEntityTypeName(entity.getType()) + ")" << "property" << EntityItem::propertyName(property)
+            << "needs" << (needed < 0 ? QString("more than %1").arg(MEASURING_ROOM) : QString::number(needed))
+            << "bytes alone, more than the" << EntityItem::streamSectionRoom()
+            << "a stream packet holds: it is not sent to other viewers; the entity's other properties are";
+    }
 }
 
 void EntityTreeSendThread::editingEntityPointer(const EntityItemPointer& entity) {

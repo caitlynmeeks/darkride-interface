@@ -58,6 +58,10 @@ public:
         Delete
     };
     EntityTree(bool shouldReaverage = false);
+
+    // How many adds and edits the entity server has measured against the stream's room (processEditPacketData: only
+    // those of streamCheckSize() or more), for TIVOLI_STREAM_DIAG
+    static uint64_t streamChecksRun() { return _streamChecksRun; }
     virtual ~EntityTree();
 
     void createRootElement();
@@ -321,9 +325,12 @@ signals:
     void clearingEntities();
 
 protected:
+    static std::atomic<uint64_t> _streamChecksRun;
 
     void recursivelyFilterAndCollectForDelete(const EntityItemPointer& entity, std::vector<EntityItemPointer>& entitiesToDelete, bool force) const;
     void sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused);
+    void warnTooBigToStream(const EntityItem& probe, const EntityPropertyFlags& tooBig, const EntityItemID& entityID,
+                            bool isAdd, const SharedNodePointer& senderNode);
     void processRemovedEntities(const DeleteEntityOperator& theOperator);
     bool updateEntity(EntityItemPointer entity, const EntityItemProperties& properties,
             const SharedNodePointer& senderNode = SharedNodePointer(nullptr), bool isPhysics = false);

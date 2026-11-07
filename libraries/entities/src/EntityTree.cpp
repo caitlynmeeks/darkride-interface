@@ -14,6 +14,8 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QQueue>
 
+#include <mutex>
+#include <set>
 #include <unordered_set>
 #include <QJsonObject>
 #include <QJsonDocument>
@@ -411,6 +413,67 @@ bool EntityTree::senderMayDelete(const SharedNodePointer& senderNode, const Enti
         }
     }
     return true;
+}
+
+std::atomic<uint64_t> EntityTree::_streamChecksRun { 0 };
+
+namespace {
+
+// The smallest edit that can carry a property too big for the stream: the stream's room, less its section header
+// (6 bytes) and the most an entity's stream header can take besides the property (id 16, type 2, created 8, last
+// edited 8, two time deltas 9 each, property flags up to 50 in all, rounded up to 128). An edit's own header only
+// makes a shorter edit carry less. Should this be too high, the stream itself still drops what it can't send
+// (EntityTreeSendThread), with its warning.
+const int STREAM_SECTION_HEADER_SIZE = 6;
+const int MAX_STREAM_ENTITY_HEADER_SIZE = 128;
+int streamCheckSize() {
+    // worked out on first use, not at load time: the room comes from the networking library's packet tables
+    static const int size = EntityItem::streamSectionRoom() - STREAM_SECTION_HEADER_SIZE - MAX_STREAM_ENTITY_HEADER_SIZE;
+    return size;
+}
+
+// What a live entity's stream header can take beyond the stand-in's: its two time deltas (ByteCountCoded) can each
+// grow by up to 9 bytes between the edit and the stream, so the stand-in is measured in a room this much smaller.
+const int STREAM_HEADER_GROWTH = 20;
+
+// One warning per entity and property for the server's life, whoever sends it, and at most this many in all
+std::mutex tooBigWarningsMutex;
+std::set<std::pair<QUuid, int>> tooBigWarnings;
+const size_t MAX_TOO_BIG_WARNINGS = 1000;
+
+}
+
+void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropertyFlags& tooBig, const EntityItemID& entityID,
+                                    bool isAdd, const SharedNodePointer& senderNode) {
+    for (int flag = (int)tooBig.firstFlag(); flag <= (int)tooBig.lastFlag(); flag++) {
+        const EntityPropertyList property = (EntityPropertyList)flag;
+        if (!tooBig.getHasProperty(property)) {
+            continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(tooBigWarningsMutex);
+            if (tooBigWarnings.size() > MAX_TOO_BIG_WARNINGS) {
+                return;
+            }
+            if (!tooBigWarnings.insert({ entityID, flag }).second) {
+                continue;
+            }
+            if (tooBigWarnings.size() > MAX_TOO_BIG_WARNINGS) {
+                qCWarning(entities) << "more adds and edits refused for a property too big to stream; no more of these"
+                    << "warnings until the entity server restarts";
+                return;
+            }
+        }
+        const int MEASURING_ROOM = 2 * MAX_APPENDED_VALUE_LENGTH + 4096;
+        const int needed = probe.bytesToStreamAlone(property, MEASURING_ROOM, true);
+        qCWarning(entities).noquote() << "User [" + (senderNode ? senderNode->getUUID() : QUuid()).toString() + "]"
+            << (isAdd ? "add of" : "edit of") << "entity" << entityID.toString()
+            << "(" + EntityTypes::getEntityTypeName(probe.getType()) + ")" << "refused: property"
+            << EntityItem::propertyName(property) << "needs"
+            << (needed < 0 ? QString("more than %1").arg(MEASURING_ROOM) : QString::number(needed))
+            << "bytes alone, more than the" << EntityItem::streamSectionRoom() - STREAM_HEADER_GROWTH
+            << "a stream packet holds for it";
+    }
 }
 
 // A refused edit is taken back on its sender's screen too: the client shows its own edit at once, and takes the server's
@@ -1782,6 +1845,32 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                 endLookup = usecTimestampNow();
                 if (!existingEntity) {
                     // this is not an add-entity operation, and we don't know about the identified entity.
+                    validEditPacket = false;
+                }
+            }
+
+            // A property too big for one stream packet would reach nobody but its sender and would hold up the
+            // stream of everyone who should see it. An add or an edit carrying one is refused; a refused edit is sent
+            // back, so the sender's client drops what it tried, as for the refusals below. Only an edit at least
+            // streamCheckSize() long can carry one, so nothing shorter (a vehicle's motion, say) is measured.
+            if (validEditPacket && !isClone && processedBytes >= streamCheckSize()) {
+                EntityTypes::EntityType type = isAdd ? properties.getType() : existingEntity->getType();
+                // a stand-in of the same type, with a new id: the stream's own encoder measures it, and nothing else sees it
+                EntityItemPointer probe = EntityTypes::constructEntityItem(type, QUuid::createUuid(), properties);
+                _streamChecksRun++;
+                EntityPropertyFlags tooBig;
+                if (probe) {
+                    tooBig = probe->propertiesTooBigToStream(properties.getChangedProperties(), STREAM_HEADER_GROWTH, true);
+                }
+                if (!tooBig.isEmpty()) {
+                    warnTooBigToStream(*probe, tooBig, entityItemID, isAdd, senderNode);
+                    if (isAdd) {
+                        // tell the client that sent it that the entity was not added
+                        QWriteLocker locker(&_recentlyDeletedEntitiesLock);
+                        _recentlyDeletedEntityItemIDs.insert(usecTimestampNow(), entityItemID);
+                    } else if (!isPhysics) {
+                        sendBackRefusedEdit(existingEntity, properties);
+                    }
                     validEditPacket = false;
                 }
             }

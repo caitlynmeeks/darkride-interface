@@ -216,6 +216,10 @@ void OctreeEditPacketSender::queueOctreeEditMessage(PacketType type, QByteArray&
             // tell the sent packet history that we used a sequence number for an untracked packet
             auto& sentPacketHistory = _sentPacketHistories[nodeUUID];
             sentPacketHistory.untrackedPacketSent(sequence);
+        } else if (editMessage.size() > maxEditMessageSize(type)) {
+            // it would fail to write into even an empty packet, and so be lost without a word
+            qCWarning(octree) << "queueOctreeEditMessage: an edit of" << editMessage.size() << "bytes is longer than an"
+                << "edit packet holds (" << maxEditMessageSize(type) << "); not sent";
         } else {
             // only a NLPacket for now
             std::unique_ptr<NLPacket>& bufferedPacket = _pendingEditPackets[nodeUUID].first;
