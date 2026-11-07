@@ -62,6 +62,12 @@ void Application::loadAvatarScripts(const QVector<QString>& urls) {
 }
 
 void Application::unloadAvatarScripts() {
+    if (avatarScriptsWorld != 0) {
+        // before they are stopped, as when a world is left: from here on the old avatar's scripts get nothing done, and
+        // what they made outside their engines (mappings, pointers, picks, 2D overlays, their entities) goes
+        getEntities()->markWorldLeft(avatarScriptsWorld);
+        avatarScriptsWorld = 0;
+    }
     auto scriptEngines = DependencyManager::get<ScriptEngines>();
     auto urls = scriptEngines->getRunningScripts();
     for (auto url : urls) {
@@ -69,12 +75,6 @@ void Application::unloadAvatarScripts() {
         if (scriptEngine->getType() == ScriptEngine::Type::AVATAR) {
             scriptEngines->stopScript(url, false);
         }
-    }
-    if (avatarScriptsWorld != 0) {
-        // from here on the old avatar's scripts get nothing done, and what they made outside their engines (mappings,
-        // pointers, picks, 2D overlays, their entities) goes, as when a world is left
-        getEntities()->markWorldLeft(avatarScriptsWorld);
-        avatarScriptsWorld = 0;
     }
 }
 

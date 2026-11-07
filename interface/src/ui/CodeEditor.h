@@ -34,6 +34,7 @@
 
 #include <QtCore/QHash>
 #include <QtCore/QObject>
+#include <QtCore/QSharedPointer>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
@@ -45,6 +46,8 @@
 
 class CallbackTarget;
 class CodeNearby;
+class NetworkShader;
+class QMenu;
 
 class CodeEditor : public QObject, public Dependency {
     Q_OBJECT
@@ -72,6 +75,18 @@ class CodeEditor : public QObject, public Dependency {
     Q_PROPERTY(bool claudeWriting READ isClaudeWriting NOTIFY claudeChanged)
     Q_PROPERTY(bool showingChange READ isShowingChange NOTIFY claudeChanged)
     Q_PROPERTY(QObject* nearby READ nearby CONSTANT)
+    // the list on the left (Caity 11-07, mockups/code-panel-list): the open file's key (its row), its path for the
+    // header's first line, what uses it and how far for its second, and how many things use it (a save changes them all)
+    Q_PROPERTY(QString openKey READ openKey NOTIFY documentChanged)
+    Q_PROPERTY(QString path READ path NOTIFY documentChanged)
+    Q_PROPERTY(bool isShader READ isShader NOTIFY documentChanged)
+    Q_PROPERTY(QString usedBy READ usedBy NOTIFY usedByChanged)
+    Q_PROPERTY(int sharedBy READ sharedBy NOTIFY usedByChanged)
+    // the files with an unsaved change kept (the person moved to another file), in this world: their rows say Edited
+    Q_PROPERTY(QStringList draftKeys READ draftKeys NOTIFY draftsChanged)
+    // changes with every document opened or cleared: an answer from the page about the text is kept as a draft only
+    // while it's still the same document (the file key alone is the same for one atp: path in two worlds)
+    Q_PROPERTY(QString openStamp READ openStamp NOTIFY documentChanged)
 
 public:
     CodeEditor();
@@ -81,7 +96,8 @@ public:
     static bool isAvailable();
 
     // from the Inspector, the Hierarchy, Code near you and Make's cards: opens the panel on that entity's script
-    // ("script" or "serverScripts"); answers false for an entity that isn't there or a script it doesn't have
+    // ("script" or "serverScripts") or shader ("fragmentShader" or "vertexShader", read only: its address read from the
+    // entity itself, never given); answers false for an entity that isn't there or a script it doesn't have
     Q_INVOKABLE bool open(const QUuid& entityId, const QString& which);
 
     bool hasDocument() const { return !_entity.isNull(); }
@@ -90,7 +106,15 @@ public:
     QString kind() const;
     QString where() const;
     QString entityName() const { return _entityName; }
-    QString language() const { return QStringLiteral("javascript"); }
+    QString language() const { return isShader() ? QStringLiteral("glsl") : QStringLiteral("javascript"); }
+    bool isShader() const;
+    QString openKey() const;
+    QString path() const;
+    QString usedBy() const { return _usedBy; }
+    int sharedBy() const { return _sharedBy; }
+    QStringList draftKeys() const;
+    QString openStamp() const;
+    int allDraftCount() const { return _drafts.size(); }   // every world's (for Test)
     QString problem() const { return _problem; }
     bool hasLink() const { return _place == Place::WorldFiles || _place == Place::Web; }
     bool canSave() const { return _canSave; }
@@ -113,11 +137,14 @@ public:
     Q_INVOKABLE QStringList change() const { return _showingChange ? QStringList{ _changeOld, _changeNew } : QStringList(); }
     // the page's text differs from it (the page tells the panel; Undo of a save doesn't replace typing)
     Q_INVOKABLE void setDirty(bool dirty) { _dirty = dirty; }
-    // the person's unsaved change, kept while the panel is closed and shown again when it opens; gone on a save or
-    // when another script opens
-    Q_INVOKABLE void setDraft(const QString& text, bool has) { _draft = has ? text : QString(); _hasDraft = has; }
-    Q_INVOKABLE bool hasDraft() const { return _hasDraft; }
-    Q_INVOKABLE QString draft() const { return _draft; }
+    // the person's unsaved change to the open file, kept while the panel is closed or another file is open, and shown
+    // again when it opens; gone on a save (one per file and world, for this run of the app: the same atp: path or
+    // entity id in another world is another file, security 11-07)
+    Q_INVOKABLE void setDraft(const QString& text, bool has);
+    Q_INVOKABLE bool hasDraft() const;
+    Q_INVOKABLE QString draft() const;
+    // the panel's answer to keepBeforeLeaving (its text kept first): the document goes
+    Q_INVOKABLE void leaveDocument(const QString& stamp);
     // the person's Save or Cmd+S, with the page's text
     Q_INVOKABLE void save(const QString& text);
     // Script: everyone's client loads it again; Server Script: the script server does (the Inspector's Reload)
@@ -128,6 +155,13 @@ public:
     Q_INVOKABLE void copyLink();
     // Esc in the editor: the keyboard back to the 3D view
     Q_INVOKABLE void giveBackKeyboard();
+    // the panel's ••• menu, the app's own (as Create's and the Entities list's), at (x, y) on the screen: Show in
+    // Inspector, Copy Link
+    Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
+    // a test's picture of that menu ("more"), drawn without showing it
+    bool saveMenuPicture(const QString& which, const QString& path);
+    // the list's Refresh: a look at the world now
+    Q_INVOKABLE void refreshNearby();
     // the panel open or closed: the status is asked for only while it's open
     Q_INVOKABLE void setPanelOpen(bool open);
     // Code near you (ui/CodeNearby.h), and whether it's unfolded: it looks at the world only while the panel is open
@@ -162,6 +196,13 @@ public:
     void testSave() { emit testRequest("save", QString(), 0); }
     // the panel open on Code near you alone, unfolded, no script (performance's ride row)
     void testShowNearby();
+    // a row of the list clicked, through the panel's own click (which keeps unsaved typing first)
+    void testOpenRow(const QUuid& entityId, const QString& which) { emit testOpenRowRequested(entityId, which); }
+    // the list unfolded or folded, as its sidebar button does
+    void testShowList(bool shown) { emit testRequest("list", shown ? "open" : "fold", 0); }
+    // stands in for another world ("" = the real one), as arriving there does: the open document cleared, drafts kept
+    // per world. An offline kit can't make one file key in two worlds (a file:// world gives new entity ids)
+    void testSetWorld(const QString& name);
 
 signals:
     void documentChanged();   // a new document, or the same one's text replaced (Undo of a save): the page shows text()
@@ -171,6 +212,7 @@ signals:
     void noteChanged();
     void statusChanged();
     void testRequest(const QString& what, const QString& source, int run);   // Test only: the panel runs it
+    void testOpenRowRequested(const QUuid& entityId, const QString& which);   // Test only
     void claudeChanged();
     // to the page, through the panel
     void streamBegan();
@@ -178,9 +220,21 @@ signals:
     void streamEnded(const QString& text);
     void changeShown(const QString& oldText, const QString& newText);
     void changeClosed();
-    void nearbyUnfoldRequested();
+    void usedByChanged();
+    void draftsChanged();
+    // arriving in another world with unsaved typing: the panel keeps the page's text as a draft, then leaveDocument
+    void keepBeforeLeaving();
 
 private:
+    QMenu* makeMoreMenu();
+    void updateUsedBy();
+    QString worldKey() const;
+    // the open document's draft key: the world it was opened in, then the file (a world change doesn't move it)
+    QString docDraftKey() const { return _docWorld + QLatin1Char('\n') + openKey(); }
+    void enterWorld();   // another world: its entities aren't this document's, so the document goes
+    void finishLeaving();
+    void fetchShader();
+
     enum class Place { None, WrittenIn, WorldFiles, Web };
 
     void clear();
@@ -204,8 +258,16 @@ private:
     QString _fileName;
     QString _entityName;
     QString _text;
-    QString _draft;
-    bool _hasDraft { false };
+    QHash<QString, QString> _drafts;   // by world, then file (docDraftKey() for the open document)
+    QString _worldAddress;     // the world's address (the domain's URL), from DomainHandler
+    QUuid _worldID;            // the domain's id once connected; another domain at the same address is another world
+    QString _testWorld;
+    QString _docWorld;         // worldKey() when the open document was opened
+    bool _leaving { false };   // in another world, the page's unsaved text on its way into the old world's drafts
+    QString _usedBy;
+    int _sharedBy { 0 };
+    QSharedPointer<NetworkShader> _shader;   // a shader on its way from the shader cache
+    QMetaObject::Connection _shaderConnection;
     QString _problem;
     bool _loading { false };
     bool _dirty { false };

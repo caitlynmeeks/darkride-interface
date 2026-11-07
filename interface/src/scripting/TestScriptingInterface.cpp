@@ -25,6 +25,7 @@
 
 #include <SpringBones.h>
 
+#include <QtCore/QAbstractItemModel>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QElapsedTimer>
@@ -57,7 +58,10 @@
 
 #include "Application.h"
 #include "InterfaceLogging.h"
+#include <QtGui/QPainter>
 #include <QtGui/QPixmap>
+#include <QtQuick/QQuickWindow>
+#include "ui/QmlDock.h"
 #include <plugins/DisplayPlugin.h>
 #include <display-plugins/DisplayLink.h>
 #include <display-plugins/OpenGLDisplayPlugin.h>
@@ -969,7 +973,24 @@ bool TestScriptingInterface::saveDockPicture(const QString& objectName, const QS
         return false;
     }
     QPixmap picture = dock->grab();
-    return !picture.isNull() && picture.save(path);
+    if (picture.isNull()) {
+        return false;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // on Qt 6 a QML panel draws in its own window inside the dock (QmlDock), which the widget grab leaves blank: its
+    // Qt Quick window's own picture goes in on top, where its container sits
+    auto qmlDock = qobject_cast<QmlDock*>(dock);
+    auto item = qmlDock ? qmlDock->panel() : nullptr;
+    auto quickWindow = item ? item->window() : nullptr;
+    if (quickWindow && dock->widget()) {
+        const QImage content = quickWindow->grabWindow();
+        if (!content.isNull()) {
+            QPainter painter(&picture);
+            painter.drawImage(QRect(dock->widget()->mapTo(dock, QPoint(0, 0)), dock->widget()->size()), content);
+        }
+    }
+#endif
+    return picture.save(path);
 }
 
 bool TestScriptingInterface::openInCode(const QUuid& id, const QString& which) {
@@ -988,14 +1009,29 @@ QVariantMap TestScriptingInterface::codePanel() {
         return result;
     }
     auto code = DependencyManager::get<CodeEditor>();
+    // the list's rows as it shows them
+    QVariantList rows;
+    if (auto model = qobject_cast<QAbstractItemModel*>(code->nearby())) {
+        const auto roles = model->roleNames();
+        for (int i = 0; i < model->rowCount(); ++i) {
+            QVariantMap row;
+            for (auto role = roles.begin(); role != roles.end(); ++role) {
+                row.insert(QString::fromUtf8(role.value()), model->data(model->index(i, 0), role.key()));
+            }
+            rows.append(row);
+        }
+    }
     return {
+        { "rows", rows },
         { "hasDocument", code->hasDocument() }, { "pageReady", code->isPageReady() }, { "fileName", code->fileName() },
         { "kind", code->kind() }, { "where", code->where() }, { "canSave", code->canSave() },
         { "readOnlyReason", code->readOnlyReason() }, { "problem", code->problem() }, { "saving", code->isSaving() },
         { "savedText", code->savedText() }, { "note", code->note() }, { "status", code->status() },
         { "statusState", code->statusState() }, { "errorLine", code->errorLine() }, { "errorText", code->errorText() },
         { "claudeWriting", code->isClaudeWriting() }, { "showingChange", code->isShowingChange() },
-        { "nearby", code->nearby()->property("count") },
+        { "nearby", code->nearby()->property("count") }, { "path", code->path() }, { "usedBy", code->usedBy() },
+        { "sharedBy", code->sharedBy() }, { "isShader", code->isShader() }, { "language", code->language() },
+        { "openKey", code->openKey() }, { "loading", code->isLoading() }, { "drafts", code->draftKeys().size() }, { "allDrafts", code->allDraftCount() },
     };
 }
 
@@ -1023,6 +1059,40 @@ void TestScriptingInterface::codeSave() {
         return;
     }
     DependencyManager::get<CodeEditor>()->testSave();
+}
+
+bool TestScriptingInterface::saveCodeMenuPicture(const QString& which, const QString& path) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "saveCodeMenuPicture", Q_RETURN_ARG(bool, result), Q_ARG(QString, which),
+                               Q_ARG(QString, path));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->saveMenuPicture(which, path);
+}
+
+void TestScriptingInterface::codeOpenRow(const QUuid& id, const QString& which) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeOpenRow", Q_ARG(QUuid, id), Q_ARG(QString, which));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testOpenRow(id, which);
+}
+
+void TestScriptingInterface::codeShowList(bool shown) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeShowList", Q_ARG(bool, shown));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testShowList(shown);
+}
+
+void TestScriptingInterface::codeSetWorld(const QString& name) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeSetWorld", Q_ARG(QString, name));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testSetWorld(name);
 }
 
 void TestScriptingInterface::codeShowNearby() {

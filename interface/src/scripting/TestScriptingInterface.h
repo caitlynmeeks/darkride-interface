@@ -407,7 +407,8 @@ public slots:
     /**jsdoc
      * The Code panel's document as the panel shows it: <code>hasDocument, pageReady, fileName, kind, where, canSave,
      * readOnlyReason, problem, saving, savedText, note, status, statusState, errorLine, errorText, claudeWriting,
-     * showingChange, nearby</code> (Code near you's row count).
+     * showingChange, nearby</code> (Code near you's row count), <code>rows</code> (its rows), <code>path, usedBy, sharedBy, isShader, language,
+     * openKey, loading, drafts</code> (how many files have an unsaved change kept).
      * @function Test.codePanel
      * @returns {object} The panel's state.
      */
@@ -441,6 +442,39 @@ public slots:
      * @function Test.codeShowNearby
      */
     Q_INVOKABLE void codeShowNearby();
+
+    /**jsdoc
+     * Clicks a row of the Code panel's list, as the person does: the open file's unsaved typing is kept first.
+     * @function Test.codeOpenRow
+     * @param {Uuid} id - The row's entity (the nearest thing using the file).
+     * @param {string} which - <code>"script"</code>, <code>"serverScripts"</code>, <code>"fragmentShader"</code> or
+     *     <code>"vertexShader"</code>.
+     */
+    Q_INVOKABLE void codeOpenRow(const QUuid& id, const QString& which);
+
+    /**jsdoc
+     * Unfolds or folds the Code panel's list, as its sidebar button does.
+     * @function Test.codeShowList
+     * @param {boolean} shown - Whether the list shows.
+     */
+    Q_INVOKABLE void codeShowList(bool shown);
+
+    /**jsdoc
+     * Makes the Code panel act as if in another world (<code>""</code>: the real one again), as arriving there does:
+     * the open document is cleared, and unsaved changes are kept per world.
+     * @function Test.codeSetWorld
+     * @param {string} name - A name for the stand-in world, or <code>""</code>.
+     */
+    Q_INVOKABLE void codeSetWorld(const QString& name);
+
+    /**jsdoc
+     * Saves a picture of the Code panel's menu, drawn as it would show but without showing it.
+     * @function Test.saveCodeMenuPicture
+     * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu).
+     * @param {string} path - Where to save it (PNG).
+     * @returns {boolean} Whether it was saved.
+     */
+    Q_INVOKABLE bool saveCodeMenuPicture(const QString& which, const QString& path);
 
     /**jsdoc
      * Shows a count on the bar's Chat button's badge (ui/ChatButton.h), as chat's unread count would, until chat's

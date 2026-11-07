@@ -8,6 +8,7 @@
 
 #include "WasmScriptEngine.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include <QtCore/QCoreApplication>
@@ -61,6 +62,7 @@ const QString JS_SUFFIX = QStringLiteral("js");
 const int MIN_TIMEOUT_FOR_COARSE_TIMER = 200;  // below this a Qt timer is made precise, as the QtScript engine does
 const int MAX_SCRIPT_QUITTING_TIME_MS = 500;
 const int MAX_SCRIPT_ENDING_TIME_MS = 3000;  // for the scriptEnding handlers, before the modules are interrupted
+const int MAX_STOPPED_CALL_TIME_MS = 2000;   // of that, for a call a stop found running to finish; the handlers have the rest
 const int DEFAULT_SCRIPT_CALL_LIMIT_MS = 5000;  // a call into a JavaScript script, of the script's own time
 
 // A call into a JavaScript script may run this long of the script's own time (what it spends in host functions,
@@ -171,7 +173,8 @@ WasmScriptEngine::WasmScriptEngine(Context context, const QString& scriptContent
         // script of the world on one thread, so a runaway there holds them all: it is interrupted and that entity
         // script alone is stopped (onCallTimeLimit). A client script or an agent runs on its own, and its runaway
         // holds only itself: the call is reported in the log once and goes on, as on QtScript (Caity's choice,
-        // 2026-10-24). stop() interrupts a call as before.
+        // 2026-10-24). stop() interrupts a call as before, up to the script's scriptEnding handlers; interruptRunningCall
+        // interrupts those too.
         if (_isEntitiesEngine) {
             _limits.callTimeout = scriptCallTimeLimit();
         } else {
@@ -184,6 +187,7 @@ WasmScriptEngine::WasmScriptEngine(Context context, const QString& scriptContent
 WasmScriptEngine::~WasmScriptEngine() {
     stopTimers();
     std::lock_guard<std::mutex> lock(_instancesMutex);
+    _starting.clear();
     _entityModules.clear();
     _main.reset();
 }
@@ -520,6 +524,30 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         instanceLimits.callTimeout = std::chrono::milliseconds(0);
     }
     instance->instance = std::make_unique<WasmInstance>(module, instanceLimits);
+    // a stop reaches the instance while it starts too (its initializer, the script's top level), not only once it is
+    // the main or an entity module: it is listed as starting, and a stop that came before is applied to it, in one
+    // locked step. Started, the caller hands it over (handOver); failed, it goes from the list here
+    {
+        std::lock_guard<std::mutex> lock(_instancesMutex);
+        _starting.push_back(instance);
+        if (_isStopping) {
+            stopInstances();
+        }
+    }
+    struct StartingFailed {
+        WasmScriptEngine* engine;
+        ModuleInstancePointer instance;
+        bool started { false };
+        ~StartingFailed() {
+            if (!started) {
+                std::lock_guard<std::mutex> lock(engine->_instancesMutex);
+                if (instance->instance && instance->instance->isStopRequested()) {
+                    engine->_startEndedByStop = true;  // for stopAll's line: it is on no list by then
+                }
+                engine->handOver(instance);
+            }
+        }
+    } startingFailed { this, instance };
     if (instanceLimits.callWarning.count() > 0) {
         // logged at once, from inside the long call: a message queued to this thread would wait for the call to end
         const QString scriptName = name;
@@ -625,7 +653,14 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         instance->running = false;
         return nullptr;
     }
+    startingFailed.started = true;
     return instance;
+}
+
+// The instance makeInstance listed as starting is off that list: it is the main or an entity module now, in the same
+// locked step, or it failed. The caller holds _instancesMutex.
+void WasmScriptEngine::handOver(const ModuleInstancePointer& instance) {
+    _starting.erase(std::remove(_starting.begin(), _starting.end(), instance), _starting.end());
 }
 
 bool WasmScriptEngine::startMain() {
@@ -655,12 +690,15 @@ bool WasmScriptEngine::startMain() {
     }
     ModuleInstancePointer main = makeInstance(getFilename(), module, _limits, error);
     if (!main) {
-        scriptErrorMessage(error);
+        if (!error.contains("the script was stopped")) {
+            scriptErrorMessage(error);  // a stop while it started is what was asked for, not a failure
+        }
         return false;
     }
     {
         std::lock_guard<std::mutex> lock(_instancesMutex);
         _main = main;
+        handOver(main);
     }
     return !_isFinished;
 }
@@ -746,6 +784,24 @@ void WasmScriptEngine::stopInstance(const ModuleInstancePointer& instance) {
 void WasmScriptEngine::stopAll() {
     scriptInfoMessage("WebAssembly script engine stopping:" + getFilename());
     stopTimers();
+    {
+        // a stop that found a module inside a call was for that call: its handlers still run. Not past the deadline,
+        // and not for a world that was left, which gets nothing more done
+        std::lock_guard<std::mutex> lock(_instancesMutex);
+        _scriptEndingBegun = true;
+        if (_stopLetCallFinish) {
+            // the call the stop found running: finished, or ended at the deadline (or by its world left)
+            bool ended = _startEndedByStop;
+            forEachInstance([&ended](WasmInstance& instance) { ended = ended || instance.isStopRequested(); });
+            qCDebug(scriptengine).nospace() << "the call running at the stop of " << getFilename()
+                                            << (ended ? " was ended at its deadline or by its world left, "
+                                                      : " finished within its deadline, ")
+                                            << MAX_SCRIPT_ENDING_TIME_MS - endingTimeLeftMs() << " ms after the stop";
+        }
+        if (!_endingDeadlinePassed && !worldWasLeft()) {
+            forEachInstance([](WasmInstance& instance) { instance.resumeAfterStop(); });
+        }
+    }
     // the signal first, while the modules can still answer it; then their own stops; the entity scripts'
     // modules before the main one, which may host them
     ++_callDepth;
@@ -762,6 +818,22 @@ void WasmScriptEngine::stopAll() {
         std::lock_guard<std::mutex> lock(_instancesMutex);
         _entityModules.clear();
         _main.reset();
+    }
+}
+
+void WasmScriptEngine::forEachInstance(const std::function<void(WasmInstance&)>& action) {
+    for (const ModuleInstancePointer& instance : _starting) {
+        if (instance->instance) {
+            action(*instance->instance);
+        }
+    }
+    if (_main && _main->instance) {
+        action(*_main->instance);
+    }
+    for (const ModuleInstancePointer& instance : _entityModules) {
+        if (instance->instance) {
+            action(*instance->instance);
+        }
     }
 }
 
@@ -845,6 +917,8 @@ void WasmScriptEngine::stopEntityScript(const EntityItemID& entityID, const QStr
 }
 
 void WasmScriptEngine::stop(bool marshal) {
+    quint64 notStoppedYet = 0;
+    _firstStopTime.compare_exchange_strong(notStoppedYet, usecTimestampNow());
     _isStopping = true;
     if (marshal) {
         QMetaObject::invokeMethod(this, "stop");
@@ -854,18 +928,46 @@ void WasmScriptEngine::stop(bool marshal) {
         _isFinished = true;
         emit runningStateChanged();
     }
-    if (QThread::currentThread() != thread() && _callDepth > 0) {
-        // a module is inside a call: make it return now rather than at its own pace
+    if (QThread::currentThread() != thread()) {
+        // every module, inside a call or not: one may begin at any moment, and a call through a signal's handler is
+        // not one the engine counts. A world that was left gets nothing more done: its call ends now, and its
+        // scriptEnding handlers run no more. Otherwise a call running now may finish what it is doing, for
+        // MAX_STOPPED_CALL_TIME_MS from the first stop, and no new call begins; the world left meanwhile ends it at
+        // once. stopAll lets the handlers in, which then have until the deadline in waitTillDoneRunning
         std::lock_guard<std::mutex> lock(_instancesMutex);
-        if (_main && _main->instance) {
-            _main->instance->requestStop();
-        }
-        for (const ModuleInstancePointer& instance : _entityModules) {
-            if (instance->instance) {
-                instance->instance->requestStop();
-            }
-        }
+        stopInstances();
     }
+}
+
+// stop()'s part for the modules; the caller holds _instancesMutex
+void WasmScriptEngine::stopInstances() {
+    if (worldWasLeft()) {
+        forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
+    } else if (!_scriptEndingBegun) {
+        const int leftMs = std::max(0, endingTimeLeftMs() - (MAX_SCRIPT_ENDING_TIME_MS - MAX_STOPPED_CALL_TIME_MS));
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(leftMs);
+        const int world = getWorldId();
+        bool inCall = _callDepth > 0;
+        forEachInstance([deadline, world, &inCall](WasmInstance& instance) {
+            instance.requestStopAfter(deadline, world);
+            inCall = inCall || instance.isInCall();
+        });
+        _stopLetCallFinish = _stopLetCallFinish || inCall;  // for stopAll's line: a call was running at the stop
+    }
+}
+
+int WasmScriptEngine::endingTimeLeftMs() const {
+    const quint64 now = usecTimestampNow();
+    const quint64 first = _firstStopTime;
+    const quint64 usedMs = now > first ? (now - first) / USECS_PER_MSEC : 0;
+    return MAX_SCRIPT_ENDING_TIME_MS - int(std::min<quint64>(usedMs, MAX_SCRIPT_ENDING_TIME_MS));
+}
+
+void WasmScriptEngine::interruptRunningCall() {
+    stop();
+    std::lock_guard<std::mutex> lock(_instancesMutex);
+    _endingDeadlinePassed = true;
+    forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
 }
 
 void WasmScriptEngine::waitTillDoneRunning() {
@@ -891,18 +993,10 @@ void WasmScriptEngine::waitTillDoneRunning() {
             }
             return true;
         };
-        if (!waitServingCalls(MAX_SCRIPT_ENDING_TIME_MS)) {
-            {
-                std::lock_guard<std::mutex> lock(_instancesMutex);
-                if (_main && _main->instance) {
-                    _main->instance->requestStop();
-                }
-                for (const ModuleInstancePointer& instance : _entityModules) {
-                    if (instance->instance) {
-                        instance->instance->requestStop();
-                    }
-                }
-            }
+        // counted from the first stop: scripts stopped together, as at a quit, reach the deadline together, so the wait
+        // on one after another adds nothing however many handlers are stuck
+        if (!waitServingCalls(endingTimeLeftMs())) {
+            interruptRunningCall();
             if (!waitServingCalls(MAX_SCRIPT_QUITTING_TIME_MS)) {
                 qCWarning(scriptengine) << "WebAssembly script engine did not stop, terminating its thread:" << getFilename();
                 workerThread->terminate();
@@ -1183,6 +1277,7 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::entityModuleInstance(c
     {
         std::lock_guard<std::mutex> lock(_instancesMutex);
         _entityModules[url] = instance;
+        handOver(instance);
     }
     return instance;
 }

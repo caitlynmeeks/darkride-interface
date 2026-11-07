@@ -78,6 +78,7 @@ void RenderForwardTask::build(JobModel& task, const render::Varying& input, rend
     auto fadeEffect = DependencyManager::get<FadeEffect>();
     ShapePlumberPointer shapePlumber = std::make_shared<ShapePlumber>();
     initForwardPipelines(*shapePlumber, fadeEffect->getBatchSetter(), fadeEffect->getItemUniformSetter());
+    task.addJob<WarmPipelines>("WarmForwardPipelines", shapePlumber);   // entry 29 step 2a: compiled while loading
 
     // Unpack inputs
     const auto& inputs = input.get<Input>();

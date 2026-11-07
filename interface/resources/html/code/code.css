@@ -12,12 +12,14 @@
 */
 
 :root {
-    --background: #171b2d;
-    --strip: #12162a;
-    --text: #f4f6f8;
-    --secondary: #9aa1bd;
-    --error: #ff5555;
-    --changed: #ffb86c;
+    /* Build mode's greys (interface/resources/styles/editor.qss) */
+    --background: #2a2a2a;
+    --strip: #383838;
+    --edge: #232323;
+    --text: #d2d2d2;
+    --secondary: #8f8f8f;
+    --error: #ff6b6b;
+    --changed: #d8a657;
     --mono: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
 }
 
@@ -52,16 +54,20 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    border-top: 1px solid #2a2f48;
+    border-top: 1px solid var(--edge);
 }
 
 #status {
     flex: 0 0 auto;
     display: flex;
-    gap: 14px;
-    padding: 3px 10px;
+    align-items: center;
+    gap: 18px;
+    height: 21px;
+    padding: 0 10px;
     background: var(--strip);
+    border-top: 1px solid var(--edge);
     color: var(--secondary);
+    font-size: 11px;
     white-space: nowrap;
     overflow: hidden;
 }
@@ -70,6 +76,23 @@ body {
     margin-left: auto;
 }
 
+#status span:empty {
+    display: none;
+}
+
+#status #readonly {
+    color: #d8a657;
+}
+
 #status #saved.changed {
     color: var(--changed);
+}
+
+#status #saved.problem {
+    color: var(--error);
+}
+
+#status #saved {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

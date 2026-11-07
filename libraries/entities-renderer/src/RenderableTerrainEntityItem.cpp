@@ -1440,12 +1440,15 @@ void TerrainEntityRenderer::postUploads(const ScenePointer& scene, Transaction& 
     for (const TerrainMeshBuffer::Pointer& buffer : due) {
         buffers.push_back(buffer->buffer);
     }
-    ItemKey::Builder keyBuilder = ItemKey::Builder::opaqueShape().withTagBits(getTagMask()).withLayer(getHifiRenderLayer()).withShadowCaster();
+    ItemKey::Builder keyBuilder = ItemKey::Builder::opaqueShape().withTagBits(getTagMask()).withLayer(getHifiRenderLayer());
     if (!_visible) {
         keyBuilder.withInvisible();
     }
     const ItemKey key = keyBuilder.build();
-    const Item::Bound bound = getBound();
+    // The item's bound is the whole world, never culled: it draws nothing, and the uploads must land whether or not the
+    // terrain is in view (culled with the terrain's own bound, a terrain wholly out of view never got its buffers fed, so
+    // its first sight came a frame or two after main's: the brush row of 11-06). Not a shadow caster: one pass is enough.
+    const Item::Bound bound(glm::vec3(-1.0e5f), 2.0e5f);
     if (_uploadItem == Item::INVALID_ITEM_ID) {
         auto payload = std::make_shared<TerrainUploadPayload>(_uploadsFed);
         payload->setBuffers(std::move(buffers), serial);

@@ -107,6 +107,7 @@ void RenderDeferredTask::build(JobModel& task, const render::Varying& input, ren
     // Prepare the ShapePipelines
     ShapePlumberPointer shapePlumber = std::make_shared<ShapePlumber>();
     initDeferredPipelines(*shapePlumber, fadeEffect->getBatchSetter(), fadeEffect->getItemUniformSetter());
+    task.addJob<WarmPipelines>("WarmDeferredPipelines", shapePlumber);   // entry 29 step 2a: compiled while loading
 
     const auto& inputs = input.get<Input>();
     

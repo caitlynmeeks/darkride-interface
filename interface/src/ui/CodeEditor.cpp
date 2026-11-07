@@ -16,10 +16,13 @@
 #include <QtCore/QRegularExpression>
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
+#include <QtWidgets/QMenu>
 #include <QUndoStack>   // QtWidgets in Qt 5, QtGui in Qt 6
 
 #include <AssetClient.h>
 #include <AssetUpload.h>
+#include <MainWindow.h>   // the menu's parent
+#include <material-networking/ShaderCache.h>
 #include <EntityItemProperties.h>
 #include <EntityScriptRights.h>
 #include <EntityScriptingInterface.h>
@@ -39,6 +42,8 @@ namespace {
 const QString PANEL = QStringLiteral("Code");
 const QString SCRIPT = QStringLiteral("script");
 const QString SERVER_SCRIPTS = QStringLiteral("serverScripts");
+const QString FRAGMENT_SHADER = QStringLiteral("fragmentShader");
+const QString VERTEX_SHADER = QStringLiteral("vertexShader");
 const int POLL_MS = 2000;                  // the script's status, as often as the Inspector asks
 const qint64 MAX_SAVE_BYTES = 1024 * 1024; // as ScriptOpener's cap on what it opens
 const int INLINE_SCRIPT_LIMIT_BYTES = 1024;   // a written-in Script past this doesn't reach visitors (ScriptEditor.cpp)
@@ -114,6 +119,9 @@ CodeEditor::CodeEditor() {
     _target = std::make_shared<AnswerTarget>([this](int32_t callback, const QVariantList& arguments) {
         answered(callback, arguments);
     });
+    // the header's "used by … (3.1 m)" follows the list's look at the world
+    connect(_nearby, &QAbstractItemModel::dataChanged, this, &CodeEditor::updateUsedBy);
+    connect(_nearby, &QAbstractItemModel::modelReset, this, &CodeEditor::updateUsedBy);
     // Build's Undo of a save (or of any edit of the field) shows in the panel, unless the person has typed since
     if (auto editor = DependencyManager::get<Editor>()) {
         connect(editor->undoStack().stack(), &QUndoStack::indexChanged, this, &CodeEditor::refreshAfterUndo);
@@ -125,6 +133,30 @@ CodeEditor::CodeEditor() {
     connect(nodeList.data(), &LimitedNodeList::canWriteAssetsChanged, this, &CodeEditor::updateRights);
     connect(nodeList.data(), &LimitedNodeList::canRezCertifiedChanged, this, &CodeEditor::updateRights);
     connect(nodeList.data(), &LimitedNodeList::isAllowedEditorChanged, this, &CodeEditor::updateRights);
+    // unsaved changes are kept per world: the same atp: path, or an entity id copied with a world, in another world is
+    // another file, and arriving there clears the open document, whose entity isn't that world's (security 11-07)
+    auto& domainHandler = nodeList->getDomainHandler();
+    connect(&domainHandler, &DomainHandler::domainURLChanged, this, [this](QUrl url) {
+        const QString address = url.adjusted(QUrl::RemoveQuery | QUrl::RemoveFragment).toString();
+        if (address != _worldAddress) {
+            _worldAddress = address;
+            _worldID = QUuid();
+            enterWorld();
+        }
+    });
+    connect(&domainHandler, &DomainHandler::connectedToDomain, this, [this] {
+        const QUuid id = DependencyManager::get<NodeList>()->getDomainHandler().getUUID();
+        if (id == _worldID) {
+            return;   // the same domain again (a reconnect)
+        }
+        const bool another = !_worldID.isNull();   // another domain at the same address
+        _worldID = id;
+        if (another) {
+            enterWorld();
+        } else {
+            emit draftsChanged();
+        }
+    });
 }
 
 CodeEditor::~CodeEditor() {
@@ -142,7 +174,134 @@ QString CodeEditor::kind() const {
     if (!hasDocument()) {
         return QString();
     }
-    return _which == SERVER_SCRIPTS ? "Server script" : "Entity script";
+    return _which == SERVER_SCRIPTS ? "Server script" : _which == FRAGMENT_SHADER ? "Fragment shader"
+        : _which == VERTEX_SHADER ? "Vertex shader" : "Entity script";
+}
+
+bool CodeEditor::isShader() const {
+    return _which == FRAGMENT_SHADER || _which == VERTEX_SHADER;
+}
+
+QString CodeEditor::openKey() const {
+    return hasDocument() ? CodeNearby::keyFor(_which, _value, _entity) : QString();
+}
+
+QString CodeEditor::path() const {
+    if (!hasDocument() || _url.isEmpty()) {
+        return QString();
+    }
+    return CodeNearby::pathOf(_url.toString());
+}
+
+QString CodeEditor::worldKey() const {
+    if (!_testWorld.isEmpty()) {
+        return "test:" + _testWorld;
+    }
+    return _worldAddress + QLatin1Char('|') + _worldID.toString(QUuid::WithoutBraces);
+}
+
+QStringList CodeEditor::draftKeys() const {
+    const QString prefix = worldKey() + QLatin1Char('\n');
+    QStringList keys;
+    for (auto it = _drafts.cbegin(); it != _drafts.cend(); ++it) {
+        if (it.key().startsWith(prefix)) {
+            keys.append(it.key().mid(prefix.size()));
+        }
+    }
+    return keys;
+}
+
+QString CodeEditor::openStamp() const {
+    return hasDocument() ? QString::number(_generation) + QLatin1Char('\n') + docDraftKey() : QString();
+}
+
+bool CodeEditor::hasDraft() const {
+    return hasDocument() && _drafts.contains(docDraftKey());
+}
+
+QString CodeEditor::draft() const {
+    return hasDocument() ? _drafts.value(docDraftKey()) : QString();
+}
+
+void CodeEditor::enterWorld() {
+    emit draftsChanged();   // the list's Edited marks are this world's
+    if (!hasDocument() || _leaving) {
+        return;
+    }
+    if (_dirty && _pageReady) {
+        // the person's typing since the last kept draft goes into the old world's drafts before the document goes
+        // (security 11-07); nothing is saved meanwhile, and the document goes anyway if the page doesn't answer
+        static const int LEAVE_WAIT_MS = 1500;
+        _leaving = true;
+        updateRights();
+        const int generation = _generation;
+        emit keepBeforeLeaving();
+        QTimer::singleShot(LEAVE_WAIT_MS, this, [this, generation] {
+            if (_leaving && generation == _generation) {
+                qCWarning(interfaceapp) << "Code: the page didn't answer before leaving the world; its last draft is kept";
+                finishLeaving();
+            }
+        });
+    } else {
+        finishLeaving();
+    }
+}
+
+void CodeEditor::leaveDocument(const QString& stamp) {
+    if (_leaving && stamp == openStamp()) {
+        finishLeaving();
+    }
+}
+
+void CodeEditor::finishLeaving() {
+    clear();
+    emit documentChanged();
+    emit rightsChanged();
+    emit draftsChanged();
+}
+
+void CodeEditor::testSetWorld(const QString& name) {
+    if (name != _testWorld) {
+        _testWorld = name;
+        enterWorld();
+    }
+}
+
+void CodeEditor::setDraft(const QString& text, bool has) {
+    if (!hasDocument()) {
+        return;
+    }
+    const QString key = docDraftKey();
+    const bool had = _drafts.contains(key);
+    if (has) {
+        _drafts.insert(key, text);
+    } else {
+        _drafts.remove(key);
+    }
+    if (had != has) {
+        emit draftsChanged();
+    }
+}
+
+void CodeEditor::updateUsedBy() {
+    QString usedBy;
+    int users = 0;
+    if (hasDocument()) {
+        QString nearest;
+        QString distance;
+        if (_nearby->find(openKey(), nearest, distance, users)) {
+            // a written-in script is its entity's own: the header's first line already names it
+            usedBy = _place == Place::WrittenIn ? distance + " away" : "used by " + nearest + " (" + distance + ")";
+        } else if (_place != Place::WrittenIn && !_entityName.isEmpty()) {
+            usedBy = "used by " + _entityName;
+            users = 1;
+        }
+    }
+    if (usedBy != _usedBy || users != _sharedBy) {
+        _usedBy = usedBy;
+        _sharedBy = users;
+        emit usedByChanged();
+    }
 }
 
 QString CodeEditor::where() const {
@@ -163,10 +322,31 @@ bool CodeEditor::readEntity(QString& value, QString& name, bool& locked) const {
     EntityPropertyFlags flags;
     flags += PROP_NAME;
     flags += PROP_LOCKED;
-    flags += _which == SERVER_SCRIPTS ? PROP_SERVER_SCRIPTS : PROP_SCRIPT;
+    if (isShader()) {
+        flags += PROP_USER_DATA;
+        flags += PROP_MATERIAL_URL;
+        flags += PROP_MATERIAL_DATA;
+    } else {
+        flags += _which == SERVER_SCRIPTS ? PROP_SERVER_SCRIPTS : PROP_SCRIPT;
+    }
     EntityItemProperties properties = entities->getEntityProperties(_entity, flags);
     if (properties.getType() == EntityTypes::Unknown) {
         return false;
+    }
+    if (isShader()) {
+        // the entity's own shader of that kind, as the renderer reads it: its address, never one given from outside
+        value.clear();
+        const auto shaders = CodeNearby::shadersOf(properties.getType() == EntityTypes::Material,
+            properties.getUserData(), properties.getMaterialURL(), properties.getMaterialData());
+        for (const auto& shader : shaders) {
+            if (shader.first == _which) {
+                value = shader.second.toString();
+                break;
+            }
+        }
+        name = properties.getName();
+        locked = properties.getLocked();
+        return true;
     }
     value = _which == SERVER_SCRIPTS ? properties.getServerScripts() : properties.getScript();
     name = properties.getName();
@@ -175,15 +355,17 @@ bool CodeEditor::readEntity(QString& value, QString& name, bool& locked) const {
 }
 
 bool CodeEditor::open(const QUuid& entityId, const QString& which) {
-    if (!isAvailable() || entityId.isNull() || (which != SCRIPT && which != SERVER_SCRIPTS)) {
+    if (!isAvailable() || entityId.isNull() ||
+        (which != SCRIPT && which != SERVER_SCRIPTS && which != FRAGMENT_SHADER && which != VERTEX_SHADER)) {
         return false;
     }
     clear();
+    _docWorld = worldKey();
     _entity = entityId;
     _which = which;
     QString value;
     bool locked = false;
-    if (!readEntity(value, _entityName, locked)) {
+    if (!readEntity(value, _entityName, locked) || (isShader() && value.isEmpty())) {
         clear();
         emit documentChanged();
         return false;
@@ -193,7 +375,13 @@ bool CodeEditor::open(const QUuid& entityId, const QString& which) {
     updateRights();
 
     const QString trimmed = value.trimmed();
-    if (which == SERVER_SCRIPTS && !_canSave) {
+    if (isShader()) {
+        // read only here (Caity 11-07): from the shader cache the renderer draws it from (shadersOf: network only)
+        _url = QUrl(trimmed);
+        _fileName = _url.fileName().isEmpty() ? _url.toDisplayString() : _url.fileName();
+        _place = _url.scheme().toLower() == "atp" ? Place::WorldFiles : Place::Web;
+        fetchShader();
+    } else if (which == SERVER_SCRIPTS && !_canSave) {
         // the world's editors only (Caity, 22:25 11-06): nothing of it is read, not even its address
         _value.clear();
         _fileName = _entityName.isEmpty() ? "Server script" : _entityName;
@@ -219,6 +407,7 @@ bool CodeEditor::open(const QUuid& entityId, const QString& which) {
         }
     }
     updateRights();
+    updateUsedBy();
     qCDebug(interfaceapp) << "Code: opened" << _entity << _which << where() << (_problem.isEmpty() ? "" : "problem");
     emit documentChanged();
     emit savedChanged();
@@ -238,8 +427,48 @@ void CodeEditor::fetch() {
     _problem = "Opening a script from its file comes with the next step of the Code panel.";
 }
 
+// a shader's text from the shader cache, the same copy the renderer draws (already there for one drawn nearby);
+// otherwise the cache fetches it as the renderer would, under the same rules
+void CodeEditor::fetchShader() {
+    _shader = ShaderCache::instance().getShader(_url);
+    if (!_shader) {
+        _problem = "This shader couldn't be loaded.";
+        return;
+    }
+    auto take = [this](bool success) {
+        if (!success || !_shader || !_shader->isLoaded()) {
+            _problem = "This shader couldn't be loaded.";
+            _text.clear();
+        } else if (_shader->_source.toUtf8().size() > MAX_SAVE_BYTES) {
+            _problem = "This shader is too big to show here (1 MB at most).";
+            _text.clear();
+        } else {
+            _text = _shader->_source;
+        }
+        _loading = false;
+        _shader.reset();
+    };
+    if (_shader->isLoaded() || _shader->isFailed()) {
+        take(_shader->isLoaded());
+        return;
+    }
+    _loading = true;
+    const int generation = _generation;
+    _shaderConnection = connect(_shader.data(), &Resource::finished, this, [this, take, generation](bool success) {
+        QObject::disconnect(_shaderConnection);
+        if (generation != _generation || !_shader) {
+            return;   // another file opened meanwhile
+        }
+        take(success);
+        qCDebug(interfaceapp) << "Code: shader" << (success ? "loaded" : "failed") << _entity << _which;
+        emit documentChanged();
+    });
+}
+
 void CodeEditor::clear() {
     ++_generation;
+    _leaving = false;
+    _docWorld.clear();
     _entity = QUuid();
     _which.clear();
     _value.clear();
@@ -248,8 +477,10 @@ void CodeEditor::clear() {
     _fileName.clear();
     _entityName.clear();
     _text.clear();
-    _draft.clear();
-    _hasDraft = false;
+    if (_shader) {
+        QObject::disconnect(_shaderConnection);
+        _shader.reset();
+    }
     _problem.clear();
     _loading = false;
     _dirty = false;
@@ -284,6 +515,8 @@ void CodeEditor::updateRights() {
         const bool mayEdit = there && entity_script_rights::mayChangeScriptsOf(locked);
         if (!there) {
             reason = "This thing isn't in the world any more.";
+        } else if (isShader()) {
+            reason = "Shaders are read only here.";
         } else if (_place == Place::Web) {
             reason = "On the web: read only here.";
         } else if (!entity_script_rights::mayChangeScripts()) {
@@ -294,8 +527,12 @@ void CodeEditor::updateRights() {
             reason = "You can't change this world's files.";
         }
         // a server script's rights decide whether it opens at all (open()), so they're read before the place is known
-        canSave = mayEdit && (_place != Place::Web) &&
+        canSave = mayEdit && !isShader() && (_place != Place::Web) &&
             (_place != Place::WorldFiles || nodeList->getThisNodeCanWriteAssets());
+        if (_leaving) {
+            canSave = false;
+            reason = "You've left this world: your change is kept for when you're back.";
+        }
     }
     if (canSave != _canSave || reason != _readOnlyReason) {
         _canSave = canSave;
@@ -319,7 +556,7 @@ void CodeEditor::setSaving(bool saving) {
 
 void CodeEditor::save(const QString& text) {
     updateRights();
-    if (!hasDocument() || !_problem.isEmpty() || _saving || _claudeWriting) {
+    if (!hasDocument() || !_problem.isEmpty() || _saving || _claudeWriting || _leaving) {
         return;
     }
     if (!_canSave) {
@@ -340,8 +577,9 @@ void CodeEditor::save(const QString& text) {
 void CodeEditor::finishSave(const QString& text) {
     _text = text;
     _dirty = false;
-    _draft.clear();
-    _hasDraft = false;
+    if (_drafts.remove(docDraftKey()) > 0) {
+        emit draftsChanged();
+    }
     _savedText = clockText();
     emit savedChanged();
     if (_place == Place::WrittenIn && _which == SCRIPT && text.trimmed().toUtf8().size() > INLINE_SCRIPT_LIMIT_BYTES) {
@@ -420,7 +658,7 @@ void CodeEditor::saveToWorldFiles(const QString& text) {
 }
 
 void CodeEditor::reloadForEveryone() {
-    if (!hasDocument() || !_problem.isEmpty()) {
+    if (!hasDocument() || !_problem.isEmpty() || isShader()) {
         return;
     }
     auto entities = DependencyManager::get<EntityScriptingInterface>();
@@ -467,6 +705,39 @@ void CodeEditor::giveBackKeyboard() {
     }
 }
 
+QMenu* CodeEditor::makeMoreMenu() {
+    auto menu = new QMenu(qApp->getWindow());
+    auto inspector = menu->addAction("Show in Inspector");
+    inspector->setEnabled(hasDocument());
+    connect(inspector, &QAction::triggered, this, &CodeEditor::showInInspector);
+    auto link = menu->addAction("Copy Link");
+    link->setEnabled(hasLink());
+    connect(link, &QAction::triggered, this, &CodeEditor::copyLink);
+    return menu;
+}
+
+void CodeEditor::showMoreMenu(qreal x, qreal y) {
+    auto menu = makeMoreMenu();
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
+bool CodeEditor::saveMenuPicture(const QString& which, const QString& path) {
+    if (which != "more") {
+        return false;
+    }
+    QMenu* menu = makeMoreMenu();
+    menu->ensurePolished();
+    menu->adjustSize();
+    const bool saved = menu->grab().save(path);   // drawn as it would show, without showing it
+    delete menu;
+    return saved;
+}
+
+void CodeEditor::refreshNearby() {
+    _nearby->refresh();
+}
+
 QObject* CodeEditor::nearby() const {
     return _nearby;
 }
@@ -491,7 +762,7 @@ void CodeEditor::claudeBegin(const QUuid& entityId, const QString& which) {
     if (!isShowing(entityId, which) || !_problem.isEmpty()) {
         return;
     }
-    if (_dirty || _hasDraft) {
+    if (_dirty || hasDraft()) {
         setNote("Claude is changing this script. Your changes here aren't saved: copy them before Claude finishes.",
             true);
         return;
@@ -518,7 +789,7 @@ void CodeEditor::claudeEnd(const QUuid& entityId, const QString& which, const QS
         // the building tools wrote it into the field: that's the saved text now
         _value = newText;
     }
-    if (wasWriting || (!_dirty && !_hasDraft)) {
+    if (wasWriting || (!_dirty && !hasDraft())) {
         _text = newText;
         emit streamEnded(newText);
         _showingChange = oldText != newText;
@@ -565,7 +836,7 @@ void CodeEditor::testShowNearby() {
     emit noteChanged();
     emit statusChanged();
     emit claudeChanged();
-    emit nearbyUnfoldRequested();
+    updateUsedBy();
     DependencyManager::get<Panels>()->open(PANEL);
 }
 
@@ -579,7 +850,7 @@ int CodeEditor::testRun(const QString& source) {
 }
 
 void CodeEditor::askStatus() {
-    if (!_panelOpen || !hasDocument() || !_problem.isEmpty()) {
+    if (!_panelOpen || !hasDocument() || !_problem.isEmpty() || isShader()) {
         _poll.stop();
         return;
     }
