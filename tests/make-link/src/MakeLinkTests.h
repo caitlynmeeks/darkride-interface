@@ -41,6 +41,7 @@ private slots:
     void testChannelCapabilityAndEvents();
     void testPeerLineJudgement();
     void testPeerOfThisProcess();
+    void testPlainTextForTheChannel();
 };
 
 #endif // hifi_MakeLinkTests_h

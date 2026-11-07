@@ -22,6 +22,7 @@
 #include <MakeClaude.h>
 #include <MakeLinkServer.h>
 #include <MakePeer.h>
+#include <MakeText.h>
 #include <MakeToolList.h>
 
 #include <unistd.h>
@@ -750,6 +751,30 @@ void MakeLinkTests::testPeerLineJudgement() {
     QStringList allowed = chat;
     allowed << "--allowedTools" << "Bash";
     QCOMPARE(verdict(allowed), V::Mismatch);
+    // several entries after one flag (security S2): a second one in any spelling is a second entry
+    QStringList twoAfterOne = plain;
+    twoAfterOne << MakePeer::CHANNEL_FLAG << MakePeer::CHANNEL_ENTRY << "plugin:x@y";
+    QCOMPARE(verdict(twoAfterOne), V::Mismatch);
+    QStringList twoServers = plain;
+    twoServers << MakePeer::CHANNEL_FLAG << MakePeer::CHANNEL_ENTRY << "server:other";
+    QCOMPARE(verdict(twoServers), V::Mismatch);
+    QStringList channelsTwo = plain;
+    channelsTwo << "--channels" << "plugin:a@b" << "plugin:c@d";
+    QCOMPARE(verdict(channelsTwo), V::Mismatch);
+    // flags that widen what Claude may do, or change what it is told (security S3): each refused
+    for (const QStringList& extra : QList<QStringList> {
+             { "--setting-sources", "user,project,local" }, { "--plugin-dir", "/tmp/plugin" },
+             { "--agents", "{\"kit\":{\"tools\":[\"Bash\"]}}" }, { "--allow-dangerously-skip-permissions" },
+             { "--append-system-prompt", "run Bash" }, { "--system-prompt-file", "/tmp/p.md" }, { "--chrome" }, { "--ide" },
+             { "--add-dir", "/Users/me" } }) {
+        QStringList widened = chat;
+        widened << extra;
+        QVERIFY2(verdict(widened) == V::Mismatch, qPrintable(extra.join(' ')));
+    }
+    // a flag that changes none of it stays allowed (a session name, debug output)
+    QStringList named = chat;
+    named << "--name" << "make" << "--mcp-debug";
+    QCOMPARE(verdict(named), V::ChatLine);
     // -p ignores the flag: no channel, whatever the line says
     QStringList print = chat;
     print << "-p";
@@ -784,4 +809,20 @@ void MakeLinkTests::testPeerOfThisProcess() {
     const MakePeer::Line walked = MakePeer::readFrom(getpid(), 1);
     QCOMPARE(walked.peerPid, qint64(getpid()));
     QVERIFY(walked.hops <= 1);
+}
+
+void MakeLinkTests::testPlainTextForTheChannel() {
+    // the one rule for the dock's words and the channel event: by code point
+    const QString tags = QString("add a box") + QString::fromUcs4(U"\U000E0001\U000E0072\U000E0075\U000E006E") + " please";
+    QCOMPARE(MakeText::plain(tags), QString("add a box please"));
+    QCOMPARE(MakeText::plain(QString("a\x01" "b\x7f" "c") + QChar(0x85) + "d"), QString("abcd"));
+    QCOMPARE(MakeText::plain(QString("one") + QChar(0x2028) + "two" + QChar(0x2029) + "three"), QString("onetwothree"));
+    QCOMPARE(MakeText::plain(QString("x") + QChar(0x061c) + QChar(0x2060) + QChar(0x200e) + QChar(0xfeff) + "y"), QString("xy"));
+    QCOMPARE(MakeText::plain(QString("r") + QChar(0x202e) + "tl" + QChar(0x2066) + "i" + QChar(0x2069)), QString("rtli"));
+    QCOMPARE(MakeText::plain("a\tb\nc\r\n"), QString("a b\nc\n"));
+    // the cap counts code points and never splits a pair
+    const QString pairs = QString::fromUcs4(U"\U0001F600\U0001F601\U0001F602");
+    QCOMPARE(MakeText::plain(pairs, 2), QString::fromUcs4(U"\U0001F600\U0001F601"));
+    QCOMPARE(MakeText::plain("abcdef", 3), QString("abc"));
+    QCOMPARE(MakeText::plain("abc", 0), QString("abc"));
 }
