@@ -8,8 +8,8 @@
 //  MakeBadge (its state and open()) on the context.
 //  Cost (performance, OPTIMIZE-LIST 35: each change on this surface is a main-thread sync behind the Mac's GL lock):
 //  hidden is visible: false; the spinner is a Timer stepping one rotation a second, running only while it shows and
-//  the app is in front (no animation, no Animator); the other states are still; no fade (a hide is one change); the
-//  shadow is a plain offset rectangle, not a blur.
+//  the app is in front (no animation, no Animator); the other states are still; no fade (a hide is one change); no
+//  shadow (mary's drawing, 21:19 11-07): the chip's 1 px edge and top line set it off the view.
 //
 //  Copyright 2026 Darkride.
 //
@@ -42,16 +42,6 @@ Item {
         running: root.visible && root.badgeState === "working"
             && (Qt.application.state === Qt.ApplicationActive || MakeBadge.forced)
         onTriggered: root.lead = (root.lead + 1) % 12
-    }
-
-    // the shadow: the chip's shape 2 px lower, darker
-    Rectangle {
-        x: chip.x
-        y: chip.y + 2
-        width: chip.width
-        height: chip.height
-        radius: chip.radius
-        color: Qt.rgba(0, 0, 0, 0.35)
     }
 
     Rectangle {
