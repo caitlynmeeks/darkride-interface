@@ -29,6 +29,7 @@
 #include <MappingRequest.h>
 #include <NodeList.h>
 #include <ScriptCallback.h>
+#include <ScriptOpener.h>
 
 #include "Application.h"
 #include "CodeNearby.h"
@@ -72,8 +73,7 @@ private:
 };
 
 bool isAddress(const QString& value) {
-    const QString trimmed = value.trimmed();
-    return !trimmed.isEmpty() && !trimmed.contains('\n') && !QUrl(trimmed).scheme().isEmpty();
+    return ScriptOpener::isAddress(value);   // one rule with scripting's opener: one line with a scheme
 }
 
 // the engine's error: its first line, the error's name once ("SyntaxError: SyntaxError: …"), and the line of the
@@ -423,8 +423,25 @@ bool CodeEditor::open(const QUuid& entityId, const QString& which) {
 // a script file's text, fetched by scripting's ScriptOpener under the rules any script of that world gets (public
 // addresses only for a world from the network, a size cap, a time limit; file: refused)
 void CodeEditor::fetch() {
-    // ScriptOpener (scripting, Make v1 piece 7) is not in this branch yet: until it is, only written-in scripts open
-    _problem = "Opening a script from its file comes with the next step of the Code panel.";
+    // scripting's ScriptOpener (Make v1 piece 7): the entity's script by its id, under the world's own rules; a
+    // refusal answers at once, a download on this object's thread and never after it's gone
+    _loading = true;
+    const int generation = _generation;
+    ScriptOpener::open(_entity, _which, this, [this, generation](const ScriptOpener::Opened& opened) {
+        if (generation != _generation) {
+            return;   // another file opened meanwhile
+        }
+        _loading = false;
+        if (opened.ok()) {
+            _text = opened.text;
+            _problem.clear();
+        } else {
+            _text.clear();
+            _problem = opened.problem;
+        }
+        qCDebug(interfaceapp) << "Code: script" << (opened.ok() ? "loaded" : "not loaded") << _entity << _which << opened.where;
+        emit documentChanged();
+    });
 }
 
 // a shader's text from the shader cache, the same copy the renderer draws (already there for one drawn nearby);
