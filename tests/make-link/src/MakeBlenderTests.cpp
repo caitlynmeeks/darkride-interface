@@ -1038,7 +1038,8 @@ void MakeBlenderTests::testLinuxBoxFilterRulesNamed() {
     // the three rules that close the shortening gap below Landlock ABI 3, named in the list the watcher prints too
     const QStringList rules = MakeBlender::linuxBoxFilterRules();
     QVERIFY(rules.filter(QRegularExpression("^truncate: EPERM")).size() == 1);
-    QVERIFY(rules.filter(QRegularExpression("^open, openat with O_TRUNC in a read-only mode: EPERM")).size() == 1);
+    QVERIFY(rules.filter(QRegularExpression("^open, openat with O_TRUNC in any mode but write \\(read-only, or access mode 3\\): "
+                                            "EPERM")).size() == 1);
     QVERIFY(rules.filter(QRegularExpression("^openat2: ENOSYS")).size() == 1);
     QVERIFY(rules.filter(QRegularExpression("^execve, execveat: the exec gate")).size() == 1);
 #ifdef Q_OS_LINUX
@@ -1087,6 +1088,7 @@ void MakeBlenderTests::testLinuxBoxRefusesShortening() {
                 "attempt('TRUNCATE_INSIDE', lambda: os.truncate(%1, 10))\n"
                 "attempt('TRUNCATE_OUTSIDE', lambda: os.truncate(%2, 10))\n"
                 "attempt('RDONLY_TRUNC_INSIDE', lambda: os.close(os.open(%1, os.O_RDONLY | os.O_TRUNC)))\n"
+                "attempt('MODE3_TRUNC_INSIDE', lambda: os.close(os.open(%1, 3 | os.O_TRUNC)))\n"
                 "def ftruncate_inside():\n"
                 "    fd = os.open(%1, os.O_WRONLY)\n"
                 "    os.ftruncate(fd, 50)\n"
@@ -1099,6 +1101,8 @@ void MakeBlenderTests::testLinuxBoxRefusesShortening() {
     QVERIFY2(watched.said.contains("TRUNCATE_INSIDE REFUSED 1"), watched.said.constData());   // EPERM by the filter
     QVERIFY2(watched.said.contains("TRUNCATE_OUTSIDE REFUSED"), watched.said.constData());
     QVERIFY2(watched.said.contains("RDONLY_TRUNC_INSIDE REFUSED 1"), watched.said.constData());
+    // access mode 3 (neither read nor write) with O_TRUNC shortens a file too without a write open (security, 11-07)
+    QVERIFY2(watched.said.contains("MODE3_TRUNC_INSIDE REFUSED 1"), watched.said.constData());
     QVERIFY2(watched.said.contains("FTRUNCATE_INSIDE DONE"), watched.said.constData());
     QCOMPARE(QFileInfo(inside).size(), qint64(50));
     QCOMPARE(QFileInfo(outside).size(), qint64(100));

@@ -172,7 +172,8 @@ constexpr long NR_PIDFD_SEND_SIGNAL = 424, NR_IO_URING_SETUP = 425, NR_IO_URING_
 const char* const FILTER_RULES[] = {
     "execve, execveat: the exec gate (the child's own start of Blender passes, every later one EPERM)",
     "truncate: EPERM (shortening a file by path; Landlock governs it only from ABI 3)",
-    "open, openat with O_TRUNC in a read-only mode: EPERM (shortening without a write open; Landlock from ABI 3)",
+    "open, openat with O_TRUNC in any mode but write (read-only, or access mode 3): EPERM (shortening without a write open; "
+    "Landlock from ABI 3)",
     "openat2: ENOSYS (its flags are behind a pointer; the C library falls back to openat)",
     "fork, vfork: EPERM; clone3: ENOSYS; clone with a namespace flag: EPERM (threads only)",
     "socket, socketpair: EACCES (no sockets of any family)",
@@ -452,9 +453,13 @@ std::vector<sock_filter> seccompFilter(std::vector<size_t>& selfSlots) {
     // need it); openat2's flags are behind a pointer, so it answers ENOSYS and the C library falls back to openat.
     // ftruncate stays: it needs a file the box opened for writing
     answer(__NR_truncate, REFUSE);
+    // the masked flags: O_TRUNC alone is a read-only open that truncates; O_TRUNC with access mode 3 (neither read nor
+    // write) truncates too without a write open (security, 11-07); only O_WRONLY and O_RDWR with O_TRUNC pass
     const std::vector<sock_filter> readOnlyTruncate = {
         BPF_STMT(BPF_ALU | BPF_AND | BPF_K, static_cast<uint32_t>(O_ACCMODE | O_TRUNC)),
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<uint32_t>(O_TRUNC), 0, 1), BPF_STMT(BPF_RET | BPF_K, REFUSE),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<uint32_t>(O_TRUNC), 1, 0),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<uint32_t>(O_TRUNC | O_ACCMODE), 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, REFUSE),
         BPF_STMT(BPF_RET | BPF_K, ALLOW) };
     auto flagsThen = [&](int argument) {
         std::vector<sock_filter> body { BPF_STMT(BPF_LD | BPF_W | BPF_ABS, argLow(argument)) };
