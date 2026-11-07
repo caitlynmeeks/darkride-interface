@@ -136,7 +136,8 @@ std::wstring envValue(const wchar_t* name) {
     return size > 0 && size < 1024 ? std::wstring(value, size) : std::wstring();
 }
 
-// Blender's whole environment: the system's few, and its own folders in the job folder; nothing of the person's
+// Blender's whole environment: the system's few, the standard folder locations, and its own folders in the job
+// folder; nothing else of the person's (no key, no other variable)
 std::wstring environmentBlock(const fs::path& job) {
     const std::wstring root = envValue(L"SystemRoot");
     std::vector<std::wstring> lines = {
@@ -147,6 +148,15 @@ std::wstring environmentBlock(const fs::path& job) {
         L"BLENDER_USER_CONFIG=" + (job / L"config").wstring(), L"BLENDER_USER_SCRIPTS=" + (job / L"user-scripts").wstring(),
         L"BLENDER_USER_DATAFILES=" + (job / L"datafiles").wstring(),
     };
+    // the folder locations an AppContainer start needs to set up the container's own folders (without them
+    // CreateProcess fails with ERROR_ENVVAR_NOT_FOUND); locations only, the box can't open them
+    for (const wchar_t* name : { L"SystemDrive", L"USERPROFILE", L"LOCALAPPDATA", L"APPDATA", L"ProgramData",
+                                 L"ProgramFiles", L"ALLUSERSPROFILE", L"PUBLIC" }) {
+        const std::wstring value = envValue(name);
+        if (!value.empty()) {
+            lines.push_back(std::wstring(name) + L"=" + value);
+        }
+    }
     std::wstring block;
     for (const auto& line : lines) {
         block += line;
