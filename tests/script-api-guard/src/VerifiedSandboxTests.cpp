@@ -640,6 +640,18 @@ void VerifiedSandboxTests::testSignalsNotForWorlds() {
     QVERIFY(ScriptApiPolicy::deniesSignal(&QObject::staticMetaObject, "destroyed"));
 }
 
+void VerifiedSandboxTests::testWorldScriptStartsNoScript() {
+    // Script.load starts another script; Script.include and the rest of Script stay (an imported avatar's gesture
+    // script uses resolvePath and scriptEnding). The policy is asked with the engine's own class, WasmScriptEngine
+    for (const QMetaObject* script : { &ScriptEngine::staticMetaObject, &WasmScriptEngine::staticMetaObject }) {
+        QVERIFY2(ScriptApiPolicy::deniesMethod(script, "load"), script->className());
+        for (const char* member : { "include", "resolvePath", "setTimeout", "setInterval", "clearTimeout", "stop" }) {
+            QVERIFY2(!ScriptApiPolicy::deniesMethod(script, member), member);
+        }
+        QVERIFY(!ScriptApiPolicy::deniesSignal(script, "scriptEnding"));
+    }
+}
+
 void VerifiedSandboxTests::testServerEnginesAreRuled() {
     // the entity script server's engine: always, its scripts counted as the network's whatever their address
     WasmScriptEngine entityServer(ScriptEngine::ENTITY_SERVER_SCRIPT, NO_SCRIPT, "about:Entities 1");

@@ -11,6 +11,7 @@
 #include <ScriptNetworkPolicy.h>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QFileInfo>
 
 #include <QtCore/QStandardPaths>
@@ -20,6 +21,7 @@
 #include <shared/QtHelpers.h>
 #include <SettingHandle.h>
 #include <PathUtils.h>
+#include <ScriptCaller.h>
 #include <shared/FileUtils.h>
 #include <NetworkingConstants.h>
 
@@ -200,6 +202,8 @@ void ScriptEngines::removeScriptEngine(ScriptEnginePointer engine) {
 
 void ScriptEngines::shutdownScripting() {
     _isStopped = true;
+    QElapsedTimer stopping;
+    stopping.start();
     QMutexLocker locker(&_allScriptsMutex);
     qCDebug(scriptengine) << "Stopping all scripts.... currently known scripts:" << _allKnownScriptEngines.size();
 
@@ -236,7 +240,7 @@ void ScriptEngines::shutdownScripting() {
 
     // Once the scripts are stopped, we can remove them from our set
     _allKnownScriptEngines.clear();
-    qCDebug(scriptengine) << "DONE Stopping all scripts....";
+    qCDebug(scriptengine) << "DONE Stopping all scripts...." << stopping.elapsed() << "ms";
 }
 
 /**jsdoc
@@ -555,12 +559,21 @@ bool ScriptEngines::stopScript(const QString& rawScriptURL, bool restart) {
             if (restart) {
                 bool isUserLoaded = scriptEngine->isUserLoaded();
                 ScriptEngine::Type type = scriptEngine->getType();
+                // an avatar's script (the only one in this list with a world) comes back as one, in the same world
+                // under the same rules, and not at all once that world is gone (the avatar was changed)
+                const int world = scriptEngine->getWorldId();
                 auto scriptCache = DependencyManager::get<ScriptCache>();
                 scriptCache->deleteScript(scriptURL);
 
                 if (!scriptEngine->isStopping()) {
                     connect(scriptEngine.data(), &ScriptEngine::finished,
-                            this, [this, isUserLoaded, type](QString scriptName, ScriptEnginePointer engine) {
+                            this, [this, isUserLoaded, type, world](QString scriptName, ScriptEnginePointer engine) {
+                            if (world != 0) {
+                                if (type == ScriptEngine::Type::AVATAR && !ScriptCaller::isRetired(world)) {
+                                    loadAvatarScript(scriptName, world);
+                                }
+                                return;
+                            }
                             reloadScript(scriptName, isUserLoaded)->setType(type);
                     });
                 }

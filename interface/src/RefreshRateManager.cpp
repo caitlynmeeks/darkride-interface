@@ -168,6 +168,15 @@ static const int INACTIVE_TIMER_LIMIT = 3000;
 // at 72 passed a tenth, returned, and were 4-6 misses a second at 144, a drop again). A maximum would let one
 // texture upload a second hold the half rate for ever; this is a tail the full rate could carry.
 static const int GOVERNOR_DROP_MISSES = 3;
+// the seconds after a world's arrival (the domain connect) in which slipped presents are counted and shown but not
+// dropped on: a world's loading second slips 3-5 presents on every build, and a heavy world then never earns the
+// climb-back, so without this no ride there ever runs at the display's rate (entry 28)
+static const int GOVERNOR_ARRIVAL_GRACE_SECONDS = 10;
+// A measurement-only switch (entry 24, Amendment 3e): with TIVOLI_GOVERNOR_HOLD set the governor never drops to the
+// half rate, so a run in front measures at the display's own rate through a world's arrival. Read once at start-up;
+// unset, which is every client a visitor runs, nothing differs. A held run is a measurement, never a ride: its log
+// says so, and the diag line's rate word reads "held".
+static bool s_governorHeld = false;
 static const int GOVERNOR_HOLD_MIN_SECONDS = 5;
 static const int GOVERNOR_HOLD_MAX_SECONDS = 60;
 static const int GOVERNOR_PROBE_SECONDS = 30;
@@ -220,6 +229,10 @@ std::string RefreshRateManager::uxModeToString(RefreshRateManager::RefreshRateMa
 
 RefreshRateManager::RefreshRateManager() {
     _refreshRateProfile = (RefreshRateManager::RefreshRateProfile) _refreshRateProfileSetting.get();
+    s_governorHeld = qEnvironmentVariableIntValue("TIVOLI_GOVERNOR_HOLD") > 0;
+    if (s_governorHeld) {
+        qCDebug(interfaceapp) << "Refresh governor: HELD at full rate by TIVOLI_GOVERNOR_HOLD (a measurement; not for riding)";
+    }
     _inactiveTimer->setInterval(INACTIVE_TIMER_LIMIT);
     _inactiveTimer->setSingleShot(true);
     QObject::connect(_inactiveTimer.get(), &QTimer::timeout, [&] {
@@ -268,6 +281,14 @@ void RefreshRateManager::updateRideExemption() {
                                        : "Refresh regime: unfocused and no ride in view: the unfocused rate");
         _governorChangeNs = steadyNowNs();
     }
+}
+
+void RefreshRateManager::noteArrival() {
+    _arrivalNs = steadyNowNs();
+}
+
+bool RefreshRateManager::inArrivalGrace() const {
+    return _arrivalNs > 0 && steadyNowNs() - _arrivalNs < (int64_t)GOVERNOR_ARRIVAL_GRACE_SECONDS * 1000000000LL;
 }
 
 void RefreshRateManager::governorTick() {
@@ -328,7 +349,7 @@ void RefreshRateManager::governorTick() {
         if (_governorCleanSeconds >= GOVERNOR_FORGIVE_SECONDS) {
             _governorHoldSeconds = GOVERNOR_HOLD_MIN_SECONDS;
         }
-        if (misses >= GOVERNOR_DROP_MISSES) {
+        if (misses >= GOVERNOR_DROP_MISSES && !inArrivalGrace() && !s_governorHeld) {   // arriving or held: counted and shown, never acted on
             const bool returnFailed = _governorProbeSecondsLeft > 0;
             if (returnFailed) {
                 _governorHoldSeconds = std::min(_governorHoldSeconds * 2, GOVERNOR_HOLD_MAX_SECONDS);
@@ -391,7 +412,7 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
     if (!GOVERNOR_DIAG) {
         return;
     }
-    qCDebug(interfaceapp).nospace() << "Refresh governor diag: " << (_halfRate ? "half" : "full") << " rate, target "
+    qCDebug(interfaceapp).nospace() << "Refresh governor diag: " << (s_governorHeld ? "held" : (_halfRate ? "half" : "full")) << " rate, target "
         << _activeRefreshRate << " of " << sample.displayRate << " Hz; last second: presents " << sample.presents
         << " (on 1 refresh " << sample.onOneRefresh << ", on 2+ " << sample.onTwoOrMoreRefreshes << ", held " << sample.repeated
         << "), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
@@ -399,7 +420,8 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
         << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms; fit "
         << _governorFitSeconds << " of " << _governorHoldSeconds << " s"
         << (sample.startedAtNs < _governorChangeNs + GOVERNOR_SETTLE_NS ? ", mixed (no verdict)" : "")
-        << (_governorProbeSecondsLeft > 0 ? ", probe" : "");
+        << (_governorProbeSecondsLeft > 0 ? ", probe" : "")
+        << (inArrivalGrace() ? "; arriving" : "");
 }
 
 void RefreshRateManager::resetInactiveTimer(bool deliberate) {

@@ -132,7 +132,10 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
         "parseMapping", "loadMapping" } },
     { "ControllerScriptingInterface", {
         "captureKeyEvents", "releaseKeyEvents", "captureJoystick", "releaseJoystick", "captureEntityClickEvents",
-        "releaseEntityClickEvents" } }
+        "releaseEntityClickEvents" } },
+    // Script: a world's script starts no script of its own (Script.load); what it needs comes in through
+    // Script.include, into the same engine under the same rules
+    { "ScriptEngine", { "load" } }
 };
 
 // Properties a world's script may write on an allow-listed class (every other write on such a class is refused).
