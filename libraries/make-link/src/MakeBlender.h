@@ -7,7 +7,9 @@
 //  with a profile that denies everything but Blender itself, our fixed scripts (read only), one fresh scratch folder and
 //  the GPU. No network, no home folder, no other program's services. Its environment is built from nothing (no key,
 //  nothing of the app's), and it is killed at its time and memory limits. Its parent is darkride-make-watch, beside
-//  the app's program, which kills it when the app stops it or is gone. macOS only: elsewhere it isn't available.
+//  the app's program, which kills it when the app stops it or is gone. On Windows the box is an AppContainer with no
+//  capabilities inside a job object (MakeBox), the job its keeper, and the tools are offered only when the box's live
+//  self-test at Connect shows the installer's firewall rules hold (selfTest). On Linux it isn't available yet.
 //
 //  What comes back is treated as untrusted, because the script runs in the same Python as our export and could change
 //  it: the .glb is size-capped and its structure checked (glTF 2.0 binary, everything inside it, no outside address),
@@ -34,6 +36,11 @@
 #include <QtCore/QVector>
 
 class QTimer;
+#ifdef Q_OS_WIN
+namespace MakeBox {
+struct Run;
+}
+#endif
 
 class MakeBlender : public QObject {
     Q_OBJECT
@@ -88,7 +95,33 @@ public:
 
     /// Whether a make can run here, sealed: macOS with its sandbox and the watcher beside the app, and a Blender found
     /// (the person's choice, else the usual places). False with a plain `why` otherwise: Blender never runs unsealed.
+    /// On Windows: a Blender found and this Connect's self-test passed (`why` CHECKING_WORDS while it runs,
+    /// UNAVAILABLE_WORDS when it withdrew); before the first Connect a found Blender counts as available, the Connect
+    /// decides, and a make runs only after a passed self-test.
     bool available(QString& why) const;
+
+    /// Decides at a Connect whether the Blender tools may be offered here and answers once through `done`, on this
+    /// object's thread, with available()'s `why` when not. On Windows this is the box's live self-test, a few seconds
+    /// in the background: first the unboxed control, a bare connection from the app to this computer's own address
+    /// (no address or no connection = unknown = not offered), then the same connection tried by Blender inside the box
+    /// (selftest.py): offered only when the box's connection was refused. The installer's firewall rules are read and
+    /// logged, never required: Group Policy can make Windows ignore local rules while they still read as present and
+    /// enabled, so only the probe decides. The stricter box form is tried first, the plain one when Blender won't start
+    /// under it. Elsewhere the answer is available()'s, at once.
+    void selfTest(std::function<void(bool offered, const QString& why)> done);
+    enum class SelfTest { NotRun, Running, Passed, Failed };
+    SelfTest selfTestState() const { return _selfTest; }
+
+    /// The words the dock shows: while the self-test runs, and when Blender can't be offered here.
+    static const char* const CHECKING_WORDS;     // "Checking Blender…"
+    static const char* const UNAVAILABLE_WORDS;  // "Blender isn't available here"
+    /// Whether a version ("5.2.2") is one the fixed scripts are written for (MINIMUM_MAJOR.MINIMUM_MINOR or newer).
+    static bool versionIsEnough(const QString& version);
+    /// The plain line for a Blender that is too old: "That's Blender 4.1; Make needs 5.2 or newer."
+    static QString tooOldLine(const QString& version);
+    /// The self-test probe's result file read: true when it says "refused" (`held` true, the box kept the connection
+    /// in) or "reached" (`held` false); false for anything else, which is unknown.
+    static bool readSelfTestResult(const QByteArray& text, bool& held);
 
     void setBlender(const QString& app) { _blender = app; }
     /// The watcher program (defaultWatcher() unless set, for tests).
@@ -128,7 +161,15 @@ private:
     void finish(Made made);
     void kill();
     qint64 blenderPid();
+    void selfTestEnded(int round, bool known, bool held, const QString& detail, bool lpac);
 
+    SelfTest _selfTest { SelfTest::NotRun };
+    int _selfTestRound { 0 };
+    bool _lpac { true };   // Windows: the box form the self-test settled on (the stricter one first)
+    std::function<void(bool, const QString&)> _selfTestDone;
+#ifdef Q_OS_WIN
+    MakeBox::Run* _box { nullptr };   // the running make's boxed Blender: the job is its keeper
+#endif
     QString _folder;
     QString _blender;
     QString _watch;

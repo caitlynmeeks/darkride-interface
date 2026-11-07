@@ -770,6 +770,80 @@ void MakeBlenderTests::testWatcherIsBlendersParent() {
 #endif
 }
 
+void MakeBlenderTests::testVersionAndWords() {
+    // the version Make needs (MINIMUM_MAJOR.MINIMUM_MINOR or newer), read from a version string of any length
+    QVERIFY(MakeBlender::versionIsEnough("5.2.2"));
+    QVERIFY(MakeBlender::versionIsEnough("5.2"));
+    QVERIFY(MakeBlender::versionIsEnough("5.10.0"));
+    QVERIFY(MakeBlender::versionIsEnough("6.0.0"));
+    QVERIFY(!MakeBlender::versionIsEnough("5.1.9"));
+    QVERIFY(!MakeBlender::versionIsEnough("4.1"));
+    QVERIFY(!MakeBlender::versionIsEnough(""));
+    QVERIFY(!MakeBlender::versionIsEnough("blender"));
+    // the plain lines: the dock's two (one ellipsis character, no word of the machinery) and the too-old answer
+    QCOMPARE(QString::fromUtf8(MakeBlender::CHECKING_WORDS), QString("Checking Blender") + QChar(0x2026));
+    QCOMPARE(QString(MakeBlender::UNAVAILABLE_WORDS), QString("Blender isn't available here"));
+    QVERIFY(!QString::fromUtf8(MakeBlender::CHECKING_WORDS).contains("box", Qt::CaseInsensitive));
+    QCOMPARE(MakeBlender::tooOldLine("4.1"), QString("That's Blender 4.1; Make needs 5.2 or newer."));
+    QVERIFY(MakeBlender::tooOldLine(QString()).contains("5.2 or newer"));
+}
+
+void MakeBlenderTests::testSelfTestResult() {
+    // the probe's one word, and nothing else counts
+    bool held = true;
+    QVERIFY(MakeBlender::readSelfTestResult("refused\n", held));
+    QVERIFY(held);
+    QVERIFY(MakeBlender::readSelfTestResult("reached", held));
+    QVERIFY(!held);
+    QVERIFY(MakeBlender::readSelfTestResult("  refused  \r\n", held));
+    QVERIFY(held);
+    QVERIFY(!MakeBlender::readSelfTestResult("", held));
+    QVERIFY(!MakeBlender::readSelfTestResult("refused reached", held));
+    QVERIFY(!MakeBlender::readSelfTestResult("Traceback (most recent call last)", held));
+    QVERIFY(!MakeBlender::readSelfTestResult(QByteArray(1000, 'r'), held));
+}
+
+void MakeBlenderTests::testSelfTestAnswers() {
+    QTemporaryDir dir;
+    MakeBlender blender(dir.path());
+#ifndef Q_OS_WIN
+    blender.setWatcher(dir.filePath("no-watcher"));
+#endif
+    QCOMPARE(static_cast<int>(blender.selfTestState()), static_cast<int>(MakeBlender::SelfTest::NotRun));
+    int answers = 0;
+    bool offered = false;
+    QString why;
+    blender.selfTest([&](bool given, const QString& reason) {
+        ++answers;
+        offered = given;
+        why = reason;
+    });
+#ifdef Q_OS_WIN
+    // Windows: the box's live self-test answers in the background, within its limits, with the plain line when not
+    QString found;
+    if (MakeBlender::findBlender(found).isEmpty()) {
+        QCOMPARE(answers, 1);
+        QVERIFY(!offered);
+        QVERIFY(!why.isEmpty());
+        QSKIP("no Blender here");
+    }
+    QCOMPARE(static_cast<int>(blender.selfTestState()), static_cast<int>(MakeBlender::SelfTest::Running));
+    QVERIFY(!blender.available(why));
+    QCOMPARE(why, QString::fromUtf8(MakeBlender::CHECKING_WORDS));
+    QTRY_COMPARE_WITH_TIMEOUT(answers, 1, 120000);
+    QCOMPARE(static_cast<int>(blender.selfTestState()),
+             static_cast<int>(offered ? MakeBlender::SelfTest::Passed : MakeBlender::SelfTest::Failed));
+    QCOMPARE(why, offered ? QString() : QString(MakeBlender::UNAVAILABLE_WORDS));
+    QCOMPARE(blender.available(why), offered);
+#else
+    // elsewhere the answer is available()'s, at once: without a watcher not offered, and it says why
+    QCOMPARE(answers, 1);
+    QVERIFY(!offered);
+    QVERIFY(!why.isEmpty());
+    QCOMPARE(static_cast<int>(blender.selfTestState()), static_cast<int>(MakeBlender::SelfTest::Failed));
+#endif
+}
+
 int main(int argc, char** argv) {
     if (qEnvironmentVariableIsSet(PLAY_THE_APP)) {
         return playTheApp(argc, argv);

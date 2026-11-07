@@ -47,6 +47,7 @@
 #include <ScriptEngine.h>
 #include <ScriptEngines.h>
 #include <MakeFolder.h>
+#include <SettingHandle.h>
 #include <MakeText.h>
 
 #include "Application.h"
@@ -71,6 +72,8 @@ const int ASK_NAME_LENGTH = 60;  // a thing's name (the world's words) in an ask
 const int ASK_WAIT_MS = 100 * 1000;
 const int MAX_LOG_LINES = 500;
 const int LOG_LINES_GIVEN = 120;
+// the person's own choice of Blender (useBlender), kept in Settings
+const QString BLENDER_SETTING = "make/blender";
 const int MAX_INLINE_VALUE_BYTES = 1200;  // the same as make-tools.js MAX_VALUE_BYTES
 const QSize PICTURE_SIZE { 768, 512 };
 const float PICTURE_FIELD_OF_VIEW = 45.0f;
@@ -177,6 +180,11 @@ MakeLink::MakeLink() {
     if (!_server.toolList().loadError().isEmpty()) {
         // the list comes from the library's resources: a build that lost them would offer no tool at all, so say so once
         qCWarning(makelog) << "Make: the tool list didn't load:" << _server.toolList().loadError();
+    }
+    // the person's own choice of Blender, when they made one (useBlender); the usual places otherwise
+    const QString chosenBlender = Setting::Handle<QString>(BLENDER_SETTING).get();
+    if (!chosenBlender.isEmpty()) {
+        _blender->setBlender(chosenBlender);
     }
     _server.setInstructions(
         "Darkride's Make: you build in the 3D world the person has open in Darkride, as them, with their rights there. "
@@ -532,26 +540,69 @@ QString MakeLink::blenderWhy() const {
 }
 
 void MakeLink::offerBlender() {
-    // the tool list Claude Code asks for waits while this is decided (the Windows self-test takes seconds; here the
-    // answer is at once), so a Claude started right after Connect still sees the Blender tools when they're offered
+    // the two tools are withdrawn while the answer is open: on the Mac it comes at once; on Windows the box's live
+    // self-test takes a few seconds, the dock says "Checking Blender…" meanwhile, and the answer offers or withdraws
+    // the two together. A tools/list asked meanwhile waits for the answer (the server's hold, 15 s at most, then the
+    // list as it stands), so a Claude Code started right after Connect sees the decided list too.
+    _blenderOffered = false;
+    _blenderWhy = MakeBlender::CHECKING_WORDS;
+    _server.removeHandler("make_with_blender");
+    _server.removeHandler("upload_model");
     _server.setToolListHold(true);
-    _blenderWhy.clear();
-    _blenderOffered = _blender->available(_blenderWhy);
-    if (_blenderOffered) {
-        _blenderWhy.clear();
-        _server.setHandler("make_with_blender", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
-            makeWithBlender(inputs, reply);
-        });
-        // a model comes only from make_with_blender, so without Blender there's nothing to upload
-        _server.setHandler("upload_model", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
-            uploadModel(inputs, reply);
-        });
-    } else {
-        _server.removeHandler("make_with_blender");
-        _server.removeHandler("upload_model");
+    _blender->selfTest([this](bool offered, const QString& why) {
+        _blenderOffered = offered;
+        _blenderWhy = offered ? QString() : why;
+        if (offered) {
+            _server.setHandler("make_with_blender", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
+                makeWithBlender(inputs, reply);
+            });
+            // a model comes only from make_with_blender, so without Blender there's nothing to upload
+            _server.setHandler("upload_model", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
+                uploadModel(inputs, reply);
+            });
+        }
+        qCInfo(makelog) << "Make's Blender tools" << (_blenderOffered ? QString("offered") : "not offered: " + _blenderWhy);
+        _server.setToolListHold(false);   // the lists that waited go out now, with the decision in them
+        emit stateChanged();   // the dock re-reads its Blender row
+    });
+}
+
+bool MakeLink::useBlender(const QString& path, QString& why) {
+    QString chosen = path.trimmed();
+#ifdef Q_OS_MAC
+    // the .app, or the program inside it
+    const QString inside = "/Contents/MacOS/Blender";
+    if (chosen.endsWith(inside)) {
+        chosen.chop(inside.size());
     }
-    qCInfo(makelog) << "Make's Blender tools" << (_blenderOffered ? QString("offered") : "not offered: " + _blenderWhy);
-    _server.setToolListHold(false);
+#endif
+    const QString found = MakeBlender::findBlender(why, chosen);
+    if (found.isEmpty()) {
+        const QString version = MakeBlender::blenderVersion(chosen);
+        if (!version.isEmpty() && !MakeBlender::versionIsEnough(version)) {
+            why = MakeBlender::tooOldLine(version);
+        } else if (why.isEmpty()) {
+            why = "That isn't a Blender Make can use.";
+        }
+        return false;
+    }
+    _blender->setBlender(found);
+    Setting::Handle<QString>(BLENDER_SETTING).set(found);
+    qCInfo(makelog) << "Make's Blender: the person's choice, version" << MakeBlender::blenderVersion(found);
+    if (_state == State::Listening || _state == State::Connected) {
+        offerBlender();   // decided again for this Connect, with the chosen one
+    } else {
+        emit stateChanged();
+    }
+    return true;
+}
+
+bool MakeLink::canChooseBlender() const {
+#if defined(Q_OS_MAC) || defined(Q_OS_WIN)
+    return true;
+#else
+    return false;
+#endif
 }
 
 bool MakeLink::connectLink() {

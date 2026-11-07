@@ -16,6 +16,8 @@ if (APPLE)
 endif ()
 if (WIN32)
   # MakeFirewall: the read of the installer's rules for Blender's box (INetFwPolicy2, COM) and the box's SID;
-  # MakeKey: the builder's key in Credential Manager
-  target_link_libraries(${TARGET_NAME} ole32 oleaut32 userenv advapi32 shell32)
+  # MakeKey: the builder's key in Credential Manager; MakeBox: the AppContainer profile and its grants (userenv,
+  # advapi32), the self-test's control connection (ws2_32) and Blender's version from its file (version); MakeClaude:
+  # the known folders for the key route's environment (shell32)
+  target_link_libraries(${TARGET_NAME} ole32 oleaut32 userenv advapi32 ws2_32 version shell32)
 endif ()
