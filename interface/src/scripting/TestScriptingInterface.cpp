@@ -1158,6 +1158,10 @@ QVariantMap TestScriptingInterface::makeDock() {
         { "hasKey", make->hasKey() }, { "claudeFound", make->claudeFound() }, { "blenderFound", make->blenderFound() },
         { "blenderSealed", make->blenderSealed() }, { "blenderWhy", make->blenderWhy() },
         { "keyStoreName", make->keyStoreName() }, { "working", make->isWorking() },
+        // the chat's state, read-only (the dock's own properties), and how many channel events the link has sent this
+        // Connect: a kit's proof that nothing but a Send makes one (security 21:48 11-07)
+        { "chat", make->chat() }, { "channelFlag", make->channelFlag() }, { "sentWaiting", make->sentWaiting() },
+        { "notGotIt", make->notGotIt() }, { "channelEvents", DependencyManager::get<MakeLink>()->channelEventCount() },
         { "timeline", timeline ? timeline->rowCount() : -1 }, { "made", made ? made->rowCount() : -1 },
         { "timelineRows", rowsOf(timeline) }, { "madeRows", rowsOf(made) },
         { "watching", make->isWatching() }, { "provider", engine && engine->imageProvider("make") != nullptr },
@@ -1228,6 +1232,15 @@ bool TestScriptingInterface::makeDockConnect(const QString& route) {
         return false;   // never the key route
     }
     return DependencyManager::get<MakeDock>()->testConnectTerminal(route == "chat");
+}
+
+int TestScriptingInterface::makeDockSend(const QString& text) {
+    if (QThread::currentThread() != thread()) {
+        int result = 0;
+        BLOCKING_INVOKE_METHOD(this, "makeDockSend", Q_RETURN_ARG(int, result), Q_ARG(QString, text));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testSend(text) : 0;
 }
 
 QVariantMap TestScriptingInterface::makeDockItem(const QString& name) {

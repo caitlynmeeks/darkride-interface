@@ -221,6 +221,11 @@ public:
     /// Tests only (Test.makeDockMouse): a left press, a drag in steps and a release over that item, at fractions of its
     /// size, sent as Qt events (not spontaneous, so takeRealInput refuses whatever they lead to).
     bool testMouse(const QString& objectName, const QPointF& from, const QPointF& to);
+    /// Tests only (Test.makeDockSend; security 21:48 11-07): send() without the real-input check, text only, and only
+    /// into the chat a test's Connect turned on (testConnectTerminal(true)), never the person's own chat or the key
+    /// route. The request's number, or 0 whichever check refused it (a kit can't learn which); the log counts
+    /// characters, never the text.
+    int testSend(const QString& text);
 
     /// The Make dock's view, once made (Panels): MakeDock watches its input and gives its engine the image provider.
     void watchWindow(QQuickWindow* window, QQmlEngine* engine);
@@ -255,6 +260,12 @@ private:
     bool takeRealInput(const char* call);
     /// Connect's work, after the gate (or a test's Terminal connect)
     bool connectNow();
+    /// send()'s checks before the real-input gate: the route, the chat's state, the text, not already working
+    bool canSend(const QString& text) const;
+    /// send()'s work after its checks and the gate: the pictures, the link's send, the ask's row
+    int sendNow(const QString& text, const QStringList& pictureIds);
+    /// A test's chat ends (Disconnect, a refused connect, the person's route): the chat line is the person's own again
+    void endTestChat();
     void linkStateChanged();
     void readFound();
     void addRow(MakeDockRows::Row row);

@@ -527,6 +527,17 @@ public slots:
     Q_INVOKABLE bool makeDockConnect(const QString& route);
 
     /**jsdoc
+     * Sends text as the Make dock's Send does, without the person's click, for a kit that has Make's chat on the other
+     * end (scripting's channel-kit.py). Only into the chat <code>Test.makeDockConnect("chat")</code> turned on, which
+     * ends with Disconnect, a refused connect or a route chosen; never the key route; text only. Every check of Send
+     * applies (connected, the chat line, not already working). Any refusal returns 0 alike.
+     * @function Test.makeDockSend
+     * @param {string} text - What to send.
+     * @returns {number} The request's number, or 0.
+     */
+    Q_INVOKABLE int makeDockSend(const QString& text);
+
+    /**jsdoc
      * An item of the Make dock's view, found by its objectName: whether it's shown, its place in the dock's window,
      * its text and selected text (a text item's).
      * @function Test.makeDockItem

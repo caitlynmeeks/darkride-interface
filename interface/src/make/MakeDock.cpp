@@ -44,6 +44,7 @@
 #include <MakeBlender.h>
 #include <MakeClaude.h>
 #include <MakeKey.h>
+#include <MakePeer.h>
 #include <MakeText.h>
 #include <AccountManager.h>
 #include <SettingHandle.h>
@@ -571,8 +572,14 @@ void MakeDock::readFound() {
 
 void MakeDock::linkStateChanged() {
     readFound();   // while connected, blenderSealed is what that Connect decided
-    if (DependencyManager::get<MakeLink>()->stateName() != "connected") {
+    auto link = DependencyManager::get<MakeLink>();
+    if (link->stateName() != "connected") {
         resetChannel();   // a new Claude Code proves its channel again
+    }
+    // the link refused a Claude Code started with another line (MakeLink::judgeConnection): a test's chat ends there
+    // (security 21:48 11-07)
+    if (link->stateName() == "listening" && link->reason() == MakePeer::REFUSED_WORDS) {
+        endTestChat();
     }
     if (DependencyManager::get<MakeLink>()->stateName() == "off") {
         _starting = false;
@@ -676,6 +683,7 @@ bool MakeDock::connectNow() {
     _reason.clear();
     _starting = false;
     if (!link->connectLink()) {
+        endTestChat();   // a refused connect ends a test's chat (security 21:48 11-07)
         readFound();
         emit stateChanged();
         return false;
@@ -700,8 +708,19 @@ bool MakeDock::connectNow() {
     return true;
 }
 
+void MakeDock::endTestChat() {
+    if (!_testChat) {
+        return;
+    }
+    _testChat = false;
+    qCWarning(interfaceapp) << "Make: a test's chat ended";
+    emit routeChanged();       // chat()
+    emit setupTextChanged();   // the start line
+}
+
 void MakeDock::disconnect() {
     _stopRequested = true;   // the person's own: never shown as Couldn't finish
+    endTestChat();
     DependencyManager::get<MakeLink>()->disconnectLink();
     _starting = false;
     _terminalQuiet.stop();
@@ -722,7 +741,7 @@ bool MakeDock::setRoute(const QString& route) {
     if (chatChanged) {
         chatSetting.set(route == "chat");
     }
-    _testChat = false;   // the person's own choice from now on, not a test's run
+    endTestChat();   // the person's own choice from now on, not a test's run
     if (plan != _route || chatChanged) {
         _route = plan;
         routeSetting.set(plan);
@@ -767,20 +786,40 @@ bool MakeDock::forgetKey() {
     return forgot;
 }
 
-int MakeDock::send(const QString& text, const QStringList& pictureIds) {
+bool MakeDock::canSend(const QString& text) const {
     // the key route; or the Claude-plan route's chat, while a Claude Code started with the chat line is connected
     const bool chatting = _route == "terminal" && chat() && state() == "connected" && channelFlag() != "off";
     if ((_route != "key" && !chatting) || text.trimmed().isEmpty() || _working) {
-        return 0;
+        return false;
     }
     // the key route's typing goes only to the app's own Claude Code: once that has ended, MakeLink::send would fall
     // through to a connected Terminal Claude Code's channel (security 19:27 11-07)
     if (_route == "key" && !DependencyManager::get<MakeLink>()->claude()->isRunning()) {
+        return false;
+    }
+    return true;
+}
+
+int MakeDock::send(const QString& text, const QStringList& pictureIds) {
+    if (!canSend(text) || !takeRealInput("send")) {
         return 0;
     }
-    if (!takeRealInput("send")) {
+    return sendNow(text, pictureIds);
+}
+
+int MakeDock::testSend(const QString& text) {
+    // only the chat a test turned on: _testChat is set by testConnectTerminal(true) alone and ends with Disconnect, a
+    // refused connect or the person's route, so this never reaches the person's own chat nor the key route
+    const int request = _testChat && canSend(text) ? sendNow(text, QStringList()) : 0;
+    if (request <= 0) {
+        qCWarning(interfaceapp) << "Make: a test's send refused";
         return 0;
     }
+    qCWarning(interfaceapp) << "Make: a test's send," << text.size() << "characters, request" << request;
+    return request;
+}
+
+int MakeDock::sendNow(const QString& text, const QStringList& pictureIds) {
     QStringList ids;
     QStringList views;
     for (const auto& id : pictureIds) {
