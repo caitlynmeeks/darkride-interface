@@ -168,6 +168,14 @@ bool EntitySizeCheck::mayCarryTooBigValue(const EntityItemProperties& properties
     return false;
 }
 
+std::vector<EntityPropertyList> EntitySizeCheck::checkedProperties() {
+    std::vector<EntityPropertyList> properties;
+    for (const LongValue& value : LONG_VALUES) {
+        properties.push_back(value.property);
+    }
+    return properties;
+}
+
 EntitySizeProblem EntitySizeCheck::findProblem(EntityTypes::EntityType type, const EntityItemProperties& properties) {
     EntitySizeProblem problem;
     if (!mayCarryTooBigValue(properties)) {

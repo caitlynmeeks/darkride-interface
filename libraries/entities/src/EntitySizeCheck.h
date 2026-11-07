@@ -12,6 +12,8 @@
 #ifndef hifi_EntitySizeCheck_h
 #define hifi_EntitySizeCheck_h
 
+#include <vector>
+
 #include <QObject>
 #include <QString>
 #include <QUuid>
@@ -41,6 +43,10 @@ namespace EntitySizeCheck {
     /// Whether any changed value of `properties` could be too big: compares each text, byte and vector value's size
     /// against a bound below the least any entity can hold. No allocation and no encoding: most edits stop here.
     bool mayCarryTooBigValue(const EntityItemProperties& properties);
+
+    /// The properties mayCarryTooBigValue looks at: every one whose size the sender chooses (a test holds it to the
+    /// property definitions, EntitySizeCheckTests).
+    std::vector<EntityPropertyList> checkedProperties();
 
     /// The first value of `properties` too big for an entity of `type`; empty when every value fits. Measures only
     /// when mayCarryTooBigValue is true. For an Inspector before it commits; addEntity and editEntity call it too.
