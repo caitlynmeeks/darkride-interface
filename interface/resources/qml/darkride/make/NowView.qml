@@ -45,11 +45,10 @@ Item {
         z: 1
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: view.terminalRoute ? parent.top : undefined
-        anchors.verticalCenter: view.terminalRoute ? undefined : parent.verticalCenter
-        anchors.topMargin: 12
         anchors.leftMargin: 14
         anchors.rightMargin: 14
+        // a y, not anchors: switching top and verticalCenter anchors by binding clashes and leaves it in the middle
+        y: view.terminalRoute ? 12 : Math.max(12, (view.height - height) / 2)
         visible: view.empty
         spacing: 12
 
