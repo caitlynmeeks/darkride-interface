@@ -9,8 +9,10 @@
 #    after the install:    powershell -ExecutionPolicy Bypass -File installer-kit.ps1 -Phase installed -Out <folder>
 #    after the uninstall:  powershell -ExecutionPolicy Bypass -File installer-kit.ps1 -Phase uninstalled -Out <folder>
 #  Same -Out both times. The installed phase keeps a copy of the installer's rule check for the uninstalled phase,
-#  since the uninstall removes the original. Each step prints PASS or FAIL. The last line is "INSTALLER KIT <phase>:
-#  PASS" or "... FAIL (<n>)"; the exit status is 0 only on PASS.
+#  since the uninstall removes the original. Each step prints PASS, FAIL or SKIP. The last line is "INSTALLER KIT
+#  <phase>: PASS", "... FAIL (<n>)" or "... INCOMPLETE (<n> skipped)"; the exit status is 0 only on PASS.
+#  Make's real profile is deleted only when the kit made it: if Make made Darkride.MakeBlender on this machine before,
+#  the kit keeps it (and its folder), skips the steps that need a fresh one, and says so (security, 11-07).
 #  installed:   1. the rules check (darkride-firewall-rules.exe check) is 0;
 #               2. Make's profile made as Make makes it, its SID the rules' SID; the rules check still 0;
 #               3. the box in Make's profile: the unboxed control reaches Windows' port 135 on the LAN address and gets
@@ -35,9 +37,22 @@ $ErrorActionPreference = 'Continue'  # native programs' stderr must not stop the
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $log = Join-Path $Out "kit-$Phase.txt"
 $script:fails = 0
+$script:skips = 0
 
 function Say([string]$line) {
     $line | Tee-Object -FilePath $log -Append
+}
+
+function Skip([string]$name, [string]$why) {
+    $script:skips++
+    Say "SKIP  $name  ($why)"
+}
+
+# Make's profile made as Make makes it; make-box-test's exit: 0 made, 5 made but its SID isn't the rules', 1 there
+# already (not the kit's: kept), 3 not made
+function MakeProfile([string]$record) {
+    & $BoxTest --profile-create *>&1 | Out-File -FilePath (Join-Path $Out $record)
+    return $LASTEXITCODE
 }
 
 function Expect([string]$name, [bool]$ok, [string]$detail) {
@@ -57,9 +72,9 @@ function CheckNamed($results, [string]$like) {
     return @($results.results | Where-Object { $_.check -like $like })[0]
 }
 
-function BoxRun([string]$folder, [bool]$keep) {
-    $arguments = @($Blender, $folder, '--profile', 'Darkride.MakeBlender', '--system-port')
-    if ($keep) { $arguments += '--keep-profile' }
+# always --keep-profile: the kit alone decides whether Make's profile is deleted
+function BoxRun([string]$folder) {
+    $arguments = @($Blender, $folder, '--profile', 'Darkride.MakeBlender', '--system-port', '--keep-profile')
     if ($Mac) { $arguments += @('--mac', $Mac) }
     & $BoxTest @arguments *>&1 | Out-File -FilePath "$folder-console.txt"
     $code = $LASTEXITCODE
@@ -77,13 +92,18 @@ if ($Phase -eq 'installed') {
     $c = RulesCheck $Helper 'step 1: after the install'
     Expect '1. the installer''s rules check after the install' ($c -eq 0) "exit $c"
 
-    & $BoxTest --profile-create *>&1 | Out-File -FilePath (Join-Path $Out 'profile-create.txt')
-    $p = $LASTEXITCODE
-    Expect '2a. Make''s profile made, its SID the rules'' SID' ($p -eq 0) "exit $p (1 = it was already there)"
-    $c = RulesCheck $Helper 'step 2: after Make''s profile is made'
-    Expect '2b. the rules check after the profile is made' ($c -eq 0) "exit $c"
+    $p = MakeProfile 'profile-create.txt'
+    $madeByKit = ($p -eq 0) -or ($p -eq 5)
+    if ($p -eq 1) {
+        Skip '2a. Make''s profile made, its SID the rules'' SID' 'Make''s profile was already there: kept, not made by the kit'
+        Skip '2b. the rules check after the profile is made' 'no fresh profile to show it'
+    } else {
+        Expect '2a. Make''s profile made, its SID the rules'' SID' ($p -eq 0) "exit $p"
+        $c = RulesCheck $Helper 'step 2: after Make''s profile is made'
+        Expect '2b. the rules check after the profile is made' ($c -eq 0) "exit $c"
+    }
 
-    $run = BoxRun (Join-Path $Out 'box-installed') $true
+    $run = BoxRun (Join-Path $Out 'box-installed')
     $r = $run.results
     Expect '3a. the box test ran in Make''s profile' (($null -ne $r) -and ($r.form -ne 'none started') -and ($r.profile -eq 'Darkride.MakeBlender')) "exit $($run.code)"
     $control135 = CheckNamed $r.control '*port 135*'
@@ -104,16 +124,27 @@ if ($Phase -eq 'installed') {
         Expect '3g. killing the parent ends Blender' ($r.kill_the_parent_ends_blender -eq $true) "$($r.kill_the_parent_ends_blender)"
     }
 
-    & $BoxTest --profile-delete *>&1 | Out-File -FilePath (Join-Path $Out 'profile-delete.txt')
-    $d = $LASTEXITCODE
-    Expect '4a. Make''s profile deleted' ($d -eq 0) "exit $d"
-    $c = RulesCheck $Helper 'step 4: after Make''s profile is deleted'
-    Expect '4b. the rules check after the profile is deleted (both rules unchanged)' ($c -eq 0) "exit $c"
+    if ($madeByKit) {
+        & $BoxTest --profile-delete *>&1 | Out-File -FilePath (Join-Path $Out 'profile-delete.txt')
+        $d = $LASTEXITCODE
+        Expect '4a. Make''s profile deleted' ($d -eq 0) "exit $d"
+        $c = RulesCheck $Helper 'step 4: after Make''s profile is deleted'
+        Expect '4b. the rules check after the profile is deleted (both rules unchanged)' ($c -eq 0) "exit $c"
+    } else {
+        Skip '4a. Make''s profile deleted' 'the kit didn''t make it: kept'
+        Skip '4b. the rules check after the profile is deleted' 'no delete to show it'
+    }
 } else {
     $c = RulesCheck $helperCopy 'step 5: after the uninstall'
     Expect '5. the rules check after the uninstall finds no rule of ours' ($c -eq 7) "exit $c"
 
-    $run = BoxRun (Join-Path $Out 'box-uninstalled') $false
+    $p = MakeProfile 'profile-create-uninstalled.txt'
+    $run = BoxRun (Join-Path $Out 'box-uninstalled')
+    if (($p -eq 0) -or ($p -eq 5)) {
+        & $BoxTest --profile-delete *>&1 | Out-File -FilePath (Join-Path $Out 'profile-delete-uninstalled.txt')
+    } elseif ($p -eq 1) {
+        Say "INFO  Make's profile was already there: kept"
+    }
     $r = $run.results
     $control135 = CheckNamed $r.control '*port 135*'
     $box135 = CheckNamed $r.probe '*port 135*'
@@ -123,6 +154,7 @@ if ($Phase -eq 'installed') {
     Expect '6c. the box reaches the closed port on the LAN address again' (($null -ne $boxClosed) -and ($boxClosed.reached -eq $true)) "$($boxClosed.detail)"
 }
 
-if ($script:fails -eq 0) { Say "INSTALLER KIT ${Phase}: PASS"; exit 0 }
-Say "INSTALLER KIT ${Phase}: FAIL ($script:fails)"
-exit 1
+if ($script:fails -gt 0) { Say "INSTALLER KIT ${Phase}: FAIL ($script:fails)"; exit 1 }
+if ($script:skips -gt 0) { Say "INSTALLER KIT ${Phase}: INCOMPLETE ($script:skips skipped)"; exit 2 }
+Say "INSTALLER KIT ${Phase}: PASS"
+exit 0

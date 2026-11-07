@@ -111,9 +111,13 @@ HRESULT createContainer(PSID* sid) {
                                      0, sid);
 }
 
-PSID containerSid() {
+// madeHere (optional): true when this call made the profile, false when it was there already
+PSID containerSid(bool* madeHere = nullptr) {
     PSID sid = nullptr;
     HRESULT made = createContainer(&sid);
+    if (madeHere) {
+        *madeHere = SUCCEEDED(made);
+    }
     if (made == HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)) {
         made = DeriveAppContainerSidFromAppContainerName(boxProfile.c_str(), &sid);
     }
@@ -684,7 +688,8 @@ int wmain(int argc, wchar_t** argv) {
     // a key-shaped variable in this program's own environment: Blender must not see it (its block is built afresh)
     SetEnvironmentVariableW(L"ANTHROPIC_API_KEY", L"kit-test-env-key");
 
-    PSID sid = containerSid();
+    bool profileMadeHere = false;
+    PSID sid = containerSid(&profileMadeHere);
     if (!sid) {
         std::cerr << "no AppContainer profile could be made\n";
         return 3;
@@ -838,7 +843,8 @@ int wmain(int argc, wchar_t** argv) {
 
     std::ofstream out(test / L"results.json");
     out << "{\"form\": " << jsonString(form.empty() ? "none started" : form) << ", \"granted\": " << (granted ? "true" : "false")
-        << ", \"profile\": " << jsonString(narrow(boxProfile)) << ", \"profile_kept\": " << (options.keepProfile ? "true" : "false")
+        << ", \"profile\": " << jsonString(narrow(boxProfile)) << ", \"profile_made_here\": " << (profileMadeHere ? "true" : "false")
+        << ", \"profile_kept\": " << (options.keepProfile ? "true" : "false")
         << ", \"targets\": {\"mac\": " << (options.macPort ? "true" : "false") << ", \"system_port\": "
         << (options.systemPort ? "true" : "false") << ", \"lan_listener\": " << (options.lanListener ? "true" : "false")
         << "}, \"control_exit\": " << controlExit << ", \"control\": " << control
@@ -850,7 +856,9 @@ int wmain(int argc, wchar_t** argv) {
 
     fs::remove_all(job, ignored);
     fs::remove(test / L"written-from-the-box.txt", ignored);
-    if (!options.keepProfile) {
+    // Make's real profile is deleted only when this run made it: one Make made earlier (and its folder) stays
+    // (security, 11-07); the test's own throwaway profile always goes
+    if (!options.keepProfile && (profileMadeHere || boxProfile == TEST_CONTAINER)) {
         DeleteAppContainerProfile(boxProfile.c_str());
     }
     FreeSid(sid);
