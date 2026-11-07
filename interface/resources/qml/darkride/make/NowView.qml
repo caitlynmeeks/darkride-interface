@@ -125,6 +125,26 @@ Item {
         onContentHeightChanged: if (stickToEnd) Qt.callLater(toEnd)
         function toEnd() { positionViewAtEnd(); }
 
+        // the Terminal route waiting for Claude after earlier work in this list: the start line below the newest row,
+        // so a Connect again always shows the line to paste (the empty list shows it in the middle, above)
+        footer: Item {
+            width: list.width
+            readonly property bool shown: view.terminalRoute && !view.empty && !!view.dock
+                && view.dock.state === "listening"
+            height: shown ? footerLine.implicitHeight + 24 * Theme.unit : 0
+            visible: shown
+            StartLine {
+                id: footerLine
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: 12 * Theme.unit
+                anchors.leftMargin: 14 * Theme.unit
+                anchors.rightMargin: 14 * Theme.unit
+                dock: view.dock
+            }
+        }
+
         delegate: Item {
             id: row
 

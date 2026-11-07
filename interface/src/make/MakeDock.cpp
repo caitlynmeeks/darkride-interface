@@ -48,7 +48,9 @@
 #include "ui/Panels.h"
 
 namespace {
+    const int FOUND_REREAD_MS = 2000;        // the Connect view's rows read again on show or activation, no more often
     const int REAL_INPUT_MS = 500;           // a real-input call must follow the person's own click or key this closely
+    const int MAX_SHEET_BYTES = 8 * 1024 * 1024;   // a model's sheet of views (1024 px square), as MakeLink gives it
     const int TERMINAL_QUIET_MS = 45000;     // the Terminal route: a request is over after this long with no activity
     const qint64 ASK_TIMEOUT_MS = 100000;    // MakeLink refuses a question after 100 s
     const qint64 PICTURE_MAX_BYTES = 20 * 1024 * 1024;
@@ -279,7 +281,7 @@ MakeDock::MakeDock() {
             row.itemId = "card-" + QString::number(++cards);
         } else if (kind == "model") {
             const QString model = card.value("model").toString();
-            const QString sheet = card.value("views").toString();
+            const QString sheet = keepSheet(model, card.value("views"));
             row.kind = "model";
             row.text = "3D model";
             row.detail = name;
@@ -685,6 +687,31 @@ void MakeDock::giveBackKeyboard() {
 
 // ---- pictures ----
 
+QString MakeDock::keepSheet(const QString& model, const QVariant& views) const {
+    // MakeLink gives a model's views as the sheet's own bytes (MakeBlender::drawViews: one JPEG or PNG); MakeDock keeps
+    // them in the Make folder's sheets/, by the model's id, and serves them from there. A path is taken as it is (the
+    // caller checks it's inside the Make folder). One write per made model, a few hundred KB.
+    if (views.userType() != QMetaType::QByteArray) {
+        return views.toString();
+    }
+    const QByteArray bytes = views.toByteArray();
+    if (!MODEL_ID.match(model).hasMatch() || bytes.isEmpty() || bytes.size() > MAX_SHEET_BYTES) {
+        return QString();
+    }
+    const QString folder = DependencyManager::get<MakeLink>()->folder() + "/sheets";
+    if (!QDir().mkpath(folder)) {
+        return QString();
+    }
+    const QString file = folder + "/" + model + (bytes.startsWith("\x89PNG") ? ".png" : ".jpg");
+    QFile::remove(file);   // written fresh: never through a link left in its place
+    QFile out(file);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::NewOnly) || out.write(bytes) != bytes.size()) {
+        out.remove();
+        return QString();
+    }
+    return file;
+}
+
 QString MakeDock::picturesFolder() const {
     return DependencyManager::get<MakeLink>()->folder() + "/pictures";
 }
@@ -882,6 +909,14 @@ void MakeDock::watchWindow(QQuickWindow* window, QQmlEngine* engine) {
 }
 
 bool MakeDock::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == _window && (event->type() == QEvent::Show || event->type() == QEvent::WindowActivate)) {
+        // the dock shown again, or its window back in front: what's on this computer may have changed (Blender just
+        // installed), so the Connect view's rows are read again; at most every 2 s, a few file checks
+        if (!_sinceFoundRead.isValid() || _sinceFoundRead.elapsed() > FOUND_REREAD_MS) {
+            _sinceFoundRead.restart();
+            readFound();
+        }
+    }
     if (watched == _window && event->spontaneous()) {   // from the window system: never a script's or a test's
         switch (event->type()) {
             case QEvent::MouseButtonRelease:

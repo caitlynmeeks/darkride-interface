@@ -217,6 +217,8 @@ private:
     void setWorking(bool working);
     void cleanPictures(const QStringList& files);
     QString picturesFolder() const;
+    /// A model's sheet of views kept in the Make folder's sheets/ from MakeLink's bytes; a path as it is; "" when not kept
+    QString keepSheet(const QString& model, const QVariant& views) const;
     QString lastAllowedSetupHash() const;
 
     MakeDockRows _timeline;
@@ -239,6 +241,7 @@ private:
     QElapsedTimer _sinceInput;      // since the last real input in the dock's window
     bool _inputUnused { false };
     QElapsedTimer _sinceDrop;
+    QElapsedTimer _sinceFoundRead;  // the last re-read of what's on this computer on show or activation
     QList<QUrl> _droppedUrls;
     QPointer<QFileDialog> _chooser;
     QTimer _terminalQuiet;          // the Terminal route: a request is over after 45 s with no activity
