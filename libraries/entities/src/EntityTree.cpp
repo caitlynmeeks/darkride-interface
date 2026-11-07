@@ -10,8 +10,6 @@
 //
 
 #include "EntityTree.h"
-
-#include <mutex>
 #include "EntityContentAddresses.h"
 #include <QtCore/QDateTime>
 #include <QtCore/QQueue>
