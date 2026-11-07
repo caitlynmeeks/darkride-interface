@@ -3,7 +3,7 @@
 //  libraries/make-link/src
 //
 //  MakeKey on macOS: the builder's API key as a generic password in the login keychain, this device only, never
-//  synchronised. MakeKeyWindows.cpp (Credential Manager) and MakeKeyLinux.cpp (libsecret) take the same calls.
+//  synchronised. MakeKeyWin.cpp (Credential Manager) and MakeKeyLinux.cpp (libsecret) take the same calls.
 //
 //  Copyright 2026 Darkride.
 //
