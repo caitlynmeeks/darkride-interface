@@ -22,9 +22,9 @@
 #include <EntityScriptRights.h>
 #include <EntityScriptingInterface.h>
 #include <ResourceManager.h>
+#include <ResourceRequest.h>
 #include <ScriptNetworkPolicy.h>
 
-#include "ScriptCache.h"
 #include "ScriptEngineLogging.h"
 
 const QString ScriptOpener::SCRIPT = "script";
@@ -40,6 +40,11 @@ namespace {
 const QUrl ENTITIES_ORIGIN("about:Entities");
 
 const QString CANT_OPEN_HERE = "This script's address can't be opened here.";
+
+// an address in the log: never its user part or its query
+QString shown(const QUrl& url) {
+    return url.toDisplayString(QUrl::RemoveUserInfo | QUrl::RemoveQuery);
+}
 
 }
 
@@ -82,7 +87,7 @@ ScriptOpener::Opened ScriptOpener::judge(const QString& value, bool worldIsLocal
     // the world's rule, before any request goes out; a name is looked up by the request itself, under the same rule
     const ScriptNetworkPolicy::Decision decision = ScriptNetworkPolicy::check(url, ENTITIES_ORIGIN, worldIsLocal);
     if (!decision.allowed && !decision.needsLookup) {
-        qCDebug(scriptengine) << "ScriptOpener: not opened," << decision.reason << url.toString();
+        qCDebug(scriptengine) << "ScriptOpener: not opened," << decision.reason << shown(url);
         opened.problem = "This script's address is one a world from the network may not reach.";
     }
     return opened;
@@ -136,13 +141,22 @@ void ScriptOpener::open(const QUuid& entityId, const QString& which, QObject* co
 }
 
 void ScriptOpener::fetch(const Opened& judged, bool worldIsLocal, QObject* context, Callback callback) {
-    auto scriptCache = DependencyManager::get<ScriptCache>();
-    if (!scriptCache) {
+    // the opener's own request, not the script cache's: a copy the cache holds, or a download already running for the
+    // same address, may have been fetched by a script the rule doesn't hold (the person's own, a local world's) and
+    // would come back here with no hop judged (security, 17:4x and 17:5x 11-07). This one is ruled as the entities
+    // engine's own would be (setNetworkRule: each hop judged, a name's addresses checked, the request pinned to one),
+    // skips the disk cache, and costs only when someone opens a script.
+    auto resources = DependencyManager::get<ResourceManager>();
+    ResourceRequest* request = resources ? resources->createResourceRequest(nullptr, judged.url, true, -1, "ScriptOpener")
+                                         : nullptr;
+    if (!request) {
         Opened opened = judged;
         opened.problem = "This script couldn't be loaded.";
         callback(opened);
         return;
     }
+    request->setNetworkRule(ENTITIES_ORIGIN, worldIsLocal);
+    request->setCacheEnabled(false);
 
     // one answer, the first of the download and the time limit, on the context's thread, only while the context lives
     struct Pending {
@@ -172,25 +186,26 @@ void ScriptOpener::fetch(const Opened& judged, bool worldIsLocal, QObject* conte
     QTimer::singleShot(TIME_LIMIT_MS, context, [deliver, judged] {
         Opened late = judged;
         late.problem = "This script took too long to load.";
-        qCDebug(scriptengine) << "ScriptOpener: time limit" << judged.url.toString();
+        qCDebug(scriptengine) << "ScriptOpener: time limit" << shown(judged.url);
         deliver(late);
     });
 
-    // the download is held to the world's rule as the entities engine's own would be (ScriptCache::ruleFetch, read
-    // by the request the cache makes: each hop judged, a name's addresses checked, the request pinned to one)
-    scriptCache->ruleFetch(judged.url, ENTITIES_ORIGIN, worldIsLocal);
-    const int noRetries = 0;
-    scriptCache->getScriptContents(judged.url.toString(),
-        [deliver, judged](const QString&, const QString& contents, bool, bool success, const QString& status) {
-            Opened result = judged;
-            if (!success) {
-                qCDebug(scriptengine) << "ScriptOpener: not loaded (" << status << ")" << judged.url.toString();
-                result.problem = "This script couldn't be loaded.";
-            } else if (contents.toUtf8().size() > MAX_BYTES) {
+    // the request lives on the resource manager's thread (createResourceRequest moves it there) and ends itself there
+    QObject::connect(request, &ResourceRequest::finished, request, [request, deliver, judged] {
+        Opened result = judged;
+        if (request->getResult() != ResourceRequest::Success) {
+            qCDebug(scriptengine) << "ScriptOpener: not loaded (" << request->getResultString() << ")" << shown(judged.url);
+            result.problem = "This script couldn't be loaded.";
+        } else {
+            const QByteArray data = request->getData();
+            if (data.size() > MAX_BYTES) {
                 result.problem = "This script is too big to show here (1 MB at most).";
             } else {
-                result.text = contents;
+                result.text = QString::fromUtf8(data);
             }
-            deliver(result);
-        }, false, noRetries);
+        }
+        request->deleteLater();
+        deliver(result);
+    });
+    request->send();
 }

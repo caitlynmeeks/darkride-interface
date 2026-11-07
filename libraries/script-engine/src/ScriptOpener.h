@@ -13,7 +13,9 @@
 //  script is read only by someone who may change that entity's scripts (entity_script_rights; Caity, 22:25 11-06),
 //  and otherwise nothing of it is read, not even its address.
 //
-//  The fetched copy is the script cache's, the same text the world runs here (a reload after a save refreshes it).
+//  A fetch is the opener's own ruled download, never the script cache's copy nor a download of its already running:
+//  either may have been fetched under a looser rule (by a local world, or the person's own script) and would skip
+//  the rule here.
 //
 //  Created by scripting on 2026-11-07.
 //  Copyright 2026 Darkride.
