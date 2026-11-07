@@ -94,7 +94,11 @@ const QStringList DENIED_TOOLS { "Bash", "BashOutput", "KillShell", "Read", "Edi
                                  "SendUserFile", "SendToProject", "SendToProjectContext",
                                  "Artifact", "ArtifactComments", "ArtifactData", "DesignSync", "ReportFindings",
                                  "EndConversation", "LSP",
-                                 "ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool" };
+                                 "ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool",
+                                 "SendUserMessage", "PowerShell" };
+// (security 21:48 11-07: 2.1.319 also names REPL, JavaScript and WebBrowser, but on the Mac it prints "Deny rule X
+// matches no tool" for those three, so they stay out until a Claude Code has them; the route kit's deny-name check
+// watches the list)
 
 QString plainName(const QString& text, int most) {
     QString name = text.toLower();
