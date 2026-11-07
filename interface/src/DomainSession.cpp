@@ -255,7 +255,7 @@ void DomainSession::resetPhysicsReadyInformation() {
     _fullSceneCounterAtLastPhysicsCheck = 0;
     _gpuTextureMemSizeStabilityCount = 0;
     _gpuTextureMemSizeAtLastCheck = 0;
-    _gpuTextureMemSizeStableSince = 0;
+    _gpuTextureMemSizeStableFor.invalidate();
     _physicsEnabled = false;
     _octreeProcessor.stopSafeLanding();
     endWorldLoading();
@@ -662,17 +662,16 @@ bool DomainSession::gpuTextureMemSizeStable() {
     // warm-up's compiles (4 programs a present, 3-115 ms each) the loading screen presents 6-19 times a second and the
     // 30 checks took 1.5-5 s (item 53). The settle is a time now, with a small floor of checks so a few slow presents
     // cannot pass it on two readings; the populated-size and pending-transfer tests below still hold uploads in flight.
-    const quint64 now = usecTimestampNow();
-    if (_gpuTextureMemSizeStableSince != 0 && _gpuTextureMemSizeAtLastCheck == textureResourceGPUMemSize) {
+    if (_gpuTextureMemSizeStableFor.isValid() && _gpuTextureMemSizeAtLastCheck == textureResourceGPUMemSize) {
         _gpuTextureMemSizeStabilityCount++;
     } else {
         _gpuTextureMemSizeStabilityCount = 0;
-        _gpuTextureMemSizeStableSince = now;
+        _gpuTextureMemSizeStableFor.start();   // a monotonic clock: a wall-clock step can neither pass nor hold the gate (physics)
     }
     _gpuTextureMemSizeAtLastCheck = textureResourceGPUMemSize;
 
     if (_gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount &&
-        now - _gpuTextureMemSizeStableSince >= _gpuTextureMemSettleUsecs) {
+        _gpuTextureMemSizeStableFor.hasExpired(_gpuTextureMemSettleMs)) {
         return (textureResourceGPUMemSize == texturePopulatedGPUMemSize) && (textureTransferSize == 0);
     }
     return false;
@@ -682,7 +681,7 @@ void DomainSession::setMinimumGPUTextureMemStabilityCount(int stabilityCount) {
     // the Test API's count, read as the 60-presents-a-second loading screen the count was written for: 30 = 500 ms
     static const int DEFAULT_CHECK_FLOOR = 5;
     stabilityCount = std::max(0, stabilityCount);
-    _gpuTextureMemSettleUsecs = (quint64)stabilityCount * USECS_PER_SECOND / 60;
+    _gpuTextureMemSettleMs = (qint64)stabilityCount * MSECS_PER_SECOND / 60;
     _minimumGPUTextureMemSizeStabilityCount = std::min(stabilityCount, DEFAULT_CHECK_FLOOR);
 }
 

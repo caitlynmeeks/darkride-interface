@@ -35,6 +35,7 @@
 #include <map>
 
 #include <QtCore/QByteArray>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QString>
@@ -187,8 +188,8 @@ private:
     // slowly presenting loading screen stretched from 0.5 s to several seconds (the shader warm-up's compiles, item 53)
     qint64 _gpuTextureMemSizeAtLastCheck{ 0 };
     qint64 _gpuTextureMemSizeStabilityCount{ 0 };     // consecutive checks that read the same size
-    quint64 _gpuTextureMemSizeStableSince{ 0 };       // when the size last changed (usecTimestampNow); 0 = no check yet
-    quint64 _gpuTextureMemSettleUsecs{ 500 * 1000 };  // 500 ms = 30 checks at 60 presents a second, the old gate in front
+    QElapsedTimer _gpuTextureMemSizeStableFor;        // since the size last changed (a monotonic clock); invalid = no check yet
+    qint64 _gpuTextureMemSettleMs{ 500 };             // 500 ms = 30 checks at 60 presents a second, the old gate in front
     int _minimumGPUTextureMemSizeStabilityCount{ 5 };  // at least this many checks (a few slow presents cannot pass on two readings)
     bool _domainLoadingInProgress{ false };   // the "Scene Loading" profile range is open
 
