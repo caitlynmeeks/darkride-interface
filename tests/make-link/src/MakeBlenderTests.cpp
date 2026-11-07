@@ -14,9 +14,7 @@
 #include <signal.h>
 #include <unistd.h>
 #ifdef Q_OS_MAC
-#include <cstring>
 #include <libproc.h>
-#include <Security/Security.h>
 #endif
 
 #include <QtCore/QJsonArray>
@@ -407,7 +405,8 @@ bpy.ops.mesh.primitive_cube_add(size=1)
 
 // the Keychain from inside the box (security's kit case): Blender's script asks for Make's own item and must not reach
 // the Keychain at all. Only whether it exists is asked, never its secret, so no permission dialog can come up; and an
-// "item not found" would mean the Keychain answered, so that fails too.
+// "item not found" would mean the Keychain answered, so that fails too. The same script without the box must get
+// "item not found" (the control), so the difference is the box's.
 void MakeBlenderTests::testKeychainUnreachableInTheBox() {
     QTemporaryDir dir;
     MakeBlender blender(dir.path());
@@ -434,23 +433,41 @@ try:
 except Exception as e:
     print("SECURITY_CLI REFUSED", type(e).__name__)
 )";
-#ifdef Q_OS_MAC
-    // the control, outside the box: the same lookup reaches the Keychain (found, or "item not found"), so a different
-    // answer from inside is the box's doing, not a wrong call (kit 00:55 11-07: outside -25300, inside -50)
-    const char* service = "Darkride Make";
-    const char* account = "Anthropic API key";
-    const OSStatus outside = SecKeychainFindGenericPassword(nullptr, static_cast<UInt32>(strlen(service)), service,
-                                                            static_cast<UInt32>(strlen(account)), account, nullptr,
-                                                            nullptr, nullptr);
-    QVERIFY2(outside == errSecSuccess || outside == errSecItemNotFound, qPrintable(QString::number(outside)));
-#endif
+    const QRegularExpression STATUS("KEYCHAIN_STATUS (\\S+)");
+    const int errSecItemNotFound = -25300;
+
+    // the control (security): the same job script, the same Blender and the same environment built from nothing, but
+    // without the box, must reach the Keychain ("item not found": no Make key is kept on a test Mac). Only then does a
+    // different answer from inside show the box made the difference, not a wrong call in Blender's Python.
+    QFile job(dir.filePath("control-job.py"));
+    QVERIFY(job.open(QIODevice::WriteOnly) && job.write(script.toUtf8()) > 0);
+    job.close();
+    QProcessEnvironment environment;
+    environment.insert("PATH", "/usr/bin:/bin");
+    environment.insert("HOME", dir.path());
+    environment.insert("TMPDIR", dir.path());
+    environment.insert("LANG", "en_US.UTF-8");
+    environment.insert("PYTHONDONTWRITEBYTECODE", "1");
+    environment.insert("PYTHONNOUSERSITE", "1");
+    QProcess control;
+    control.setProcessEnvironment(environment);
+    control.setWorkingDirectory(dir.path());
+    control.setProcessChannelMode(QProcess::MergedChannels);
+    control.setStandardInputFile(QProcess::nullDevice());
+    control.start(blender.blender() + "/Contents/MacOS/Blender",
+                  { "--background", "--factory-startup", "--disable-autoexec", "-noaudio", "--python-exit-code", "3",
+                    "--python", job.fileName() });
+    QVERIFY(control.waitForFinished(60000));
+    const QString controlLog = QString::fromUtf8(control.readAll());
+    const QString outside = STATUS.match(controlLog).captured(1);
+    qDebug().noquote() << "the Keychain without the box: status" << outside;
+    QVERIFY2(outside == QString::number(errSecItemNotFound), qPrintable(controlLog.right(2000)));
+
     const MakeBlender::Made made = makeAndWait(blender, script);
     QVERIFY2(made.ok(), qPrintable(made.code + ": " + made.message + "\n" + made.log));
-    const QRegularExpression STATUS("KEYCHAIN_STATUS (\\S+)");
     const QString status = STATUS.match(made.log).captured(1);
     qDebug().noquote() << "the Keychain from the box: status" << status;
     QVERIFY2(!status.isEmpty(), qPrintable(made.log));
-    const int errSecItemNotFound = -25300;
     QVERIFY2(status != "0" && status != QString::number(errSecItemNotFound), qPrintable(made.log));
     QVERIFY2(made.log.contains("SECURITY_CLI REFUSED"), qPrintable(made.log));
     QVERIFY(!made.log.contains("SECURITY_CLI OPEN"));
