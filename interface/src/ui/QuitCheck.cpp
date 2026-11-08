@@ -24,6 +24,7 @@
 #include <MainWindow.h>
 
 #include "Application.h"
+#include "ClientOptions.h"
 #include "CodeEditor.h"
 #include "InterfaceLogging.h"
 #include "Popup.h"
@@ -132,6 +133,18 @@ bool ask(const QStringList& scripts, const QString& terrainReason) {
         title = "Quit without saving your terrain and " + scriptsText + "?";
         text = "Your terrain couldn't be saved: " + terrainReason + ". All these changes will be lost.";
     }
+#if defined(Q_OS_MACOS)
+    // asked from the Dock while Darkride is behind other apps: to the front first, so the question is seen (a client a
+    // test script drives stays behind: it never takes the keyboard from whoever is at the Mac)
+    if (isOutsideRequest()) {
+        if (ClientOptions::get().testScript.isEmpty()) {
+            mac::bringToFront();
+            qCInfo(interfaceapp) << "QuitCheck: brought to the front to ask";
+        } else {
+            qCInfo(interfaceapp) << "QuitCheck: a test client stays behind to ask";
+        }
+    }
+#endif
     qCInfo(interfaceapp) << "QuitCheck: asking:" << title << "| scripts" << scripts << "| terrain"
                          << (terrainReason.isEmpty() ? QString("saved") : terrainReason);
     popup::Alert alert(popup::appIcon(), title, text, QString(),
@@ -174,7 +187,11 @@ bool mayQuit() {
     const QString terrainReason = saveTerrain();
     const QStringList scripts =
         DependencyManager::isSet<CodeEditor>() ? DependencyManager::get<CodeEditor>()->unsavedNames() : QStringList();
-    const bool yes = (scripts.isEmpty() && terrainReason.isEmpty()) || ask(scripts, terrainReason);
+    const bool nothing = scripts.isEmpty() && terrainReason.isEmpty();
+    if (nothing) {
+        qCInfo(interfaceapp) << "QuitCheck: nothing unsaved";
+    }
+    const bool yes = nothing || ask(scripts, terrainReason);
     asking = false;
     if (yes) {
         goingAheadNow = true;

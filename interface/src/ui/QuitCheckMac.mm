@@ -16,6 +16,7 @@
 
 #include "QuitCheck.h"
 
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <CoreServices/CoreServices.h>
 
@@ -39,6 +40,16 @@ bool isQuitEvent(bool& fromSystem) {
                          why == kAEShowShutdownDialog || why == kAERestart || why == kAEShutDown;
         }
         return true;
+    }
+}
+
+void bringToFront() {
+    @autoreleasepool {
+        if (@available(macOS 14.0, *)) {
+            [NSApp activate];
+        } else {
+            [NSApp activateIgnoringOtherApps:YES];
+        }
     }
 }
 

@@ -49,6 +49,8 @@ namespace mac {
 // The Apple event being handled now is a quit (kAEQuitApplication): fromSystem says whether it carries the system's
 // reason (log out, restart, shut down, or their dialogs). QuitCheckMac.mm.
 bool isQuitEvent(bool& fromSystem);
+// Darkride to the front, as a Mac app asked to quit from the Dock does before it asks about unsaved work
+void bringToFront();
 }
 #endif
 
