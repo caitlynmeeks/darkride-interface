@@ -717,10 +717,7 @@ Rectangle {
                     spacing: 5
                     clip: true
                     visible: root.hasEditor && CodeEditor.hasDocument
-                    readonly property string place: !root.hasEditor ? ""
-                        : CodeEditor.where === "Written in" ? "Written in"
-                        : CodeEditor.where === "My Files" ? "My Files"
-                        : CodeEditor.where === "On the web, read only" ? "On the web" : ""
+                    readonly property string place: root.hasEditor ? CodeEditor.place : ""
                     readonly property bool hasStatus: root.hasEditor && (CodeEditor.status !== "" || CodeEditor.claudeWriting)
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
