@@ -1153,32 +1153,42 @@ void NetworkTexture::loadMetaContent(const QByteArray& content) {
         return;
     }
 
+    // An ambient map needs its irradiance (the spherical harmonics the diffuse lighting reads). A baked KTX carries it
+    // only when it was baked as an ambient map; a sky baked as a skybox has none, and a zone borrowing that sky as its
+    // ambient map lit the world with the built-in sphere instead: pale and flat (Darkside on Windows, 2026-11-08, whose
+    // GPU took the BPTC variant of the built-in aurora sky; the Mac, with no BPTC, took the original and computed the
+    // irradiance). So an ambient map is made from the original image whenever the meta names one, on every platform,
+    // and the irradiance is computed on load. A refinement for later: take a baked variant when it carries the key.
+    const bool ambientFromOriginal = _type == image::TextureUsage::AMBIENT_TEXTURE && !meta.original.isEmpty();
+
     auto& backend = DependencyManager::get<TextureCache>()->getGPUContext()->getBackend();
-    for (auto pair : meta.availableTextureTypes) {
-        gpu::Element elFormat;
+    if (!ambientFromOriginal) {
+        for (auto pair : meta.availableTextureTypes) {
+            gpu::Element elFormat;
 
-        if (gpu::Texture::getCompressedFormat(pair.first, elFormat)) {
-            if (backend->supportedTextureFormat(elFormat)) {
-                auto url = pair.second;
-                if (url.fileName().endsWith(TEXTURE_META_EXTENSION)) {
-                    continue;
-                }
+            if (gpu::Texture::getCompressedFormat(pair.first, elFormat)) {
+                if (backend->supportedTextureFormat(elFormat)) {
+                    auto url = pair.second;
+                    if (url.fileName().endsWith(TEXTURE_META_EXTENSION)) {
+                        continue;
+                    }
 
-                _currentlyLoadingResourceType = ResourceType::KTX;
-                _activeUrl = _activeUrl.resolved(url);
-                auto textureCache = DependencyManager::get<TextureCache>();
-                auto self = _self.lock();
-                if (!self) {
+                    _currentlyLoadingResourceType = ResourceType::KTX;
+                    _activeUrl = _activeUrl.resolved(url);
+                    auto textureCache = DependencyManager::get<TextureCache>();
+                    auto self = _self.lock();
+                    if (!self) {
+                        return;
+                    }
+                    QMetaObject::invokeMethod(this, "attemptRequest", Qt::QueuedConnection);
                     return;
                 }
-                QMetaObject::invokeMethod(this, "attemptRequest", Qt::QueuedConnection);
-                return;
             }
         }
     }
 
 #ifndef Q_OS_ANDROID
-    if (!meta.uncompressed.isEmpty()) {
+    if (!ambientFromOriginal && !meta.uncompressed.isEmpty()) {
         _currentlyLoadingResourceType = ResourceType::KTX;
         _activeUrl = _activeUrl.resolved(meta.uncompressed);
 
