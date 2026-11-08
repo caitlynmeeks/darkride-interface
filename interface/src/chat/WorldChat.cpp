@@ -44,6 +44,8 @@ namespace {
     // alternating, loud enough to hear over a world (the files peak at -19 and -23 dBFS; the old in-world chat's 0.05
     // put them near -45, unheard)
     const float SOUND_VOLUME = 0.5f;
+    // a burst of lines (a bot, a fast typist) is one note: no world can make a visitor's client chime on and on
+    const qint64 SOUND_GAP_MS = 3000;
 
     QPointer<WorldChat> theWorldChat;
 
@@ -355,6 +357,10 @@ void WorldChat::clear() {
 }
 
 void WorldChat::playSound() {
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - _soundAt < SOUND_GAP_MS) {
+        return;
+    }
     SharedSoundPointer sound = _sounds[_nextSound];
     _nextSound = 1 - _nextSound;
     if (!sound || !sound->isReady()) {
@@ -366,6 +372,7 @@ void WorldChat::playSound() {
     // system sounds)
     options.positionSet = false;
     options.volume = SOUND_VOLUME;
+    _soundAt = now;
     DependencyManager::get<AudioInjectorManager>()->playSound(sound, options, true);
 }
 

@@ -91,6 +91,7 @@ private:
     QTimer _peopleChange;                   // comings and goings within it are one peopleChanged
     SharedSoundPointer _sounds[2];
     int _nextSound { 0 };
+    qint64 _soundAt { 0 };                  // when the last note played
 };
 
 #endif // hifi_WorldChat_h

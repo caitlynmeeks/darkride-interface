@@ -15,6 +15,7 @@
 
 #include <ChatService.h>
 #include <DependencyManager.h>
+#include <SettingHandle.h>
 #include <ui/TabletScriptingInterface.h>
 
 #include "Application.h"
@@ -64,6 +65,9 @@ ChatButton::ChatButton(TabletProxy* tablet) : QObject(tablet) {
     // (Local Chat is made here, so it keeps its lines from start: a line said before chat opens is there when it does)
     connect(WorldChat::instance(), &WorldChat::unreadChanged, this, &ChatButton::updateUnread);
     updateUnread();
+    // chat no longer remembers its last room (it opens on Local Chat): the old setting goes, as settings outside
+    // private/ are readable by scripts (security, 11-08)
+    Setting::Handle<QString>("chat/room").remove();
     // chat's panel is made by the layout's restore after sign-in (ui/WindowLayout.h), or by a first open
     connect(WindowLayout::instance(), &WindowLayout::restored, this, &ChatButton::watchDock);
 
