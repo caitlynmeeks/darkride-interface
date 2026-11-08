@@ -21,6 +21,7 @@
 #include <QtWidgets/QMenu>
 #include <QUndoStack>   // QtWidgets in Qt 5, QtGui in Qt 6
 
+#include <AccountManager.h>
 #include <AssetClient.h>
 #include <AssetUpload.h>
 #include <MainWindow.h>   // the menu's parent
@@ -28,7 +29,9 @@
 #include <EntityItemProperties.h>
 #include <EntityScriptRights.h>
 #include <EntityScriptingInterface.h>
+#include <MakeFiles.h>
 #include <MappingRequest.h>
+#include <NetworkingConstants.h>
 #include <NodeList.h>
 #include <ScriptCallback.h>
 #include <ScriptOpener.h>
@@ -39,8 +42,11 @@
 #include "NewScriptTemplates.h"
 #include "Panels.h"
 #include "editor/Editor.h"
+#include "editor/EditorCreate.h"   // EditorUpload: My Files
 #include "editor/EditorSelection.h"
 #include "editor/EditorUndo.h"
+#include "editor/ui/UserFiles.h"
+#include "make/MakeLink.h"
 
 namespace {
 
@@ -114,9 +120,15 @@ QString clockText() {
     return "Saved " + QDateTime::currentDateTime().toString("HH:mm");
 }
 
-// New Script's words (mary 11-08): the same wherever New is off
-const QString NO_SCRIPTS_IN_A_FILE_WORLD = QStringLiteral("This world is a file on your computer, so it can't keep scripts.");
-const QString NEW_SCRIPTS_FOLDER = QStringLiteral("/scripts/");
+// New Script's words (mary 11-08 14:08): the same wherever New is off
+const QString NO_SERVER_SCRIPTS_IN_A_FILE_WORLD =
+    QStringLiteral("Server scripts need a world on a server. This one is a file on your computer.");
+const QString SIGN_IN_FOR_MY_FILES = QStringLiteral("Sign in to keep scripts in My Files.");
+const QString NEW_SCRIPTS_FOLDER = QStringLiteral("/scripts/");   // in the world's files, and in My Files
+const QString MY_FILES = QStringLiteral("my_files");
+const QString WORLD_FILES = QStringLiteral("world");
+const QString SCRIPT_MIME_TYPE = QStringLiteral("application/javascript");   // as Make's scripts in My Files
+const int MY_FILES_WAIT_MS = 20000;   // the My Files listing, at most
 const int NEW_NAME_MAX = 40;
 const int NEW_NAME_NUMBERED_MAX = 99;   // past "-99", 4 random hex digits instead
 
@@ -176,6 +188,35 @@ QString newScriptBase(const QString& name, const QString& typeName, bool server)
     return server ? base + QStringLiteral("-server") : base;
 }
 
+// scripting's free name (11-08): the first of "<folder><base>.js", "<base>-2.js" … "<base>-99.js", then 4 random hex
+// digits, that none of `taken` (lower case: "cube.js" beside "Cube.js" collide in a download on a Mac) has; "" when none
+QString firstFreePath(const QString& folder, const QString& base, const QSet<QString>& taken) {
+    for (int number = 1; number <= NEW_NAME_NUMBERED_MAX + 20; ++number) {
+        QString name = base;
+        if (number > NEW_NAME_NUMBERED_MAX) {
+            name += '-' + QString::number(QRandomGenerator::global()->bounded(0x10000), 16).rightJustified(4, '0');
+        } else if (number > 1) {
+            name += '-' + QString::number(number);
+        }
+        const QString candidate = folder + name + ".js";
+        if (!taken.contains(candidate.toLower())) {
+            return candidate;
+        }
+    }
+    return QString();
+}
+
+// a My Files link's file id (<files host>/f/<id>/<name>): the same file however the link is written
+QString myFilesIdOf(const QString& link) {
+    const QString path = QUrl(link).path();
+    return path.startsWith("/f/") ? path.section('/', 2, 2) : QString();
+}
+
+QString myFilesProblem(const QString& error) {
+    return error.contains("Storage is full", Qt::CaseInsensitive) ? QStringLiteral("Couldn't save: My Files is full.")
+                                                                  : QStringLiteral("Couldn't save: My Files turned it down.");
+}
+
 // an entity's script field, name, type and lock, for New Script; false when it isn't there
 bool readForNew(const QUuid& id, const QString& which, QString& value, QString& name, QString& typeName, bool& locked) {
     EntityPropertyFlags flags;
@@ -215,6 +256,26 @@ CodeEditor::CodeEditor() {
         connect(&editor->selection(), &EditorSelection::changed, this, &CodeEditor::updateNewScript);
         connect(editor.data(), &Editor::activeChanged, this, &CodeEditor::updateNewScript);
     }
+    // where a new script goes follows Make's place (My Files needs a sign-in)
+    if (auto link = DependencyManager::get<MakeLink>()) {
+        connect(link.data(), &MakeLink::filesPlaceChanged, this, [this] {
+            updateNewScript();
+            updateRights();
+        });
+    }
+    auto accounts = DependencyManager::get<AccountManager>();
+    auto signedInOrOut = [this] {
+        if (_userFiles) {
+            _userFiles->clear();   // another person's My Files, or none
+        }
+        if (_place == Place::MyFiles) {
+            checkMyFilesOwner();
+        }
+        updateNewScript();
+        updateRights();
+    };
+    connect(accounts.data(), &AccountManager::loginComplete, this, signedInOrOut);
+    connect(accounts.data(), &AccountManager::logoutComplete, this, signedInOrOut);
     // the world's rights change with the world, and with an instance's edit mode
     auto nodeList = DependencyManager::get<NodeList>();
     connect(nodeList.data(), &LimitedNodeList::canRezChanged, this, &CodeEditor::updateRights);
@@ -287,6 +348,9 @@ QString CodeEditor::openKey() const {
 QString CodeEditor::path() const {
     if (!hasDocument() || _url.isEmpty()) {
         return QString();
+    }
+    if (_place == Place::MyFiles && !_myFilesPath.isEmpty()) {
+        return _myFilesPath;   // its place in the person's own My Files
     }
     return CodeNearby::pathOf(_url.toString());
 }
@@ -410,6 +474,8 @@ QString CodeEditor::where() const {
             return "Written in";
         case Place::WorldFiles:
             return "World files";
+        case Place::MyFiles:
+            return "My Files";
         case Place::Web:
             return "On the web, read only";
         default:
@@ -506,6 +572,8 @@ bool CodeEditor::open(const QUuid& entityId, const QString& which) {
         const QString scheme = _url.scheme().toLower();
         if (scheme == "atp") {
             _place = Place::WorldFiles;
+        } else if (MakeFiles::isOwnFilesLink(_url, NetworkingConstants::METAVERSE_SERVER_URL())) {
+            _place = Place::MyFiles;   // someone's My Files: saved here only when it's the person's own (the listing)
         } else if (scheme == "http" || scheme == "https") {
             _place = Place::Web;
         }
@@ -513,6 +581,7 @@ bool CodeEditor::open(const QUuid& entityId, const QString& which) {
             _problem = "This script's address can't be opened here.";
         } else {
             fetch();
+            checkMyFilesOwner();
         }
     }
     updateRights();
@@ -533,9 +602,15 @@ bool CodeEditor::isFileWorld() {
     return DependencyManager::get<NodeList>()->getDomainHandler().isServerless();
 }
 
+QString CodeEditor::newScriptPlace() {
+    // MakeLink::filesGoTo's rule, from its public parts: the person's choice where this world allows it, else My Files
+    auto link = DependencyManager::get<MakeLink>();
+    return link && link->filesPlace() == WORLD_FILES && link->worldFilesAllowed() ? WORLD_FILES : MY_FILES;
+}
+
 QString CodeEditor::whyNoNewScript(const QUuid& entityId, const QString& which) {
-    if (isFileWorld()) {
-        return NO_SCRIPTS_IN_A_FILE_WORLD;   // a world opened from a file has no files to keep a script in
+    if (which == SERVER_SCRIPTS && isFileWorld()) {
+        return NO_SERVER_SCRIPTS_IN_A_FILE_WORLD;   // no server to run it, signed in or not (mary 11-08)
     }
     QString value;
     QString name;
@@ -553,7 +628,12 @@ QString CodeEditor::whyNoNewScript(const QUuid& entityId, const QString& which) 
     if (!entity_script_rights::mayChangeScriptsOf(locked)) {
         return "Locked: unlock it in the Inspector to change its script.";
     }
-    if (!DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
+    // where its file will go: Make's place (Caity 11-08: My Files by default, any world, a world from a file too)
+    if (newScriptPlace() == MY_FILES) {
+        if (!UserFiles::isLoggedIn()) {
+            return SIGN_IN_FOR_MY_FILES;
+        }
+    } else if (!DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
         return "You can't add files to this world. Its owner can allow it.";
     }
     return QString();
@@ -583,7 +663,7 @@ bool CodeEditor::openNew(const QUuid& entityId, const QString& which) {
     ++_generation;
     _isNew = true;
     _value = value;   // the empty field
-    _place = Place::WorldFiles;
+    _place = Place::None;   // decided at the first Save: Make's place then
     _newBase = newScriptBase(_entityName, typeName, which == SERVER_SCRIPTS);
     _fileName = _newBase + ".js";
     _text = QString::fromUtf8(which == SERVER_SCRIPTS ? new_script_templates::SERVER_SCRIPT
@@ -620,9 +700,7 @@ void CodeEditor::updateNewScript() {
     QString tip;
     auto editor = DependencyManager::get<Editor>();
     const QList<QUuid> ids = editor ? editor->selection().ids() : QList<QUuid>();
-    if (isFileWorld()) {
-        off = NO_SCRIPTS_IN_A_FILE_WORLD;
-    } else if (!editor || !editor->isActive()) {
+    if (!editor || !editor->isActive()) {
         off = "Scripts are added in Build mode.";
     } else if (ids.isEmpty()) {
         off = "Select a thing first.";
@@ -723,6 +801,10 @@ void CodeEditor::clear() {
     _newBase.clear();
     _madePath.clear();
     _madeHash.clear();
+    _madeAddress.clear();
+    _madePlace.clear();
+    _myFilesPath.clear();
+    _myFilesChecked = false;
     _url = QUrl();
     _place = Place::None;
     _fileName.clear();
@@ -773,6 +855,12 @@ void CodeEditor::updateRights() {
             reason = "Shaders are read only here.";
         } else if (_place == Place::Web) {
             reason = "On the web: read only here.";
+        } else if (_place == Place::MyFiles && !UserFiles::isLoggedIn()) {
+            reason = "Sign in to change scripts in your My Files.";
+        } else if (_place == Place::MyFiles && !_myFilesChecked) {
+            reason = "Looking for it in your My Files…";
+        } else if (_place == Place::MyFiles && _myFilesPath.isEmpty()) {
+            reason = "In someone else's My Files: read only here.";
         } else if (!entity_script_rights::mayChangeScripts()) {
             reason = "Only this world's builders can change its scripts.";
         } else if (locked) {
@@ -782,7 +870,8 @@ void CodeEditor::updateRights() {
         }
         // a server script's rights decide whether it opens at all (open()), so they're read before the place is known
         canSave = _isNew ? reason.isEmpty() : mayEdit && !isShader() && (_place != Place::Web) &&
-            (_place != Place::WorldFiles || nodeList->getThisNodeCanWriteAssets());
+            (_place != Place::WorldFiles || nodeList->getThisNodeCanWriteAssets()) &&
+            (_place != Place::MyFiles || (UserFiles::isLoggedIn() && !_myFilesPath.isEmpty()));
         if (_leaving) {
             canSave = false;
             reason = "You've left this world: your change is kept for when you're back.";
@@ -827,6 +916,8 @@ void CodeEditor::save(const QString& text) {
         saveWrittenIn(text);
     } else if (_place == Place::WorldFiles) {
         saveToWorldFiles(text);
+    } else if (_place == Place::MyFiles) {
+        saveToMyFiles(text);
     }
 }
 
@@ -916,8 +1007,9 @@ void CodeEditor::saveToWorldFiles(const QString& text) {
     upload->start();
 }
 
-// a new script's first Save (New Script, 11-08): the text into the world's files, then a free name under /scripts/
-// for it, then the field pointed at it as ONE Build mode edit (Build's Undo takes the field back; the file stays)
+// a new script's first Save (New Script, 11-08): the text kept where Make keeps its work now (newScriptPlace: My Files
+// by default, the world's files where the person chose them and the world allows them), at a free scripts/ name, then
+// the field pointed at it as ONE Build mode edit (Build's Undo takes the field back; the file stays)
 void CodeEditor::saveNew(const QString& text) {
     // the file's name is fixed at the first Save, from the thing's name now (scripting's rule): a rename since New counts
     QString value;
@@ -936,6 +1028,10 @@ void CodeEditor::saveNew(const QString& text) {
     setSaving(true);
     setNote("Saving…", false);
     const int generation = _generation;
+    if (newScriptPlace() == MY_FILES) {
+        saveNewToMyFiles(text, generation);
+        return;
+    }
     auto upload = DependencyManager::get<AssetClient>()->createUpload(text.toUtf8());
     connect(upload, &AssetUpload::finished, this, [this, generation, text](AssetUpload* upload, const QString& hash) {
         upload->deleteLater();
@@ -953,11 +1049,10 @@ void CodeEditor::saveNew(const QString& text) {
     upload->start();
 }
 
-// scripting's rule: the first free name of "<base>.js", "<base>-2.js" … "<base>-99.js", then "<base>-<4 hex>.js",
-// against ONE look at every name in the world's files, compared without case ("cube.js" beside "Cube.js" collide in a
-// download on a Mac). SetMapping replaces a name without asking, so this look is what keeps someone's file safe; the
-// asset server has no create-only call, so a tiny window stays between the look and the SetMapping. The file this
-// document made itself, unchanged since (an Undo, then Save again), counts as free: no "Cube-2.js" for the same script.
+// scripting's rule (firstFreePath) against ONE look at every name in the world's files. SetMapping replaces a name
+// without asking, so this look is what keeps someone's file safe; the asset server has no create-only call, so a tiny
+// window stays between the look and the SetMapping. The file this document made itself, unchanged since (an Undo, then
+// Save again), counts as free: no "Cube-2.js" for the same script.
 void CodeEditor::pickFreePath(const QString& hash, const QString& text, int generation) {
     auto request = DependencyManager::get<AssetClient>()->createGetAllMappingsRequest();
     connect(request, &GetAllMappingsRequest::finished, this, [this, hash, text, generation](GetAllMappingsRequest* request) {
@@ -974,24 +1069,12 @@ void CodeEditor::pickFreePath(const QString& hash, const QString& text, int gene
         QSet<QString> taken;
         const auto mappings = request->getMappings();
         for (const auto& mapping : mappings) {
-            if (mapping.first == _madePath && mapping.second.hash == _madeHash) {
+            if (_madePlace == WORLD_FILES && mapping.first == _madePath && mapping.second.hash == _madeHash) {
                 continue;   // this document's own file
             }
             taken.insert(mapping.first.toLower());
         }
-        QString path;
-        for (int number = 1; number <= NEW_NAME_NUMBERED_MAX + 20 && path.isEmpty(); ++number) {
-            QString name = _newBase;
-            if (number > NEW_NAME_NUMBERED_MAX) {
-                name += '-' + QString::number(QRandomGenerator::global()->bounded(0x10000), 16).rightJustified(4, '0');
-            } else if (number > 1) {
-                name += '-' + QString::number(number);
-            }
-            const QString candidate = NEW_SCRIPTS_FOLDER + name + ".js";
-            if (!taken.contains(candidate.toLower())) {
-                path = candidate;
-            }
-        }
+        const QString path = firstFreePath(NEW_SCRIPTS_FOLDER, _newBase, taken);
         if (path.isEmpty()) {
             setSaving(false);
             setNote("Couldn't save: the world's files have no free name for it. Rename " + thingName(_entityName) +
@@ -1010,40 +1093,116 @@ void CodeEditor::pickFreePath(const QString& hash, const QString& text, int gene
                 qCWarning(interfaceapp) << "Code: naming a new script failed" << set->getError();
                 return;
             }
-            pointAtNewFile(path, hash, text);
+            pointAtNewFile("atp:" + path, path, hash, WORLD_FILES, text);
         });
         set->start();
     });
     request->start();
 }
 
+// the first Save into the person's My Files (Caity 11-08): a free name in its /scripts folder from the listing (the same
+// rule; their own file this document made, still at its path with its link, counts as free), sent with their own
+// sign-in as Build mode's uploads are; only a link of the metaverse's own files host goes into the field
+void CodeEditor::saveNewToMyFiles(const QString& text, int generation) {
+    withMyFiles([this, text, generation](bool listed) {
+        if (generation != _generation) {
+            return;
+        }
+        if (!listed) {
+            setSaving(false);
+            setNote(UserFiles::isLoggedIn() ? QStringLiteral("Couldn't save: My Files didn't answer.") : SIGN_IN_FOR_MY_FILES,
+                true);
+            return;
+        }
+        QSet<QString> taken;
+        for (const auto& file : _userFiles->files()) {
+            if (_madePlace == MY_FILES && file.path == _madePath && !file.id.isEmpty() &&
+                file.id == myFilesIdOf(_madeAddress)) {
+                continue;   // this document's own file: sent to its path again, its link stays
+            }
+            taken.insert(file.path.toLower());
+        }
+        const QString path = firstFreePath(NEW_SCRIPTS_FOLDER, _newBase, taken);
+        if (path.isEmpty()) {
+            setSaving(false);
+            setNote("Couldn't save: My Files has no free name for it. Rename " + thingName(_entityName) +
+                " and save again.", true);
+            return;
+        }
+        auto upload = new EditorUpload(this);
+        connect(upload, &EditorUpload::finished, this, [this, upload, path, text, generation](const QString& url) {
+            upload->deleteLater();
+            if (generation != _generation) {
+                return;
+            }
+            if (!MakeFiles::isOwnFilesLink(QUrl(url), NetworkingConstants::METAVERSE_SERVER_URL())) {
+                setSaving(false);
+                setNote("Couldn't save: My Files turned it down.", true);
+                qCWarning(interfaceapp) << "Code: My Files answered with a link that isn't its files host's:" << url;
+                return;
+            }
+            _userFiles->refresh();   // the listing has it now
+            pointAtNewFile(url, path, url, MY_FILES, text);
+        });
+        connect(upload, &EditorUpload::failed, this, [this, upload, generation](const QString& error) {
+            upload->deleteLater();
+            if (generation != _generation) {
+                return;
+            }
+            setSaving(false);
+            setNote(myFilesProblem(error), true);
+            qCWarning(interfaceapp) << "Code: a new script's upload to My Files failed:" << error;
+        });
+        QString error;
+        if (!upload->startData(text.toUtf8(), path.section('/', -1), NEW_SCRIPTS_FOLDER.chopped(1), SCRIPT_MIME_TYPE,
+                               error)) {
+            upload->deleteLater();
+            setSaving(false);
+            setNote(myFilesProblem(error), true);
+            qCWarning(interfaceapp) << "Code: a new script's upload to My Files couldn't start:" << error;
+        }
+    });
+}
+
+// "Saved in My Files as scripts/Cube.js" (mary 11-08) or "Saved as /scripts/Cube.js"
+QString CodeEditor::savedAs(const QString& path, const QString& place) const {
+    return place == MY_FILES ? "Saved in My Files as " + path.mid(1) : "Saved as " + path;
+}
+
 // the field pointed at the new file, as one Build mode edit with the person's own rights; everyone's client (or the
 // script server) loads it because the field changed
-void CodeEditor::pointAtNewFile(const QString& path, const QString& hash, const QString& text) {
+void CodeEditor::pointAtNewFile(const QString& address, const QString& path, const QString& madeKey, const QString& place,
+                                const QString& text) {
     setSaving(false);
     QString value;
     QString name;
     QString typeName;
     bool locked = false;
     if (!readForNew(_entity, _which, value, name, typeName, locked)) {
-        setNote("Saved as " + path + ", but " + thingName(_entityName) + " isn't in the world any more.", true);
+        setNote(savedAs(path, place) + ", but " + thingName(_entityName) + " isn't in the world any more.", true);
         return;
     }
     if (!value.trimmed().isEmpty()) {
         // someone gave it a script meanwhile: never written over
-        setNote("Saved as " + path + ", but " + thingName(name) + " got another script meanwhile, so this one wasn't "
+        setNote(savedAs(path, place) + ", but " + thingName(name) + " got another script meanwhile, so this one wasn't "
             "added to it.", true);
         return;
     }
-    const QString address = "atp:" + path;
     if (_drafts.remove(docDraftKey()) > 0) {   // the typing kept under "new" is in the file now
         emit draftsChanged();
     }
     _madePath = path;
-    _madeHash = hash;
+    _madeHash = madeKey;   // the text's hash in the world's files, or the My Files link
+    _madeAddress = address;
+    _madePlace = place;
     _isNew = false;
     _url = QUrl(address);
-    _fileName = _url.fileName();
+    _fileName = path.section('/', -1);
+    _place = place == MY_FILES ? Place::MyFiles : Place::WorldFiles;
+    if (place == MY_FILES) {
+        _myFilesPath = path;   // the person's own: it saves again to the same path
+        _myFilesChecked = true;
+    }
     _value = address;   // before the undo stack's indexChanged, so the panel doesn't take its own save for an undo
     EntityItemProperties before;
     EntityItemProperties after;
@@ -1063,12 +1222,129 @@ void CodeEditor::pointAtNewFile(const QString& path, const QString& hash, const 
         DependencyManager::get<EntityScriptingInterface>()->editEntity(_entity, after);
     }
     finishSave(text);
+    if (place == MY_FILES) {
+        setNote(savedAs(path, place) + ".", false);   // where it went, as the header can't say it of a link
+    }
     updateRights();
     updateUsedBy();
     emit headerChanged();
     updateNewScript();
-    qCDebug(interfaceapp) << "Code: new script made" << _entity << _which << path;
+    qCDebug(interfaceapp) << "Code: new script made" << _entity << _which << place << path;
     askStatus();
+}
+
+// the person's My Files listing, fetched now (the index answers in milliseconds); done(false) signed out, on a failed
+// listing, or after MY_FILES_WAIT_MS
+void CodeEditor::withMyFiles(const std::function<void(bool listed)>& done) {
+    if (!UserFiles::isLoggedIn()) {
+        done(false);
+        return;
+    }
+    if (!_userFiles) {
+        _userFiles = new UserFiles(this);
+    }
+    auto connections = std::make_shared<QList<QMetaObject::Connection>>();
+    auto called = std::make_shared<bool>(false);
+    auto once = [connections, called, done](bool listed) {
+        if (*called) {
+            return;
+        }
+        *called = true;
+        for (const auto& connection : *connections) {
+            QObject::disconnect(connection);
+        }
+        done(listed);
+    };
+    connections->append(connect(_userFiles, &UserFiles::listed, this, [this, once] { once(_userFiles->hasListing()); }));
+    connections->append(connect(_userFiles, &UserFiles::listingFailed, this, [once] { once(false); }));
+    QTimer::singleShot(MY_FILES_WAIT_MS, this, [once] { once(false); });
+    _userFiles->refresh();   // one already on its way answers too
+}
+
+// a My Files link opened: the person's own file (in their listing, by its id) saves back to its path; anyone else's is
+// read only
+void CodeEditor::checkMyFilesOwner() {
+    _myFilesPath.clear();
+    _myFilesChecked = false;
+    if (_place != Place::MyFiles) {
+        return;
+    }
+    if (!UserFiles::isLoggedIn()) {
+        _myFilesChecked = true;
+        updateRights();
+        return;
+    }
+    const int generation = _generation;
+    const QString id = myFilesIdOf(_url.toString());
+    withMyFiles([this, generation, id](bool listed) {
+        if (generation != _generation) {
+            return;
+        }
+        _myFilesChecked = true;
+        if (listed && !id.isEmpty()) {
+            for (const auto& file : _userFiles->files()) {
+                if (!file.folder && file.id == id) {
+                    _myFilesPath = file.path;
+                    break;
+                }
+            }
+        }
+        updateRights();
+        emit headerChanged();
+    });
+}
+
+// the person's own My Files script, sent to its path again (its link stays; the files host refreshes its copies), then
+// loaded again for everyone
+void CodeEditor::saveToMyFiles(const QString& text) {
+    const QString path = _myFilesPath;
+    if (path.isEmpty()) {
+        setNote(_readOnlyReason, true);
+        return;
+    }
+    QString folder = UserFile::folderOf(path);
+    if (folder.size() > 1 && folder.endsWith('/')) {
+        folder.chop(1);
+    }
+    setSaving(true);
+    setNote("Saving…", false);
+    const int generation = _generation;
+    const QString link = _url.toString();
+    auto upload = new EditorUpload(this);
+    connect(upload, &EditorUpload::finished, this, [this, upload, generation, text, path, link](const QString& url) {
+        upload->deleteLater();
+        if (generation != _generation) {
+            return;
+        }
+        setSaving(false);
+        if (myFilesIdOf(url) != myFilesIdOf(link)) {
+            // never seen (scripting: a file sent to its path keeps its id), but things using the old link wouldn't change
+            qCWarning(interfaceapp) << "Code: My Files gave a saved script another link:" << link << "->" << url;
+            setNote("Saved in My Files as " + path.mid(1) + ", but it has a new link now, so things using the old one "
+                "don't change.", true);
+            return;
+        }
+        if (_userFiles) {
+            _userFiles->refresh();
+        }
+        finishSave(text);
+        reloadForEveryone();
+    });
+    connect(upload, &EditorUpload::failed, this, [this, upload, generation](const QString& error) {
+        upload->deleteLater();
+        if (generation != _generation) {
+            return;
+        }
+        setSaving(false);
+        setNote(myFilesProblem(error), true);
+        qCWarning(interfaceapp) << "Code: saving to My Files failed:" << error;
+    });
+    QString error;
+    if (!upload->startData(text.toUtf8(), path.section('/', -1), folder, SCRIPT_MIME_TYPE, error)) {
+        upload->deleteLater();
+        setSaving(false);
+        setNote(myFilesProblem(error), true);
+    }
 }
 
 void CodeEditor::reloadForEveryone() {
@@ -1342,7 +1618,10 @@ void CodeEditor::refreshAfterUndo() {
             _isNew = true;
             _value = value;
             _url = QUrl();
-            _fileName = QUrl("atp:" + _madePath).fileName();   // the file Save uses again, if nothing changed it
+            _place = Place::None;
+            _myFilesPath.clear();
+            _myFilesChecked = false;
+            _fileName = _madePath.section('/', -1);   // the file Save uses again, if nothing changed it
             _savedText.clear();
             _status.clear();
             _statusState.clear();
@@ -1364,11 +1643,15 @@ void CodeEditor::refreshAfterUndo() {
             // file, the document still knows it made it, so another Undo and Save use it again
             const QString madePath = _madePath;
             const QString madeHash = _madeHash;
+            const QString madeAddress = _madeAddress;
+            const QString madePlace = _madePlace;
             const QString base = _newBase;
             open(_entity, _which);
-            if (!madePath.isEmpty() && value.trimmed() == "atp:" + madePath) {
+            if (!madeAddress.isEmpty() && value.trimmed() == madeAddress) {
                 _madePath = madePath;
                 _madeHash = madeHash;
+                _madeAddress = madeAddress;
+                _madePlace = madePlace;
                 _newBase = base;
             }
         }

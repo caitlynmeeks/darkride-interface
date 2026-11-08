@@ -20,10 +20,12 @@
 //  New Script (Caity's walkthrough 11-08, 1.1.4; mary's words): "New" beside an empty Script or Server Script field in
 //  the Inspector, "New Script" in the panel's header for the one selected thing (an entity script). The panel opens a
 //  starter script, named for the thing ("Cube.js", "not saved yet"), and nothing is made until the first Save: then the
-//  text goes into the world's files at a free /scripts/ name and the field points at it, as ONE Build mode edit that
-//  Build's Undo takes back (the file stays in the world's files). A world opened from a file has no files, so New is
-//  off there, and nothing is written into the field instead (a written-in script over about 1 KB never reaches
-//  visitors).
+//  text is kept where Make keeps its work (newScriptPlace: the person's My Files by default, the world's files where
+//  they chose them and the world allows them; Caity 11-08) at a free scripts/ name, and the field points at it, as ONE
+//  Build mode edit that Build's Undo takes back (the file stays). Nothing is ever written into the field instead (a
+//  written-in script over about 1 KB never reaches visitors). Signed out, My Files can't keep it; a world opened from a
+//  file has no server for a server script (mary's words). A script in the person's own My Files opens savable: a Save
+//  sends it to the same path, and its link stays.
 //
 //  It lives on the main thread and emits only there (the panel's QML connects to it, and on Qt 6 a QML connection to an
 //  object of another thread is fatal): everything from other threads reaches it queued, and MakeDock calls it on the
@@ -38,6 +40,7 @@
 #ifndef hifi_CodeEditor_h
 #define hifi_CodeEditor_h
 
+#include <functional>
 #include <memory>
 
 #include <QtCore/QHash>
@@ -122,8 +125,11 @@ public:
     // why a new script can't be made for that entity's field now ("" when it can): the words the Inspector's New and
     // the header's New Script show while they're off (mary 11-08)
     static QString whyNoNewScript(const QUuid& entityId, const QString& which);
-    // a world opened from a file (serverless): it has no files to keep a script in
+    // a world opened from a file (serverless): no files of its own, no server for a server script
     static bool isFileWorld();
+    // where a new script's file goes now: Make's place (MakeLink::filesGoTo), "my_files" or "world"; the one place
+    // New Script reads it, so it follows Make's choice
+    static QString newScriptPlace();
     QString newScriptOff() const { return _newScriptOff; }
     QString newScriptTip() const { return _newScriptTip; }
 
@@ -143,7 +149,9 @@ public:
     QString openStamp() const;
     int allDraftCount() const { return _drafts.size(); }   // every world's (for Test)
     QString problem() const { return _problem; }
-    bool hasLink() const { return !_isNew && (_place == Place::WorldFiles || _place == Place::Web); }
+    bool hasLink() const {
+        return !_isNew && (_place == Place::WorldFiles || _place == Place::MyFiles || _place == Place::Web);
+    }
     bool isNew() const { return _isNew; }
     bool canSave() const { return _canSave; }
     QString readOnlyReason() const { return _readOnlyReason; }
@@ -269,9 +277,17 @@ private:
     void updateNewScript();   // the header's New Script, for the selection now
     void saveNew(const QString& text);
     void pickFreePath(const QString& hash, const QString& text, int generation);
-    void pointAtNewFile(const QString& path, const QString& hash, const QString& text);
+    void saveNewToMyFiles(const QString& text, int generation);
+    // the field pointed at the new file (address: atp:/scripts/… or a My Files link), with what made it
+    void pointAtNewFile(const QString& address, const QString& path, const QString& madeKey, const QString& place,
+                        const QString& text);
+    QString savedAs(const QString& path, const QString& place) const;   // "Saved in My Files as scripts/Cube.js"
+    // My Files: the person's listing, fetched now (done(false) signed out or when it can't be had)
+    void withMyFiles(const std::function<void(bool listed)>& done);
+    void checkMyFilesOwner();   // whether the open My Files link is one of the person's own files (then it saves)
+    void saveToMyFiles(const QString& text);
 
-    enum class Place { None, WrittenIn, WorldFiles, Web };
+    enum class Place { None, WrittenIn, WorldFiles, MyFiles, Web };
 
     void clear();
     bool readEntity(QString& value, QString& name, bool& locked) const;
@@ -291,8 +307,13 @@ private:
     QString _value;            // the entity's field as it was when opened or saved: the address, or the script itself
     bool _isNew { false };     // a new script, not saved yet: _value is the empty field, _fileName the name it will get
     QString _newBase;          // its name without ".js" ("Cube", "Cube server")
-    QString _madePath;         // its file once saved, and the text's hash there: an Undo then Save again reuses the
-    QString _madeHash;         //   file it made if nothing has changed it since (no "Cube 2.js" for the same script)
+    QString _madePath;         // its file once saved, and the text's hash there (world files) or its link (My Files):
+    QString _madeHash;         //   an Undo then Save again reuses the file it made if nothing has changed it since
+    QString _madeAddress;      //   (no "Cube-2.js" for the same script); the field's value it set, and where it went
+    QString _madePlace;
+    class UserFiles* _userFiles { nullptr };   // the person's My Files listing, made when first needed
+    QString _myFilesPath;      // the open My Files script's path in the person's own My Files ("" not theirs, or unknown)
+    bool _myFilesChecked { false };   // the listing has answered for the open My Files script
     bool _pushingEdit { false };   // the first Save's Build mode edit going onto the stack
     QString _newScriptOff;
     QString _newScriptTip;
