@@ -79,12 +79,15 @@ QtObject {
             var request = info[row.request];
             if (!request) {
                 request = info[row.request] = {
-                    first: index, activities: [], lastReply: -1, done: false, cost: -1, undone: false, folded: false,
+                    first: index, activities: [], failures: [], lastReply: -1, done: false, cost: -1, undone: false,
+                    folded: false,
                     startTime: row.time, endTime: 0, title: "", firstText: row.text
                 };
             }
             if (row.kind === "activity") {
                 request.activities.push(index);
+            } else if (row.kind === "failed") {
+                request.failures.push(index);   // a step that didn't work: never folded away with the steps
             } else if (row.kind === "reply") {
                 request.lastReply = index;   // Claude's reply: the step before it is done (NowView)
             } else if (row.kind === "ask" && request.title === "") {
@@ -120,6 +123,14 @@ QtObject {
             var request = info[row.request];
             if (request.folded && !_opened[row.request]) {
                 modes.push(index === request.first ? "fold" : "hidden");
+                return;
+            }
+            // the steps that didn't work stay out when the steps fold (mary 12:28 11-08): past three, the first two
+            // and "and N more didn't work" on the second, the rest inside the fold
+            if (row.kind === "failed" && !_stepsOpened[row.request] && request.failures.length > 3
+                    && (request.done || request.activities.length > recentSteps)) {
+                var failedRank = request.failures.indexOf(index);
+                modes.push(failedRank === 0 ? "row" : failedRank === 1 ? "failedMore" : "hidden");
                 return;
             }
             if (row.kind === "activity" && !_stepsOpened[row.request]) {

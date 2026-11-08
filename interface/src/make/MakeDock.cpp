@@ -242,6 +242,13 @@ void MakeDockRows::update(const std::function<bool(const Row&)>& match, const st
     }
 }
 
+void MakeDockRows::updateAt(int row, const std::function<void(Row&)>& change) {
+    if (row >= 0 && row < _rows.size()) {
+        change(_rows[row]);
+        emit dataChanged(index(row), index(row));
+    }
+}
+
 // ---- MakeDock ----
 
 bool MakeDock::isAvailable() {
@@ -392,7 +399,8 @@ MakeDock::MakeDock() {
         }
         requestDone(request, _costSoFar);
         if (_working && !_stopRequested) {
-            emit requestEnded(!error);   // the Make badge: Done, or Couldn't finish
+            // the Make badge: Done, or Couldn't finish (also when a step didn't work: the badge never says done then)
+            emit requestEnded(!error && !_failedRequests.contains(request));
         }
         setWorking(false);
     });
@@ -423,7 +431,8 @@ MakeDock::MakeDock() {
         const int request = DependencyManager::get<MakeLink>()->currentRequest();
         requestDone(request, -1.0);
         if (_working && !_stopRequested) {
-            emit requestEnded(true);   // Terminal went quiet: the Make badge's Done
+            // Terminal went quiet: the Make badge's Done, or Couldn't finish when a step didn't work
+            emit requestEnded(!_failedRequests.contains(request));
         }
         setWorking(false);
     });
@@ -1149,6 +1158,32 @@ void MakeDock::cleanPictures(const QStringList& files) {
 }
 
 // ---- the timeline ----
+
+void MakeDock::stepFailed(int request, const QString& startedLine, const QString& failedLine) {
+    const QString started = clean(startedLine);
+    const QString failed = clean(failedLine).left(300);
+    if (request <= 0 || failed.isEmpty()) {
+        return;
+    }
+    _failedRequests.insert(request);
+    const auto& rows = _timeline.rows();
+    for (int i = rows.size() - 1; i >= 0; i--) {
+        const auto& row = rows.at(i);
+        if (row.request == request && row.kind == "activity" && row.text == started) {
+            _timeline.updateAt(i, [&](MakeDockRows::Row& changed) {
+                changed.kind = "failed";
+                changed.text = failed;
+            });
+            return;
+        }
+    }
+    // its step's row isn't there (a link that came back mid-request): the failure still shows, under its request
+    MakeDockRows::Row row;
+    row.kind = "failed";
+    row.request = request;
+    row.text = failed;
+    addRow(row);
+}
 
 void MakeDock::addRow(MakeDockRows::Row row) {
     row.time = QDateTime::currentMSecsSinceEpoch();

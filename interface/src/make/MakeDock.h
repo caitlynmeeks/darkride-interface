@@ -30,6 +30,7 @@
 #include <QtCore/QHash>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -64,7 +65,8 @@ public:
         TimeRole
     };
     struct Row {
-        QString kind;           // ask, activity, reply, question, thing, script, model, done
+        QString kind;           // ask, activity, failed (a step that didn't work), reply, question, thing, script,
+                                // model, done
         int request { 0 };
         QString text;
         QString detail;
@@ -93,6 +95,8 @@ public:
     const QVector<Row>& rows() const { return _rows; }
     /// Changes the rows `match` picks with `change`, and says which changed.
     void update(const std::function<bool(const Row&)>& match, const std::function<void(Row&)>& change);
+    /// Changes the one row at `row`.
+    void updateAt(int row, const std::function<void(Row&)>& change);
 
 signals:
     void countChanged();
@@ -275,6 +279,9 @@ private:
     void addRow(MakeDockRows::Row row);
     void addMade(const MakeDockRows::Row& row);
     void requestDone(int request, double cost);
+    // a step of `request` that ran and didn't work (MakeLink::callFailed): its own row, the newest with startedLine,
+    // becomes failedLine (mary 12:28 11-08: "Couldn't <step>: <reason>."), and the request ends Couldn't finish
+    void stepFailed(int request, const QString& startedLine, const QString& failedLine);
     void setWorking(bool working);
     void cleanPictures(const QStringList& files);
     QString picturesFolder() const;
@@ -301,6 +308,7 @@ private:
     bool _working { false };
     double _costSoFar { -1.0 };
     int _doneRequest { 0 };         // the newest request with a "done" row
+    QSet<int> _failedRequests;      // requests with a step that didn't work: they end Couldn't finish, never Done
 
     QPointer<QQuickWindow> _window;
     QElapsedTimer _sinceInput;      // since the last real input in the dock's window

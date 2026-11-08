@@ -159,7 +159,8 @@ Item {
             readonly property int request: model.request || 0
             readonly property string mode: requests.revision >= 0 ? requests.mode(index) : "row"
             readonly property var info: requests.revision >= 0 ? requests.info(request) : null
-            readonly property real gap: (kind === "activity" && mode === "row" ? 5 : 12)
+            readonly property real gap: (kind === "activity" && mode === "row")
+                || (kind === "failed" && (mode === "row" || mode === "failedMore")) ? 5 : 12
 
             width: ListView.view.width
             height: mode === "hidden" ? 0 : loader.implicitHeight + gap
@@ -175,6 +176,7 @@ Item {
                     : row.kind === "ask" ? askBubble
                     : row.kind === "reply" ? replyBubble
                     : row.kind === "activity" ? activityLine
+                    : row.kind === "failed" ? failedLine
                     : row.kind === "question" ? question
                     : row.kind === "done" ? doneLine
                     : (row.kind === "thing" || row.kind === "script" || row.kind === "model") ? madeCard
@@ -401,6 +403,50 @@ Item {
                         font.pixelSize: BuildTheme.noteSize + 0.5
                         wrapMode: Text.Wrap
                         lineHeight: 1.1
+                    }
+                }
+            }
+
+            // a step that didn't work (mary 12:28 11-08): a red ✕ and the line in the normal colour, "Couldn't <step>:
+            // <reason>."; the second of more than three also says how many more are inside the fold
+            Component {
+                id: failedLine
+                RowLayout {
+                    spacing: 8
+                    Item {
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: 1
+                        implicitWidth: 14
+                        implicitHeight: 14
+                        Text {
+                            anchors.centerIn: parent
+                            text: "✕"
+                            textFormat: Text.PlainText
+                            color: BuildTheme.problem
+                            font.pixelSize: BuildTheme.noteSize
+                            font.weight: Font.DemiBold
+                        }
+                    }
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Text {
+                            width: parent.width
+                            text: row.model.text || ""
+                            textFormat: Text.PlainText
+                            color: BuildTheme.text
+                            font.pixelSize: BuildTheme.noteSize + 0.5
+                            wrapMode: Text.Wrap
+                            lineHeight: 1.1
+                        }
+                        Text {
+                            width: parent.width
+                            visible: row.mode === "failedMore" && !!row.info
+                            text: row.info ? "and " + (row.info.failures.length - 2) + " more didn't work" : ""
+                            textFormat: Text.PlainText
+                            color: BuildTheme.mutedText
+                            font.pixelSize: BuildTheme.noteSize
+                        }
                     }
                 }
             }
