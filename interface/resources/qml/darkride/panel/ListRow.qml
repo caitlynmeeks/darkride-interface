@@ -29,6 +29,8 @@ Item {
     property string iconPlaceholder: ""
     // the control fills the room beside the label (a slider, a text field) rather than sitting at the right
     property bool fill: false
+    // how far past the card's text the row starts, its separator with it (a picker's open choice: Theme.choiceIndent)
+    property real indent: 0
     // a fixed width for the label, so the controls of neighbouring rows line up (0: the words' own width)
     property real labelWidth: 0
     default property alias content: contentRow.data
@@ -80,21 +82,51 @@ Item {
         }
         return true;
     }
+    // where the separator above starts: inset to the text, or the whole width under an open picker, which closes its
+    // indented choices off from the rows that follow (the item above says so with fullWidthSeparatorBelow)
+    readonly property real separatorX: {
+        var column = cardItem ? cardItem.parent : null;
+        if (column) {
+            var above = null;
+            for (var i = 0; i < column.children.length && column.children[i] !== cardItem; i++) {
+                if (shown(column.children[i])) {
+                    above = column.children[i];
+                }
+            }
+            if (above && above.fullWidthSeparatorBelow === true) {
+                return 0;
+            }
+        }
+        return Theme.cardPadding + indent;
+    }
     readonly property bool stacked: !action && width > 0 && contentRow.visibleChildrenWidth > 0
         && Math.max(labelWidth, labelColumn.implicitWidth) + Theme.gap + contentRow.visibleChildrenWidth
-           > width - 2 * Theme.cardPadding
+           > width - 2 * Theme.cardPadding - indent
 
-    readonly property bool lastShown: {
-        var column = cardItem ? cardItem.parent : null;
+    // the last shown item of its column
+    function lastOf(item) {
+        var column = item ? item.parent : null;
         if (!column) {
             return true;
         }
         for (var i = column.children.length - 1; i >= 0; i--) {
             if (shown(column.children[i])) {
-                return column.children[i] === cardItem;
+                return column.children[i] === item;
             }
         }
         return true;
+    }
+    // the card's last row, so its pressed shade rounds the card's bottom corners: a picker's own row is not while its
+    // choices show under it, and a picker's choice (its column has fullWidthSeparatorBelow) only when the picker is last
+    readonly property bool lastShown: {
+        if (!lastOf(cardItem)) {
+            return false;
+        }
+        if (cardItem !== row && cardItem.fullWidthSeparatorBelow === true) {
+            return false;
+        }
+        var column = cardItem ? cardItem.parent : null;
+        return !column || column.fullWidthSeparatorBelow === undefined || lastOf(column);
     }
 
     // pressed: the row darkens, rounded where it meets the card's corners
@@ -114,7 +146,7 @@ Item {
 
     Rectangle {
         visible: !row.firstShown
-        x: Theme.cardPadding
+        x: row.separatorX
         width: parent.width - x
         height: 1
         color: Theme.separator
@@ -134,7 +166,7 @@ Item {
         id: grid
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: Theme.cardPadding
+        anchors.leftMargin: Theme.cardPadding + row.indent
         anchors.rightMargin: Theme.cardPadding
         anchors.verticalCenter: parent.verticalCenter
         columns: row.stacked ? 1 : 2

@@ -803,6 +803,8 @@ Page {
         property bool isInput: true
         property bool open: false
         property string currentName: ""
+        // as PickerRow's: the choices indented, a full-width separator under the last
+        readonly property bool fullWidthSeparatorBelow: open && choices.count > 0
 
         width: parent ? parent.width : 0
 
@@ -838,10 +840,12 @@ Page {
         }
 
         Repeater {
+            id: choices
             model: devicePicker.open ? devicePicker.devices : null
             delegate: ListRow {
                 readonly property bool selected: root.inHeadset ? model.selectedHMD : model.selectedDesktop
                 label: model.devicename
+                indent: Theme.choiceIndent
                 clickable: true
                 onClicked: {
                     if (!selected) {
