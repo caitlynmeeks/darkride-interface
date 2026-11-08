@@ -271,6 +271,8 @@ MakeDock::MakeDock() {
     // Claude Code's version comes with its hello, after the connection: the panel re-reads claudeVersion (the
     // "Update Claude Code" line; the chat kit's old-version phase)
     QObject::connect(link.data(), &MakeLink::claudeVersionChanged, this, &MakeDock::stateChanged);
+    // a step that ran and didn't work: its row says so (stepFailed)
+    QObject::connect(link.data(), &MakeLink::callFailed, this, &MakeDock::stepFailed);
     // an Allow covers one signed-in account (allowHash)
     QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
                      [this] { emit setupTextChanged(); });
