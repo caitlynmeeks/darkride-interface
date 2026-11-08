@@ -244,6 +244,19 @@ Place safePlace(const std::string& path) {
     return Place::Ready;
 }
 
+// the user at the other end of a local socket: SO_PEERCRED on Linux, getpeereid on macOS and the BSDs
+bool peerIsThisUser(int fd) {
+#if defined(__linux__)
+    struct ucred credentials;
+    socklen_t length = sizeof credentials;
+    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) == 0 && credentials.uid == getuid();
+#else
+    uid_t uid = 0;
+    gid_t gid = 0;
+    return getpeereid(fd, &uid, &gid) == 0 && uid == getuid();
+#endif
+}
+
 int connectTo(const std::string& path) {
     sockaddr_un address;
     std::memset(&address, 0, sizeof(address));
@@ -262,9 +275,7 @@ int connectTo(const std::string& path) {
         return -1;
     }
     // the app at the other end runs as this user
-    uid_t uid = 0;
-    gid_t gid = 0;
-    if (getpeereid(fd, &uid, &gid) != 0 || uid != getuid()) {
+    if (!peerIsThisUser(fd)) {
         fail("the other end of the socket isn't this user's; not connecting");
         close(fd);
         return -1;

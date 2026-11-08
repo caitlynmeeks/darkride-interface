@@ -363,11 +363,21 @@ void MakeLinkServer::accept() {
         QString refused;
         _connecting = MakePeer::Line();
 #ifndef Q_OS_WIN
-        // who connected, before anything is read from it
-        uid_t uid = 0;
-        gid_t gid = 0;
+        // who connected, before anything is read from it: SO_PEERCRED on Linux, getpeereid on macOS
         const int fd = static_cast<int>(socket->socketDescriptor());
-        if (fd < 0 || getpeereid(fd, &uid, &gid) != 0 || uid != getuid()) {
+        bool thisUser = false;
+        if (fd >= 0) {
+#ifdef Q_OS_LINUX
+            struct ucred credentials;
+            socklen_t length = sizeof credentials;
+            thisUser = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) == 0 && credentials.uid == getuid();
+#else
+            uid_t uid = 0;
+            gid_t gid = 0;
+            thisUser = getpeereid(fd, &uid, &gid) == 0 && uid == getuid();
+#endif
+        }
+        if (!thisUser) {
             refused = "a program of another user tried to connect";
         } else {
             // and how its Claude Code was started (MakePeer: the relay's parents, read from the system; C9)
