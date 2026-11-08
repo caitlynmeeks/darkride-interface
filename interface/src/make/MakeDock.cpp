@@ -278,6 +278,25 @@ MakeDock::MakeDock() {
     QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
                      [this] { emit setupTextChanged(); });
     QObject::connect(link.data(), &MakeLink::activity, this, [this](int request, const QString& line) {
+        // a line about a request the person undid (the undo's own "undid N change(s)", or anything late) goes in with
+        // that request's steps and does nothing more: it isn't Claude working, so no "Working for...", no Terminal
+        // wait and no channel take-up (the kit saw Working 2 s after an Undo, 11-08; mary: Undo while working stops it)
+        bool undone = false;
+        for (const auto& row : _timeline.rows()) {
+            if (row.request == request && row.undone) {
+                undone = true;
+                break;
+            }
+        }
+        if (undone) {
+            MakeDockRows::Row row;
+            row.kind = "activity";
+            row.request = request;
+            row.text = clean(line);
+            row.undone = true;
+            addRow(row);
+            return;
+        }
         if (line == SENT_TO_CLAUDE) {
             _sentWaiting = true;
             _sentRequest = request;
@@ -934,11 +953,12 @@ bool MakeDock::testUndo(int request) {
 }
 
 void MakeDock::undoNow(int request) {
-    DependencyManager::get<MakeLink>()->undoRequest(request);
+    // marked undone before the link is asked, so its answer (even one that comes at once) finds the request undone
     _timeline.update([&](const MakeDockRows::Row& row) { return row.request == request; },
                      [](MakeDockRows::Row& row) { row.undone = true; });
     _made.update([&](const MakeDockRows::Row& row) { return row.request == request; },
                  [](MakeDockRows::Row& row) { row.undone = true; });
+    DependencyManager::get<MakeLink>()->undoRequest(request);
 }
 
 void MakeDock::openInCode(const QString& cardId) {
