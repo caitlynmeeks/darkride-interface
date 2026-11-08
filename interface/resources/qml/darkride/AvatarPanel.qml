@@ -554,8 +554,9 @@ Page {
             ListRow {
                 visible: !wearing.isDefault
                 label: wearing.isWeb ? "Keep in My Avatars" : "Favorite"
-                detail: !wearing.isWeb ? "Favorites come first in My Avatars."
-                    : wearing.kept ? "Kept: it's first in My Avatars, below." : "It stays on the web, at its link."
+                // the line explains the setting and never narrates the switch: the switch and the row's star show it's
+                // kept (Caity's hand test, 11-08: "verbose and un-apple")
+                detail: wearing.isWeb ? "It stays on the web, at its link." : "Favorites come first in My Avatars."
                 Toggle {
                     checked: wearing.kept
                     onToggled: checked ? wearing.keep() : wearing.unkeep()
