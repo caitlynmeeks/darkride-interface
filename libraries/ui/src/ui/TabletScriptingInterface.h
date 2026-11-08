@@ -118,9 +118,9 @@ public:
      */
     Q_INVOKABLE void playSound(TabletAudioEvents aEvent);
 
-    void setToolbarMode(bool toolbarMode);
+    Q_INVOKABLE void setToolbarMode(bool toolbarMode);
 
-    void setQmlTabletRoot(QString tabletId, OffscreenQmlSurface* offscreenQmlSurface);
+    Q_INVOKABLE void setQmlTabletRoot(QString tabletId, OffscreenQmlSurface* offscreenQmlSurface);
 
     void processEvent(const QKeyEvent* event);
 
@@ -240,12 +240,14 @@ public:
     TabletProxy(QObject* parent, const QString& name);
     ~TabletProxy();
 
-    void setQmlTabletRoot(OffscreenQmlSurface* offscreenQmlSurface);
+    Q_INVOKABLE void setQmlTabletRoot(OffscreenQmlSurface* offscreenQmlSurface);
 
     const QString getName() const { return _name; }
     bool getToolbarMode() const { return _toolbarMode; }
-    void setToolbarMode(bool toolbarMode);
-    void unfocus();
+    // these three hand themselves to the tablet's thread by name (QMetaObject::invokeMethod), so they must be
+    // invokable, or a call from another thread (a script writing toolbarMode) is dropped with "No such method"
+    Q_INVOKABLE void setToolbarMode(bool toolbarMode);
+    Q_INVOKABLE void unfocus();
 
     /**jsdoc
      * Displays the tablet menu. The tablet is opened if it isn't already open.
