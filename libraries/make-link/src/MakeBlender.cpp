@@ -163,12 +163,19 @@ void capCpuInChild(int seconds) {
 #endif
 }
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_UNIX)
 class CappedProcess : public QProcess {
 public:
     CappedProcess(int cpuSeconds, QObject* parent) : QProcess(parent) {
         setChildProcessModifier([cpuSeconds] { capCpuInChild(cpuSeconds); });
     }
+};
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Windows: Qt 6's QProcess has no child modifier there (no fork), and capCpuInChild does nothing off the Mac; the CPU
+// cap on Windows is the job object's (MakeBox), so this is a plain QProcess
+class CappedProcess : public QProcess {
+public:
+    CappedProcess(int cpuSeconds, QObject* parent) : QProcess(parent) { Q_UNUSED(cpuSeconds); }
 };
 #else
 class CappedProcess : public QProcess {
