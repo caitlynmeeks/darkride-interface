@@ -856,11 +856,11 @@ void CodeEditor::updateRights() {
         } else if (_place == Place::Web) {
             reason = "On the web: read only here.";
         } else if (_place == Place::MyFiles && !UserFiles::isLoggedIn()) {
-            reason = "Sign in to change scripts in your My Files.";
+            reason = "Sign in to change scripts in My Files.";
         } else if (_place == Place::MyFiles && !_myFilesChecked) {
-            reason = "Looking for it in your My Files…";
+            reason = "Looking for it in My Files…";
         } else if (_place == Place::MyFiles && _myFilesPath.isEmpty()) {
-            reason = "In someone else's My Files: read only here.";
+            reason = "Someone else's file: read only here.";
         } else if (!entity_script_rights::mayChangeScripts()) {
             reason = "Only this world's builders can change its scripts.";
         } else if (locked) {
@@ -1110,7 +1110,7 @@ void CodeEditor::saveNewToMyFiles(const QString& text, int generation) {
         }
         if (!listed) {
             setSaving(false);
-            setNote(UserFiles::isLoggedIn() ? QStringLiteral("Couldn't save: My Files didn't answer.") : SIGN_IN_FOR_MY_FILES,
+            setNote(UserFiles::isLoggedIn() ? QStringLiteral("Couldn't save: My Files took too long to answer.") : SIGN_IN_FOR_MY_FILES,
                 true);
             return;
         }
@@ -1320,8 +1320,8 @@ void CodeEditor::saveToMyFiles(const QString& text) {
         if (myFilesIdOf(url) != myFilesIdOf(link)) {
             // never seen (scripting: a file sent to its path keeps its id), but things using the old link wouldn't change
             qCWarning(interfaceapp) << "Code: My Files gave a saved script another link:" << link << "->" << url;
-            setNote("Saved in My Files as " + path.mid(1) + ", but it has a new link now, so things using the old one "
-                "don't change.", true);
+            setNote("Saved in My Files as " + path.mid(1) + ", but it has a new link now, so things using the old link "
+                "won't change.", true);
             return;
         }
         if (_userFiles) {
