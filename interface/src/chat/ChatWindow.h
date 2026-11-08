@@ -54,7 +54,7 @@ public:
     // chat in front on your direct message with a Darkride user, made if there is none yet (Friends.openDirectMessage,
     // People's Message); while chat is signing in, once it's ready. In VR, on the tablet (ChatTabletPage)
     static void openDirectMessage(const QString& username);
-    // Enter or "/" in the 3D view: chat in front on This world (WorldChat), the message box ready, with "/" in it for
+    // Enter or "/" in the 3D view: chat in front on Local Chat (WorldChat), the message box ready, with "/" in it for
     // a command; the line sent (or Esc), back to the world
     static void openWorld(bool command);
 
@@ -72,9 +72,9 @@ private:
 
     void updateState();
     void updateRooms(const QJsonArray& rooms);
-    // This world's row, under Friends
+    // Local Chat's row, under Friends
     void addWorldRow(QListWidgetItem*& current);
-    // after a line in This world opened by a key: the 3D view has the keys again; hide: the panel goes too if the
+    // after a line in Local Chat opened by a key: the 3D view has the keys again; hide: the panel goes too if the
     // key brought it
     void backToWorld(bool hide);
     void updateTimeline(const QString& room, const QJsonArray& items);
@@ -83,6 +83,8 @@ private:
     void selectRoom(const QString& room);
     QJsonObject roomById(const QString& room) const;
     void showRoomPage();
+    // the line beside Local Chat's title (WorldChat::hereLine); empty for the other rooms
+    void updateRoomTopic();
     void renderTimeline();
     void sendMessage();
     // the message under a point of the conversation (viewport coordinates): its index in _items, or -1
@@ -157,6 +159,7 @@ private:
     QLabel* _userName { nullptr };
     QLabel* _userStatus { nullptr };
     QLabel* _roomTitle { nullptr };
+    QLabel* _roomTopic { nullptr };   // beside the title: Local Chat's world and who's there
     QStackedWidget* _pages { nullptr };
     QLabel* _stateText { nullptr };
     QPushButton* _retryButton { nullptr };
@@ -173,7 +176,7 @@ private:
     QHash<QString, QPushButton*> _friendsTabs;
     QString _friendsTab { "online" };
     bool _friendsShown { false };               // the Friends page is up (the last room stays _room)
-    bool _worldByKey { false };                 // This world opened by Enter or "/" in the 3D view
+    bool _worldByKey { false };                 // Local Chat opened by Enter or "/" in the 3D view
     bool _worldHideOnEsc { false };             // ... and the panel wasn't in sight before
     QString _dmWanted;                           // a friend's chat account whose new DM is being made, to open
     QString _dmWantedUser;                       // a username whose DM is to open once chat is ready

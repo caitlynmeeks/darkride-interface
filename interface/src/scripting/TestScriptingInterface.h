@@ -641,7 +641,7 @@ public slots:
     Q_INVOKABLE bool setChatBadge(int count);
 
     /**jsdoc
-     * This world in chat (chat/WorldChat.h): its lines and unseen count, whether the chat panel is open, and the
+     * Local Chat (chat/WorldChat.h): its lines and unseen count, whether the chat panel is open, and the
      * widget that has the keyboard (its object name, and its text when it is chat's message box).
      * @function Test.worldChat
      * @returns {object} <code>{items, unread, chatOpen, focus, focusText}</code>

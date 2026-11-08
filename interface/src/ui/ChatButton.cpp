@@ -57,17 +57,17 @@ ChatButton::ChatButton(TabletProxy* tablet) : QObject(tablet) {
         ChatWindow::toggle();
         watchDock();   // opened before the layout's restore made the panel
     });
-    // the count from sign-in on, before chat is ever opened
+    // the count from sign-in on, before chat is ever opened, and Local Chat's new lines with it
     if (auto chat = DependencyManager::get<ChatService>()) {
-        connect(chat.data(), &ChatService::unreadCountChanged, this, &ChatButton::setUnread);
-        setUnread(chat->getUnreadCount());
+        connect(chat.data(), &ChatService::unreadCountChanged, this, &ChatButton::updateUnread);
     }
+    // (Local Chat is made here, so it keeps its lines from start: a line said before chat opens is there when it does)
+    connect(WorldChat::instance(), &WorldChat::unreadChanged, this, &ChatButton::updateUnread);
+    updateUnread();
     // chat's panel is made by the layout's restore after sign-in (ui/WindowLayout.h), or by a first open
     connect(WindowLayout::instance(), &WindowLayout::restored, this, &ChatButton::watchDock);
 
-    // This world keeps its lines from now on, so a line said before chat opens is there when it does
-    WorldChat::instance();
-    // Enter or "/" in the 3D view (keys Build mode didn't take): This world, the box ready, as the old in-world chat
+    // Enter or "/" in the 3D view (keys Build mode didn't take): Local Chat, the box ready, as the old in-world chat
     // had them
     auto controller = dynamic_cast<ControllerScriptingInterface*>(qApp->getControllerScriptingInterface());
     if (controller) {
@@ -102,8 +102,10 @@ void ChatButton::updateActive() {
     }
 }
 
-void ChatButton::setUnread(int count) {
+void ChatButton::updateUnread() {
+    auto chat = DependencyManager::get<ChatService>();
+    int count = std::max(0, chat ? chat->getUnreadCount() : 0) + WorldChat::instance()->unread();
     if (_button) {
-        _button->editProperties({ { "badge", std::max(0, count) } });
+        _button->editProperties({ { "badge", count } });
     }
 }

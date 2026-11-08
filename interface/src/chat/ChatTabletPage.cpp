@@ -49,10 +49,15 @@ ChatTabletPage* ChatTabletPage::get() {
 ChatTabletPage::ChatTabletPage(TabletProxy* tablet) : QObject(tablet), _tablet(tablet) {
     connect(tablet, &TabletProxy::screenChanged, this, &ChatTabletPage::screenChanged);
     connect(tablet, &TabletProxy::webEventReceived, this, &ChatTabletPage::webEventReceived);
-    // This world's lines to the page as they change, while it's there
+    // Local Chat's lines to the page as they change, while it's there, and the line beside its title
     connect(WorldChat::instance(), &WorldChat::itemsChanged, this, [this] {
         if (!_bridge.isEmpty()) {
             sendWorld();
+        }
+    });
+    connect(WorldChat::instance(), &WorldChat::peopleChanged, this, [this] {
+        if (!_bridge.isEmpty()) {
+            sendWorldHere();
         }
     });
 }
@@ -123,6 +128,7 @@ void ChatTabletPage::webEventReceived(const QVariant& message) {
         signIn();
     } else if (command == "world") {
         sendWorld();
+        sendWorldHere();
     } else if (command == "worldSend") {
         WorldChat::instance()->send(args.value("text").toString());
     } else if (command == "worldRead") {
@@ -175,6 +181,10 @@ void ChatTabletPage::signIn() {
 
 void ChatTabletPage::sendWorld() {
     answer({ { "event", "world" }, { "items", WorldChat::instance()->items() } });
+}
+
+void ChatTabletPage::sendWorldHere() {
+    answer({ { "event", "worldHere" }, { "text", WorldChat::instance()->hereLine() } });
 }
 
 void ChatTabletPage::answer(QJsonObject message) {
