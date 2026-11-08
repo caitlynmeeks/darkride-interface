@@ -366,6 +366,23 @@ bool TestScriptingInterface::reloadEditorScript(const QString& key) {
     return row && row->pressReload();
 }
 
+QVariantMap TestScriptingInterface::inspectorScriptButton(const QString& key, bool click) {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "inspectorScriptButton", Q_RETURN_ARG(QVariantMap, result), Q_ARG(QString, key),
+                               Q_ARG(bool, click));
+        return result;
+    }
+    auto row = inspectorScriptRow(key);
+    if (!row) {
+        return { { "found", false } };
+    }
+    QVariantMap result = row->editButton();
+    result["found"] = true;
+    result["clicked"] = click && row->pressEdit();
+    return result;
+}
+
 QVariantMap TestScriptingInterface::inspectorField(const QString& key) {
     if (QThread::currentThread() != thread()) {
         QVariantMap result;
@@ -634,6 +651,14 @@ void TestScriptingInterface::editorUndo() {
         return;
     }
     DependencyManager::get<Editor>()->undo();
+}
+
+void TestScriptingInterface::editorRedo() {
+    if (QThread::currentThread() != thread()) {
+        BLOCKING_INVOKE_METHOD(this, "editorRedo");
+        return;
+    }
+    DependencyManager::get<Editor>()->redo();
 }
 
 QString TestScriptingInterface::hierarchyRowColor(const QUuid& id) {
@@ -1037,6 +1062,7 @@ QVariantMap TestScriptingInterface::codePanel() {
         { "nearby", code->nearby()->property("count") }, { "path", code->path() }, { "usedBy", code->usedBy() },
         { "sharedBy", code->sharedBy() }, { "isShader", code->isShader() }, { "language", code->language() },
         { "openKey", code->openKey() }, { "loading", code->isLoading() }, { "drafts", code->draftKeys().size() }, { "allDrafts", code->allDraftCount() },
+        { "isNew", code->isNew() }, { "newScriptOff", code->newScriptOff() }, { "newScriptTip", code->newScriptTip() },
     };
 }
 
@@ -1064,6 +1090,14 @@ void TestScriptingInterface::codeSave() {
         return;
     }
     DependencyManager::get<CodeEditor>()->testSave();
+}
+
+void TestScriptingInterface::codeNewScript() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeNewScript");
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testNewScript();
 }
 
 bool TestScriptingInterface::saveCodeMenuPicture(const QString& which, const QString& path) {
