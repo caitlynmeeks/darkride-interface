@@ -50,6 +50,8 @@ Page {
             id: avatarBar
             visible: root.currentTab === 0
             settingsKey: "io.darkride.avatarPanel.files"
+            // a fresh panel lists them, ten a screen with where each lives (mary 11-08); a choice made is remembered
+            view: "list"
             placeholder: "Search My Avatars"
             sorts: [
                 { text: "Name", value: "name", by: function (a, b) { return a.title.toLowerCase().localeCompare(b.title.toLowerCase()); } },
