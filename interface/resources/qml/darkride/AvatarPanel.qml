@@ -400,8 +400,9 @@ Page {
                 action: true
                 label: "Paste an Avatar Link…"
                 onClicked: {
-                    // the link worn, selected: a paste replaces it, and it can be copied
-                    linkField.text = avatar.url;
+                    // the link worn, selected: a paste replaces it, and it can be copied; a file on this computer is no
+                    // link anyone can use, so then the box opens empty (mary, 11-08)
+                    linkField.text = avatar.onThisComputer ? "" : avatar.url;
                     avatar.linking = true;
                     linkField.forceActiveFocus();
                     linkField.selectAll();
