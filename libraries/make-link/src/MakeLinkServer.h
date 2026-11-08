@@ -87,6 +87,11 @@ public:
     void setInstructions(const QString& instructions) { _instructions = instructions; }
     /// The time limit of one call of `name` (default 30 s), the gate's wait included.
     void setTimeLimit(const QString& name, int milliseconds) { _timeLimits[name] = milliseconds; }
+    /// While held, a tools/list request waits: Make's Connect self-test decides the Blender tools, so the list is
+    /// answered when the hold is released (after the handlers are set), or after the cap with what is offered then.
+    void setToolListHold(bool held);
+    /// The cap of that wait (default 15 s: the self-test's usual seconds with margin).
+    void setToolListHoldCap(int milliseconds) { _toolListHoldMs = milliseconds; }
 
     /// Listens on `folder`/link.sock: the folder is made (or kept) this user's own, mode 0700, and the socket 0600.
     /// False with a plain reason when the folder isn't this user's, the path is too long for a socket, or another
@@ -100,6 +105,10 @@ public:
     void close();
     /// The socket, for the MCP line Make writes; empty while not listening. Never log it.
     QString socketPath() const { return _socketPath; }
+    /// The access the listening link really has, for the log and the tests: on Windows the pipe's access list read back
+    /// from the waiting instance (SDDL, this user shown as "this user"); on Unix the socket folder's mode in octal.
+    /// Empty while not listening.
+    QString accessAsApplied() const;
 
     bool isConnected() const { return _client != nullptr; }
     /// Closes Claude Code's connection and goes on listening (the person's Disconnect).
@@ -157,6 +166,8 @@ private:
     void send(const QJsonObject& message);
     void answer(const QJsonValue& requestId, const QJsonObject& result);
     void answerError(const QJsonValue& requestId, int code, const QString& message);
+    void answerToolList(const QJsonValue& requestId);
+    void answerHeldToolLists();
     QJsonObject toolResult(const QString& tool, const Result& result) const;
 
     MakeToolList _tools;
@@ -179,6 +190,10 @@ private:
     QHash<int, Call> _calls;
     int _nextCall { 1 };
     bool _stopped { false };
+    bool _toolListHeld { false };
+    QList<QJsonValue> _heldToolLists;   // tools/list requests waiting for the offer to be decided
+    QTimer* _toolListCap { nullptr };
+    int _toolListHoldMs { 0 };
 };
 
 #endif // hifi_MakeLinkServer_h

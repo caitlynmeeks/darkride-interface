@@ -14,6 +14,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QLoggingCategory>
+#include <QtCore/QFileInfo>
 #include <QtCore/QSet>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
@@ -26,6 +27,7 @@
 #include <QtCore/QWinEventNotifier>
 
 #include <windows.h>
+#include <aclapi.h>
 #include <sddl.h>
 #else
 #include <sys/socket.h>
@@ -53,6 +55,8 @@ const int PARSE_ERROR = -32700;
 const int INVALID_REQUEST = -32600;
 const int METHOD_NOT_FOUND = -32601;
 const int INVALID_PARAMS = -32602;
+const int TOOL_LIST_HOLD_MS = 15000;   // a tools/list waits this long at most for the offer to be decided
+const int TOOL_LIST_HOLD_MOST = 8;     // how many tools/list requests wait at once; the rest are answered as the list stands
 
 }  // namespace
 
@@ -159,11 +163,43 @@ public:
         _notifier = new QWinEventNotifier(_overlapped.hEvent);
         QObject::connect(_notifier, &QWinEventNotifier::activated, [this] { ready(); });
         if (!wait(true)) {
-            error = GetLastError() == ERROR_ACCESS_DENIED ? "another program holds the link's name"
-                                                          : "can't open the link (" + QString::number(GetLastError()) + ")";
+            // the name held by another program: access denied when it exists, busy when its every instance is taken
+            // (a squatter made with one instance; windowz's final run, 11-08): both mean the name isn't ours
+            const DWORD why = GetLastError();
+            error = why == ERROR_ACCESS_DENIED || why == ERROR_PIPE_BUSY ? "another program holds the link's name"
+                                                                       : "can't open the link (" + QString::number(why) + ")";
             return false;
         }
         return true;
+    }
+
+    // the DACL the waiting instance really carries, read back from its handle and spelt as SDDL: the log line at listen
+    // shows the access as applied (the lab can't read a pipe's security from outside while an instance waits)
+    QString appliedDacl() const {
+        if (_waiting == INVALID_HANDLE_VALUE) {
+            return QStringLiteral("(no waiting instance)");
+        }
+        PACL dacl = nullptr;
+        PSECURITY_DESCRIPTOR descriptor = nullptr;
+        const DWORD read = GetSecurityInfo(_waiting, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl,
+                                           nullptr, &descriptor);
+        if (read != ERROR_SUCCESS) {
+            return QString("(unreadable: %1)").arg(read);
+        }
+        LPWSTR text = nullptr;
+        QString result = QStringLiteral("(unprintable)");
+        if (ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, SDDL_REVISION_1, DACL_SECURITY_INFORMATION,
+                                                                 &text, nullptr)) {
+            // the SID is this user's own: the log says so instead of printing it (security, 11-08)
+            result = QString::fromWCharArray(text);
+            const QString sid = thisUserSid();
+            if (!sid.isEmpty()) {
+                result.replace(sid, QStringLiteral("this user"));
+            }
+            LocalFree(text);
+        }
+        LocalFree(descriptor);
+        return result;
     }
 
 private:
@@ -243,6 +279,13 @@ QString MakeLinkServer::newPipeName() {
 }
 
 MakeLinkServer::MakeLinkServer(QObject* parent) : QObject(parent) {
+    _toolListHoldMs = TOOL_LIST_HOLD_MS;
+    _toolListCap = new QTimer(this);
+    _toolListCap->setSingleShot(true);
+    connect(_toolListCap, &QTimer::timeout, this, [this] {
+        qCInfo(makelink) << "the tool list was asked for before the offer was decided and waited its cap: answered as it stands";
+        answerHeldToolLists();
+    });
 }
 
 MakeLinkServer::~MakeLinkServer() {
@@ -271,7 +314,7 @@ bool MakeLinkServer::listen(const QString& folder, QString& error) {
         return false;
     }
     _socketPath = folder;
-    qCInfo(makelink) << "Make's link is listening";
+    qCInfo(makelink) << "Make's link is listening; the pipe's access as applied:" << _pipes->appliedDacl();
     return true;
 #else
     close();
@@ -328,6 +371,19 @@ bool MakeLinkServer::listen(const QString& folder, QString& error) {
 
 bool MakeLinkServer::isListening() const {
     return (_server && _server->isListening()) || _pipes;
+}
+
+QString MakeLinkServer::accessAsApplied() const {
+#ifdef Q_OS_WIN
+    return _pipes ? _pipes->appliedDacl() : QString();
+#else
+    if (!_server || !_server->isListening()) {
+        return QString();
+    }
+    struct stat info;
+    const QByteArray folder = QFile::encodeName(QFileInfo(_socketPath).path());
+    return lstat(folder.constData(), &info) == 0 ? QString::number(info.st_mode & 0777, 8) : QString();
+#endif
 }
 
 void MakeLinkServer::close() {
@@ -424,6 +480,8 @@ void MakeLinkServer::adopt(QLocalSocket* socket, QString refused) {
         socket->deleteLater();
         return;
     }
+    // the same words on every platform: the socket's or pipe's peer was checked to be this user's (security, 11-08)
+    qCInfo(makelink) << "the link's peer is this user's own process";
     _client = socket;
     _buffer.clear();
     _clientName.clear();
@@ -441,7 +499,34 @@ void MakeLinkServer::adopt(QLocalSocket* socket, QString refused) {
     emit connectedChanged(true);
 }
 
+void MakeLinkServer::setToolListHold(bool held) {
+    _toolListHeld = held;
+    if (!held) {
+        _toolListCap->stop();
+        answerHeldToolLists();
+    }
+}
+
+void MakeLinkServer::answerToolList(const QJsonValue& requestId) {
+    QSet<QString> offered;
+    for (auto it = _handlers.begin(); it != _handlers.end(); ++it) {
+        offered.insert(it.key());
+    }
+    answer(requestId, QJsonObject { { "tools", _tools.mcpTools(offered) } });
+}
+
+void MakeLinkServer::answerHeldToolLists() {
+    const QList<QJsonValue> waiting = _heldToolLists;
+    _heldToolLists.clear();
+    for (const QJsonValue& requestId : waiting) {
+        answerToolList(requestId);
+    }
+}
+
 void MakeLinkServer::dropClient() {
+    // a list the gone client was waiting for has nowhere to go
+    _heldToolLists.clear();
+    _toolListCap->stop();
     // the running calls end with the connection: their answers have nowhere to go
     for (auto it = _calls.begin(); it != _calls.end(); ++it) {
         if (it->timer) {
@@ -559,11 +644,16 @@ void MakeLinkServer::handle(const QJsonObject& message) {
     } else if (method == "ping") {
         answer(id, QJsonObject());
     } else if (method == "tools/list") {
-        QSet<QString> offered;
-        for (auto it = _handlers.begin(); it != _handlers.end(); ++it) {
-            offered.insert(it.key());
+        if (_toolListHeld && _heldToolLists.size() < TOOL_LIST_HOLD_MOST) {
+            // the offer is being decided (Make's Connect self-test): the answer waits for it, or for the cap; a few
+            // requests at most wait, so a chatty client can't grow the queue (security, 11-08)
+            _heldToolLists.append(id);
+            if (!_toolListCap->isActive()) {
+                _toolListCap->start(_toolListHoldMs);
+            }
+            return;
         }
-        answer(id, QJsonObject { { "tools", _tools.mcpTools(offered) } });
+        answerToolList(id);
     } else if (method == "tools/call") {
         callTool(id, params);
     } else if (method == "resources/list" || method == "prompts/list") {

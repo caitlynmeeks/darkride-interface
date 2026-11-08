@@ -87,6 +87,7 @@ QString realPath(const QString& path) {
 }
 
 bool copyResource(const QString& name, const QString& to) {
+    initMakeLinkResources();
     QFile from(":/make-link/blender/" + name);
     QFile file(to);
     if (!from.open(QIODevice::ReadOnly) || !file.open(QIODevice::WriteOnly)) {

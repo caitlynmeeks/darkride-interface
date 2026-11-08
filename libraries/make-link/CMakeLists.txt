@@ -17,5 +17,5 @@ endif ()
 if (WIN32)
   # MakeFirewall: the read of the installer's rules for Blender's box (INetFwPolicy2, COM) and the box's SID;
   # MakeKey: the builder's key in Credential Manager
-  target_link_libraries(${TARGET_NAME} ole32 oleaut32 userenv advapi32)
+  target_link_libraries(${TARGET_NAME} ole32 oleaut32 userenv advapi32 shell32)
 endif ()

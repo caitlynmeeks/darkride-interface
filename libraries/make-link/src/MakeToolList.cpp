@@ -103,7 +103,13 @@ QJsonValue cutEvery(const QJsonValue& value, const QString& path, const QHash<QS
 
 }  // namespace
 
+// outside every namespace: Q_INIT_RESOURCE declares the generated initializer at the scope it is used in
+void initMakeLinkResources() {
+    Q_INIT_RESOURCE(make_link);
+}
+
 MakeToolList::MakeToolList() {
+    initMakeLinkResources();
     QFile file(":/make-link/TOOLS.json");
     if (!file.open(QIODevice::ReadOnly)) {
         _loadError = "the tool list isn't in the app";

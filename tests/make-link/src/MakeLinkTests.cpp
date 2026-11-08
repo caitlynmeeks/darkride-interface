@@ -9,6 +9,7 @@
 
 #include "MakeLinkTests.h"
 
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -18,12 +19,15 @@
 #include <QtNetwork/QLocalSocket>
 
 #include <MakeClaude.h>
+#include <MakeFolder.h>
 #include <MakeLinkServer.h>
 #include <MakePeer.h>
 #include <MakeText.h>
 #include <MakeToolList.h>
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_WIN
+#include <windows.h>
+#else
 #include <sys/stat.h>
 #endif
 
@@ -601,6 +605,25 @@ void MakeLinkTests::testKeyHiddenInClaudeCodeErrors() {
 // its own start; and the key route's line is --bare with its cap, never the key
 void MakeLinkTests::testClaudeStartedOncePerRun() {
     QTemporaryDir dir;
+#ifdef Q_OS_WIN
+    // the fake Claude on Windows: a command script that answers the same lines (a shell script isn't a program there)
+    const QString program = dir.filePath("claude.cmd");
+    QFile script(program);
+    QVERIFY(script.open(QIODevice::WriteOnly));
+    script.write("@echo off\r\n"
+                 "setlocal enabledelayedexpansion\r\n"
+                 "set n=0\r\n"
+                 ":loop\r\n"
+                 "set \"line=\"\r\n"
+                 "set /p line=\r\n"
+                 "if errorlevel 1 goto end\r\n"
+                 "set /a n+=1\r\n"
+                 "echo {\"type\":\"system\",\"subtype\":\"init\",\"model\":\"kit-model\"}\r\n"
+                 "echo {\"type\":\"result\",\"subtype\":\"success\",\"total_cost_usd\":!n!.5,"
+                 "\"is_error\":false,\"result\":\"ok\"}\r\n"
+                 "goto loop\r\n"
+                 ":end\r\n");
+#else
     const QString program = dir.filePath("claude");
     QFile script(program);
     QVERIFY(script.open(QIODevice::WriteOnly));
@@ -612,6 +635,7 @@ void MakeLinkTests::testClaudeStartedOncePerRun() {
                  "  echo \"{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"total_cost_usd\\\":$n.5,"
                  "\\\"is_error\\\":false,\\\"result\\\":\\\"ok\\\"}\"\n"
                  "done\n");
+#endif
     script.close();
     QVERIFY(QFile::setPermissions(program, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
 
@@ -1026,4 +1050,245 @@ void MakeLinkTests::testPlainTextForTheChannel() {
     QCOMPARE(MakeText::plain(pairs, 2), QString::fromUcs4(U"\U0001F600\U0001F601"));
     QCOMPARE(MakeText::plain("abcdef", 3), QString("abc"));
     QCOMPARE(MakeText::plain("abc", 0), QString("abc"));
+}
+
+// the Make folder rule (security, 11-08): a real folder of this user's own and private; a link or junction in its place,
+// or something that isn't a folder, is refused with a plain why
+void MakeLinkTests::testMakeFolderIsPrivate() {
+    QTemporaryDir dir(shortFolderTemplate());
+    const QString folder = dir.filePath("Make");
+    QString why;
+    QVERIFY2(MakeFolder::makePrivate(folder, why), qPrintable(why));
+    QVERIFY(QFileInfo(folder).isDir());
+    QVERIFY2(MakeFolder::makePrivate(folder, why), qPrintable(why));   // again, nothing to change: still fine
+    const QString access = MakeFolder::access(folder);
+    const QString elsewhere = dir.filePath("elsewhere");
+    QVERIFY(QDir().mkpath(elsewhere));
+    const QFileDevice::Permissions openToAll = QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
+                                          QFileDevice::ReadGroup | QFileDevice::ExeGroup | QFileDevice::ReadOther |
+                                          QFileDevice::ExeOther;
+#ifdef Q_OS_WIN
+    // protected, three allow entries that what is made inside inherits (this user, SYSTEM, Administrators), nothing else
+    QVERIFY2(access.startsWith("D:P"), qPrintable(access));
+    QCOMPARE(access.count("("), 3);
+    QVERIFY2(access.contains("(A;OICI;FA;;;this user)"), qPrintable(access));
+    QVERIFY2(access.contains("(A;OICI;FA;;;SY)"), qPrintable(access));
+    QVERIFY2(access.contains("(A;OICI;FA;;;BA)"), qPrintable(access));
+    QVERIFY2(!access.contains("S-1-"), qPrintable(access));
+    // a file made new inside carries those three and nothing else
+    QFile inside(folder + "/inside.json");
+    QVERIFY(inside.open(QIODevice::WriteOnly | QIODevice::NewOnly));
+    inside.write("{}");
+    inside.close();
+    const QString fileAccess = MakeFolder::access(inside.fileName());
+    QCOMPARE(fileAccess.count("("), 3);
+    for (const char* who : { ";;;this user)", ";;;SY)", ";;;BA)" }) {
+        QVERIFY2(fileAccess.contains(who), qPrintable(fileAccess));
+    }
+    QVERIFY2(!fileAccess.contains("S-1-"), qPrintable(fileAccess));
+    // a junction where the folder goes is refused (Qt's isSymLink doesn't see one), and the target is left alone
+    const QString junction = dir.filePath("Make2");
+    QCOMPARE(QProcess::execute("cmd", { "/c", "mklink", "/J", QDir::toNativeSeparators(junction),
+                                        QDir::toNativeSeparators(elsewhere) }), 0);
+    QVERIFY(MakeFolder::isLinkOrJunction(junction));
+    QVERIFY(!MakeFolder::makePrivate(junction, why));
+    QVERIFY2(why.contains("link"), qPrintable(why));
+    QVERIFY(QFileInfo(elsewhere).isDir());
+#else
+    QCOMPARE(access, QString("700"));
+    // a folder left open by an earlier version is closed again
+    QVERIFY(QFile::setPermissions(folder, openToAll));
+    QVERIFY2(MakeFolder::makePrivate(folder, why), qPrintable(why));
+    QCOMPARE(MakeFolder::access(folder), QString("700"));
+    // a link where the folder goes is refused, and not followed: its target keeps its mode
+    QVERIFY(QFile::setPermissions(elsewhere, openToAll));
+    const QString link = dir.filePath("Make2");
+    QVERIFY(QFile::link(elsewhere, link));
+    QVERIFY(MakeFolder::isLinkOrJunction(link));
+    QVERIFY(!MakeFolder::makePrivate(link, why));
+    QVERIFY2(why.contains("link"), qPrintable(why));
+    QCOMPARE(MakeFolder::access(elsewhere), QString("755"));
+#endif
+    // something that isn't a folder in its place is refused
+    const QString file = dir.filePath("Make3");
+    QFile plain(file);
+    QVERIFY(plain.open(QIODevice::WriteOnly));
+    plain.close();
+    QVERIFY(!MakeFolder::makePrivate(file, why));
+    QVERIFY2(why.contains("isn't a folder"), qPrintable(why));
+}
+
+// the listening link's access as applied (security, 11-08): on Windows the pipe's access list read back from the
+// server's own handle: protected, one allow entry, this user, full access (GA, or FA as Windows maps it at creation),
+// nothing else; on Unix the socket folder's mode
+void MakeLinkTests::testLinkAccessIsThisUserOnly() {
+    QTemporaryDir dir(shortFolderTemplate());
+    MakeLinkServer server;
+    QString error;
+    QVERIFY2(server.listen(socketFolder(dir), error), qPrintable(error));
+    const QString access = server.accessAsApplied();
+#ifdef Q_OS_WIN
+    QVERIFY2(access.startsWith("D:P"), qPrintable(access));
+    QCOMPARE(access.count("("), 1);
+    QVERIFY2(access.contains("(A;;GA;;;this user)") || access.contains("(A;;FA;;;this user)"), qPrintable(access));
+    for (const char* other : { ";;;WD)", ";;;BU)", ";;;AU)", ";;;AC)", ";;;IU)", ";;;SY)", ";;;BA)", "S-1-" }) {
+        QVERIFY2(!access.contains(other), qPrintable(access));
+    }
+#else
+    QCOMPARE(access, QString("700"));   // the socket's folder; the socket itself is 0600 (testSocketIsPrivate)
+#endif
+    server.close();
+}
+
+// a program that made the pipe's name first keeps it: Make's listen fails instead of joining it (security's (c), 11-08)
+void MakeLinkTests::testLinkNameAlreadyTakenIsRefused() {
+#ifndef Q_OS_WIN
+    QSKIP("the pipe name is Windows' own; on Unix the socket file's owner and kind are checked (testSocketIsPrivate)");
+#else
+    const QString name = MakeLinkServer::newPipeName();
+    HANDLE squatter = CreateNamedPipeW(name.toStdWString().c_str(), PIPE_ACCESS_DUPLEX,
+                                       PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, nullptr);
+    QVERIFY(squatter != INVALID_HANDLE_VALUE);
+    MakeLinkServer server;
+    QString error;
+    QVERIFY(!server.listen(name, error));
+    QVERIFY2(error.contains("another program holds"), qPrintable(error));
+    QVERIFY(!server.isListening());
+    CloseHandle(squatter);
+    // the name free again: listen works
+    QVERIFY2(server.listen(name, error), qPrintable(error));
+    server.close();
+#endif
+}
+
+// Make's private copy of the helper (security, 11-08): written fresh inside a private folder, byte for byte the program,
+// this user's to run on Unix; whatever stood in its place goes and is never followed
+void MakeLinkTests::testHelperCopyIsPrivateAndIdentical() {
+    QTemporaryDir dir(shortFolderTemplate());
+    const QString folder = dir.filePath("Make");
+    QString why;
+    QVERIFY2(MakeFolder::makePrivate(folder, why), qPrintable(why));
+    QVERIFY(QDir().mkpath(folder + "/bin"));
+    // the program: this test's own, a real executable of some size
+    const QString program = QCoreApplication::applicationFilePath();
+    QFile original(program);
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    const QByteArray bytes = original.readAll();
+    QVERIFY(bytes.size() > 1000);
+    const QString copy = folder + "/bin/helper";
+    QVERIFY2(MakeFolder::copyProgram(program, copy, why), qPrintable(why));
+    QFile made(copy);
+    QVERIFY(made.open(QIODevice::ReadOnly));
+    QCOMPARE(made.size(), original.size());
+    QVERIFY(made.readAll() == bytes);
+    made.close();
+#ifdef Q_OS_WIN
+    const QString access = MakeFolder::access(copy);
+    QCOMPARE(access.count("("), 3);   // the folder's three entries, inherited, nothing else
+    QVERIFY2(!access.contains("S-1-"), qPrintable(access));
+#else
+    QCOMPARE(MakeFolder::access(copy), QString("700"));
+#endif
+    // made again while an identical copy stands there: that copy is kept, not rewritten (Windows won't replace a running
+    // program, and Claude Code may still be running the copy after a Disconnect)
+    const QDateTime firstMade = QFileInfo(copy).lastModified();
+    QTest::qWait(1100);
+    QVERIFY2(MakeFolder::copyProgram(program, copy, why), qPrintable(why));
+    QCOMPARE(QFileInfo(copy).lastModified(), firstMade);
+    QVERIFY(QFileInfo(copy).size() == original.size());
+    // a stale file of another content in its place is replaced
+    QFile stale(copy);
+    QVERIFY(stale.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    stale.write("not the program");
+    stale.close();
+    QVERIFY2(MakeFolder::copyProgram(program, copy, why), qPrintable(why));
+    QVERIFY(QFileInfo(copy).size() == original.size());
+#ifndef Q_OS_WIN
+    // a link planted in its place is replaced by a real file, and its target is left alone
+    const QString elsewhere = dir.filePath("elsewhere.bin");
+    QFile target(elsewhere);
+    QVERIFY(target.open(QIODevice::WriteOnly));
+    target.write("elsewhere");
+    target.close();
+    QVERIFY(QFile::remove(copy));
+    QVERIFY(QFile::link(elsewhere, copy));
+    QVERIFY2(MakeFolder::copyProgram(program, copy, why), qPrintable(why));
+    QVERIFY(!MakeFolder::isLinkOrJunction(copy));
+    QVERIFY(QFileInfo(copy).size() == original.size());
+    QCOMPARE(QFileInfo(elsewhere).size(), qint64(9));
+#endif
+    // a source that can't be read is refused with a why
+    QVERIFY(!MakeFolder::copyProgram(dir.filePath("no-such-program"), copy, why));
+    QVERIFY2(why.contains("can't be read"), qPrintable(why));
+}
+
+
+// the Blender tools are decided by a self-test at Connect: a tools/list asked meanwhile waits for the decision, or for
+// the cap, and lists what is offered then (security's bounded hold, 11-08; a Claude started right after Connect saw no
+// make_with_blender in windowz's run 2)
+void MakeLinkTests::testToolListWaitsForTheOffer() {
+    QTemporaryDir dir(shortFolderTemplate());
+    MakeLinkServer server;
+    server.setHandler("guide", [](const QJsonObject&, const MakeLinkServer::Reply& reply) { reply({}); });
+    server.setToolListHold(true);
+    QString error;
+    QVERIFY(server.listen(socketFolder(dir), error));
+    Client client;
+    QVERIFY(client.connectTo(server.socketPath()));
+    QVERIFY(!client.ask(1, "initialize", QJsonObject { { "protocolVersion", "2025-06-18" },
+                                                       { "clientInfo", QJsonObject { { "name", "claude-code" }, { "version", "2" } } } }).isEmpty());
+    auto names = [](const QJsonObject& listed) {
+        QStringList result;
+        for (const QJsonValue& tool : listed.value("result").toObject().value("tools").toArray()) {
+            result << tool.toObject().value("name").toString();
+        }
+        return result;
+    };
+    // held: no answer for 400 ms
+    QVERIFY(client.ask(2, "tools/list", QJsonObject(), 400).isEmpty());
+    // the offer decided and the hold released: the answer comes, with the tool offered meanwhile
+    server.setHandler("make_with_blender", [](const QJsonObject&, const MakeLinkServer::Reply& reply) { reply({}); });
+    server.setToolListHold(false);
+    const QStringList decided = names(client.waitFor(2, 2000));
+    QVERIFY2(decided.contains("make_with_blender") && decided.contains("guide"), qPrintable(decided.join(',')));
+    // held again with a short cap and no decision: answered at the cap without the tool that comes later
+    server.removeHandler("make_with_blender");
+    server.setToolListHold(true);
+    server.setToolListHoldCap(300);
+    const QStringList capped = names(client.ask(3, "tools/list", QJsonObject(), 2000));
+    QVERIFY2(capped.contains("guide") && !capped.contains("make_with_blender"), qPrintable(capped.join(',')));
+    // a chatty client while held: a few requests wait, the rest are answered at once as the list stands
+    server.setToolListHoldCap(5000);
+    for (int id = 10; id < 18; ++id) {
+        QVERIFY(client.ask(id, "tools/list", QJsonObject(), 50).isEmpty());   // the first eight wait
+    }
+    QVERIFY(!client.ask(18, "tools/list", QJsonObject(), 1000).isEmpty());    // the ninth doesn't
+    server.setToolListHold(false);
+    QVERIFY(!client.waitFor(10, 1000).isEmpty());   // the waiting ones go out on the release
+}
+
+// the key route's Claude Code finds the program's folder and the system's tool folders, nothing of the person's PATH
+// (security, 11-08; on Windows the old line was the Unix one, a broken PATH)
+void MakeLinkTests::testClaudePathIsSystemFoldersOnly() {
+    const QString program = QDir::tempPath() + "/claude-kit/claude";
+    const QString path = MakeClaude::pathFor(program);
+#ifdef Q_OS_WIN
+    wchar_t buffer[MAX_PATH];
+    QVERIFY(GetSystemDirectoryW(buffer, MAX_PATH) > 0);
+    const QString system = QString::fromWCharArray(buffer);
+    QVERIFY(GetWindowsDirectoryW(buffer, MAX_PATH) > 0);
+    const QString windows = QString::fromWCharArray(buffer);
+    const QStringList allowed { QDir::toNativeSeparators(QFileInfo(program).absolutePath()), system, windows,
+                                system + "\\Wbem" };
+    const QStringList entries = path.split(';');
+    QCOMPARE(entries.size(), 4);
+    for (const QString& entry : entries) {
+        QVERIFY2(allowed.contains(entry), qPrintable(entry));
+    }
+    for (const QString& theirs : qEnvironmentVariable("PATH").split(';', Qt::SkipEmptyParts)) {
+        QVERIFY2(allowed.contains(theirs, Qt::CaseInsensitive) || !entries.contains(theirs, Qt::CaseInsensitive), qPrintable(theirs));
+    }
+#else
+    QCOMPARE(path, QFileInfo(program).absolutePath() + ":/usr/bin:/bin:/usr/sbin:/sbin");
+#endif
 }

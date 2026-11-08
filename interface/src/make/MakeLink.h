@@ -104,6 +104,10 @@ public:
     /// Claude Code's project folder, where it runs: only the two files below, rewritten at every Connect.
     QString projectFolder() const;
     /// What Connect writes there, for the dock to show first (security A5): the MCP line and the settings.
+    /// The app's own darkride-mcp beside its program, and Make's private copy of it in the Make folder, the one the
+    /// config names (writeFolder makes the copy at every Connect)
+    QString appHelper() const;
+    QString helperCopy() const;
     QString mcpConfigText() const;
     QString settingsText() const;
     /// The line the builder pastes into Terminal (the Claude-plan route; PowerShell on Windows): Claude Code in its
