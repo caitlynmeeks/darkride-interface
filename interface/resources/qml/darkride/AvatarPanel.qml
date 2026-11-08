@@ -195,7 +195,9 @@ Page {
         // a row of My Avatars: a favorite with a saved look (its scale and wearables) through the favorite, which
         // replaces the wearables worn; anything else by its link, as a My Files avatar is worn (avatars, 11-08)
         function wearEntry(entry) {
-            if (entry.savedLook && entry.favoriteName) {
+            if (entry.source === "default") {
+                wearDefault();
+            } else if (entry.savedLook && entry.favoriteName) {
                 wearFavorite(entry.favoriteName);
             } else {
                 wear(entry.url, entry.title);
@@ -653,7 +655,7 @@ Page {
                             title: modelData.title
                             picture: modelData.picture
                             pictureRatio: 1
-                            checked: modelData.key === list.wornKey
+                            checked: modelData.key === list.wornKey || (modelData.source === "default" && wearing.isDefault)
                             onClicked: avatar.wearEntry(modelData)
                         }
                     }
