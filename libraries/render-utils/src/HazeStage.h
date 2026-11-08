@@ -38,7 +38,8 @@ public:
     using HazeIndices = std::vector<Index>;
 
     Index findHaze(const HazePointer& haze) const;
-    Index addHaze(const HazePointer& haze);
+    // shouldSetAsDefault: the engine's default haze, pushed by SetupZones through getDefaultHaze() (see BackgroundStage)
+    Index addHaze(const HazePointer& haze, bool shouldSetAsDefault = false);
 
     HazePointer removeHaze(Index index);
     
@@ -51,9 +52,11 @@ public:
     HazePointer getHaze(Index hazeId) const {
         return _hazes.get(hazeId);
     }
+    Index getDefaultHaze() const { return _defaultHazeId; }
 
     Hazes _hazes;
     HazeMap _hazeMap;
+    Index _defaultHazeId { INVALID_INDEX };
 
     class Frame {
     public:
