@@ -639,8 +639,8 @@ void Application::connectServices() {
     connect(&domainHandler, &DomainHandler::resetting, &_domainSession, &DomainSession::resettingDomain);
     connect(&_domainSession, &DomainSession::worldLoadingChanged, this, &Application::worldLoadingChanged);   // relayed likewise
     connect(&_domainSession, &DomainSession::interstitialModeChanged, this, &Application::interstitialModeChanged);
-    // (relayed: the Window scripting interface connects to Application in the essentials stage, before the session
-    // exists)
+    // (the two relays above: the Window scripting interface connects to Application in the essentials stage, before the
+    // session exists)
     connect(&_domainSession, &DomainSession::physicsEnabledChanged, this, [this](bool physicsEnabled) {
         // entry 29 step 2a: the render tasks warm their programs while the loading screen is up, not while a world is
         // presented. Keyed to the arrival gate itself (physics on = the world presented), since interstitialModeChanged
