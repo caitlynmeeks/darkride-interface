@@ -6,8 +6,10 @@
 //  Avatar: the avatar worn (its picture and name); Favorites; the avatars in My Files as a collection (Caity, 10-24:
 //    she has 100+), under the panels' search bar (search, Cards / Tiles / List, Name / Newest / Folder), each with its
 //    picture when there is one beside it (<name>.preview.jpg or .png, or preview.jpg/.png in its folder: the
-//    picture an .fst's `preview` field names); wearing one from a link (Wear from Link…: an .fst as it is, a .glb
-//    imported first), the default, its scale, its collisions with the world, and putting it in My Files; for an avatar in your own My Files, a picture: taken of you wearing it
+//    picture an .fst's `preview` field names); wearing one from a link (Paste an Avatar Link…: an .fst as it is, a .glb
+//    imported first) or the default, in a card of their own above the avatar worn (mary's Apple pass, 11-08); saving
+//    an avatar on this computer in My Files (Save in My Files, under it); its scale and its collisions with the world
+//    (Body); for an avatar in your own My Files, a picture: taken of you wearing it
 //    or chosen from this computer (AvatarThumbnails), saved beside its .fst as <name>.preview.jpg, private when the
 //    avatar is (Caity, 10-24); the pictures load through the engine's loader (image://resource/), which asks the files
 //    host again with your login for a private one;
@@ -93,7 +95,10 @@ Page {
         property bool collisions: true
         property real scale: 1
         property bool adding: false
-        property bool linking: false         // Wear from Link…'s box is open
+        property bool linking: false         // Paste an Avatar Link…'s box is open
+        // the avatar worn is a file on this computer: others see the default until it is saved in My Files
+        // (AvatarImporter::putInMyFiles takes only a local file)
+        readonly property bool onThisComputer: /^file:/i.test(url)
         property string linkGiven: ""        // a link being worn (after its license or the importer's questions)
         property string removing: ""         // the favourite whose Remove waits for a second press
 
@@ -384,78 +389,16 @@ Page {
     Tab {
         visible: root.currentTab === 0
 
+        // changing avatar: its own card above the avatar worn (mary's Apple pass, 11-08; Caity's bug batch 10-29 first
+        // brought these up from below My Files)
         Section {
-            title: "Wearing"
-            footer: thumb.status !== "" ? thumb.status
-                : avatar.linking ? "A link to an avatar's .fst, .glb or .vrm file. A .glb or .vrm is set up for Darkride first, then you test it or keep it."
+            footer: avatar.linking ? "A link to an avatar's .fst, .glb or .vrm file. A .glb or .vrm is set up for Darkride first, then you test it or keep it."
                 : ""
-            Item {
-                width: parent ? parent.width : 0
-                height: wornRow.implicitHeight + 2 * Theme.rowPadding + 4 * Theme.unit
 
-                RowLayout {
-                    id: wornRow
-                    x: Theme.cardPadding
-                    width: parent.width - 2 * Theme.cardPadding
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 12 * Theme.unit
-
-                    RoundedImage {
-                        Layout.preferredWidth: 56 * Theme.unit
-                        Layout.preferredHeight: 56 * Theme.unit
-                        radius: 10 * Theme.unit
-                        placeholder: avatar.name !== "" ? avatar.name : "?"
-                        source: myFiles.worn && myFiles.worn.picture !== "" ? myFiles.worn.picture
-                            : avatar.pictureSource(avatar.pictureUrl)
-                    }
-                    Column {
-                        Layout.fillWidth: true
-                        spacing: 2 * Theme.unit
-                        Text {
-                            width: parent.width
-                            text: avatar.favoriteName !== "" ? avatar.favoriteName : (avatar.name !== "" ? avatar.name : "Your avatar")
-                            textFormat: Text.PlainText
-                            color: Theme.text
-                            font.pixelSize: 16 * Theme.unit
-                            font.bold: true
-                            elide: Text.ElideMiddle
-                        }
-                        Text {
-                            width: parent.width
-                            text: avatar.url
-                            textFormat: Text.PlainText
-                            color: Theme.tertiaryText
-                            font.pixelSize: Theme.detailSize
-                            elide: Text.ElideMiddle
-                        }
-                    }
-                }
-            }
-            ListRow {
-                visible: thumb.possible && thumb.pending === ""
-                action: true
-                label: "Take Its Picture"
-                enabled: !thumb.busy
-                onClicked: thumb.take()
-            }
-            ListRow {
-                visible: thumb.possible && thumb.pending === ""
-                action: true
-                label: "Choose a Picture…"
-                enabled: !thumb.busy
-                onClicked: thumb.choose()
-            }
-            // here, not below My Files, where hundreds of avatars hid it (Caity's bug batch, 10-29)
-            ListRow {
-                action: true
-                label: "Use the Default Avatar"
-                onClicked: avatar.wearDefault()
-            }
-            // here too: a player who wore avatars by their link didn't find the box below My Files (Caity, 10-29)
             ListRow {
                 visible: !avatar.linking
                 action: true
-                label: "Wear from Link…"
+                label: "Paste an Avatar Link…"
                 onClicked: {
                     // the link worn, selected: a paste replaces it, and it can be copied
                     linkField.text = avatar.url;
@@ -490,6 +433,82 @@ Page {
                 label: "Wear"
                 enabled: linkField.text.trim() !== "" && linkField.text.trim() !== avatar.url
                 onClicked: avatar.wearLink(linkField.text)
+            }
+            ListRow {
+                action: true
+                label: "Wear the Default Avatar"
+                onClicked: avatar.wearDefault()
+            }
+        }
+
+        Section {
+            title: "Wearing"
+            footer: thumb.status
+            // the upload's rights line, with the row that uploads
+            rightsLine: avatar.onThisComputer
+            Item {
+                width: parent ? parent.width : 0
+                height: wornRow.implicitHeight + 2 * Theme.rowPadding + 4 * Theme.unit
+
+                RowLayout {
+                    id: wornRow
+                    x: Theme.cardPadding
+                    width: parent.width - 2 * Theme.cardPadding
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 12 * Theme.unit
+
+                    RoundedImage {
+                        Layout.preferredWidth: 56 * Theme.unit
+                        Layout.preferredHeight: 56 * Theme.unit
+                        radius: 10 * Theme.unit
+                        placeholder: avatar.name !== "" ? avatar.name : "?"
+                        source: myFiles.worn && myFiles.worn.picture !== "" ? myFiles.worn.picture
+                            : avatar.pictureSource(avatar.pictureUrl)
+                    }
+                    Column {
+                        Layout.fillWidth: true
+                        spacing: 2 * Theme.unit
+                        Text {
+                            width: parent.width
+                            text: avatar.favoriteName !== "" ? avatar.favoriteName : (avatar.name !== "" ? avatar.name : "Your avatar")
+                            textFormat: Text.PlainText
+                            color: Theme.text
+                            font.pixelSize: 16 * Theme.unit
+                            font.bold: true
+                            elide: Text.ElideMiddle
+                        }
+                        Text {
+                            width: parent.width
+                            text: avatar.onThisComputer ? "On this computer" : avatar.url
+                            textFormat: Text.PlainText
+                            color: Theme.tertiaryText
+                            font.pixelSize: Theme.detailSize
+                            elide: Text.ElideMiddle
+                        }
+                    }
+                }
+            }
+            // under the avatar it saves, and only when it would do something (mary's Apple pass, 11-08)
+            ListRow {
+                visible: avatar.onThisComputer
+                action: true
+                label: "Save in My Files"
+                detail: "Others see the default avatar until it's saved."
+                onClicked: MenuInterface.triggerOption("Put Avatar in My Files")
+            }
+            ListRow {
+                visible: thumb.possible && thumb.pending === ""
+                action: true
+                label: "Take Its Picture"
+                enabled: !thumb.busy
+                onClicked: thumb.take()
+            }
+            ListRow {
+                visible: thumb.possible && thumb.pending === ""
+                action: true
+                label: "Choose a Picture…"
+                enabled: !thumb.busy
+                onClicked: thumb.choose()
             }
         }
 
@@ -590,7 +609,7 @@ Page {
             ListRow {
                 visible: !avatar.adding
                 action: true
-                label: "Add This Avatar…"
+                label: "Add to Favorites…"
                 onClicked: {
                     favoriteField.text = avatar.name;
                     avatar.adding = true;
@@ -611,15 +630,13 @@ Page {
                 : avatarBar.search !== "" ? "No avatar in My Files matches “" + avatarBar.search + "”."
                 : "Avatars you put in My Files show here."
             footer: myFiles.privateCount > 0
-                ? "Private: other players see it when they're on Darkride 1.2 or newer; it can't be downloaded from a browser."
+                ? "Private avatars are seen on you in Darkride 1.1 or newer, and have no public link."
                 : ""
             onActivated: avatar.wear(item.url, item.title)
         }
 
         Section {
             title: "Body"
-            footer: "Put This Avatar in My Files uploads an avatar that is on this computer, private: people see it on you in Darkride, but it has no public link."
-            rightsLine: true
 
             ListRow {
                 label: "Scale"
@@ -649,11 +666,6 @@ Page {
                     checked: avatar.collisions
                     onToggled: { MyAvatar.collisionsEnabled = checked; avatar.refresh(); }
                 }
-            }
-            ListRow {
-                action: true
-                label: "Put This Avatar in My Files"
-                onClicked: MenuInterface.triggerOption("Put Avatar in My Files")
             }
         }
     }
