@@ -44,8 +44,8 @@
 #include <EntityScriptingInterface.h>
 #include <GLMHelpers.h>
 #include <MappingRequest.h>
-#include <MaterialEntityItem.h>
-#include <ModelEntityItem.h>
+#include <EntityItemProperties.h>
+#include <EntityPropertyFlags.h>
 #include <NetworkAccessManager.h>
 #include <NetworkingConstants.h>
 #include <PickFilter.h>
@@ -89,7 +89,7 @@ const char* NO_SERVER_IN_A_FILE_WORLD = "server scripts need a world on a server
 const char* TOO_LONG_REASON = "a value is too long for the world to keep.";
 const char* LONG_MATERIAL_NO_FILE_REASON = "you're signed out.";
 // where Make keeps its files: "my_files" (the default) or "world"
-const char* FILES_PLACE_SETTING = "Make/filesPlace";
+const char* FILES_PLACE_SETTING = "private/make/filesPlace";   // private/: no world's script may change it
 const char* MY_FILES_API = "/api/user/files";
 const char* MY_FILES_STATUS_API = "/api/user/files/status";
 // how long after an Undo its own changes are surely in this world's tree, before its files are looked for there
@@ -1380,8 +1380,18 @@ bool MakeLink::fileLinksInTheWorld(QStringList& links) const {
     if (!tree) {
         return false;
     }
+    // every property that can hold an address (EntityContentAddresses::propertyNames(), and the three holding several:
+    // textures, materialData, userData), plus the scripts: a link anywhere in one keeps the file
+    EntityPropertyFlags flags;
+    for (EntityPropertyList property : { PROP_SCRIPT, PROP_SERVER_SCRIPTS, PROP_USER_DATA, PROP_TEXTURES, PROP_MATERIAL_DATA,
+                                         PROP_MODEL_URL, PROP_COMPOUND_SHAPE_URL, PROP_COLLISION_SOUND_URL, PROP_ANIMATION_URL,
+                                         PROP_SKYBOX_URL, PROP_AMBIENT_LIGHT_URL, PROP_IMAGE_URL, PROP_MATERIAL_URL,
+                                         PROP_TERRAIN_URL, PROP_GRAB_EQUIPPABLE_INDICATOR_URL, PROP_FILTER_URL, PROP_SOURCE_URL,
+                                         PROP_SCRIPT_URL, PROP_FONT, PROP_HREF }) {
+        flags += property;
+    }
     tree->withReadLock([&] {
-        // every entity reaches every client (ENTITY-STREAMING.md), so this world's whole tree is here
+        // every entity reaches every client (ENTITY-STREAMING.md), so this world's whole tree is here, worn ones too
         QVector<QUuid> ids;
         tree->evalEntitiesInCube(tree->getRoot()->getAACube(), PickFilter(), ids);
         for (const QUuid& id : ids) {
@@ -1389,13 +1399,12 @@ bool MakeLink::fileLinksInTheWorld(QStringList& links) const {
             if (!entity) {
                 continue;
             }
-            links << entity->getScript() << entity->getServerScripts();
-            if (auto model = std::dynamic_pointer_cast<ModelEntityItem>(entity)) {
-                links << model->getModelURL() << model->getCompoundShapeURL();
-            }
-            if (auto material = std::dynamic_pointer_cast<MaterialEntityItem>(entity)) {
-                links << material->getMaterialURL();
-            }
+            const EntityItemProperties p = entity->getProperties(flags);
+            links << p.getScript() << p.getServerScripts() << p.getUserData() << p.getTextures() << p.getMaterialData()
+                  << p.getModelURL() << p.getCompoundShapeURL() << p.getCollisionSoundURL() << p.getAnimation().getURL()
+                  << p.getSkybox().getURL() << p.getAmbientLight().getAmbientURL() << p.getImageURL()
+                  << p.getMaterialURL() << p.getTerrainURL() << p.getGrab().getEquippableIndicatorURL()
+                  << p.getFilterURL() << p.getSourceUrl() << p.getScriptURL() << p.getFont() << p.getHref();
         }
     });
     return true;
