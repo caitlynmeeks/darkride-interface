@@ -26,6 +26,7 @@
 #include <QtCore/QWinEventNotifier>
 
 #include <windows.h>
+#include <aclapi.h>
 #include <sddl.h>
 #else
 #include <sys/socket.h>
@@ -166,6 +167,31 @@ public:
         return true;
     }
 
+    // the DACL the waiting instance really carries, read back from its handle and spelt as SDDL: the log line at listen
+    // shows the access as applied (the lab can't read a pipe's security from outside while an instance waits)
+    QString appliedDacl() const {
+        if (_waiting == INVALID_HANDLE_VALUE) {
+            return QStringLiteral("(no waiting instance)");
+        }
+        PACL dacl = nullptr;
+        PSECURITY_DESCRIPTOR descriptor = nullptr;
+        const DWORD read = GetSecurityInfo(_waiting, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &dacl,
+                                           nullptr, &descriptor);
+        if (read != ERROR_SUCCESS) {
+            return QString("(unreadable: %1)").arg(read);
+        }
+        LPWSTR text = nullptr;
+        QString result = QStringLiteral("(unprintable)");
+        if (ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, SDDL_REVISION_1, DACL_SECURITY_INFORMATION,
+                                                                 &text, nullptr)) {
+            // the SID is this user's own: the log says so instead of printing it (security, 11-08)
+            result = QString::fromWCharArray(text).replace(thisUserSid(), QStringLiteral("this user"));
+            LocalFree(text);
+        }
+        LocalFree(descriptor);
+        return result;
+    }
+
 private:
     bool wait(bool first) {
         SECURITY_ATTRIBUTES attributes { sizeof attributes, _descriptor, FALSE };
@@ -271,7 +297,7 @@ bool MakeLinkServer::listen(const QString& folder, QString& error) {
         return false;
     }
     _socketPath = folder;
-    qCInfo(makelink) << "Make's link is listening";
+    qCInfo(makelink) << "Make's link is listening; the pipe's access as applied:" << _pipes->appliedDacl();
     return true;
 #else
     close();

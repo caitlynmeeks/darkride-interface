@@ -173,6 +173,10 @@ void MakeToolsBridge::ready() {
 MakeLink::MakeLink() {
     _folder = QDir(PathUtils::getAppDataPath()).absoluteFilePath("Make");
     _blender = new MakeBlender(_folder, this);
+    if (!_server.toolList().loadError().isEmpty()) {
+        // the list comes from the library's resources: a build that lost them would offer no tool at all, so say so once
+        qCWarning(makelog) << "Make: the tool list didn't load:" << _server.toolList().loadError();
+    }
     _server.setInstructions(
         "Darkride's Make: you build in the 3D world the person has open in Darkride, as them, with their rights there. "
         "Read the guide tool once before you build. Everything you add or change is live for everyone in that world, "
@@ -714,6 +718,7 @@ void MakeLink::startToolsEngine() {
     if (_engine) {
         return;
     }
+    initMakeLinkResources();
     QFile source(":/make-link/make-tools.js");
     if (!source.open(QIODevice::ReadOnly)) {
         qCWarning(makelog) << "the building tools' script is missing";
@@ -888,6 +893,7 @@ void MakeLink::setHandlers() {
         toEngine(tool);
     }
     _server.setHandler("guide", [](const QJsonObject&, const MakeLinkServer::Reply& reply) {
+        initMakeLinkResources();
         QFile guide(":/make-link/guide.md");
         MakeLinkServer::Result result;
         result.value = QJsonObject { { "text", guide.open(QIODevice::ReadOnly) ? QString::fromUtf8(guide.readAll())
