@@ -141,6 +141,14 @@ void MakeToolList::load(const QByteArray& json) {
             _order.clear();
             return;
         }
+        // whether it puts something into the world or changes it: the outside-world ask and the undone-request refusal
+        // go by this, so every tool must say (security, 11-08); a tool that doesn't keeps the whole list from loading
+        if (!tool.value("changes").isBool()) {
+            _loadError = "the tool list has a tool that doesn't say whether it changes the world: " + name.left(80);
+            _tools.clear();
+            _order.clear();
+            return;
+        }
         _tools.insert(name, tool);
         _order.append(name);
     }

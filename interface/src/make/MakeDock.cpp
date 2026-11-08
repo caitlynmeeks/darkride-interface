@@ -28,6 +28,7 @@
 #include <QtCore/QThreadPool>
 #include <QtCore/QUuid>
 #include <QtGui/QClipboard>
+#include <QtGui/QDesktopServices>
 #include <QtGui/QDropEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QMouseEvent>
@@ -39,6 +40,8 @@
 #include <QtQuick/QQuickWindow>
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QMenu>
+
+#include <NodeList.h>
 
 #include <MainWindow.h>
 #include <MakeBlender.h>
@@ -64,6 +67,15 @@ namespace {
     // ... or this long after Claude's reply with nothing after it (the chat: a reply is Claude's turn's end as a rule;
     // a tool call after it waits TERMINAL_QUIET_MS again; mary + pm after Caity's try 11-07)
     const int TERMINAL_REPLY_QUIET_MS = 5000;
+    // the more menu's item that opens the Make folder: each system's own name for its file browser, Title Case as the
+    // app's menus (mary 03:41 11-08)
+#if defined(Q_OS_MACOS)
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder in Finder";
+#elif defined(Q_OS_WIN)
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder in File Explorer";
+#else
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder";
+#endif
     const qint64 ASK_TIMEOUT_MS = 100000;    // MakeLink refuses a question after 100 s
     const qint64 PICTURE_MAX_BYTES = 20 * 1024 * 1024;
     const int PICTURE_MAX_SIDE = 8192;       // checked before decoding
@@ -242,6 +254,13 @@ void MakeDockRows::update(const std::function<bool(const Row&)>& match, const st
     }
 }
 
+void MakeDockRows::updateAt(int row, const std::function<void(Row&)>& change) {
+    if (row >= 0 && row < _rows.size()) {
+        change(_rows[row]);
+        emit dataChanged(index(row), index(row));
+    }
+}
+
 // ---- MakeDock ----
 
 bool MakeDock::isAvailable() {
@@ -264,10 +283,38 @@ MakeDock::MakeDock() {
     // Claude Code's version comes with its hello, after the connection: the panel re-reads claudeVersion (the
     // "Update Claude Code" line; the chat kit's old-version phase)
     QObject::connect(link.data(), &MakeLink::claudeVersionChanged, this, &MakeDock::stateChanged);
+    // a step that ran and didn't work: its row says so (stepFailed)
+    QObject::connect(link.data(), &MakeLink::callFailed, this, &MakeDock::stepFailed);
+    // where Make keeps its work: the person's choice, and whether this world offers its own files (the world, the
+    // person's rights in it)
+    QObject::connect(link.data(), &MakeLink::filesPlaceChanged, this, &MakeDock::filesPlaceChanged);
+    auto nodeList = DependencyManager::get<NodeList>();
+    QObject::connect(nodeList.data(), &LimitedNodeList::canWriteAssetsChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::domainURLChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::connectedToDomain, this, &MakeDock::filesPlaceChanged);
     // an Allow covers one signed-in account (allowHash)
     QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
                      [this] { emit setupTextChanged(); });
     QObject::connect(link.data(), &MakeLink::activity, this, [this](int request, const QString& line) {
+        // a line about a request the person undid (the undo's own "undid N change(s)", or anything late) goes in with
+        // that request's steps and does nothing more: it isn't Claude working, so no "Working for...", no Terminal
+        // wait and no channel take-up (the kit saw Working 2 s after an Undo, 11-08; mary: Undo while working stops it)
+        bool undone = false;
+        for (const auto& row : _timeline.rows()) {
+            if (row.request == request && row.undone) {
+                undone = true;
+                break;
+            }
+        }
+        if (undone) {
+            MakeDockRows::Row row;
+            row.kind = "activity";
+            row.request = request;
+            row.text = clean(line);
+            row.undone = true;
+            addRow(row);
+            return;
+        }
         if (line == SENT_TO_CLAUDE) {
             _sentWaiting = true;
             _sentRequest = request;
@@ -392,7 +439,8 @@ MakeDock::MakeDock() {
         }
         requestDone(request, _costSoFar);
         if (_working && !_stopRequested) {
-            emit requestEnded(!error);   // the Make badge: Done, or Couldn't finish
+            // the Make badge: Done, or Couldn't finish (also when a step didn't work: the badge never says done then)
+            emit requestEnded(!error && !_failedRequests.contains(request));
         }
         setWorking(false);
     });
@@ -423,7 +471,8 @@ MakeDock::MakeDock() {
         const int request = DependencyManager::get<MakeLink>()->currentRequest();
         requestDone(request, -1.0);
         if (_working && !_stopRequested) {
-            emit requestEnded(true);   // Terminal went quiet: the Make badge's Done
+            // Terminal went quiet: the Make badge's Done, or Couldn't finish when a step didn't work
+            emit requestEnded(!_failedRequests.contains(request));
         }
         setWorking(false);
     });
@@ -613,6 +662,7 @@ bool MakeDock::takeRealInput(const char* call) {
 }
 
 bool MakeDock::connect() {
+    endTestUndo();   // any Connect not made by a test ends a test's Undo (security 02:06 11-08)
     if (!takeRealInput("connect")) {
         return false;
     }
@@ -624,6 +674,9 @@ bool MakeDock::testConnectTerminal(bool chat) {
     // answered no from now on, so a kit never gets a silent yes (scripting's rule); chat for this run only, whether or
     // not the connect screen offers it
     _testRefusesAsks = true;
+    // Test.makeDockUndo: only requests from here on, until this run ends (endTestUndo); a refused connect ends it
+    _testUndo = true;
+    _testFirstRequest = DependencyManager::get<MakeLink>()->currentRequest() + 1;
     if (_route != "terminal" || chat != _testChat) {
         _route = "terminal";   // not saved: the person's own route setting stays as it was
         _testChat = chat;
@@ -639,7 +692,8 @@ namespace {
     // the shown one of the items by that name (the start line is in two places, one shown at a time), else the first
     QQuickItem* testFind(QQuickWindow* window, const QString& objectName) {
         // only the dock's own named parts a kit needs: never "" (every unnamed item, the key's field among them)
-        static const QStringList NAMES { "makeStartLine", "makeCopy", "makeComposer" };
+        static const QStringList NAMES { "makeStartLine", "makeCopy", "makeComposer", "makeFilesPlaceWords",
+                                         "makeFilesPlaceButton" };
         if (!window || !NAMES.contains(objectName)) {
             return nullptr;
         }
@@ -720,6 +774,7 @@ bool MakeDock::connectNow() {
 }
 
 void MakeDock::endTestChat() {
+    endTestUndo();
     if (!_testChat) {
         return;
     }
@@ -727,6 +782,11 @@ void MakeDock::endTestChat() {
     qCWarning(interfaceapp) << "Make: a test's chat ended";
     emit routeChanged();       // chat()
     emit setupTextChanged();   // the start line
+}
+
+void MakeDock::endTestUndo() {
+    _testUndo = false;
+    _testFirstRequest = 0;
 }
 
 void MakeDock::disconnect() {
@@ -881,25 +941,45 @@ void MakeDock::stop() {
     }
 }
 
-bool MakeDock::undoRequest(int request) {
+bool MakeDock::canUndo(int request) const {
     if (_working || request <= 0 || request != _doneRequest) {
         return false;   // only the newest finished request, never while Claude works
     }
-    bool undone = false;
     for (const auto& row : _timeline.rows()) {
         if (row.request == request && row.undone) {
-            undone = true;
+            return false;
         }
     }
-    if (undone || !takeRealInput("undoRequest")) {
+    return true;
+}
+
+bool MakeDock::undoRequest(int request) {
+    if (!canUndo(request) || !takeRealInput("undoRequest")) {
         return false;
     }
-    DependencyManager::get<MakeLink>()->undoRequest(request);
+    undoNow(request);
+    return true;
+}
+
+bool MakeDock::testUndo(int request) {
+    // only a request the test's own Connect led to, while its run lasts (_testUndo: set by testConnectTerminal alone,
+    // ended with a test's chat and by any other Connect), and every check of the button (security 02:06 11-08)
+    if (!_testUndo || request < _testFirstRequest || !canUndo(request)) {
+        qCWarning(interfaceapp) << "Make: a test's undo refused";
+        return false;
+    }
+    undoNow(request);
+    qCWarning(interfaceapp) << "Make: a test's undo of request" << request;
+    return true;
+}
+
+void MakeDock::undoNow(int request) {
+    // marked undone before the link is asked, so its answer (even one that comes at once) finds the request undone
     _timeline.update([&](const MakeDockRows::Row& row) { return row.request == request; },
                      [](MakeDockRows::Row& row) { row.undone = true; });
     _made.update([&](const MakeDockRows::Row& row) { return row.request == request; },
                  [](MakeDockRows::Row& row) { row.undone = true; });
-    return true;
+    DependencyManager::get<MakeLink>()->undoRequest(request);
 }
 
 void MakeDock::openInCode(const QString& cardId) {
@@ -975,6 +1055,22 @@ QString MakeDock::testCopyLine(const QString& which) {
 void MakeDock::showMoreMenu(qreal x, qreal y) {
     auto menu = new QMenu(qApp->getWindow());
     menu->setAttribute(Qt::WA_DeleteOnClose);
+    // the Make folder in Finder, Explorer or the file manager (docs 11-08): MakeLink's own folder in the app's data,
+    // never an address from anywhere else; opened as a folder by the system (no script, no shell, no path pasted into
+    // a command), and only while it is a real folder, not a link
+    const QString folder = DependencyManager::get<MakeLink>()->folder();
+    auto realFolder = [](const QString& path) {
+        const QFileInfo info(path);
+        return !path.isEmpty() && info.isAbsolute() && info.isDir() && !info.isSymLink();
+    };
+    auto folderAction = menu->addAction(SHOW_FOLDER_WORDS);
+    folderAction->setEnabled(realFolder(folder));
+    QObject::connect(folderAction, &QAction::triggered, this, [folder, realFolder] {
+        if (realFolder(folder)) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        }
+    });
+    menu->addSeparator();
     auto disconnectAction = menu->addAction("Disconnect");
     disconnectAction->setEnabled(DependencyManager::get<MakeLink>()->stateName() != "off");
     QObject::connect(disconnectAction, &QAction::triggered, this, &MakeDock::disconnect);
@@ -984,6 +1080,37 @@ void MakeDock::showMoreMenu(qreal x, qreal y) {
     });
     _moreMenuOpen = true;
     emit moreMenuChanged();
+    menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
+QString MakeDock::filesPlace() const {
+    return DependencyManager::get<MakeLink>()->filesGoTo();   // as New Script reads it (CodeEditor::newScriptPlace)
+}
+
+bool MakeDock::filesChoice() const {
+    return DependencyManager::get<MakeLink>()->worldFilesAllowed();
+}
+
+void MakeDock::showFilesPlaceMenu(qreal x, qreal y) {
+    if (_working || !filesChoice()) {
+        return;   // the row says where without a pop-up then
+    }
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const QString place = filesPlace();
+    auto add = [this, menu, &place](const QString& text, const QString& value) {
+        auto action = menu->addAction(text);
+        action->setCheckable(true);
+        action->setChecked(place == value);
+        // the person's own click in the app's menu (a script can't reach it): the choice is remembered (MakeLink)
+        QObject::connect(action, &QAction::triggered, this, [this, value] {
+            if (!_working) {
+                DependencyManager::get<MakeLink>()->setFilesPlace(value);
+            }
+        });
+    };
+    add("My Files", "my_files");
+    add("This World's Files", "world");
     menu->popup(QPoint(qRound(x), qRound(y)));
 }
 
@@ -1149,6 +1276,32 @@ void MakeDock::cleanPictures(const QStringList& files) {
 }
 
 // ---- the timeline ----
+
+void MakeDock::stepFailed(int request, const QString& startedLine, const QString& failedLine) {
+    const QString started = clean(startedLine);
+    const QString failed = clean(failedLine).left(300);
+    if (request <= 0 || failed.isEmpty()) {
+        return;
+    }
+    _failedRequests.insert(request);
+    const auto& rows = _timeline.rows();
+    for (int i = rows.size() - 1; i >= 0; i--) {
+        const auto& row = rows.at(i);
+        if (row.request == request && row.kind == "activity" && row.text == started) {
+            _timeline.updateAt(i, [&](MakeDockRows::Row& changed) {
+                changed.kind = "failed";
+                changed.text = failed;
+            });
+            return;
+        }
+    }
+    // its step's row isn't there (a link that came back mid-request): the failure still shows, under its request
+    MakeDockRows::Row row;
+    row.kind = "failed";
+    row.request = request;
+    row.text = failed;
+    addRow(row);
+}
 
 void MakeDock::addRow(MakeDockRows::Row row) {
     row.time = QDateTime::currentMSecsSinceEpoch();

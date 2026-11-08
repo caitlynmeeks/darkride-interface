@@ -25,8 +25,11 @@
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QHash>
 #include <QtCore/QJsonObject>
+#include <QtCore/QList>
 #include <QtCore/QObject>
+#include <QtCore/QPair>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QVariantMap>
@@ -36,6 +39,7 @@
 #include <MakeBlender.h>
 #include <MakeClaude.h>
 #include <MakeLinkServer.h>
+#include <MakeRequests.h>
 
 class ScriptEngine;
 using ScriptEnginePointer = QSharedPointer<ScriptEngine>;
@@ -106,6 +110,18 @@ public:
     /// The key route's cap for one Connect, in dollars (Claude Code's --max-budget-usd holds for its whole run).
     double limitUsd() const { return claudeSettings().maxBudgetUsd; }
 
+    /// Where Make keeps the files it makes (scripts, models, long materials), the person's choice in Settings:
+    /// "my_files" (the default, Caity 11-08: the person's My Files, a link that works in any world) or "world" (this
+    /// world's own files). "world" holds only where this world allows it (worldFilesAllowed()); elsewhere Make keeps
+    /// its files in My Files.
+    QString filesPlace() const;
+    void setFilesPlace(const QString& place);
+    /// Whether this world lets the person add files, so the dock offers "This world's files" only where it can work.
+    bool worldFilesAllowed() const { return whyNoWorldFiles().isEmpty(); }
+    /// Where Make keeps its files now: the person's choice where it can work here, else "my_files" (New Script follows
+    /// the same place)
+    QString filesGoTo() const;
+
     /// The Make folder: the saved scripts, models, pictures and Blender's jobs, and Claude Code's project folder.
     QString folder() const { return _folder; }
     /// Claude Code's project folder, where it runs: only the two files below, rewritten at every Connect.
@@ -147,7 +163,8 @@ public:
     void stop();
     /// A new request from the person (each message in the dock, or Claude's next call after a pause in the Terminal
     /// route): Stop is over, and Undo can take back this request alone.
-    int newRequest();
+    /// A new request; `bySend` when a Send of the dock's starts it (it stays open for Claude's calls until answered)
+    int newRequest(bool bySend = false);
     int currentRequest() const { return _request; }
     /// Make's Undo: every change of request `request`, newest first.
     void undoRequest(int request);
@@ -170,11 +187,17 @@ public:
 
 signals:
     void stateChanged();
+    /// filesPlace() changed (setFilesPlace).
+    void filesPlaceChanged();
     /// Claude Code's version is known: its hello arrives after the connection (and after stateChanged for it), so the
     /// dock's "Update Claude Code" line re-reads claudeVersion() on this.
     void claudeVersionChanged();
     /// What Claude is doing now, in plain words ("adding “Awning”").
     void activity(int request, const QString& line);
+    /// A step that ran didn't work: `startedLine` is the activity line it started with (the dock's row to replace),
+    /// `failedLine` the whole sentence for that row ("Couldn't write “Cube”’s server script: this world doesn't keep
+    /// files."). Not for a change refused because its request was undone, nor for Stop.
+    void callFailed(int request, const QString& startedLine, const QString& failedLine);
     /// The person must allow this first (security C10): `what` in plain words, `exactly` what it would do.
     void askPerson(int id, const QString& what, const QString& exactly);
     /// Something made, for the dock's cards: kind "model", "script" or "thing", with its name and details.
@@ -204,8 +227,28 @@ private:
     QJsonObject madeBy() const;
     void saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply& reply);
     void uploadModel(const QJsonObject& inputs, const MakeLinkServer::Reply& reply);
-    void upload(const QByteArray& data, const QString& path,
+    /// A file of Make's into the place the person chose: `kind` "scripts", "models" or "materials", `name` the app's
+    /// own file name; `done` gets the link for the thing's field, or why it wasn't kept.
+    void upload(const QByteArray& data, const QString& kind, const QString& name, const QString& mimeType,
                 const std::function<void(const QString& url, const QString& error)>& done);
+    void uploadToWorldFiles(const QByteArray& data, const QString& path,
+                            const std::function<void(const QString& url, const QString& error)>& done);
+    void uploadToMyFiles(const QByteArray& data, const QString& kind, const QString& name, const QString& mimeType,
+                         const std::function<void(const QString& url, const QString& error)>& done);
+    /// Before a model goes to My Files: `done` gets why it won't fit (the person's files are full), or nothing. A
+    /// failed look lets the upload go on: the server refuses a full store anyway.
+    void checkMyFilesRoom(qint64 bytes, const std::function<void(const QString& why)>& done);
+    /// The files a request kept in My Files that no thing in this world points at any more are deleted (after its Undo,
+    /// or a save whose thing was gone); the rest stay. Delete is final: the link stops working everywhere.
+    void deleteUnusedMyFiles(const QList<QPair<QString, QString>>& files);
+    /// Every file link this world's things hold (script, server scripts, model, collision model, material).
+    /// False when this world's things can't be read now (then no file is deleted).
+    bool fileLinksInTheWorld(QStringList& links) const;
+    bool keepsInMyFiles() const { return filesGoTo() == "my_files"; }
+    /// Why a file of Make's can't be kept now in the place the person chose (empty when it can).
+    QString whyNoFiles() const;
+    /// This world's name for its folder in My Files (/Make/<world>).
+    QString worldName() const;
     void makeWithBlender(const QJsonObject& inputs, const MakeLinkServer::Reply& reply);
     void picture(const QJsonObject& inputs, const MakeLinkServer::Reply& reply);
     QString activityLine(const QString& tool, const QJsonObject& inputs) const;
@@ -233,12 +276,28 @@ private:
     int _nextPictureNumber { 1 };
 
     int _request { 0 };
-    QElapsedTimer _sinceCall;
+    MakeRequests _requests;   // when a call belongs to a new request (the pause; a Send open until answered)
+    struct RunningCall {
+        int request { 0 };
+        QString line;     // its activity line ("writing …")
+        QString failed;   // its "couldn't" phrase ("write …")
+        bool myFiles { false };   // it keeps a file in My Files (a time-out is My Files' then)
+    };
+    QHash<int, RunningCall> _runningCalls;   // the server's calls that started (ran past the gate)
+    bool _stopping { false };                // Stop is answering the running calls: not failures to show
+    QString whyNoWorldFiles() const;
+    QString failedPhrase(const QString& tool, const QJsonObject& inputs) const;
+    /// "the Lantern model" (upload_model's name), or "the model" (mary, 11-08)
+    QString modelNamed(const QJsonObject& inputs) const;
+    /// "My Files" or "the world's files": where Make keeps its files now
+    QString filesPlaceWords() const { return keepsInMyFiles() ? QString("My Files") : QString("the world's files"); }
     QHash<int, std::function<void(bool)>> _asks;
     int _nextAsk { 1 };
     int _removesThisRequest { 0 };
     int _askedOutsideFor { 0 };
     QHash<QString, QString> _names;  // id -> name, for the activity lines
+    // the files each request kept in My Files this Connect: (path in My Files, link); an Undo deletes the unused ones
+    QHash<int, QList<QPair<QString, QString>>> _myFiles;
 
     QStringList _clientLog;
     QStringList _serverLog;

@@ -31,6 +31,8 @@ const QString NOT_FOUND = "not_found";
 const QString BAD_INPUT = "bad_input";
 const QString BUSY = "busy";
 const QString TIMEOUT = "timeout";
+// not an answer Claude gets: a call that ended because Claude Code cancelled it or the connection closed (callFinished)
+const QString CANCELLED = "cancelled";
 }
 
 // The library's resources (make-link.qrc: TOOLS.json, the guide, make-tools.js, the Blender files) are in this library.
@@ -55,6 +57,9 @@ public:
     bool has(const QString& name) const { return _tools.contains(name); }
     /// The tool's entry as TOOLS.json has it.
     QJsonObject tool(const QString& name) const { return _tools.value(name); }
+    /// The tool puts something into the world or changes it (TOOLS.json "changes", which every tool must have): what
+    /// the outside-world ask and the undone-request refusal go by. False for a tool not on the list.
+    bool changesTheWorld(const QString& name) const { return _tools.value(name).value("changes").toBool(); }
 
     /// The MCP tools/list entries for `offered` (in the list's order): name, description and inputSchema, with every
     /// $ref replaced by what it names, so each schema stands alone.

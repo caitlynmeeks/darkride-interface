@@ -25,6 +25,9 @@
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSize>
 #include <QtCore/QTimer>
+#include <QtCore/QUrlQuery>
+#include <QtNetwork/QNetworkReply>
+#include <QtNetwork/QNetworkRequest>
 #include <QtGui/QImage>
 
 #ifndef Q_OS_WIN
@@ -33,6 +36,7 @@
 #endif
 
 #include <AccountManager.h>
+#include <AddressManager.h>
 #include <AssetClient.h>
 #include <AssetUpload.h>
 #include <EntityScriptRights.h>
@@ -40,12 +44,18 @@
 #include <EntityScriptingInterface.h>
 #include <GLMHelpers.h>
 #include <MappingRequest.h>
+#include <MaterialEntityItem.h>
+#include <ModelEntityItem.h>
+#include <NetworkAccessManager.h>
+#include <NetworkingConstants.h>
+#include <PickFilter.h>
 #include <DomainHandler.h>
 #include <NodeList.h>
 #include <PathUtils.h>
 #include <ScriptCaller.h>
 #include <ScriptEngine.h>
 #include <ScriptEngines.h>
+#include <MakeFiles.h>
 #include <MakeFolder.h>
 #include <SettingHandle.h>
 #include <MakeText.h>
@@ -53,6 +63,7 @@
 #include "Application.h"
 #include "SecondaryCamera.h"
 #include "avatar/AvatarManager.h"
+#include "editor/EditorCreate.h"
 
 Q_LOGGING_CATEGORY(makelog, "darkride.make")
 
@@ -60,8 +71,32 @@ namespace {
 
 const int MAX_SOCKET_PATH = 100;  // a socket's path holds 104 bytes on macOS
 // the Terminal route: Claude's next call after this long is the person's next request
-const int NEW_REQUEST_AFTER_MS = 45 * 1000;
 // one request removes this many things before the person is asked
+// why the world can't keep a file of Make's (a script, a model, a long material): its own file store
+const char* NO_FILES_IN_A_FILE_WORLD = "this world is a file on this computer and keeps no files; scripts and models need a "
+                                       "world on a server";
+const char* NO_FILES_ALLOWED = "the person may not add files to this world (its owner can allow it)";
+// why Make can't keep a file in the person's My Files (Caity 11-08: the default place for Make's files)
+const char* NO_FILES_SIGNED_OUT = "the person isn't signed in to Darkride, and Make keeps its files in their My Files (they "
+                                  "can sign in, or choose this world's files in Make's panel)";
+const char* MY_FILES_FULL = "the person's My Files are full";
+const char* MY_FILES_REFUSED = "My Files didn't take it";
+// a world opened from a file has no server, so nothing runs a server script there
+const char* NO_SERVER_IN_A_FILE_WORLD = "server scripts need a world on a server, and this world is a file on this "
+                                        "computer";
+// the dock's reasons for a value longer than Make sets (make-tools.js MAX_VALUE_BYTES), and for a long material Make
+// couldn't keep as a file (mary's words)
+const char* TOO_LONG_REASON = "a value is too long for the world to keep.";
+const char* LONG_MATERIAL_NO_FILE_REASON = "you're signed out.";
+// where Make keeps its files: "my_files" (the default) or "world"
+const char* FILES_PLACE_SETTING = "Make/filesPlace";
+const char* MY_FILES_API = "/api/user/files";
+const char* MY_FILES_STATUS_API = "/api/user/files/status";
+// how long after an Undo its own changes are surely in this world's tree, before its files are looked for there
+const int UNDO_SETTLE_MS = 2000;
+// the answer a change gets when the person undid its request while Claude was still working (mary's words, 11-08)
+const char* UNDONE_LINE = "Not applied: the person undid this request while you were working on it. Stop working on it, "
+                          "and don't redo it unless they ask again.";
 const int REMOVES_BEFORE_ASKING = 5;
 // Claude Code's project folder, inside the Make folder: only the app's two files in it
 const QString PROJECT_FOLDER = "claude-code";
@@ -233,18 +268,61 @@ MakeLink::MakeLink() {
         }
         setState(connected ? State::Connected : State::Listening);
     });
-    connect(&_server, &MakeLinkServer::callStarted, this, [this](int, const QString& tool, const QJsonObject& inputs) {
-        if (_sinceCall.isValid() && _sinceCall.elapsed() > NEW_REQUEST_AFTER_MS) {
-            newRequest();
-        }
-        _sinceCall.restart();
+    connect(&_server, &MakeLinkServer::callStarted, this, [this](int call, const QString& tool, const QJsonObject& inputs) {
+        // the call's request was decided in gate(), before it ran (MakeRequests)
         const QString line = activityLine(tool, inputs);
+        const bool myFiles = (tool == "set_script" || tool == "upload_model") && keepsInMyFiles();
+        _runningCalls.insert(call, RunningCall { _request, line, failedPhrase(tool, inputs), myFiles });
+        _requests.touched();
         if (!line.isEmpty()) {
             emit activity(_request, line);
         }
     });
-    connect(&_server, &MakeLinkServer::callFinished, this, [this](int, const QString&, bool, const QString&) {
-        _sinceCall.restart();
+    connect(&_server, &MakeLinkServer::callFinished, this,
+            [this](int call, const QString&, bool ok, const QString& code, const QString& message) {
+        // only a call that ran counts as activity: a refused one (an undone request's change) mustn't keep it alive
+        auto running = _runningCalls.find(call);
+        if (running == _runningCalls.end()) {
+            return;
+        }
+        const RunningCall entry = *running;
+        _runningCalls.erase(running);
+        _requests.touched();
+        // a step that ran and didn't work shows so on its own row, in the person's words (mary, 11-08): never only the
+        // "writing …" line, which reads as done; not for Stop (the person's own act)
+        // nor for a call Claude Code cancelled or the connection closed (the person's act too, like Stop)
+        if (!ok && !_stopping && code != MakeError::CANCELLED && !entry.line.isEmpty()) {
+            // the person's words for why (mary, 11-08): who said no and, where there is one, the way on; each ends with
+            // its own full stop; the server's own words stay in Claude's answer only
+            QString reason;
+            if (message.contains(NO_SERVER_IN_A_FILE_WORLD)) {
+                reason = "server scripts need a world on a server.";
+            } else if (message.contains(NO_FILES_SIGNED_OUT)) {
+                reason = "you're signed out.";
+            } else if (message.contains(MY_FILES_FULL)) {
+                reason = "My Files is full.";
+            } else if (message.contains(MY_FILES_REFUSED)) {
+                reason = "My Files turned it down.";
+            } else if (code == MakeError::TIMEOUT && entry.myFiles) {
+                reason = "My Files took too long to answer.";
+            } else if (code == MakeError::BAD_INPUT && message.contains("a value can be at most")) {
+                // a long material is kept as a file when Make can (longMaterialToFile): refused, it couldn't
+                reason = message.startsWith("materialData") && !whyNoFiles().isEmpty() ? QString(LONG_MATERIAL_NO_FILE_REASON)
+                                                                                        : QString(TOO_LONG_REASON);
+            } else if (message.contains(NO_FILES_ALLOWED)) {
+                reason = "you can't add files to this world. Its owner can allow it.";
+            } else if (message.contains("the world's files didn't take")) {
+                reason = "the world's server turned it down.";
+            } else if (code == MakeError::TIMEOUT) {
+                reason = "the world took too long to answer.";
+            } else if (code == MakeError::NOT_FOUND) {
+                reason = "it isn't in the world any more.";
+            } else if (code == MakeError::BUSY) {
+                reason = "Make was busy with another change.";
+            }
+            emit callFailed(entry.request, entry.line,
+                            "Couldn't " + entry.failed + (reason.isEmpty() ? QString(".") : ": " + reason));
+        }
     });
 
     // the key route's cost per request: Claude Code's total is for its whole run
@@ -254,6 +332,7 @@ MakeLink::MakeLink() {
         setModel(model);
     });
     connect(&_claude, &MakeClaude::turnEnded, this, [this](double total, bool, const QString&, const QString& subtype) {
+        _requests.answered(_claudeRequest);   // the key route's turn is over: its Send is answered
         _claudeTotal = total;
         emit requestCost(_claudeRequest, std::max(0.0, total - _costAtRequestStart));
         // the run's cap: every later message in this run would be refused at once, so the run ends here and the
@@ -684,6 +763,7 @@ void MakeLink::disconnectLink() {
     }
     _asks.clear();
     _names.clear();
+    _myFiles.clear();   // no Undo after Disconnect: what the requests kept stays theirs
     _pictureNumbers.clear();
     _nextPictureNumber = 1;
     _channelFlag = "off";
@@ -738,7 +818,7 @@ int MakeLink::send(const QString& text, const QStringList& pictureIds) {
             }
             images.append({ path.endsWith(".png") ? QString("image/png") : QString("image/jpeg"), picture.readAll() });
         }
-        const int request = newRequest();
+        const int request = newRequest(true);
         _claudeRequest = request;
         _costAtRequestStart = _claudeTotal;
         _claude.send(text, images);
@@ -749,7 +829,7 @@ int MakeLink::send(const QString& text, const QStringList& pictureIds) {
     if (!_server.isConnected() || _channelFlag == "off") {
         return 0;
     }
-    const int request = newRequest();
+    const int request = newRequest(true);
     QStringList numbers;
     for (const QString& id : pictureIds) {
         if (numbers.size() >= MAX_PICTURES_SENT || pictureFile(_folder, id).isEmpty() || _nextPictureNumber > 999) {
@@ -772,8 +852,10 @@ int MakeLink::send(const QString& text, const QStringList& pictureIds) {
 }
 
 void MakeLink::stop() {
+    _stopping = true;   // the running calls Stop answers are the person's act, not failures to show
     _blender->cancel();
     _server.stop();
+    _stopping = false;
     for (auto it = _asks.begin(); it != _asks.end(); ++it) {
         it.value()(false);
     }
@@ -781,8 +863,9 @@ void MakeLink::stop() {
     emit activity(_request, "stopped");
 }
 
-int MakeLink::newRequest() {
+int MakeLink::newRequest(bool bySend) {
     ++_request;
+    _requests.started(_request, bySend);
     _removesThisRequest = 0;
     _server.resume();
     return _request;
@@ -792,9 +875,18 @@ void MakeLink::undoRequest(int request) {
     if (!_engine) {
         return;
     }
+    _requests.undone(request);   // from now, a late change Claude makes for it is refused, not landed with no Undo
     _bridge.send("undo_request", QJsonObject { { "request", request } }, _request, [this, request](bool ok, const QJsonObject& result) {
         emit activity(request, ok ? QString("undid %1 change(s)").arg(result.value("undone").toArray().size())
                                   : "couldn't undo: " + result.value("message").toString());
+        if (ok) {
+            // the files the request kept in My Files go with it, once the Undo's own changes are in this world's tree:
+            // one a thing still points at (another request's, or a copy) stays; Make has no Redo
+            const QList<QPair<QString, QString>> files = _myFiles.take(request);
+            if (!files.isEmpty()) {
+                QTimer::singleShot(UNDO_SETTLE_MS, this, [this, files] { deleteUnusedMyFiles(files); });
+            }
+        }
     });
 }
 
@@ -860,14 +952,15 @@ void MakeLink::longMaterialToFile(const QJsonObject& inputs, const std::function
     const QJsonValue material = properties.value("materialData");
     const QByteArray text = material.isObject() ? QJsonDocument(material.toObject()).toJson(QJsonDocument::Compact)
                                                 : material.toString().toUtf8();
-    if (text.size() <= MAX_INLINE_VALUE_BYTES || !DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
+    if (text.size() <= MAX_INLINE_VALUE_BYTES || !whyNoFiles().isEmpty()) {
         then(inputs);
         return;
     }
     // a name the app makes, as for scripts: never the world's name for the thing or Claude's words
     const QString name = "material-" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd-HHmmss-zzz") + "-" +
                          QString::number(QRandomGenerator::global()->bounded(0x10000), 16).rightJustified(4, '0');
-    upload(text, "/claude-materials/" + name + ".json", [inputs, properties, then](const QString& url, const QString& error) mutable {
+    upload(text, "materials", name + ".json", "application/json",
+           [inputs, properties, then](const QString& url, const QString& error) mutable {
         if (!error.isEmpty()) {
             then(inputs);
             return;
@@ -903,6 +996,12 @@ void MakeLink::forward(const QString& tool, const QJsonObject& inputs, const Mak
             for (const QJsonValue& thing : result.value("things").toArray()) {
                 _names.insert(thing.toObject().value("id").toString(), thing.toObject().value("name").toString());
             }
+            // whether a script or a model can be stored now, and where, so Claude knows before it tries (Caity's
+            // walkthrough; My Files the default, 11-08)
+            QJsonObject here = answer.value.value("here").toObject();
+            here["canKeepFiles"] = whyNoFiles().isEmpty();
+            here["filesGoTo"] = filesGoTo();
+            answer.value["here"] = here;
         } else if (tool == "remove") {
             ++_removesThisRequest;
         }
@@ -933,6 +1032,22 @@ QString MakeLink::ask(const QString& what, const QString& exactly, const std::fu
 
 void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
                     const std::function<void(bool, const QString&)>& proceed) {
+    // which request the call belongs to, before anything else (MakeRequests): a pause between Claude's calls means the
+    // person asked again in Terminal, except while a Send of the dock's is unanswered (phase F, 11-08); and a change for
+    // the request the person just undid is refused, since it would land with no Undo (phase F's rerun, 11-08)
+    // the tools that put something into the world or change it, as the tool list declares them (TOOLS.json "changes")
+    const bool changes = _server.toolList().changesTheWorld(tool);
+    switch (_requests.fileCall(changes)) {
+        case MakeRequests::Filing::New:
+            newRequest();
+            break;
+        case MakeRequests::Filing::Refuse:
+            qCInfo(makelog) << "Make: a change for a request the person undid wasn't applied:" << tool;
+            proceed(false, UNDONE_LINE);
+            return;
+        case MakeRequests::Filing::Same:
+            break;
+    }
     QStringList why;
     QString exactly;
     // a name the world gave it, kept short in the ask
@@ -950,10 +1065,8 @@ void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
     if (tool == "remove" && _removesThisRequest >= REMOVES_BEFORE_ASKING) {
         why.append(QString("remove more than %1 things in one request (the next: %2)").arg(REMOVES_BEFORE_ASKING).arg(named));
     }
-    // every tool that puts something into the world or changes it asks once a request in a world that isn't the
-    // person's own (security B10): add and upload_model as well as edit, remove and set_script
-    const bool changes = tool == "add" || tool == "edit" || tool == "remove" || tool == "set_script" ||
-                         tool == "upload_model";
+    // every tool that puts something into the world or changes it (`changes`, above) asks once a request in a world that
+    // isn't the person's own (security B10)
     const bool outside = changes && !DependencyManager::get<NodeList>()->getThisNodeCanReplaceContent() &&
                          _askedOutsideFor != _request;
     if (outside) {
@@ -1018,6 +1131,7 @@ void MakeLink::setHandlers() {
                 request = given;
             }
         }
+        _requests.answered(request);   // the chat route's Send is answered; a late call within the pause still counts
         emit this->reply(request, inputs.value("text").toString());
         MakeLinkServer::Result result;
         result.value = QJsonObject { { "shown", true } };
@@ -1067,9 +1181,29 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
                      });
         return;
     }
-    // marked as made with Claude, and kept as a readable file in the Make folder (security B7)
-    const QString header = QString("// made with Claude in Darkride's Make, %1, for %2\n")
-                               .arg(QDateTime::currentDateTime().toString(Qt::ISODate), by.value("name").toString());
+    // with My Files a file world keeps scripts, but nothing there runs a server script: said first, signed in or not,
+    // since no place to keep it would make it run
+    if (side == "server" && DependencyManager::get<NodeList>()->getDomainHandler().isServerless()) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
+                                            "Not saved: " + QString(NO_SERVER_IN_A_FILE_WORLD) + ". A client script works "
+                                            "here if it can do the job; otherwise tell the person it didn't work."));
+        return;
+    }
+    // a world that can't keep the script says so at once, before any copy is written (Caity's walkthrough, 11-08: a
+    // file world answered with a network error, and two copies were left behind)
+    const QString noFiles = whyNoFiles();
+    if (!noFiles.isEmpty()) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
+                                            "Not saved: " + noFiles + ". The script isn't on it and isn't running. Tell the "
+                                            "person it didn't work."));
+        return;
+    }
+    // marked as made with Claude, and kept as a readable file in the Make folder (security B7); in My Files anyone with
+    // the link may read it, so the person's name stays out (pm 11-08)
+    const QString when = QDateTime::currentDateTime().toString(Qt::ISODate);
+    const QString header = keepsInMyFiles()
+        ? QString("// made with Claude in Darkride's Make, %1\n").arg(when)
+        : QString("// made with Claude in Darkride's Make, %1, for %2\n").arg(when, by.value("name").toString());
     const QByteArray text = (source.startsWith("// made with Claude") ? source : header + source).toUtf8();
     // a name the app makes (security's Make-folder must): never the world's name for the thing or Claude's words
     const QString name = side + "-" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd-HHmmss-zzz") + "-" +
@@ -1082,14 +1216,25 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     }
     file.close();
     const int request = _request;
-    upload(text, "/claude-scripts/" + name + ".js", [this, id, side, copy, by, request, reply](const QString& url, const QString& error) {
+    upload(text, "scripts", name + ".js", "application/javascript",
+           [this, id, side, copy, by, request, reply](const QString& url, const QString& error) {
         if (!error.isEmpty()) {
-            reply(MakeLinkServer::Result::error(MakeError::REFUSED, error));
+            QFile::remove(copy);   // not saved, so no readable copy of it either
+            reply(MakeLinkServer::Result::error(MakeError::REFUSED, "Not saved: " + error +
+                                                ". The script isn't on it and isn't running. Tell the person it didn't work."));
             return;
         }
         _bridge.send("set_script", QJsonObject { { "id", id }, { "side", side }, { "url", url } }, request,
                      [this, id, side, copy, by, request, url, reply](bool ok, const QJsonObject& result) {
                          if (!ok) {
+                             // nothing points at the file it just kept in My Files (the thing was gone): it goes
+                             QList<QPair<QString, QString>>& kept = _myFiles[request];
+                             for (int i = 0; i < kept.size(); ++i) {
+                                 if (kept.at(i).second == url) {
+                                     deleteUnusedMyFiles({ kept.takeAt(i) });
+                                     break;
+                                 }
+                             }
                              reply(MakeLinkServer::Result::error(result.value("code").toString(), result.value("message").toString()));
                              return;
                          }
@@ -1105,10 +1250,202 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     });
 }
 
-void MakeLink::upload(const QByteArray& data, const QString& path,
+void MakeLink::upload(const QByteArray& data, const QString& kind, const QString& name, const QString& mimeType,
                       const std::function<void(const QString& url, const QString& error)>& done) {
-    if (!DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
-        done(QString(), "you may not put files in this world's own files here (the world's owner can allow it)");
+    if (keepsInMyFiles()) {
+        uploadToMyFiles(data, kind, name, mimeType, done);
+    } else {
+        uploadToWorldFiles(data, "/claude-" + kind + "/" + name, done);
+    }
+}
+
+void MakeLink::uploadToMyFiles(const QByteArray& data, const QString& kind, const QString& name, const QString& mimeType,
+                               const std::function<void(const QString& url, const QString& error)>& done) {
+    const QString why = whyNoFiles();
+    if (!why.isEmpty()) {
+        done(QString(), why);
+        return;
+    }
+    // the app uploads with the person's own sign-in (Build mode's upload); Claude only ever handed the bytes over.
+    // /Make/<world>/<kind>: the person finds what Make kept for each world together
+    const QString folder = "/Make/" + MakeFiles::folderName(worldName()) + "/" + kind;
+    const int request = _request;
+    auto start = [this, data, folder, name, mimeType, request, done] {
+        auto upload = new EditorUpload(this);
+        connect(upload, &EditorUpload::finished, this, [this, upload, folder, request, done](const QString& url) {
+            upload->deleteLater();
+            // only a link of the metaverse's own files host goes into a thing's field
+            if (!MakeFiles::isOwnFilesLink(QUrl(url), NetworkingConstants::METAVERSE_SERVER_URL())) {
+                qCWarning(makelog) << "Make: My Files answered with a link that isn't its files host's:" << url;
+                done(QString(), QString(MY_FILES_REFUSED) + ": its answer wasn't one of its own links");
+                return;
+            }
+            _myFiles[request].append({ folder + "/" + upload->fileName(), url });
+            done(url, QString());
+        });
+        connect(upload, &EditorUpload::failed, this, [upload, done](const QString& error) {
+            upload->deleteLater();
+            done(QString(), error.contains("Storage is full", Qt::CaseInsensitive) ? QString(MY_FILES_FULL)
+                                                                                     : QString(MY_FILES_REFUSED) + ": " + error);
+        });
+        QString error;
+        if (!upload->startData(data, name, folder, mimeType, error)) {
+            upload->deleteLater();
+            done(QString(), QString(MY_FILES_REFUSED) + ": " + error);
+        }
+    };
+    if (kind != "models") {
+        start();   // a script or a material is a few KB
+        return;
+    }
+    // a model may be tens of MB: a full store says so before it is sent
+    checkMyFilesRoom(data.size(), [start, done](const QString& full) {
+        if (full.isEmpty()) {
+            start();
+        } else {
+            done(QString(), full);
+        }
+    });
+}
+
+void MakeLink::checkMyFilesRoom(qint64 bytes, const std::function<void(const QString& why)>& done) {
+    QNetworkRequest request = DependencyManager::get<AccountManager>()->createRequest(MY_FILES_STATUS_API,
+                                                                                      AccountManagerAuth::Required);
+    if (request.url().isEmpty()) {
+        done(QString());
+        return;
+    }
+    QNetworkReply* reply = NetworkAccessManager::getInstance().get(request);
+    connect(reply, &QNetworkReply::finished, this, [reply, bytes, done] {
+        reply->deleteLater();
+        const QJsonObject status = QJsonDocument::fromJson(reply->readAll()).object();
+        const double used = status.value("usedSize").toDouble(-1.0);
+        const double most = status.value("maxSize").toDouble(-1.0);   // -1: no limit
+        const double MB = 1024.0 * 1024.0;
+        if (reply->error() == QNetworkReply::NoError && used >= 0.0 && most >= 0.0 && used + bytes > most) {
+            done(QString("%1 (%2 MB of %3 MB used; this is %4 MB)")
+                     .arg(MY_FILES_FULL)
+                     .arg(qRound(used / MB))
+                     .arg(qRound(most / MB))
+                     .arg(qMax(1, qRound(bytes / MB))));
+        } else {
+            done(QString());
+        }
+    });
+}
+
+void MakeLink::deleteUnusedMyFiles(const QList<QPair<QString, QString>>& files) {
+    if (files.isEmpty()) {
+        return;
+    }
+    QStringList links;
+    if (!fileLinksInTheWorld(links)) {
+        qCInfo(makelog) << "Make: kept" << files.size() << "file(s) in My Files: this world's things couldn't be read";
+        return;
+    }
+    auto accountManager = DependencyManager::get<AccountManager>();
+    for (const auto& file : files) {
+        const QString& path = file.first;
+        if (!path.startsWith("/Make/") || path.contains("/../")) {
+            continue;   // only Make's own, as it kept them
+        }
+        if (MakeFiles::usedBy(file.second, links)) {
+            qCInfo(makelog) << "Make: kept" << path << "in My Files: a thing still uses it";
+            continue;
+        }
+        QNetworkRequest request = accountManager->createRequest(MY_FILES_API, AccountManagerAuth::Required);
+        if (request.url().isEmpty()) {
+            return;
+        }
+        QUrl url = request.url();
+        QUrlQuery query(url);
+        query.addQueryItem("path", path);
+        url.setQuery(query);
+        request.setUrl(url);
+        QNetworkReply* reply = NetworkAccessManager::getInstance().deleteResource(request);
+        connect(reply, &QNetworkReply::finished, this, [reply, path] {
+            reply->deleteLater();
+            if (reply->error() == QNetworkReply::NoError) {
+                qCInfo(makelog) << "Make: deleted" << path << "from My Files (its request was undone)";
+            } else {
+                qCWarning(makelog) << "Make: couldn't delete" << path << "from My Files:" << reply->errorString();
+            }
+        });
+    }
+}
+
+bool MakeLink::fileLinksInTheWorld(QStringList& links) const {
+    auto renderer = qApp->getEntities();
+    EntityTreePointer tree = renderer ? renderer->getTree() : nullptr;
+    if (!tree) {
+        return false;
+    }
+    tree->withReadLock([&] {
+        // every entity reaches every client (ENTITY-STREAMING.md), so this world's whole tree is here
+        QVector<QUuid> ids;
+        tree->evalEntitiesInCube(tree->getRoot()->getAACube(), PickFilter(), ids);
+        for (const QUuid& id : ids) {
+            EntityItemPointer entity = tree->findEntityByEntityItemID(id);
+            if (!entity) {
+                continue;
+            }
+            links << entity->getScript() << entity->getServerScripts();
+            if (auto model = std::dynamic_pointer_cast<ModelEntityItem>(entity)) {
+                links << model->getModelURL() << model->getCompoundShapeURL();
+            }
+            if (auto material = std::dynamic_pointer_cast<MaterialEntityItem>(entity)) {
+                links << material->getMaterialURL();
+            }
+        }
+    });
+    return true;
+}
+
+QString MakeLink::whyNoFiles() const {
+    if (!keepsInMyFiles()) {
+        return whyNoWorldFiles();
+    }
+    if (!DependencyManager::get<AccountManager>()->isLoggedIn()) {
+        return NO_FILES_SIGNED_OUT;
+    }
+    return QString();
+}
+
+QString MakeLink::worldName() const {
+    const DomainHandler& domain = DependencyManager::get<NodeList>()->getDomainHandler();
+    auto addresses = DependencyManager::get<AddressManager>();
+    if (domain.isServerless()) {
+        return QFileInfo(addresses->currentAddress(true).path()).completeBaseName();   // the world's own file
+    }
+    const QString place = addresses->getPlaceName();
+    return place.isEmpty() ? domain.getHostname() : place;
+}
+
+QString MakeLink::filesGoTo() const {
+    // the world's files where the person chose them and this world allows them; My Files everywhere else (a file world,
+    // a world that doesn't let them add files): Make keeps its work somewhere it can
+    return filesPlace() == "world" && worldFilesAllowed() ? QString("world") : QString("my_files");
+}
+
+QString MakeLink::filesPlace() const {
+    return Setting::Handle<QString>(FILES_PLACE_SETTING, "my_files").get() == "world" ? QString("world")
+                                                                                      : QString("my_files");
+}
+
+void MakeLink::setFilesPlace(const QString& place) {
+    const QString value = place == "world" ? QString("world") : QString("my_files");
+    if (value == filesPlace()) {
+        return;
+    }
+    Setting::Handle<QString>(FILES_PLACE_SETTING, "my_files").set(value);
+    emit filesPlaceChanged();
+}
+
+void MakeLink::uploadToWorldFiles(const QByteArray& data, const QString& path,
+                                  const std::function<void(const QString& url, const QString& error)>& done) {
+    const QString noFiles = whyNoWorldFiles();
+    if (!noFiles.isEmpty()) {
+        done(QString(), noFiles);
         return;
     }
     auto client = DependencyManager::get<AssetClient>();
@@ -1116,14 +1453,14 @@ void MakeLink::upload(const QByteArray& data, const QString& path,
     connect(upload, &AssetUpload::finished, this, [this, path, done](AssetUpload* upload, const QString& hash) {
         upload->deleteLater();
         if (upload->getError() != AssetUpload::NoError) {
-            done(QString(), "the world's files refused it: " + upload->getErrorString());
+            done(QString(), "the world's files didn't take it: " + upload->getErrorString());
             return;
         }
         auto mapping = DependencyManager::get<AssetClient>()->createSetMappingRequest(path, hash);
         connect(mapping, &SetMappingRequest::finished, this, [path, done](SetMappingRequest* request) {
             request->deleteLater();
             if (request->getError() != MappingRequest::NoError) {
-                done(QString(), "the world's files refused its name: " + request->getErrorString());
+                done(QString(), "the world's files didn't take its name: " + request->getErrorString());
                 return;
             }
             done("atp:" + path, QString());
@@ -1186,11 +1523,19 @@ void MakeLink::uploadModel(const QJsonObject& inputs, const MakeLinkServer::Repl
         reply(MakeLinkServer::Result::error(MakeError::BAD_INPUT, "the model was refused: " + why));
         return;
     }
+    const QString noFiles = whyNoFiles();
+    if (!noFiles.isEmpty()) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE, "Not uploaded: " + noFiles +
+                                            ". The model isn't in the world. Tell the person it didn't work."));
+        return;
+    }
     const QString name = plainName(inputs.value("name").toString(), 40) + "-" + inputs.value("model_id").toString();
     const QJsonObject by = madeBy();
-    upload(bytes, "/claude-models/" + name + ".glb", [reply, by, size = bytes.size()](const QString& url, const QString& error) {
+    upload(bytes, "models", name + ".glb", "model/gltf-binary",
+           [reply, by, size = bytes.size()](const QString& url, const QString& error) {
         if (!error.isEmpty()) {
-            reply(MakeLinkServer::Result::error(MakeError::REFUSED, error));
+            reply(MakeLinkServer::Result::error(MakeError::REFUSED, "Not uploaded: " + error +
+                                                ". The model isn't in the world. Tell the person it didn't work."));
             return;
         }
         MakeLinkServer::Result result;
@@ -1306,6 +1651,49 @@ void MakeLink::picture(const QJsonObject& inputs, const MakeLinkServer::Reply& r
     });
 }
 
+QString MakeLink::whyNoWorldFiles() const {
+    auto nodeList = DependencyManager::get<NodeList>();
+    if (nodeList->getDomainHandler().isServerless()) {
+        return NO_FILES_IN_A_FILE_WORLD;   // a world opened from a file has no file store at all
+    }
+    if (!nodeList->getThisNodeCanWriteAssets()) {
+        return NO_FILES_ALLOWED;
+    }
+    return QString();
+}
+
+// the step's words for its "Couldn't …" row, as activityLine words it while it runs
+QString MakeLink::modelNamed(const QJsonObject& inputs) const {
+    const QString name = inputs.value("name").toString().simplified();
+    return name.isEmpty() ? QString("the model") : "the " + name + " model";
+}
+
+QString MakeLink::failedPhrase(const QString& tool, const QJsonObject& a) const {
+    auto thing = [this](const QJsonValue& id) {
+        const QString name = _names.value(id.toString());
+        return name.isEmpty() ? QString("a thing") : "“" + name + "”";
+    };
+    if (tool == "get") return "read " + thing(a.value("id"));
+    if (tool == "add") {
+        const QString name = a.value("properties").toObject().value("name").toString();
+        return name.isEmpty() ? QString("add a thing") : "add “" + name + "”";
+    }
+    if (tool == "edit") return "change " + thing(a.value("id"));
+    if (tool == "remove") return "remove " + thing(a.value("id"));
+    if (tool == "set_script") return "write " + thing(a.value("id")) + "’s " + a.value("side").toString("client") + " script";
+    if (tool == "click") return "click " + thing(a.value("id"));
+    if (tool == "call") return "call " + a.value("method").toString() + " on " + thing(a.value("id"));
+    if (tool == "walk") return a.contains("id") ? "walk to " + thing(a.value("id")) : QString("walk there");
+    if (tool == "watch") return "watch what happens";
+    if (tool == "picture") return "take a picture";
+    if (tool == "log") return "read the scripts' log";
+    if (tool == "undo") return "undo";
+    if (tool == "upload_model") return "save " + modelNamed(a) + " to " + filesPlaceWords();
+    if (tool == "scene") return "look around";
+    if (tool == "guide") return "read the building guide";
+    return "finish that step";
+}
+
 QString MakeLink::activityLine(const QString& tool, const QJsonObject& a) const {
     auto thing = [this](const QJsonValue& id) {
         const QString name = _names.value(id.toString());
@@ -1328,6 +1716,6 @@ QString MakeLink::activityLine(const QString& tool, const QJsonObject& a) const 
     if (tool == "picture") return "taking a picture to check";
     if (tool == "log") return "reading the scripts' log";
     if (tool == "undo") return "undoing";
-    if (tool == "upload_model") return "putting the model into the world's files";
+    if (tool == "upload_model") return "saving " + modelNamed(a) + " to " + filesPlaceWords();
     return QString();
 }

@@ -19,8 +19,10 @@
 #include <QtNetwork/QLocalSocket>
 
 #include <MakeClaude.h>
+#include <MakeFiles.h>
 #include <MakeFolder.h>
 #include <MakeLinkServer.h>
+#include <MakeRequests.h>
 #include <MakePeer.h>
 #include <MakeText.h>
 #include <MakeToolList.h>
@@ -1291,4 +1293,240 @@ void MakeLinkTests::testClaudePathIsSystemFoldersOnly() {
 #else
     QCOMPARE(path, QFileInfo(program).absolutePath() + ":/usr/bin:/bin:/usr/sbin:/sbin");
 #endif
+}
+
+// when a call of Claude's belongs to a new request (phase F, 11-08: what Claude made for a Send landed under the next
+// number when its first call came over 45 s after the previous one); the clock is the test's, so minutes take no time
+void MakeLinkTests::testRequestsFollowTheSend() {
+    qint64 now = 0;
+    MakeRequests requests([&now] { return now; });
+    const qint64 PAUSE = MakeRequests::PAUSE_MS;
+    const qint64 OPEN = MakeRequests::OPEN_SEND_MS;
+    QCOMPARE(PAUSE, qint64(45 * 1000));
+    QCOMPARE(OPEN, qint64(10 * 60 * 1000));
+
+    // the Terminal route: request 1 from Connect; the first call ever is its own; a pause over 45 s means a new one
+    requests.started(1, false);
+    QVERIFY(!requests.newRequestDue());
+    requests.touched();
+    now += PAUSE;
+    QVERIFY(!requests.newRequestDue());   // exactly 45 s: still the same request
+    now += 1;
+    QVERIFY(requests.newRequestDue());    // over 45 s: a new one
+
+    // a Send opens request 2; Claude thinks five minutes before its first call: still the Send's
+    requests.started(2, true);
+    QVERIFY(requests.sendOpen());
+    now += 5 * 60 * 1000;
+    QVERIFY(!requests.newRequestDue());
+    requests.touched();
+    now += 2 * 60 * 1000;                 // two more minutes between calls while it's open: still the Send's
+    QVERIFY(!requests.newRequestDue());
+    requests.touched();
+    // the answer (the reply naming 2): the pause counts from it; a late call 10 s later is still the Send's
+    now += 3000;
+    requests.answered(2);
+    QVERIFY(!requests.sendOpen());
+    now += 10 * 1000;
+    QVERIFY(!requests.newRequestDue());
+    now += PAUSE - 10 * 1000 + 1;          // over 45 s after the answer: a new one
+    QVERIFY(requests.newRequestDue());
+
+    // an unanswered Send (request 3): open until 10 minutes of silence exactly, closed a millisecond after
+    requests.started(3, true);
+    now += OPEN;
+    QVERIFY(!requests.newRequestDue());
+    now += 1;
+    QVERIFY(requests.newRequestDue());
+    // the app starts request 4 there (the pause rule's own, not a Send); a late reply naming the closed Send 3 changes
+    // nothing about 4: its pause still counts from its own calls
+    requests.started(4, false);
+    requests.touched();
+    now += 30 * 1000;
+    requests.answered(3);
+    QVERIFY(!requests.sendOpen());
+    now += 16 * 1000;                      // 46 s after 4's call, 16 s after the late reply: 4's pause has passed
+    QVERIFY(requests.newRequestDue());
+
+    // a Send followed by another Send before any answer: the first one's late answer doesn't close the second
+    requests.started(5, true);
+    requests.started(6, true);
+    requests.answered(5);
+    QVERIFY(requests.sendOpen());
+    QCOMPARE(requests.current(), 6);
+    requests.answered(6);
+    QVERIFY(!requests.sendOpen());
+}
+
+// a change Claude makes that would be filed under the request the person just undid is refused: it would land with no
+// Undo (phase F's rerun, 11-08). The request's life is the usual one (a Send's until its answer or the long silence, then
+// the pause; a Terminal request's through the pause), and a refused call doesn't count as activity (the test calls
+// touched() only for calls that ran, as MakeLink does)
+void MakeLinkTests::testUndoneRequestRefusesLateChanges() {
+    using Filing = MakeRequests::Filing;
+    qint64 now = 0;
+    MakeRequests requests([&now] { return now; });
+    auto at = [&now](qint64 ms) { now = ms; };
+    const qint64 PAUSE = MakeRequests::PAUSE_MS;
+    const qint64 OPEN = MakeRequests::OPEN_SEND_MS;
+
+    // a Send's request 10; the person undoes it while Claude is still working, before its answer
+    at(0);
+    requests.started(10, true);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+    requests.touched();
+    at(3000);
+    requests.undone(10);
+    at(3000 + 20 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // a change 20 s after the Undo, before the answer
+    at(3000 + 2 * 60 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // and 2 min after
+    QCOMPARE(requests.fileCall(false), Filing::Same);     // a look around runs (and counts)
+    requests.touched();
+    at(180 * 1000);
+    requests.answered(10);                                // the reply naming 10 ends the turn
+    at(180 * 1000 + 25 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // 25 s after the answer: still 10's, refused
+    at(180 * 1000 + PAUSE);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // the pause exactly: still 10's
+    at(180 * 1000 + PAUSE + 1);
+    QCOMPARE(requests.fileCall(true), Filing::New);       // over the pause since the last call that ran: new work
+    requests.started(11, false);
+
+    // phase F's case: the Send's request 20 answered, Undo in the gap 5 s later, a late add 25 s after the Undo
+    at(1000 * 1000);
+    requests.started(20, true);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+    requests.touched();
+    at(1002 * 1000);
+    QCOMPARE(requests.fileCall(false), Filing::Same);     // the reply runs
+    requests.touched();
+    requests.answered(20);
+    at(1007 * 1000);
+    requests.undone(20);
+    at(1032 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // --late-seconds 30: refused
+    at(1002 * 1000 + PAUSE);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // refused calls kept nothing alive: the pause still counts
+    at(1002 * 1000 + PAUSE + 1);                          //   from the answer
+    QCOMPARE(requests.fileCall(true), Filing::New);       // a late add after more than 45 s of quiet: new work
+    requests.started(21, false);
+    requests.touched();
+
+    // the Terminal route: request 30 from the pause rule; Undo 5 s after its last call; a change 20 s later refused,
+    // one after the pause new work
+    at(2000 * 1000);
+    requests.started(30, false);
+    requests.touched();
+    at(2005 * 1000);
+    requests.undone(30);
+    at(2020 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);
+    at(2000 * 1000 + PAUSE + 1);
+    QCOMPARE(requests.fileCall(true), Filing::New);
+    requests.started(31, false);
+    requests.touched();
+
+    // an Undo of an older request (30) refuses nothing: nothing later is filed under it
+    requests.undone(30);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+
+    // an undone Send left unanswered: refused up to its long silence, new work after it
+    at(3000 * 1000);
+    requests.started(40, true);
+    requests.touched();
+    requests.undone(40);
+    at(3000 * 1000 + OPEN);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);
+    at(3000 * 1000 + OPEN + 1);
+    QCOMPARE(requests.fileCall(true), Filing::New);
+    requests.started(41, false);
+
+    // a Send after an Undo is a request of its own: its changes run
+    requests.undone(41);
+    requests.started(42, true);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+}
+
+// every tool says whether it puts something into the world or changes it (TOOLS.json "changes"): the outside-world ask
+// and the undone-request refusal go by it, so a new tool can't slip past both by being forgotten (security, 11-08)
+void MakeLinkTests::testEveryToolSaysWhetherItChanges() {
+    const MakeToolList tools;
+    QVERIFY2(tools.isValid(), qPrintable(tools.loadError()));
+    QStringList changing;
+    for (const QString& name : tools.names()) {
+        QVERIFY2(tools.tool(name).value("changes").isBool(), qPrintable(name));
+        if (tools.changesTheWorld(name)) {
+            changing << name;
+        }
+    }
+    changing.sort();
+    QCOMPARE(changing, QStringList({ "add", "edit", "remove", "set_script", "upload_model" }));
+    QVERIFY(!tools.changesTheWorld("no_such_tool"));
+    // a list with a tool that doesn't say doesn't load at all
+    const QByteArray silent = R"({"version": 1, "tools": [
+        {"name": "look", "changes": false, "inputs": {"type": "object"}},
+        {"name": "build", "inputs": {"type": "object"}}]})";
+    const MakeToolList broken(silent);
+    QVERIFY(!broken.isValid());
+    QVERIFY2(broken.loadError().contains("build"), qPrintable(broken.loadError()));
+    // and one that says, does
+    const QByteArray said = R"({"version": 1, "tools": [
+        {"name": "look", "changes": false, "inputs": {"type": "object"}},
+        {"name": "build", "changes": true, "inputs": {"type": "object"}}]})";
+    const MakeToolList whole(said);
+    QVERIFY2(whole.isValid(), qPrintable(whole.loadError()));
+    QVERIFY(whole.changesTheWorld("build") && !whole.changesTheWorld("look"));
+}
+
+// a world's folder in My Files (/Make/<world>): its name's plain letters and digits, never a "/" or a ".", at most 40
+void MakeLinkTests::testMyFilesFolderName() {
+    QCOMPARE(MakeFiles::folderName("Port Amarelle"), QString("Port-Amarelle"));
+    QCOMPARE(MakeFiles::folderName("Finca del Cardo, Tenerife"), QString("Finca-del-Cardo-Tenerife"));
+    QCOMPARE(MakeFiles::folderName("Señal Álamo"), QString("Senal-Alamo"));
+    QCOMPARE(MakeFiles::folderName("../../avatars"), QString("avatars"));
+    QCOMPARE(MakeFiles::folderName("a/b\\c"), QString("a-b-c"));
+    QCOMPARE(MakeFiles::folderName(".."), QString("world"));
+    QCOMPARE(MakeFiles::folderName(""), QString("world"));
+    QCOMPARE(MakeFiles::folderName(QString::fromUtf8("東京")), QString("world"));
+    QCOMPARE(MakeFiles::folderName("world.example.com"), QString("world-example-com"));
+    const QString longName = MakeFiles::folderName(QString(30, 'a') + " " + QString(30, 'b'));
+    QVERIFY(longName.size() <= MakeFiles::FOLDER_NAME_MAX);
+    QVERIFY(!longName.endsWith('-'));
+    QCOMPARE(longName, QString(30, 'a') + "-" + QString(9, 'b'));
+    for (const QString& name : { QString("a/../b"), QString("./x"), QString("x."), QString(" / ") }) {
+        const QString folder = MakeFiles::folderName(name);
+        QVERIFY2(!folder.contains('/') && !folder.contains('.') && !folder.isEmpty(), qPrintable(folder));
+    }
+}
+
+// only the metaverse's own files host's id link goes into a thing's field
+void MakeLinkTests::testMyFilesLinkIsTheFilesHosts() {
+    const QUrl metaverse("https://vr.darkride.ai");
+    QVERIFY(MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/abcdef0123456789/client-1.js"), metaverse));
+    QVERIFY(MakeFiles::isOwnFilesLink(QUrl("https://FILES.vr.darkride.ai/f/abcdef0123456789/m.glb"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("http://files.vr.darkride.ai/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai:8443/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://cdn.darkride.ai/ids/abcdef0123456789"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/someone/Make/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/x/../../y"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://user@files.vr.darkride.ai/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai.example.com/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.darkride.ai/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("atp:/claude-scripts/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl(""), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/abcdef0123456789/a.js"), QUrl()));
+}
+
+// an Undo deletes a file of its request only when no thing points at it; a doubtful case keeps it
+void MakeLinkTests::testMyFilesUsedBy() {
+    const QString link = "https://files.vr.darkride.ai/f/abcdef0123456789/client-1.js";
+    QVERIFY(!MakeFiles::usedBy(link, {}));
+    QVERIFY(!MakeFiles::usedBy(link, { "", "atp:/claude-scripts/client-1.js",
+                                       "https://files.vr.darkride.ai/f/0000000000000000/client-1.js" }));
+    QVERIFY(MakeFiles::usedBy(link, { "", link }));
+    QVERIFY(MakeFiles::usedBy(link, { link + "?v=2" }));
+    QVERIFY(MakeFiles::usedBy(link, { "[\"" + link + "\", \"atp:/other.js\"]" }));
+    QVERIFY(MakeFiles::usedBy(QString(), { "anything" }));
 }

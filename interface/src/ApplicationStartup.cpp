@@ -95,6 +95,7 @@
 #endif
 #include "ui/DialogsManager.h"
 #include "ui/LoginDialog.h"
+#include "ui/QuitCheck.h"
 #include "ui/Keyboard.h"
 #include "Util.h"
 #include <GPUIdent.h>
@@ -1027,6 +1028,8 @@ void Application::startEntityProcessing() {
     updateHeartbeat();
 
     connect(this, SIGNAL(aboutToQuit()), this, SLOT(onAboutToQuit()));
+    // the window's close button asks about what isn't saved first; a session's end never asks (ui/QuitCheck.h)
+    quitcheck::install();
 
     // FIXME -- I'm a little concerned about this.
     connect(myAvatar->getSkeletonModel().get(), &SkeletonModel::skeletonLoaded,

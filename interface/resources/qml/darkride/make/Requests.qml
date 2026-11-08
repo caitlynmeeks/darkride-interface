@@ -9,7 +9,7 @@
 //    steps of a running one (the newest three stay in sight);
 //  - "hidden": inside a fold or a steps line;
 //  - "row": as itself.
-//  And which request's Undo is on: the newest request not undone, once it's done (MakeLink undoes only that one).
+//  And which request's Undo is on: the newest request, once it's done and until it's undone (MakeDock's rule).
 //  It rebuilds once per change (Qt.callLater), and only while the model changes: nothing runs when Make is idle.
 //
 //  Copyright 2026 Darkride.
@@ -79,12 +79,15 @@ QtObject {
             var request = info[row.request];
             if (!request) {
                 request = info[row.request] = {
-                    first: index, activities: [], lastReply: -1, done: false, cost: -1, undone: false, folded: false,
+                    first: index, activities: [], failures: [], lastReply: -1, done: false, cost: -1, undone: false,
+                    folded: false,
                     startTime: row.time, endTime: 0, title: "", firstText: row.text
                 };
             }
             if (row.kind === "activity") {
                 request.activities.push(index);
+            } else if (row.kind === "failed") {
+                request.failures.push(index);   // a step that didn't work: never folded away with the steps
             } else if (row.kind === "reply") {
                 request.lastReply = index;   // Claude's reply: the step before it is done (NowView)
             } else if (row.kind === "ask" && request.title === "") {
@@ -99,17 +102,9 @@ QtObject {
             newest = Math.max(newest, row.request);
         });
 
-        // the newest request not undone; its Undo is on once it's done
-        var undoable = -1;
-        Object.keys(info).forEach(function (key) {
-            var number = Number(key);
-            if (!info[key].undone && number > undoable) {
-                undoable = number;
-            }
-        });
-        if (undoable >= 0 && !info[undoable].done) {
-            undoable = -1;
-        }
+        // the newest request, once it's done and while it isn't undone: MakeDock.undoRequest undoes only that one, so
+        // an older request's Undo never comes on after the newest is undone (it would be refused; kit F, 11-08)
+        var undoable = newest >= 0 && info[newest] && info[newest].done && !info[newest].undone ? newest : -1;
 
         var modes = [];
         rowsSeen.forEach(function (row, index) {
@@ -120,6 +115,14 @@ QtObject {
             var request = info[row.request];
             if (request.folded && !_opened[row.request]) {
                 modes.push(index === request.first ? "fold" : "hidden");
+                return;
+            }
+            // the steps that didn't work stay out when the steps fold (mary 12:28 11-08): past three, the first two
+            // and "and N more didn't work" on the second, the rest inside the fold
+            if (row.kind === "failed" && !_stepsOpened[row.request] && request.failures.length > 3
+                    && (request.done || request.activities.length > recentSteps)) {
+                var failedRank = request.failures.indexOf(index);
+                modes.push(failedRank === 0 ? "row" : failedRank === 1 ? "failedMore" : "hidden");
                 return;
             }
             if (row.kind === "activity" && !_stepsOpened[row.request]) {

@@ -144,7 +144,8 @@ signals:
     void clientIdentified();
     /// A checked call is about to run (after its gate), and when it has been answered.
     void callStarted(int call, const QString& tool, const QJsonObject& inputs);
-    void callFinished(int call, const QString& tool, bool ok, const QString& message);
+    /// A call answered; `code` is the error code (MakeError) when it failed, empty when it worked
+    void callFinished(int call, const QString& tool, bool ok, const QString& code, const QString& message);
 
 private:
     struct Call {

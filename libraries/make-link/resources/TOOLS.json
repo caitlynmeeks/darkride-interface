@@ -125,6 +125,7 @@
       "name": "guide",
       "group": "look",
       "needs": "none",
+      "changes": false,
       "description": "How building and scripting work in Darkride, with patterns and rules. Read it once before building.",
       "inputs": {
         "type": "object",
@@ -148,6 +149,7 @@
       "name": "api",
       "group": "look",
       "needs": "none",
+      "changes": false,
       "description": "Look up the exact scripting API by name, e.g. 'Entities.editEntity', 'playSound', 'Quat.'.",
       "inputs": {
         "type": "object",
@@ -190,6 +192,7 @@
       "name": "scene",
       "group": "look",
       "needs": "world",
+      "changes": false,
       "description": "The things near the signed-in account's avatar (or matching part of a name): id, name, type, position, size, turn, parent, which scripts it has, who made it. Also where the avatar stands.",
       "inputs": {
         "type": "object",
@@ -219,6 +222,15 @@
               },
               "yawDegrees": {
                 "type": "number"
+              },
+              "canKeepFiles": {
+                "type": "boolean",
+                "description": "False where a script or a model can't be stored now: the person isn't signed in, so My Files can't be used. Build with what things can do on their own then, and say so."
+              },
+              "filesGoTo": {
+                "type": "string",
+                "enum": ["my_files", "world"],
+                "description": "Where Make keeps the scripts and models it saves: my_files (the person's own My Files: an https link that works in any world, readable by anyone with it) or world (this world's own files, where the person chose them and the world allows them)."
               }
             },
             "required": [
@@ -306,6 +318,7 @@
       "name": "get",
       "group": "look",
       "needs": "world",
+      "changes": false,
       "description": "One thing's properties, its scripts' text included.",
       "inputs": {
         "type": "object",
@@ -386,6 +399,7 @@
       "name": "picture",
       "group": "look",
       "needs": "app",
+      "changes": false,
       "description": "A picture from the app: of a thing (id) from a good angle, or what the avatar sees; or, with reference, a picture the person attached to their panel message (the <channel> tag's pictures=\"2,3\"). Use it to check the result looks right.",
       "inputs": {
         "type": "object",
@@ -431,6 +445,7 @@
       "name": "log",
       "group": "look",
       "needs": "world",
+      "changes": false,
       "description": "Script prints and errors since the last look: the world's server scripts, and the app's visitor-side scripts where there is an app (client is null in a body).",
       "inputs": {
         "type": "object",
@@ -475,6 +490,7 @@
       "name": "add",
       "group": "build",
       "needs": "world",
+      "changes": true,
       "description": "Add a thing to the world (everyone there sees it), with the signed-in account's rights. Returns its id. Undo removes it.",
       "inputs": {
         "type": "object",
@@ -516,6 +532,7 @@
       "name": "edit",
       "group": "build",
       "needs": "world",
+      "changes": true,
       "description": "Change a thing's properties, with the signed-in account's rights. Returns the new values. Undo puts the old ones back.",
       "inputs": {
         "type": "object",
@@ -567,6 +584,7 @@
       "name": "remove",
       "group": "build",
       "needs": "world",
+      "changes": true,
       "description": "Delete a thing, with the signed-in account's rights. Undo brings it back.",
       "inputs": {
         "type": "object",
@@ -609,7 +627,8 @@
       "name": "set_script",
       "group": "build",
       "needs": "world",
-      "description": "Put a script into a thing, as text. side 'server' runs once in the world's server (shared state); 'client' runs on every visitor's computer (clicks, what one visitor sees). Replaces that side's script; source '' removes it. A readable copy is saved, marked with made_by.",
+      "changes": true,
+      "description": "Put a script into a thing, as text. side 'server' runs once in the world's server (shared state); 'client' runs on every visitor's computer (clicks, what one visitor sees). Replaces that side's script; source '' removes it. The file goes where the person keeps Make's files (scene's here.filesGoTo). A readable copy is saved, marked with made_by.",
       "inputs": {
         "type": "object",
         "properties": {
@@ -685,6 +704,7 @@
       "name": "undo",
       "group": "build",
       "needs": "world",
+      "changes": false,
       "description": "Undo the signed-in account's last changes made through these tools in this world (add, edit, remove, set_script, upload_model's placement), newest first.",
       "inputs": {
         "type": "object",
@@ -732,6 +752,7 @@
       "name": "click",
       "group": "test",
       "needs": "app",
+      "changes": false,
       "description": "Click a thing as a visitor would (its client script's clickDownOnEntity, clickReleaseOnEntity, mousePressOnEntity and mouseReleaseOnEntity).",
       "inputs": {
         "type": "object",
@@ -769,6 +790,7 @@
       "name": "call",
       "group": "test",
       "needs": "world",
+      "changes": false,
       "description": "Call a method in a thing's script. side 'server': the server script (the method must be in its remotelyCallable list); side 'client': this app's copy of the client script (needs an app; a body answers not_available_here).",
       "inputs": {
         "type": "object",
@@ -825,6 +847,7 @@
       "name": "walk",
       "group": "test",
       "needs": "world",
+      "changes": false,
       "description": "Move the signed-in account's avatar: onto or next to a thing (id), or to a position (give one of the two). Walking into a thing fires its enterEntity.",
       "inputs": {
         "type": "object",
@@ -868,6 +891,7 @@
       "name": "watch",
       "group": "test",
       "needs": "world",
+      "changes": false,
       "description": "Watch things for a few seconds and report what changed: moved, turned, resized, recoloured, text, visibility.",
       "inputs": {
         "type": "object",
@@ -947,6 +971,7 @@
       "name": "make_with_blender",
       "group": "make",
       "needs": "none",
+      "changes": false,
       "description": "Run a Blender Python script (bpy) in a sandbox (no network, a fresh scratch folder, time and memory limits; --background --factory-startup --disable-autoexec), then our fixed export: a size-capped .glb, four views of it as Darkride draws it, and Blender's report. Nothing is placed: upload_model does that. kind 'room' bakes its lighting into a lightmap.",
       "inputs": {
         "type": "object",
@@ -1110,7 +1135,8 @@
       "name": "upload_model",
       "group": "make",
       "needs": "world",
-      "description": "Put a model from make_with_blender into the world's own files, with the signed-in account's rights, through the model-format guard. Returns its address for add's modelURL.",
+      "changes": true,
+      "description": "Put a model from make_with_blender where the person keeps Make's files (scene's here.filesGoTo: their My Files, or this world's own files), with the signed-in account's rights, through the model-format guard. Returns its address for add's modelURL.",
       "inputs": {
         "type": "object",
         "properties": {
@@ -1161,6 +1187,7 @@
       "name": "reply",
       "group": "talk",
       "needs": "app",
+      "changes": false,
       "description": "Answer in Darkride's Make panel: plain words, two or three sentences. When the person's message came as a <channel source=\"darkride\" msg_id=\"…\"> event, pass its msg_id. (A resident speaks with its own say, in the world's chat.)",
       "inputs": {
         "type": "object",

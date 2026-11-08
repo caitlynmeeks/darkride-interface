@@ -30,6 +30,7 @@
 #include <QtCore/QHash>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -64,7 +65,8 @@ public:
         TimeRole
     };
     struct Row {
-        QString kind;           // ask, activity, reply, question, thing, script, model, done
+        QString kind;           // ask, activity, failed (a step that didn't work), reply, question, thing, script,
+                                // model, done
         int request { 0 };
         QString text;
         QString detail;
@@ -93,6 +95,8 @@ public:
     const QVector<Row>& rows() const { return _rows; }
     /// Changes the rows `match` picks with `change`, and says which changed.
     void update(const std::function<bool(const Row&)>& match, const std::function<void(Row&)>& change);
+    /// Changes the one row at `row`.
+    void updateAt(int row, const std::function<void(Row&)>& change);
 
 signals:
     void countChanged();
@@ -133,6 +137,10 @@ class MakeDock : public QObject, public Dependency {
     Q_PROPERTY(QObject* made READ made CONSTANT)
     // the more menu (•••) is showing: its button is drawn lit, as the Build toolbar's tools while their menu is open
     Q_PROPERTY(bool moreMenuOpen READ moreMenuOpen NOTIFY moreMenuChanged)
+    // where Make keeps its work now (Caity 11-08): "my_files" (the default) or "world", the person's choice where this
+    // world allows its own files; and whether it does (the row's pop-up, mary 15:36, only then)
+    Q_PROPERTY(QString filesPlace READ filesPlace NOTIFY filesPlaceChanged)
+    Q_PROPERTY(bool filesChoice READ filesChoice NOTIFY filesPlaceChanged)
 
 public:
     MakeDock();
@@ -171,6 +179,8 @@ public:
     bool sentWaiting() const { return _sentWaiting; }
     bool notGotIt() const { return _notGotIt; }
     bool moreMenuOpen() const { return _moreMenuOpen; }
+    QString filesPlace() const;
+    bool filesChoice() const;
 
     // ---- the dock's calls (contract). "Real input" ones answer false when refused. ----
 
@@ -210,8 +220,12 @@ public:
     Q_INVOKABLE bool copyLine(const QString& which);
     /// "Stop allowing" in the Allow's Details: forgets the Allow, so the next Connect shows the whole card (security R3).
     Q_INVOKABLE void stopAllowing();
-    /// The more menu (•••): the app's own menu at (x, y) on the screen, as the Code panel's. Disconnect.
+    /// The more menu (•••): the app's own menu at (x, y) on the screen, as the Code panel's. Show Make Folder (the
+    /// system's own file browser on MakeLink's folder), Disconnect.
     Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
+    // the "Keep Make's work in:" pop-up (the app's own menu): My Files, This World's Files, a check on the current one;
+    // nothing while a request is working (a change mid-request would leave half the work in each place)
+    Q_INVOKABLE void showFilesPlaceMenu(qreal x, qreal y);
 
     /// Tests only (Test.makeDockConnect, with --testScript): Connect on the Terminal route without the person's click;
     /// from then on every question Claude asks is answered no at once. Never the key route. Not on the QML's context.
@@ -229,6 +243,11 @@ public:
     /// route. The request's number, or 0 whichever check refused it (a kit can't learn which); the log counts
     /// characters, never the text.
     int testSend(const QString& text);
+    /// Tests only (Test.makeDockUndo; security 02:06 11-08): undoRequest() without the real-input check, only for a
+    /// request the test's own Connect led to (testConnectTerminal, numbered from then on) while that run lasts: it
+    /// ends wherever a test's chat ends and with any Connect not made by a test. The same checks as the button. The
+    /// log names the request when done, one line alike for any refusal.
+    bool testUndo(int request);
 
     /// The Make dock's view, once made (Panels): MakeDock watches its input and gives its engine the image provider.
     void watchWindow(QQuickWindow* window, QQmlEngine* engine);
@@ -246,6 +265,7 @@ signals:
     void workingChanged();
     void channelChanged();
     void moreMenuChanged();
+    void filesPlaceChanged();
     /// a question was asked, answered or timed out
     void questionsChanged();
     /// a request came to its end by itself: finished (true) or couldn't finish (false); never after the person's Stop
@@ -268,13 +288,23 @@ private:
     bool canSend(const QString& text) const;
     /// send()'s work after its checks and the gate: the pictures, the link's send, the ask's row
     int sendNow(const QString& text, const QStringList& pictureIds);
-    /// A test's chat ends (Disconnect, a refused connect, the person's route): the chat line is the person's own again
+    /// A test's chat ends (Disconnect, a refused connect, the person's route): the chat line is the person's own again;
+    /// a test's Undo ends with it
     void endTestChat();
+    /// A test's Undo ends (endTestChat's places and any Connect not made by a test)
+    void endTestUndo();
+    /// undoRequest()'s checks before the real-input gate: not working, the newest finished request, not undone yet
+    bool canUndo(int request) const;
+    /// undoRequest()'s work after its checks and the gate: the link's undo, the rows marked undone
+    void undoNow(int request);
     void linkStateChanged();
     void readFound();
     void addRow(MakeDockRows::Row row);
     void addMade(const MakeDockRows::Row& row);
     void requestDone(int request, double cost);
+    // a step of `request` that ran and didn't work (MakeLink::callFailed): its own row, the newest with startedLine,
+    // becomes failedLine (mary 12:28 11-08: "Couldn't <step>: <reason>."), and the request ends Couldn't finish
+    void stepFailed(int request, const QString& startedLine, const QString& failedLine);
     void setWorking(bool working);
     void cleanPictures(const QStringList& files);
     QString picturesFolder() const;
@@ -291,6 +321,8 @@ private:
     bool _starting { false };       // the key route: Claude Code started, not ready yet
     bool _testRefusesAsks { false }; // connected by a test: every question answered no
     bool _testChat { false };        // connected by a test with the chat line, for that run only
+    bool _testUndo { false };        // a test's Connect: testUndo may undo its requests, for that run only
+    int _testFirstRequest { 0 };     // the first request number after that Connect; testUndo refuses any below it
     QString _reason;
     QString _route;
     bool _hasKey { false };
@@ -301,6 +333,7 @@ private:
     bool _working { false };
     double _costSoFar { -1.0 };
     int _doneRequest { 0 };         // the newest request with a "done" row
+    QSet<int> _failedRequests;      // requests with a step that didn't work: they end Couldn't finish, never Done
 
     QPointer<QQuickWindow> _window;
     QElapsedTimer _sinceInput;      // since the last real input in the dock's window

@@ -290,6 +290,16 @@ public slots:
     Q_INVOKABLE bool reloadEditorScript(const QString& key);
 
     /**jsdoc
+     * The button beside the Inspector's Script or Server Script link: Edit, or New while the field is empty (New
+     * Script), and a click on it as the mouse's.
+     * @function Test.inspectorScriptButton
+     * @param {string} key - <code>"script"</code> or <code>"serverScripts"</code>.
+     * @param {boolean} [click=false] - Whether to click it.
+     * @returns {object} <code>{ found, shown, text, enabled, tip, clicked }</code> (before the click's effect).
+     */
+    Q_INVOKABLE QVariantMap inspectorScriptButton(const QString& key, bool click = false);
+
+    /**jsdoc
      * An Inspector field of the editor's selection, as the panel shows it.
      * @function Test.inspectorField
      * @param {string} key - The Inspector's key for the property (e.g. "locked").
@@ -408,7 +418,9 @@ public slots:
      * The Code panel's document as the panel shows it: <code>hasDocument, pageReady, fileName, kind, where, canSave,
      * readOnlyReason, problem, saving, savedText, note, status, statusState, errorLine, errorText, claudeWriting,
      * showingChange, nearby</code> (Code near you's row count), <code>rows</code> (its rows), <code>path, usedBy, sharedBy, isShader, language,
-     * openKey, loading, drafts</code> (how many files have an unsaved change kept).
+     * openKey, loading, drafts</code> (how many files have an unsaved change kept), <code>isNew</code> (a new script not
+     * saved yet), <code>newScriptOff</code> (why the header's New Script is off, <code>""</code> when on) and
+     * <code>newScriptTip</code>.
      * @function Test.codePanel
      * @returns {object} The panel's state.
      */
@@ -436,6 +448,13 @@ public slots:
      * @function Test.codeSave
      */
     Q_INVOKABLE void codeSave();
+
+    /**jsdoc
+     * Presses the Code panel header's New Script, as the person's click does (it does nothing while it's off: see
+     * <code>newScriptOff</code> in Test.codePanel).
+     * @function Test.codeNewScript
+     */
+    Q_INVOKABLE void codeNewScript();
 
     /**jsdoc
      * Opens the Code panel on Code near you alone, unfolded, with no script open (a timing run's case).
@@ -538,6 +557,18 @@ public slots:
      * @returns {number} The request's number, or 0.
      */
     Q_INVOKABLE int makeDockSend(const QString& text);
+
+    /**jsdoc
+     * Undo for a request, as the Make dock's Undo does, without the person's click, for a kit that checks Undo while
+     * Claude may still edit the world (scripting's channel-kit.py <code>--mode chat-late</code>). Only a request made
+     * after <code>Test.makeDockConnect</code> connected, while that run lasts: it ends with Disconnect, a refused
+     * connect, a route chosen or any Connect not made by a test. Every check of Undo applies (not working, the newest
+     * finished request, not undone yet). Any refusal returns false alike.
+     * @function Test.makeDockUndo
+     * @param {number} request - The request's number (<code>Test.makeDockSend</code>'s answer).
+     * @returns {boolean} Whether the request was undone.
+     */
+    Q_INVOKABLE bool makeDockUndo(int request);
 
     /**jsdoc
      * An item of the Make dock's view, found by its objectName: whether it's shown, its place in the dock's window,
@@ -693,6 +724,12 @@ public slots:
      * @function Test.editorUndo
      */
     Q_INVOKABLE void editorUndo();
+
+    /**jsdoc
+     * Redoes the editor's last undone step, as Shift+Cmd+Z does in build mode.
+     * @function Test.editorRedo
+     */
+    Q_INVOKABLE void editorRedo();
 
     /**jsdoc
      * Puts an installed skin on (ui/Skins.h), or Darkride's own look with "", as the Skins panel does, so a scripted

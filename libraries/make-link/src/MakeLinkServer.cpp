@@ -532,7 +532,7 @@ void MakeLinkServer::dropClient() {
         if (it->timer) {
             it->timer->deleteLater();
         }
-        emit callFinished(it.key(), it->tool, false, "the connection closed");
+        emit callFinished(it.key(), it->tool, false, MakeError::CANCELLED, "the connection closed");
     }
     _calls.clear();
     if (!_client) {
@@ -616,7 +616,7 @@ void MakeLinkServer::handle(const QJsonObject& message) {
                     }
                     const QString tool = it->tool;
                     _calls.erase(it);
-                    emit callFinished(call, tool, false, "Claude Code cancelled it");
+                    emit callFinished(call, tool, false, MakeError::CANCELLED, "Claude Code cancelled it");
                     break;
                 }
             }
@@ -726,7 +726,7 @@ void MakeLinkServer::finish(int call, const Result& result) {
         entry.timer->deleteLater();
     }
     answer(entry.requestId, toolResult(entry.tool, result));
-    emit callFinished(call, entry.tool, result.ok(), result.message);
+    emit callFinished(call, entry.tool, result.ok(), result.ok() ? QString() : result.code, result.message);
 }
 
 QJsonObject MakeLinkServer::toolResult(const QString& tool, const Result& result) const {

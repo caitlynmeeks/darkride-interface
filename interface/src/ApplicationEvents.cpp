@@ -50,6 +50,7 @@
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
 #endif
 #include "ui/LoginDialog.h"
+#include "ui/QuitCheck.h"
 #include "ui/StandAloneJSConsole.h"
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>
@@ -231,6 +232,17 @@ bool Application::event(QEvent* event) {
             if (handleFileOpenEvent(static_cast<QFileOpenEvent*>(event))) {
                 return true;
             }
+            break;
+
+        // a quit from outside the app (the Dock's Quit, another app asking; on Qt 6 macOS every quit arrives as this
+        // event): what isn't saved is asked about first (ui/QuitCheck.h), before Qt closes any window; Cancel
+        // ignores the event, which cancels the quit. Not in the frame: it comes once, at a quit.
+        case QEvent::Quit:
+            if (quitcheck::isOutsideRequest() && !quitcheck::mayQuit()) {
+                event->ignore();
+                return true;
+            }
+            quitcheck::goingAhead();
             break;
 
         default:

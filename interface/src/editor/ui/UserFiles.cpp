@@ -415,7 +415,7 @@ void UserFiles::run(const QString& route, QNetworkAccessManager::Operation opera
                     const QList<QPair<QString, QString>>& query, const QString& what) {
     QNetworkReply* reply = send(route, operation, query);
     if (!reply) {
-        emit failed("Could not " + what + ": you are not logged in");
+        emit failed("Could not " + what + ": you're signed out");
         return;
     }
     connect(reply, &QNetworkReply::finished, this, [this, reply, what] {
