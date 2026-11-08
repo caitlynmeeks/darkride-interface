@@ -20,6 +20,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QProcess>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QtEndian>
 #include <QtGui/QGuiApplication>
@@ -41,10 +42,12 @@
 
 namespace {
 
+// the watcher these tests drive: MAKE_TESTS_WATCHER names one (an installed app's, so a test box checks the program
+// that ships), else the one built with the tests
 #ifdef DARKRIDE_MAKE_WATCH_PATH
-const QString WATCH_PROGRAM = DARKRIDE_MAKE_WATCH_PATH;
+const QString WATCH_PROGRAM = qEnvironmentVariable("MAKE_TESTS_WATCHER", DARKRIDE_MAKE_WATCH_PATH);
 #else
-const QString WATCH_PROGRAM;
+const QString WATCH_PROGRAM = qEnvironmentVariable("MAKE_TESTS_WATCHER");
 #endif
 
 // this test program, started again with this set, plays the app for testBlenderEndsWithTheApp: it starts a runaway
@@ -174,6 +177,8 @@ QString programOf(qint64 pid) {
     if (proc_pidpath(static_cast<pid_t>(pid), path, sizeof(path)) > 0) {
         return QString::fromUtf8(path);
     }
+#elif defined(Q_OS_LINUX)
+    return QFile::symLinkTarget(QString("/proc/%1/exe").arg(pid));
 #endif
     return QString();
 }
@@ -183,6 +188,17 @@ qint64 parentOf(qint64 pid) {
     proc_bsdinfo info;
     if (proc_pidinfo(static_cast<pid_t>(pid), PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)) {
         return info.pbi_ppid;
+    }
+#elif defined(Q_OS_LINUX)
+    // /proc/<pid>/stat: the parent's id is the second field after the command's closing parenthesis
+    QFile stat(QString("/proc/%1/stat").arg(pid));
+    if (stat.open(QIODevice::ReadOnly)) {
+        const QByteArray text = stat.read(4096);
+        const int command = text.lastIndexOf(')');
+        const QList<QByteArray> fields = text.mid(command + 2).split(' ');
+        if (command >= 0 && fields.size() >= 2) {
+            return fields.at(1).toLongLong();
+        }
     }
 #endif
     return 0;
@@ -433,6 +449,9 @@ bpy.ops.mesh.primitive_cube_add(size=1)
 // "item not found" would mean the Keychain answered, so that fails too. The same script without the box must get
 // "item not found" (the control), so the difference is the box's.
 void MakeBlenderTests::testKeychainUnreachableInTheBox() {
+#ifndef Q_OS_MAC
+    QSKIP("the Keychain is macOS's; testTheBoxHolds checks a key in the app's environment and a port outside the box");
+#else
     QTemporaryDir dir;
     MakeBlender blender(dir.path());
     if (!haveBlender(blender)) {
@@ -496,6 +515,7 @@ except Exception as e:
     QVERIFY2(status != "0" && status != QString::number(errSecItemNotFound), qPrintable(made.log));
     QVERIFY2(made.log.contains("SECURITY_CLI REFUSED"), qPrintable(made.log));
     QVERIFY(!made.log.contains("SECURITY_CLI OPEN"));
+#endif
 }
 
 void MakeBlenderTests::testRunawayIsStopped() {
@@ -526,8 +546,15 @@ void MakeBlenderTests::testCpuCapInTheBox() {
         "print('THREADS', bpy.context.scene.render.threads)\n";
     const MakeBlender::Made made = makeAndWait(blender, script);
     QVERIFY2(made.ok(), qPrintable(made.message + "\n" + made.log));
-    QVERIFY2(made.log.contains(QString("CPULIMIT %1 %2").arg(MakeBlender::CPU_LIMIT_S).arg(MakeBlender::CPU_LIMIT_S + 5)),
-             qPrintable(made.log));
+#ifdef Q_OS_LINUX
+    // Linux: the watcher sets Blender's own limit from its cap, (cap, cap + 2); Make's own limits make the cap the CPU
+    // limit (the time limit's seconds plus 20 are fewer)
+    QCOMPARE(qMax(MakeBlender::CPU_LIMIT_S, MakeBlender::TIME_LIMIT_MS / 1000 + 20), MakeBlender::CPU_LIMIT_S);
+    const int hard = MakeBlender::CPU_LIMIT_S + 2;
+#else
+    const int hard = MakeBlender::CPU_LIMIT_S + 5;   // the Mac: Blender keeps the watcher's own cap
+#endif
+    QVERIFY2(made.log.contains(QString("CPULIMIT %1 %2").arg(MakeBlender::CPU_LIMIT_S).arg(hard)), qPrintable(made.log));
     QVERIFY2(made.log.contains(QString("THREADS %1").arg(MakeBlender::THREADS)), qPrintable(made.log));
     QVERIFY(MakeBlender::CPU_LIMIT_S >= (MakeBlender::TIME_LIMIT_MS / 1000) * MakeBlender::THREADS);
 }
@@ -619,6 +646,9 @@ void MakeBlenderTests::testWatcherPassesTheExitOn() {
 #ifdef Q_OS_WIN
     QSKIP("the watcher is macOS and Linux's");
 #else
+#ifndef Q_OS_MAC
+    QSKIP("the watcher's Mac line (sandbox-exec); the Linux box needs Blender and a work folder");
+#endif
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -646,6 +676,9 @@ void MakeBlenderTests::testWatcherEndsItsChild() {
 #ifdef Q_OS_WIN
     QSKIP("the watcher is macOS and Linux's");
 #else
+#ifndef Q_OS_MAC
+    QSKIP("the watcher's Mac line (sandbox-exec); the Linux box needs Blender and a work folder");
+#endif
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -698,6 +731,9 @@ void MakeBlenderTests::testWatcherRefuses() {
 #ifdef Q_OS_WIN
     QSKIP("the watcher is macOS and Linux's");
 #else
+#ifndef Q_OS_MAC
+    QSKIP("the watcher's Mac line (sandbox-exec); testLinuxWatcherRefusesOtherLines is the Linux one");
+#endif
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -756,11 +792,20 @@ void MakeBlenderTests::testWatcherIsBlendersParent() {
     }
     QVERIFY(pid > 1);
     QVERIFY(pid != blender.watcherId());
-    // once it is Blender (sandbox-exec becomes it in the same process), still the watcher's child
-    while (!programOf(pid).endsWith("/Contents/MacOS/Blender") && timer.elapsed() < 15000) {
+    // once it is Blender (on the Mac sandbox-exec becomes it in the same process; on Linux the watcher's child runs
+    // Blender's own program), still the watcher's child
+#ifdef Q_OS_MAC
+    const auto isBlender = [](const QString& program) { return program.endsWith("/Contents/MacOS/Blender"); };
+#else
+    const QString blenderProgram = QFileInfo(blender.blender()).canonicalFilePath();
+    const auto isBlender = [blenderProgram](const QString& program) {
+        return !blenderProgram.isEmpty() && program == blenderProgram;
+    };
+#endif
+    while (!isBlender(programOf(pid)) && timer.elapsed() < 15000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    QVERIFY2(programOf(pid).endsWith("/Contents/MacOS/Blender"), qPrintable(programOf(pid)));
+    QVERIFY2(isBlender(programOf(pid)), qPrintable(programOf(pid)));
     QCOMPARE(parentOf(pid), blender.watcherId());
     QCOMPARE(parentOf(blender.watcherId()), QCoreApplication::applicationPid());
     const QStringList jobs = QDir(dir.filePath("jobs")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
@@ -915,4 +960,173 @@ int main(int argc, char** argv) {
     MakeBlenderTests tests;
     QTEST_SET_MAIN_SOURCE_PATH
     return QTest::qExec(&tests, argc, argv);
+}
+
+void MakeBlenderTests::testLinuxParsesAndCaps() {
+    // the version the unpacked tarball's folder name says, else Blender's own "5.2" folder inside; nothing else
+    QCOMPARE(MakeBlender::versionFromTarball("/home/me/blender-5.2.3-linux-x64"), QString("5.2.3"));
+    QCOMPARE(MakeBlender::versionFromTarball("/opt/blender-5.10-linux-x64"), QString("5.10"));
+    QCOMPARE(MakeBlender::versionFromTarball("/opt/Blender-4.1.0-linux-x64"), QString("4.1.0"));
+    QCOMPARE(MakeBlender::versionFromTarball("/home/me/Downloads/blender5.3.0-linux-x64"), QString("5.3.0"));
+    QVERIFY(MakeBlender::versionFromTarball("/nonexistent/folder").isEmpty());
+    QTemporaryDir dir;
+    QVERIFY(QDir(dir.path()).mkpath("blender/5.2"));
+    QVERIFY(QDir(dir.path()).mkpath("blender/4.2"));
+    QVERIFY(QDir(dir.path()).mkpath("blender/datafiles"));
+    QCOMPARE(MakeBlender::versionFromTarball(dir.filePath("blender")), QString("5.2"));
+    QVERIFY(MakeBlender::versionFromTarball(dir.path()).isEmpty());
+    QVERIFY(!MakeBlender::versionIsEnough(MakeBlender::versionFromTarball("/opt/blender-4.1.0-linux-x64")));
+    QVERIFY(MakeBlender::versionIsEnough(MakeBlender::versionFromTarball("/opt/blender-5.2.0-linux-x64")));
+    // the resident memory line of /proc/<pid>/status, in bytes
+    QCOMPARE(MakeBlender::vmRssBytes("Name:\tblender\nVmPeak:\t 1000 kB\nVmRSS:\t   12345 kB\nThreads:\t4\n"),
+             qint64(12345) * 1024);
+    QCOMPARE(MakeBlender::vmRssBytes("VmRSS:\t4194304 kB\n"), qint64(4194304) * 1024);
+    QCOMPARE(MakeBlender::vmRssBytes("Name:\tblender\n"), qint64(-1));
+    QCOMPARE(MakeBlender::vmRssBytes("VmRSS:\tnone\n"), qint64(-1));
+    QCOMPARE(MakeBlender::vmRssBytes(QByteArray()), qint64(-1));
+    // the work folder's size cap the watcher is given: above a capped model and its views, well below a disk
+    QVERIFY(MakeBlender::FOLDER_CAP_BYTES >= 256LL * 1024 * 1024);
+    QVERIFY(MakeBlender::FOLDER_CAP_BYTES <= 16LL * 1024 * 1024 * 1024);
+    QVERIFY(MakeBlender::FOLDER_CAP_BYTES > 4 * MakeBlender::MAX_GLB_BYTES);
+    QCOMPARE(MakeBlender::FOLDER_CAP_BYTES % (1024 * 1024), qint64(0));  // the watcher takes whole megabytes
+}
+
+void MakeBlenderTests::testLinuxWatcherRefusesOtherLines() {
+#ifndef Q_OS_LINUX
+    QSKIP("the watcher's Linux line");
+#else
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    // the Linux watcher takes only its own line: a work and a fixed folder, absolute, then "--" and an absolute
+    // program; the Mac line, a relative program, a missing folder or a bad --env name are refused before anything runs
+    QTemporaryDir dir;
+    const QString pid = dir.filePath("a.pid");
+    const QString work = dir.filePath("work");
+    const QString fixed = dir.filePath("fixed");
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(fixed));
+    const QString marker = dir.filePath("ran");
+    for (const QStringList& line : QList<QStringList> {
+             { "60", pid, "--", "/usr/bin/sandbox-exec", "-p", OPEN_BOX, "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--", "usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--", "/usr/bin/touch", marker },
+             { "60", pid, "--fixed", fixed, "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", "work", "--fixed", fixed, "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--env", "lower=1", "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--env", "PYTHONPATH=/tmp", "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--env", "MAKE_OUT", "--", "/usr/bin/touch", marker },
+             { "60", pid, "--job", work, "--fixed", fixed, "--folder-cap", "0", "--", "/usr/bin/touch", marker },
+             { "0", pid, "--job", work, "--fixed", fixed, "--", "/usr/bin/touch", marker } }) {
+        const Watched watched = watch(line);
+        QVERIFY2(watched.exit == 125, qPrintable(line.join(' ') + " -> " + QString::number(watched.exit)));
+        QVERIFY2(watched.said.contains("usage"), watched.said.constData());
+        QVERIFY(!QFileInfo::exists(marker));
+    }
+    QVERIFY(!QFileInfo::exists(pid));
+#endif
+}
+
+void MakeBlenderTests::testLinuxOwnFolderRule() {
+    // the Linux forbidden list: the system's folders and the person's, and the own-folder rule against it (the folder
+    // itself and any parent of one refused, a Blender folder inside one allowed)
+    const QStringList forbidden = MakeBlender::linuxForbiddenFolders();
+    for (const QString& folder : { "/", "/usr", "/usr/bin", "/usr/local/bin", "/bin", "/opt" }) {
+        QVERIFY2(forbidden.contains(folder), qPrintable(folder));
+    }
+    QVERIFY(forbidden.contains(QDir::homePath()) || forbidden.contains(QFileInfo(QDir::homePath()).canonicalFilePath()));
+    QString why;
+    QVERIFY(!MakeBlender::isBlendersOwnFolder("/opt", "5.2.2", forbidden, why));           // the place itself
+    QVERIFY(!MakeBlender::isBlendersOwnFolder("/usr/bin", "5.2.2", forbidden, why));       // a distro Blender's folder
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QDir::homePath(), "5.2.2", forbidden, why)); // the home folder
+    const QString downloads = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (!downloads.isEmpty()) {
+        QVERIFY(!MakeBlender::isBlendersOwnFolder(QFileInfo(downloads).absolutePath(), "5.2.2", forbidden, why));  // a parent of Downloads
+    }
+    // a tarball unpacked inside a usual place: its own folder, with Blender's version folder in it, passes; the place
+    // it sits in (a stand-in for /opt, added to the list) does not
+    QTemporaryDir dir;
+    const QString place = QFileInfo(dir.path()).canonicalFilePath();
+    const QString unpacked = place + "/blender-5.2.3-linux-x64";
+    QVERIFY(QDir().mkpath(unpacked + "/5.2"));
+    QStringList withPlace = forbidden;
+    withPlace.append(place);
+    QVERIFY2(MakeBlender::isBlendersOwnFolder(unpacked, "5.2.3", withPlace, why), qPrintable(why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(place, "5.2.3", withPlace, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(unpacked, "5.3.0", withPlace, why));  // no 5.3 folder in it
+    QCOMPARE(MakeBlender::versionFromTarball(unpacked), QString("5.2.3"));
+}
+
+void MakeBlenderTests::testLinuxBoxFilterRulesNamed() {
+    // the three rules that close the shortening gap below Landlock ABI 3, named in the list the watcher prints too
+    const QStringList rules = MakeBlender::linuxBoxFilterRules();
+    QVERIFY(rules.filter(QRegularExpression("^truncate: EPERM")).size() == 1);
+    QVERIFY(rules.filter(QRegularExpression("^open, openat with O_TRUNC in any mode but write \\(read-only, or access mode 3\\): "
+                                            "EPERM")).size() == 1);
+    QVERIFY(rules.filter(QRegularExpression("^openat2: ENOSYS")).size() == 1);
+    QVERIFY(rules.filter(QRegularExpression("^execve, execveat: the exec gate")).size() == 1);
+#ifdef Q_OS_LINUX
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    // the watcher's own list is the same, line for line
+    const Watched watched = watch({ "--filter-rules" });
+    QCOMPARE(watched.exit, 0);
+    QCOMPARE(QString::fromUtf8(watched.said).split('\n', Qt::SkipEmptyParts), rules);
+#endif
+}
+
+void MakeBlenderTests::testLinuxBoxRefusesShortening() {
+#ifndef Q_OS_LINUX
+    QSKIP("the Linux box");
+#else
+    if (WATCH_PROGRAM.isEmpty()) {
+        QSKIP("the watcher isn't built with these tests");
+    }
+    if (!QFileInfo("/usr/bin/python3").isExecutable()) {
+        QSKIP("no python3 to run in the box");
+    }
+    // inside the box (python3 as the one program, its own start let through by the exec gate): a file in the work
+    // folder can't be shortened by path nor by a read-only O_TRUNC open, on any kernel; ftruncate on a write open
+    // still works (Blender's saves). The file outside the work folder can't even be opened (Landlock)
+    QTemporaryDir dir;
+    const QString work = dir.filePath("work");
+    const QString fixed = dir.filePath("fixed");
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(fixed));
+    const QString inside = work + "/inside.txt";
+    const QString outside = dir.filePath("outside.txt");
+    for (const QString& path : { inside, outside }) {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.write(QByteArray(100, 'x')) == 100);
+    }
+    const QString script =
+        QString("import os, sys\n"
+                "def attempt(label, call):\n"
+                "    try:\n"
+                "        call()\n"
+                "        print(label, 'DONE')\n"
+                "    except OSError as error:\n"
+                "        print(label, 'REFUSED', error.errno)\n"
+                "attempt('TRUNCATE_INSIDE', lambda: os.truncate(%1, 10))\n"
+                "attempt('TRUNCATE_OUTSIDE', lambda: os.truncate(%2, 10))\n"
+                "attempt('RDONLY_TRUNC_INSIDE', lambda: os.close(os.open(%1, os.O_RDONLY | os.O_TRUNC)))\n"
+                "attempt('MODE3_TRUNC_INSIDE', lambda: os.close(os.open(%1, 3 | os.O_TRUNC)))\n"
+                "def ftruncate_inside():\n"
+                "    fd = os.open(%1, os.O_WRONLY)\n"
+                "    os.ftruncate(fd, 50)\n"
+                "    os.close(fd)\n"
+                "attempt('FTRUNCATE_INSIDE', ftruncate_inside)\n")
+            .arg("'" + inside + "'", "'" + outside + "'");
+    const Watched watched = watch({ "60", dir.filePath("a.pid"), "--job", work, "--fixed", fixed, "--",
+                                    "/usr/bin/python3", "-I", "-c", script }, nullptr, 60000);
+    QVERIFY2(watched.exit == 0, qPrintable(QString::number(watched.exit) + "\n" + watched.said));
+    QVERIFY2(watched.said.contains("TRUNCATE_INSIDE REFUSED 1"), watched.said.constData());   // EPERM by the filter
+    QVERIFY2(watched.said.contains("TRUNCATE_OUTSIDE REFUSED"), watched.said.constData());
+    QVERIFY2(watched.said.contains("RDONLY_TRUNC_INSIDE REFUSED 1"), watched.said.constData());
+    // access mode 3 (neither read nor write) with O_TRUNC shortens a file too without a write open (security, 11-07)
+    QVERIFY2(watched.said.contains("MODE3_TRUNC_INSIDE REFUSED 1"), watched.said.constData());
+    QVERIFY2(watched.said.contains("FTRUNCATE_INSIDE DONE"), watched.said.constData());
+    QCOMPARE(QFileInfo(inside).size(), qint64(50));
+    QCOMPARE(QFileInfo(outside).size(), qint64(100));
+#endif
 }

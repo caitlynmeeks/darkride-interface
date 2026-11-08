@@ -22,6 +22,7 @@
 #include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
 #include <QtCore/QtEndian>
@@ -44,6 +45,11 @@
 
 #include "MakeBox.h"
 #endif
+#ifdef Q_OS_LINUX
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 
 Q_DECLARE_LOGGING_CATEGORY(makelink)
 
@@ -51,6 +57,9 @@ const qint64 MakeBlender::MAX_GLB_BYTES = 64 * 1024 * 1024;
 // under two minutes in all with the views: a longer tool call moves to Claude Code's background
 const int MakeBlender::TIME_LIMIT_MS = 100 * 1000;
 const qint64 MakeBlender::MEMORY_LIMIT_BYTES = 4LL * 1024 * 1024 * 1024;
+// Linux: the work folder's size cap (the watcher's --folder-cap, and each file's RLIMIT_FSIZE in the box): far above a
+// capped model and its views, far below a full disk
+const qint64 MakeBlender::FOLDER_CAP_BYTES = 2LL * 1024 * 1024 * 1024;
 const int MakeBlender::THREADS = 4;
 const int MakeBlender::CPU_LIMIT_S = (MakeBlender::TIME_LIMIT_MS / 1000) * MakeBlender::THREADS + 20;
 const int MakeBlender::MINIMUM_MAJOR = 5;
@@ -68,6 +77,14 @@ namespace {
 const int SELF_TEST_PORT = 135;
 const int SELF_TEST_CONTROL_MS = 3000;
 const int SELF_TEST_PROBE_MS = 45000;
+#endif
+#ifdef Q_OS_LINUX
+// Landlock's version, as the watcher asks it before it boxes Blender (landlock_create_ruleset with the version flag,
+// written out so this builds with older kernel headers): 0 when the kernel has none
+int landlockAbi() {
+    const long version = syscall(444, nullptr, 0, 1U);
+    return version < 0 ? 0 : static_cast<int>(version);
+}
 #endif
 
 const int MEMORY_CHECK_MS = 250;
@@ -160,7 +177,7 @@ QString logForClaude(const QByteArray& log, const QString& job) {
 // set in the child between fork and exec and Blender inherits it from the watcher. Only async-signal-safe calls here.
 // The script inside can lower the cap, never raise it (the hard limit needs root).
 void capCpuInChild(int seconds) {
-#ifdef Q_OS_MAC
+#if defined(Q_OS_MAC) || defined(Q_OS_LINUX)
     struct rlimit now;
     if (getrlimit(RLIMIT_CPU, &now) != 0) {
         _exit(126);
@@ -224,6 +241,9 @@ QString MakeBlender::blenderVersion(const QString& app) {
     // from blender.exe's own version resource: no process started; a folder means the blender.exe in it
     const QString program = QFileInfo(app).isDir() ? QDir(app).absoluteFilePath("blender.exe") : app;
     return MakeBox::fileVersion(program);
+#elif defined(Q_OS_LINUX)
+    // the unpacked tarball's folder says the version in its name (its program's folder when given the program)
+    return versionFromTarball(QFileInfo(app).isDir() ? app : QFileInfo(app).absolutePath());
 #else
     QFile plist(app + "/Contents/Info.plist");
     if (!plist.open(QIODevice::ReadOnly) || plist.size() > 1024 * 1024) {
@@ -305,6 +325,88 @@ bool MakeBlender::isBlendersOwnFolder(const QString& folder, const QString& vers
     return true;
 }
 
+QStringList MakeBlender::linuxForbiddenFolders() {
+    // the system's own folders (a distro package's Blender lives in /usr/bin, and has no "5.2" folder beside it
+    // anyway) and the person's own, canonical; the usual places (/opt, the home folder, Downloads) are in it
+    // themselves, so only a Blender folder inside one passes, never the place itself or a parent of it
+    QStringList folders { "/", "/usr", "/usr/bin", "/usr/local/bin", "/bin", "/opt" };
+    for (QStandardPaths::StandardLocation location : { QStandardPaths::HomeLocation, QStandardPaths::DownloadLocation,
+                                                       QStandardPaths::DesktopLocation,
+                                                       QStandardPaths::DocumentsLocation }) {
+        const QString path = QStandardPaths::writableLocation(location);
+        if (!path.isEmpty()) {
+            const QString canonical = QFileInfo(path).canonicalFilePath();
+            folders.append(canonical.isEmpty() ? path : canonical);
+        }
+    }
+    folders.append(QDir::homePath());
+    folders.removeDuplicates();
+    return folders;
+}
+
+QStringList MakeBlender::linuxBoxFilterRules() {
+    // the same lines as the watcher's FILTER_RULES (tools/darkride-make-watch/src/main.cpp): change both together; the
+    // Linux test compares them against the watcher's --filter-rules output
+    return QStringList {
+        "execve, execveat: the exec gate (the child's own start of Blender passes, every later one EPERM)",
+        "truncate: EPERM (shortening a file by path; Landlock governs it only from ABI 3)",
+        "open, openat with O_TRUNC in any mode but write (read-only, or access mode 3): EPERM (shortening without a write open; "
+        "Landlock from ABI 3)",
+        "openat2: ENOSYS (its flags are behind a pointer; the C library falls back to openat)",
+        "fork, vfork: EPERM; clone3: ENOSYS; clone with a namespace flag: EPERM (threads only)",
+        "socket, socketpair: EACCES (no sockets of any family)",
+        "kill, tkill, tgkill, rt_sigqueueinfo, rt_tgsigqueueinfo to another process: EPERM; pidfd_send_signal: EPERM",
+        "ioctl TIOCSTI, TIOCLINUX: EPERM (no typing into a terminal)",
+        "ptrace, process_vm_readv, process_vm_writev, kcmp, pidfd_getfd, process_madvise, io_uring, bpf, perf_event_open, "
+        "userfaultfd, unshare, setns, mount, umount2, pivot_root, chroot, open_tree, move_mount, fsopen, fsconfig, fsmount, "
+        "fspick, mount_setattr, add_key, request_key, keyctl, kexec_load, kexec_file_load, init_module, finit_module, "
+        "delete_module, acct, swapon, swapoff, reboot, quotactl, quotactl_fd, open_by_handle_at, name_to_handle_at, iopl, "
+        "ioperm, uselib, vhangup, syslog, fanotify_init: EPERM",
+        "x32 system calls: EPERM; another architecture: the process is killed",
+    };
+}
+
+QString MakeBlender::versionFromTarball(const QString& folder) {
+    // the official tarball unpacks as "blender-5.2.3-linux-x64": the version is in the name; a renamed folder still
+    // holds Blender's own "5.2" folder beside the program (the newest such folder when there are several)
+    static const QRegularExpression NAME("^blender-?([0-9]+\\.[0-9]+(?:\\.[0-9]+)?)",
+                                         QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch named = NAME.match(QFileInfo(folder).fileName());
+    if (named.hasMatch()) {
+        return named.captured(1);
+    }
+    static const QRegularExpression INSIDE("^[0-9]+\\.[0-9]+$");
+    const auto newer = [](const QString& a, const QString& b) {
+        const QStringList pa = a.split('.'), pb = b.split('.');
+        return pa.value(0).toInt() > pb.value(0).toInt() ||
+               (pa.value(0).toInt() == pb.value(0).toInt() && pa.value(1).toInt() > pb.value(1).toInt());
+    };
+    QString best;
+    for (const QString& name : QDir(folder).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (INSIDE.match(name).hasMatch() && (best.isEmpty() || newer(name, best))) {
+            best = name;
+        }
+    }
+    return best;
+}
+
+qint64 MakeBlender::vmRssBytes(const QByteArray& status) {
+    // /proc/<pid>/status: "VmRSS:\t  123456 kB" (the kernel writes kB)
+    for (const QByteArray& line : status.split('\n')) {
+        if (!line.startsWith("VmRSS:")) {
+            continue;
+        }
+        const QList<QByteArray> words = line.mid(6).simplified().split(' ');
+        bool number = false;
+        const qint64 value = words.value(0).toLongLong(&number);
+        if (!number || value < 0) {
+            return -1;
+        }
+        return words.value(1).toLower() == "kb" ? value * 1024 : value;
+    }
+    return -1;
+}
+
 bool MakeBlender::available(QString& why) const {
 #if defined(Q_OS_WIN)
     // Windows: a Blender found, and this Connect's self-test (selfTest) passed: the box's own connection out was
@@ -327,6 +429,21 @@ bool MakeBlender::available(QString& why) const {
             return true;
     }
     return false;
+#elif defined(Q_OS_LINUX)
+    // Linux: Landlock in the kernel (the box's file rules; ABI 1 is enough, newer ones add the TCP and signal scoping),
+    // the watcher beside the app (on Linux it is the box: its child takes the limits, Landlock and seccomp with the
+    // exec gate before Blender starts), and a Blender found. Without Landlock there is no box, and Blender never runs
+    // unsealed
+    if (landlockAbi() < 1) {
+        qCInfo(makelink) << "Blender isn't offered: this kernel has no Landlock";
+        why = UNAVAILABLE_WORDS;
+        return false;
+    }
+    if (!QFileInfo(_watch.isEmpty() ? defaultWatcher() : _watch).isExecutable()) {
+        why = "Make's Blender watcher is missing from the app";
+        return false;
+    }
+    return !findBlender(why, _blender).isEmpty();
 #elif !defined(Q_OS_MAC)
     why = UNAVAILABLE_WORDS;
     return false;
@@ -412,6 +529,69 @@ QString MakeBlender::findBlender(QString& why, const QString& app) {
         why = QString("Blender isn't installed (blender.org, %1.%2 or newer)").arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
     }
     return QString();
+#elif defined(Q_OS_LINUX)
+    // the official tarball from blender.org, unpacked: its "blender" program, an x86_64 ELF the box runs under Landlock
+    // and seccomp as the Linux box test proved; the person's choice (the program or its folder), else the usual
+    // places, the newest that is new enough wins. Never a distro package's /usr/bin/blender, a Flatpak or a Snap:
+    // those start through wrappers, other loaders or sandboxes of their own that the box hasn't been proven on.
+    // Cheap: folder names only, no process started (the dock asks whenever its window shows)
+    QStringList candidates;
+    if (!app.isEmpty()) {
+        candidates.append(QFileInfo(app).isDir() ? QDir(app).absoluteFilePath("blender") : app);
+    } else {
+        const QStringList places { QDir::homePath(), QDir::homePath() + "/Downloads", QDir::homePath() + "/Applications",
+                                   "/opt" };
+        for (const QString& place : places) {
+            const QDir folder(place);
+            for (const QString& name : folder.entryList({ "blender*" }, QDir::Dirs | QDir::NoDotAndDotDot)) {
+                candidates.append(folder.absoluteFilePath(name + "/blender"));
+            }
+        }
+    }
+    QString best;
+    QStringList bestVersion;
+    const QStringList forbidden = linuxForbiddenFolders();
+    for (const QString& candidate : candidates) {
+        const QFileInfo program(candidate);
+        if (!program.isFile() || !program.isExecutable()) {
+            continue;
+        }
+        // the folder the box is opened to is the canonical one (the watcher grants read+run on it): it must be
+        // Blender's own, with Blender's version folder in it and none of the person's or the system's folders
+        const QString real = realPath(candidate);
+        const QString version = blenderVersion(real);
+        if (!versionIsEnough(version)) {
+            why = QString("Blender %1 is older than Make needs (%2.%3 or newer)")
+                      .arg(version.isEmpty() ? QString("there") : version).arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+            continue;
+        }
+        QString reason;
+        if (!isBlendersOwnFolder(QFileInfo(real).absolutePath(), version, forbidden, reason)) {
+            why = reason;
+            continue;
+        }
+        const QStringList parts = version.split('.');
+        bool newer = best.isEmpty();
+        for (int i = 0; i < 3 && !newer && i < parts.size(); ++i) {
+            if (parts.value(i).toInt() != bestVersion.value(i).toInt()) {
+                newer = parts.value(i).toInt() > bestVersion.value(i).toInt();
+                break;
+            }
+        }
+        if (newer) {
+            best = realPath(candidate);
+            bestVersion = parts;
+        }
+    }
+    if (!best.isEmpty()) {
+        why.clear();
+        return best;
+    }
+    if (why.isEmpty()) {
+        why = QString("Blender isn't installed (the blender.org download, unpacked in your home folder, Downloads, "
+                      "Applications or /opt; %1.%2 or newer)").arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+    }
+    return QString();
 #elif !defined(Q_OS_MAC)
     Q_UNUSED(app);
     why = UNAVAILABLE_WORDS;
@@ -476,6 +656,17 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     if (!QFileInfo(watch).isExecutable()) {
         made.code = MakeError::NOT_AVAILABLE_HERE;
         made.message = "Make's Blender watcher is missing from the app, so Blender can't be started safely";
+        done(made);
+        return;
+    }
+#endif
+#ifdef Q_OS_LINUX
+    // Blender's folder proven its own before any folder is opened to the box: the watcher grants read+run on the
+    // canonical folder of the program it is given, so that folder is the one judged
+    if (!isBlendersOwnFolder(QFileInfo(realPath(_blender)).absolutePath(), blenderVersion(realPath(_blender)),
+                             linuxForbiddenFolders(), why)) {
+        made.code = MakeError::NOT_AVAILABLE_HERE;
+        made.message = why;
         done(made);
         return;
     }
@@ -613,9 +804,18 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     environment.insert("PYTHONDONTWRITEBYTECODE", "1");
     environment.insert("PYTHONNOUSERSITE", "1");
 
+    // the watcher's cap: its wall-clock seconds, and on Linux also the CPU time it gives Blender (cap, cap + 2)
+    const int watchCap = qBound(1, qMax(_cpuLimitS, _timeLimitMs / 1000 + 20), 3600);
+
     // the watcher, Blender's parent: its standard input is a pipe from here (a line stops Blender, its end means the
-    // app is gone); Blender gets /dev/null, and the watcher's output, where its log is read
+    // app is gone); Blender gets /dev/null, and the watcher's output, where its log is read. On the Mac Blender keeps
+    // the watcher's CPU cap; on Linux the watcher sets Blender's own, which may only lower its hard limit (raising one
+    // needs privilege), so the watcher is capped at the cap it gives. Make's own limits give the same number either way
+#if defined(Q_OS_LINUX)
+    _process = new CappedProcess(watchCap, this);
+#else
     _process = new CappedProcess(_cpuLimitS, this);
+#endif
     _process->setProcessEnvironment(environment);
     _process->setWorkingDirectory(realWork);
     _process->setProcessChannelMode(QProcess::MergedChannels);
@@ -635,7 +835,7 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         }
     });
 
-    const int watchCap = qBound(1, qMax(_cpuLimitS, _timeLimitMs / 1000 + 20), 3600);
+#if defined(Q_OS_MAC)
     const QStringList arguments {
         QString::number(watchCap), _job + "/blender.pid", "--", "/usr/bin/sandbox-exec",
         "-f", realFixed + "/box.sb",
@@ -650,6 +850,26 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         "--python", realFixed + "/finish.py",
         "--python", realFixed + "/views.py",
     };
+#else
+    // Linux: the watcher is the box (its child takes the limits, Landlock and seccomp with the exec gate before
+    // Blender starts): it is given the work folder (the box's only writable place, Blender's home and temp), the fixed
+    // scripts (read only), Make's two lines for the environment it builds from nothing, and the work folder's size cap;
+    // the pid file stays outside the work folder
+    const QStringList arguments {
+        QString::number(watchCap), _job + "/blender.pid",
+        "--job", realWork, "--fixed", realFixed,
+        "--env", "MAKE_OUT=" + realWork + "/out",
+        "--env", QString("MAKE_KIND=") + (kind == "room" ? "room" : "object"),
+        "--folder-cap", QString::number(FOLDER_CAP_BYTES / (1024 * 1024)),
+        "--", _blender,
+        "--background", "--factory-startup", "--disable-autoexec", "-noaudio", "--threads", QString::number(THREADS),
+        "--python-exit-code", "3",
+        "--python", realFixed + "/prelude.py",
+        "--python", realWork + "/job.py",
+        "--python", realFixed + "/finish.py",
+        "--python", realFixed + "/views.py",
+    };
+#endif
     _started = QDateTime::currentMSecsSinceEpoch();
     _process->start(watch, arguments);
     _limit->start(_timeLimitMs);
@@ -686,6 +906,34 @@ qint64 MakeBlender::blenderPid() {
 #elif defined(Q_OS_WIN)
     // from the job's own list (MakeBox): never a name, never signalled from here
     return _box ? MakeBox::pid(_box) : 0;
+#elif defined(Q_OS_LINUX)
+    if (!_process || _job.isEmpty()) {
+        return 0;
+    }
+    if (_blenderPid == 0) {
+        QFile file(_job + "/blender.pid");
+        if (QFileInfo(file.fileName()).isSymLink() || !file.open(QIODevice::ReadOnly)) {
+            return 0;
+        }
+        bool number = false;
+        const qint64 pid = QString::fromLatin1(file.read(32)).trimmed().toLongLong(&number);
+        if (!number || pid <= 1) {
+            return 0;
+        }
+        _blenderPid = pid;
+    }
+    // still the watcher's child: /proc/<pid>/stat names the parent right after the command's closing parenthesis
+    QFile stat(QString("/proc/%1/stat").arg(_blenderPid));
+    if (!stat.open(QIODevice::ReadOnly)) {
+        return 0;
+    }
+    const QByteArray text = stat.read(4096);
+    const int command = text.lastIndexOf(')');
+    const QList<QByteArray> fields = text.mid(command + 2).split(' ');  // the state, then the parent's id
+    if (command < 0 || fields.size() < 2 || fields.at(1).toLongLong() != _process->processId()) {
+        return 0;
+    }
+    return _blenderPid;
 #else
     return 0;
 #endif
@@ -717,6 +965,22 @@ void MakeBlender::checkMemory() {
         return;
     }
     if (MakeBox::peakMemory(_box) > MEMORY_LIMIT_BYTES) {
+        _stopCode = MakeError::BAD_INPUT;
+        _stopReason = QString("Blender used more than %1 GB of memory and was stopped: make it lighter")
+                          .arg(MEMORY_LIMIT_BYTES / (1024 * 1024 * 1024));
+        kill();
+    }
+#elif defined(Q_OS_LINUX)
+    // the resident memory /proc reports for the pid the watcher wrote (read only, never signalled by it)
+    if (!_process) {
+        return;
+    }
+    const qint64 pid = blenderPid();
+    if (pid <= 0) {
+        return;
+    }
+    QFile status(QString("/proc/%1/status").arg(pid));
+    if (status.open(QIODevice::ReadOnly) && vmRssBytes(status.read(16384)) > MEMORY_LIMIT_BYTES) {
         _stopCode = MakeError::BAD_INPUT;
         _stopReason = QString("Blender used more than %1 GB of memory and was stopped: make it lighter")
                           .arg(MEMORY_LIMIT_BYTES / (1024 * 1024 * 1024));
