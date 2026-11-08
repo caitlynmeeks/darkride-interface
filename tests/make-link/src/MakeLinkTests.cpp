@@ -21,6 +21,7 @@
 #include <MakeClaude.h>
 #include <MakeFolder.h>
 #include <MakeLinkServer.h>
+#include <MakeRequests.h>
 #include <MakePeer.h>
 #include <MakeText.h>
 #include <MakeToolList.h>
@@ -1291,4 +1292,67 @@ void MakeLinkTests::testClaudePathIsSystemFoldersOnly() {
 #else
     QCOMPARE(path, QFileInfo(program).absolutePath() + ":/usr/bin:/bin:/usr/sbin:/sbin");
 #endif
+}
+
+// when a call of Claude's belongs to a new request (phase F, 11-08: what Claude made for a Send landed under the next
+// number when its first call came over 45 s after the previous one); the clock is the test's, so minutes take no time
+void MakeLinkTests::testRequestsFollowTheSend() {
+    qint64 now = 0;
+    MakeRequests requests([&now] { return now; });
+    const qint64 PAUSE = MakeRequests::PAUSE_MS;
+    const qint64 OPEN = MakeRequests::OPEN_SEND_MS;
+    QCOMPARE(PAUSE, qint64(45 * 1000));
+    QCOMPARE(OPEN, qint64(10 * 60 * 1000));
+
+    // the Terminal route: request 1 from Connect; the first call ever is its own; a pause over 45 s means a new one
+    requests.started(1, false);
+    QVERIFY(!requests.newRequestDue());
+    requests.touched();
+    now += PAUSE;
+    QVERIFY(!requests.newRequestDue());   // exactly 45 s: still the same request
+    now += 1;
+    QVERIFY(requests.newRequestDue());    // over 45 s: a new one
+
+    // a Send opens request 2; Claude thinks five minutes before its first call: still the Send's
+    requests.started(2, true);
+    QVERIFY(requests.sendOpen());
+    now += 5 * 60 * 1000;
+    QVERIFY(!requests.newRequestDue());
+    requests.touched();
+    now += 2 * 60 * 1000;                 // two more minutes between calls while it's open: still the Send's
+    QVERIFY(!requests.newRequestDue());
+    requests.touched();
+    // the answer (the reply naming 2): the pause counts from it; a late call 10 s later is still the Send's
+    now += 3000;
+    requests.answered(2);
+    QVERIFY(!requests.sendOpen());
+    now += 10 * 1000;
+    QVERIFY(!requests.newRequestDue());
+    now += PAUSE - 10 * 1000 + 1;          // over 45 s after the answer: a new one
+    QVERIFY(requests.newRequestDue());
+
+    // an unanswered Send (request 3): open until 10 minutes of silence exactly, closed a millisecond after
+    requests.started(3, true);
+    now += OPEN;
+    QVERIFY(!requests.newRequestDue());
+    now += 1;
+    QVERIFY(requests.newRequestDue());
+    // the app starts request 4 there (the pause rule's own, not a Send); a late reply naming the closed Send 3 changes
+    // nothing about 4: its pause still counts from its own calls
+    requests.started(4, false);
+    requests.touched();
+    now += 30 * 1000;
+    requests.answered(3);
+    QVERIFY(!requests.sendOpen());
+    now += 16 * 1000;                      // 46 s after 4's call, 16 s after the late reply: 4's pause has passed
+    QVERIFY(requests.newRequestDue());
+
+    // a Send followed by another Send before any answer: the first one's late answer doesn't close the second
+    requests.started(5, true);
+    requests.started(6, true);
+    requests.answered(5);
+    QVERIFY(requests.sendOpen());
+    QCOMPARE(requests.current(), 6);
+    requests.answered(6);
+    QVERIFY(!requests.sendOpen());
 }
