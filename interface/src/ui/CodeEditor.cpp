@@ -600,7 +600,8 @@ bool CodeEditor::open(QUuid entityId, QString which) {
     }
     updateRights();
     updateUsedBy();
-    qCDebug(interfaceapp) << "Code: opened" << _entity << _which << where() << (_problem.isEmpty() ? "" : "problem");
+    qCDebug(interfaceapp) << "Code: opened" << _entity << _which << where() << "| header:" << place()
+                          << (_problem.isEmpty() ? "" : "problem");
     emit documentChanged();
     emit savedChanged();
     emit noteChanged();
