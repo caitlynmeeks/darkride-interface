@@ -670,9 +670,13 @@ void DomainSession::traceArrivalGate() {
     auto renderStats = qApp->getRenderEngine()->getConfiguration()->getConfig<render::EngineStats>("Stats");
     const double MB = 1024.0 * 1024.0;
     const auto progress = _octreeProcessor.safeLandingProgress();
-    // the shader warm-up's progress (entry 29): the two render tasks' jobs, one of them active; property reads
+    // the shader warm-up's progress (entry 29): the main view's two jobs by their full paths (a bare name finds another
+    // view's, which never runs), one of them active; property reads
     int warmed = 0, warmLeft = 0;
-    for (const char* name : { "WarmForwardPipelines", "WarmDeferredPipelines" }) {
+    static const char* const WARM_UP_JOBS[] = {
+        "RenderMainView.DeferredForwardSwitch.RenderForwardTask.WarmForwardPipelines",
+        "RenderMainView.DeferredForwardSwitch.RenderDeferredTask.WarmDeferredPipelines" };
+    for (const char* name : WARM_UP_JOBS) {
         if (auto config = qApp->getRenderEngine()->getConfiguration()->getConfig(name)) {
             warmed += config->property("warmed").toInt();
             warmLeft += config->property("left").toInt();
