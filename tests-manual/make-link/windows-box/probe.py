@@ -95,15 +95,22 @@ MAKE_PIPE_CHECK = "Make's own pipe, by its name"
 
 
 def open_pipe(name):
-    """(reached, detail): Make's own named pipe opened as a client and closed at once, nothing sent or read. From the box
+    """(reached, detail): Make's own named pipe opened as a client with CreateFileW and closed at once, nothing sent or
+    read; the detail is Windows' own error number (Python's open() would give errno 13 with no winerror). From the box
     its access list (this user only, no AppContainer entry) must answer error 5; the unboxed control may open it (Make
     takes it or refuses it as a second client, and closes it)."""
-    try:
-        with open(name, "r+b", buffering=0):
-            pass
-        return True, "connected"
-    except Exception as e:  # noqa: BLE001 - access denied (5) is the box's answer; anything else is not reaching it either
-        return False, failure(e)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32,
+                                     ctypes.c_uint32, ctypes.c_void_p]
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING = 0x80000000, 0x40000000, 3
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+    handle = kernel32.CreateFileW(name, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
+    if handle is None or handle == INVALID_HANDLE_VALUE:
+        return False, "winerror %d" % ctypes.get_last_error()
+    kernel32.CloseHandle(handle)
+    return True, "connected"
 
 
 def resolve(name):
@@ -152,11 +159,11 @@ def network_checks(boxed):
         reached, detail = action()
         score = None
         if boxed and name == MAKE_PIPE_CHECK:
-            # the box's pass needs access denied, error 5, exactly: a busy pipe (231: Make has one instance, held by any
-            # client, the control's own open included), a missing one (2) or a timeout says nothing, so it scores unknown
+            # the box's pass needs access denied, Windows' error 5, exactly: a busy pipe (231: Make has one instance, held
+            # by any client, the control's own open included), a missing one (2) or a timeout says nothing: unknown
             if reached:
                 passed = False
-            elif detail == "PermissionError 5":
+            elif detail == "winerror 5":
                 passed = True
             else:
                 passed = None
