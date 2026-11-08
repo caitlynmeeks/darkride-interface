@@ -138,6 +138,8 @@ signals:
     void worldLoadingChanged(bool isWorldLoading);
 
 private:
+    // the arrival trace's gate line (TIVOLI_ARRIVAL_TRACE), once a second while physics is off; read-only
+    void traceArrivalGate();
     void setFailedToConnectToEntityServer();
     std::map<QString, QString> prepareServerlessDomainContents(QUrl domainURL, QByteArray data);
     void tryToEnablePhysics(bool skipTextureCheck = false);
@@ -191,6 +193,8 @@ private:
     QElapsedTimer _gpuTextureMemSizeStableFor;        // since the size last changed (a monotonic clock); invalid = no check yet
     qint64 _gpuTextureMemSettleMs{ 500 };             // 500 ms = 30 checks at 60 presents a second, the old gate in front
     int _minimumGPUTextureMemSizeStabilityCount{ 5 };  // at least this many checks (a few slow presents cannot pass on two readings)
+    // the arrival trace (TIVOLI_ARRIVAL_TRACE): one gate line a second while physics is off
+    QElapsedTimer _arrivalTraceTimer;
     bool _domainLoadingInProgress{ false };   // the "Scene Loading" profile range is open
 
     // Whole-world loading, per arrival (reset with the physics-ready information). The choice is the domain's

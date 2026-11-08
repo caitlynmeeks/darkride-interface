@@ -256,6 +256,7 @@ void DomainSession::resetPhysicsReadyInformation() {
     _gpuTextureMemSizeStabilityCount = 0;
     _gpuTextureMemSizeAtLastCheck = 0;
     _gpuTextureMemSizeStableFor.invalidate();
+    _arrivalTraceTimer.invalidate();
     _physicsEnabled = false;
     _octreeProcessor.stopSafeLanding();
     endWorldLoading();
@@ -649,6 +650,46 @@ void DomainSession::trackIncomingOctreePacket(ReceivedMessage& message, SharedNo
     }
 }
 
+// The arrival trace (SafeLanding.cpp's TIVOLI_ARRIVAL_TRACE flag): while physics is off, one line a second with what
+// the gate reads, so a slow arrival names its holder (item 53, 2026-11-07: the texture gate behind the shader warm-up).
+// Read-only: nothing here changes state but this trace's own timer. With the flag off the cost is one static bool read.
+static bool arrivalTrace() {
+    static const bool trace = !qgetenv("TIVOLI_ARRIVAL_TRACE").isEmpty();
+    return trace;
+}
+
+void DomainSession::traceArrivalGate() {
+    if (!arrivalTrace()) {
+        return;
+    }
+    if (_arrivalTraceTimer.isValid() && !_arrivalTraceTimer.hasExpired(1000)) {
+        return;
+    }
+    _arrivalTraceTimer.start();
+    auto renderStats = qApp->getRenderEngine()->getConfiguration()->getConfig<render::EngineStats>("Stats");
+    const double MB = 1024.0 * 1024.0;
+    const auto progress = _octreeProcessor.safeLandingProgress();
+    // the shader warm-up's progress (entry 29): the two render tasks' jobs, one of them active; property reads
+    int warmed = 0, warmLeft = 0;
+    for (const char* name : { "WarmForwardPipelines", "WarmDeferredPipelines" }) {
+        if (auto config = qApp->getRenderEngine()->getConfiguration()->getConfig(name)) {
+            warmed += config->property("warmed").toInt();
+            warmLeft += config->property("left").toInt();
+        }
+    }
+    qCDebug(interfaceapp).nospace().noquote() << "arrival trace: gate: presents=" << qApp->getRenderFrameCount()
+        << " warmed=" << warmed << " warmLeft=" << warmLeft
+        << " resourceMB=" << QString::number(renderStats->textureResourceGPUMemSize / MB, 'f', 1)
+        << " populatedMB=" << QString::number(renderStats->textureResourcePopulatedGPUMemSize / MB, 'f', 1)
+        << " pendingMB=" << QString::number(renderStats->texturePendingGPUTransferSize / MB, 'f', 1)
+        << " stable=" << _gpuTextureMemSizeStabilityCount
+        << " settleMs=" << (_gpuTextureMemSizeStableFor.isValid() ? _gpuTextureMemSizeStableFor.elapsed() : (qint64)-1)
+        << " landing=" << (_octreeProcessor.safeLandingIsActive() ? "tracking" : "idle")
+        << " received=" << progress.received << " waiting=" << progress.waiting << " serverDone=" << progress.serverDone
+        << " arrivalWait=" << _arrivalWaitsForNearby.load() << " worldLoading=" << _worldLoading.active
+        << " settingsKnown=" << _worldLoading.settingsKnown << " serverless=" << isServerlessMode();
+}
+
 bool DomainSession::gpuTextureMemSizeStable() {
     auto renderConfig = qApp->getRenderEngine()->getConfiguration();
     auto renderStats = renderConfig->getConfig<render::EngineStats>("Stats");
@@ -913,6 +954,7 @@ void DomainSession::enablePhysicsWhenReady() {
             _domainLoadingInProgress = true;
             qDebug() << "SCENE LOADING";
         }
+        traceArrivalGate();
 
         // we haven't yet enabled physics.  we wait until we think we have all the collision information
         // for nearby entities before starting bullet up.
