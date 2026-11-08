@@ -6,7 +6,8 @@
 //  Tiles, three a row (two when narrow); List, one card of rows, each with a small picture. An item:
 //  { key, title, subtitle, picture, checked, badge, dim }; a click on one says activated(item). A page with more to
 //  show on each passes its own card, tile and row components: each is loaded with the item as `entry`. Rows after
-//  the things (actions: "Show All 256", "Older files · 181 ›") sit in the list's card and say actionChosen(key).
+//  the things (actions: "Show All 256", "Older files · 181 ›") sit in the list's card and say actionChosen(key). An item
+//  with a `favorite` flag gets a Star in every view, which says starToggled(item).
 //
 //  Copyright 2026 Darkride.
 //
@@ -35,6 +36,7 @@ ColumnLayout {
 
     signal activated(var item)
     signal actionChosen(string key)
+    signal starToggled(var item)
 
     Layout.fillWidth: true
     spacing: 0
@@ -93,6 +95,11 @@ ColumnLayout {
                 Checkmark {
                     checked: !!entry.checked
                 }
+                Star {
+                    visible: entry.favorite !== undefined
+                    on: !!entry.favorite
+                    onToggled: collection.starToggled(entry)
+                }
             }
         }
     }
@@ -106,6 +113,11 @@ ColumnLayout {
             checked: !!entry.checked
             badge: entry.badge || ""
             onClicked: collection.activated(entry)
+            Star {
+                visible: entry.favorite !== undefined
+                on: !!entry.favorite
+                onToggled: collection.starToggled(entry)
+            }
         }
     }
     Component {

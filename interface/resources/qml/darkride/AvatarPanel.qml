@@ -686,6 +686,7 @@ Page {
                      list.keepsLinks ? "Web links you keep are kept on this computer." : ""]
                 .filter(function (line) { return line !== ""; }).join(" ")
             onActivated: avatar.wearEntry(item)
+            onStarToggled: list.toggleStar(item)
             onActionChosen: {
                 if (key === "all") {
                     list.showAll = true;
