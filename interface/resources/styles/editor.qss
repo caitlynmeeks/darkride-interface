@@ -115,6 +115,16 @@ QDockWidget#EditorHierarchy::title, QDockWidget#EditorInspector::title {
 #EditorInspector QDoubleSpinBox:focus, #EditorInspector QLineEdit:focus, #EditorInspector QPlainTextEdit:focus {
     border-color: #2c5d87;
 }
+/* the number fields (ScrubSpinBox) keep Qt's up/down buttons, 0 px wide and without arrows: on Qt 6.11 a styled spin
+   box with no buttons gets a 1 px text field (blank numbers, qa 11-08); Qt 5 lays the field out the same either way */
+ScrubSpinBox::up-button, ScrubSpinBox::down-button {
+    width: 0px;
+    border: none;
+}
+ScrubSpinBox::up-arrow, ScrubSpinBox::down-arrow {
+    image: none;
+    width: 0px;
+}
 #EditorInspector QComboBox::drop-down {
     border: none;
     border-left: 1px solid #1f1f1f;

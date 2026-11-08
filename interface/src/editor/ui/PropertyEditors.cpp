@@ -330,7 +330,10 @@ void ScrubLabel::mouseReleaseEvent(QMouseEvent* event) {
 
 ScrubSpinBox::ScrubSpinBox(QWidget* parent) : QDoubleSpinBox(parent) {
     setKeyboardTracking(false);
-    setButtonSymbols(QAbstractSpinBox::NoButtons);
+    // Qt's up/down buttons stay, drawn 0 px wide by editor.qss (ScrubSpinBox::up-button): on Qt 6.11 a spin box with a
+    // style sheet and NoButtons lays its text field out 1 px wide, so every number drew blank (qa's 1.1.4 bug, 11-08).
+    // Nothing can click them (0 px); the keys, the scrub and the field's own typing step as before
+    setButtonSymbols(QAbstractSpinBox::UpDownArrows);
     setAlignment(Qt::AlignRight);
     setFocusPolicy(Qt::StrongFocus);    // Qt's spin boxes also take the keyboard from a wheel passing over them
     _stepPause = new QTimer(this);

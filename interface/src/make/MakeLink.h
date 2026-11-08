@@ -36,6 +36,7 @@
 #include <MakeBlender.h>
 #include <MakeClaude.h>
 #include <MakeLinkServer.h>
+#include <MakeRequests.h>
 
 class ScriptEngine;
 using ScriptEnginePointer = QSharedPointer<ScriptEngine>;
@@ -147,7 +148,8 @@ public:
     void stop();
     /// A new request from the person (each message in the dock, or Claude's next call after a pause in the Terminal
     /// route): Stop is over, and Undo can take back this request alone.
-    int newRequest();
+    /// A new request; `bySend` when a Send of the dock's starts it (it stays open for Claude's calls until answered)
+    int newRequest(bool bySend = false);
     int currentRequest() const { return _request; }
     /// Make's Undo: every change of request `request`, newest first.
     void undoRequest(int request);
@@ -233,7 +235,7 @@ private:
     int _nextPictureNumber { 1 };
 
     int _request { 0 };
-    QElapsedTimer _sinceCall;
+    MakeRequests _requests;   // when a call belongs to a new request (the pause; a Send open until answered)
     QHash<int, std::function<void(bool)>> _asks;
     int _nextAsk { 1 };
     int _removesThisRequest { 0 };
