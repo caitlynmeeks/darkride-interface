@@ -19,6 +19,7 @@
 #include <QtNetwork/QLocalSocket>
 
 #include <MakeClaude.h>
+#include <MakeFiles.h>
 #include <MakeFolder.h>
 #include <MakeLinkServer.h>
 #include <MakeRequests.h>
@@ -1476,4 +1477,56 @@ void MakeLinkTests::testEveryToolSaysWhetherItChanges() {
     const MakeToolList whole(said);
     QVERIFY2(whole.isValid(), qPrintable(whole.loadError()));
     QVERIFY(whole.changesTheWorld("build") && !whole.changesTheWorld("look"));
+}
+
+// a world's folder in My Files (/Make/<world>): its name's plain letters and digits, never a "/" or a ".", at most 40
+void MakeLinkTests::testMyFilesFolderName() {
+    QCOMPARE(MakeFiles::folderName("Port Amarelle"), QString("Port-Amarelle"));
+    QCOMPARE(MakeFiles::folderName("Finca del Cardo, Tenerife"), QString("Finca-del-Cardo-Tenerife"));
+    QCOMPARE(MakeFiles::folderName("Señal Álamo"), QString("Senal-Alamo"));
+    QCOMPARE(MakeFiles::folderName("../../avatars"), QString("avatars"));
+    QCOMPARE(MakeFiles::folderName("a/b\\c"), QString("a-b-c"));
+    QCOMPARE(MakeFiles::folderName(".."), QString("world"));
+    QCOMPARE(MakeFiles::folderName(""), QString("world"));
+    QCOMPARE(MakeFiles::folderName(QString::fromUtf8("東京")), QString("world"));
+    QCOMPARE(MakeFiles::folderName("world.example.com"), QString("world-example-com"));
+    const QString longName = MakeFiles::folderName(QString(30, 'a') + " " + QString(30, 'b'));
+    QVERIFY(longName.size() <= MakeFiles::FOLDER_NAME_MAX);
+    QVERIFY(!longName.endsWith('-'));
+    QCOMPARE(longName, QString(30, 'a') + "-" + QString(9, 'b'));
+    for (const QString& name : { QString("a/../b"), QString("./x"), QString("x."), QString(" / ") }) {
+        const QString folder = MakeFiles::folderName(name);
+        QVERIFY2(!folder.contains('/') && !folder.contains('.') && !folder.isEmpty(), qPrintable(folder));
+    }
+}
+
+// only the metaverse's own files host's id link goes into a thing's field
+void MakeLinkTests::testMyFilesLinkIsTheFilesHosts() {
+    const QUrl metaverse("https://vr.darkride.ai");
+    QVERIFY(MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/abcdef0123456789/client-1.js"), metaverse));
+    QVERIFY(MakeFiles::isOwnFilesLink(QUrl("https://FILES.vr.darkride.ai/f/abcdef0123456789/m.glb"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("http://files.vr.darkride.ai/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai:8443/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://cdn.darkride.ai/ids/abcdef0123456789"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/someone/Make/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/x/../../y"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://user@files.vr.darkride.ai/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai.example.com/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.darkride.ai/f/abcdef0123456789/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("atp:/claude-scripts/a.js"), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl(""), metaverse));
+    QVERIFY(!MakeFiles::isOwnFilesLink(QUrl("https://files.vr.darkride.ai/f/abcdef0123456789/a.js"), QUrl()));
+}
+
+// an Undo deletes a file of its request only when no thing points at it; a doubtful case keeps it
+void MakeLinkTests::testMyFilesUsedBy() {
+    const QString link = "https://files.vr.darkride.ai/f/abcdef0123456789/client-1.js";
+    QVERIFY(!MakeFiles::usedBy(link, {}));
+    QVERIFY(!MakeFiles::usedBy(link, { "", "atp:/claude-scripts/client-1.js",
+                                       "https://files.vr.darkride.ai/f/0000000000000000/client-1.js" }));
+    QVERIFY(MakeFiles::usedBy(link, { "", link }));
+    QVERIFY(MakeFiles::usedBy(link, { link + "?v=2" }));
+    QVERIFY(MakeFiles::usedBy(link, { "[\"" + link + "\", \"atp:/other.js\"]" }));
+    QVERIFY(MakeFiles::usedBy(QString(), { "anything" }));
 }

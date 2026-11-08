@@ -225,7 +225,12 @@
               },
               "canKeepFiles": {
                 "type": "boolean",
-                "description": "False where a script or a model can't be stored: a world opened from a file on this computer, or one the person may not add files to. Build with what things can do on their own then, and say so."
+                "description": "False where a script or a model can't be stored now: with my_files the person isn't signed in; with world, the world is a file on this computer or the person may not add files to it. Build with what things can do on their own then, and say so."
+              },
+              "filesGoTo": {
+                "type": "string",
+                "enum": ["my_files", "world"],
+                "description": "Where Make keeps the scripts and models it saves, the person's choice: my_files (their own My Files: an https link that works in any world, readable by anyone with it) or world (this world's own files)."
               }
             },
             "required": [
@@ -623,7 +628,7 @@
       "group": "build",
       "needs": "world",
       "changes": true,
-      "description": "Put a script into a thing, as text. side 'server' runs once in the world's server (shared state); 'client' runs on every visitor's computer (clicks, what one visitor sees). Replaces that side's script; source '' removes it. A readable copy is saved, marked with made_by.",
+      "description": "Put a script into a thing, as text. side 'server' runs once in the world's server (shared state); 'client' runs on every visitor's computer (clicks, what one visitor sees). Replaces that side's script; source '' removes it. The file goes where the person keeps Make's files (scene's here.filesGoTo). A readable copy is saved, marked with made_by.",
       "inputs": {
         "type": "object",
         "properties": {
@@ -1131,7 +1136,7 @@
       "group": "make",
       "needs": "world",
       "changes": true,
-      "description": "Put a model from make_with_blender into the world's own files, with the signed-in account's rights, through the model-format guard. Returns its address for add's modelURL.",
+      "description": "Put a model from make_with_blender where the person keeps Make's files (scene's here.filesGoTo: their My Files, or this world's own files), with the signed-in account's rights, through the model-format guard. Returns its address for add's modelURL.",
       "inputs": {
         "type": "object",
         "properties": {

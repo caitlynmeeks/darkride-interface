@@ -25,6 +25,9 @@
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSize>
 #include <QtCore/QTimer>
+#include <QtCore/QUrlQuery>
+#include <QtNetwork/QNetworkReply>
+#include <QtNetwork/QNetworkRequest>
 #include <QtGui/QImage>
 
 #ifndef Q_OS_WIN
@@ -33,6 +36,7 @@
 #endif
 
 #include <AccountManager.h>
+#include <AddressManager.h>
 #include <AssetClient.h>
 #include <AssetUpload.h>
 #include <EntityScriptRights.h>
@@ -40,12 +44,18 @@
 #include <EntityScriptingInterface.h>
 #include <GLMHelpers.h>
 #include <MappingRequest.h>
+#include <MaterialEntityItem.h>
+#include <ModelEntityItem.h>
+#include <NetworkAccessManager.h>
+#include <NetworkingConstants.h>
+#include <PickFilter.h>
 #include <DomainHandler.h>
 #include <NodeList.h>
 #include <PathUtils.h>
 #include <ScriptCaller.h>
 #include <ScriptEngine.h>
 #include <ScriptEngines.h>
+#include <MakeFiles.h>
 #include <MakeFolder.h>
 #include <SettingHandle.h>
 #include <MakeText.h>
@@ -53,6 +63,7 @@
 #include "Application.h"
 #include "SecondaryCamera.h"
 #include "avatar/AvatarManager.h"
+#include "editor/EditorCreate.h"
 
 Q_LOGGING_CATEGORY(makelog, "darkride.make")
 
@@ -65,6 +76,20 @@ const int MAX_SOCKET_PATH = 100;  // a socket's path holds 104 bytes on macOS
 const char* NO_FILES_IN_A_FILE_WORLD = "this world is a file on this computer and keeps no files; scripts and models need a "
                                        "world on a server";
 const char* NO_FILES_ALLOWED = "the person may not add files to this world (its owner can allow it)";
+// why Make can't keep a file in the person's My Files (Caity 11-08: the default place for Make's files)
+const char* NO_FILES_SIGNED_OUT = "the person isn't signed in to Darkride, and Make keeps its files in their My Files (they "
+                                  "can sign in, or choose this world's files in Make's panel)";
+const char* MY_FILES_FULL = "the person's My Files are full";
+const char* MY_FILES_REFUSED = "My Files didn't take it";
+// a world opened from a file has no server, so nothing runs a server script there
+const char* NO_SERVER_IN_A_FILE_WORLD = "this world is a file on this computer and has no server, so a server script "
+                                        "can't run in it";
+// where Make keeps its files: "my_files" (the default) or "world"
+const char* FILES_PLACE_SETTING = "Make/filesPlace";
+const char* MY_FILES_API = "/api/user/files";
+const char* MY_FILES_STATUS_API = "/api/user/files/status";
+// how long after an Undo its own changes are surely in this world's tree, before its files are looked for there
+const int UNDO_SETTLE_MS = 2000;
 // the answer a change gets when the person undid its request while Claude was still working (mary's words, 11-08)
 const char* UNDONE_LINE = "Not applied: the person undid this request while you were working on it. Stop working on it, "
                           "and don't redo it unless they ask again.";
@@ -267,6 +292,14 @@ MakeLink::MakeLink() {
             QString reason;
             if (message.contains(NO_FILES_IN_A_FILE_WORLD)) {
                 reason = "this world is a file on your computer, so it can't keep files.";
+            } else if (message.contains(NO_SERVER_IN_A_FILE_WORLD)) {
+                reason = "this world is a file on your computer, so it has no server to run it.";
+            } else if (message.contains(NO_FILES_SIGNED_OUT)) {
+                reason = "you aren't signed in, so Make can't keep files in your My Files.";
+            } else if (message.contains(MY_FILES_FULL)) {
+                reason = "your My Files are full.";
+            } else if (message.contains(MY_FILES_REFUSED)) {
+                reason = "My Files turned it down.";
             } else if (message.contains(NO_FILES_ALLOWED)) {
                 reason = "you can't add files to this world. Its owner can allow it.";
             } else if (message.contains("the world's files didn't take")) {
@@ -721,6 +754,7 @@ void MakeLink::disconnectLink() {
     }
     _asks.clear();
     _names.clear();
+    _myFiles.clear();   // no Undo after Disconnect: what the requests kept stays theirs
     _pictureNumbers.clear();
     _nextPictureNumber = 1;
     _channelFlag = "off";
@@ -836,6 +870,14 @@ void MakeLink::undoRequest(int request) {
     _bridge.send("undo_request", QJsonObject { { "request", request } }, _request, [this, request](bool ok, const QJsonObject& result) {
         emit activity(request, ok ? QString("undid %1 change(s)").arg(result.value("undone").toArray().size())
                                   : "couldn't undo: " + result.value("message").toString());
+        if (ok) {
+            // the files the request kept in My Files go with it, once the Undo's own changes are in this world's tree:
+            // one a thing still points at (another request's, or a copy) stays; Make has no Redo
+            const QList<QPair<QString, QString>> files = _myFiles.take(request);
+            if (!files.isEmpty()) {
+                QTimer::singleShot(UNDO_SETTLE_MS, this, [this, files] { deleteUnusedMyFiles(files); });
+            }
+        }
     });
 }
 
@@ -901,14 +943,15 @@ void MakeLink::longMaterialToFile(const QJsonObject& inputs, const std::function
     const QJsonValue material = properties.value("materialData");
     const QByteArray text = material.isObject() ? QJsonDocument(material.toObject()).toJson(QJsonDocument::Compact)
                                                 : material.toString().toUtf8();
-    if (text.size() <= MAX_INLINE_VALUE_BYTES || !whyNoWorldFiles().isEmpty()) {
+    if (text.size() <= MAX_INLINE_VALUE_BYTES || !whyNoFiles().isEmpty()) {
         then(inputs);
         return;
     }
     // a name the app makes, as for scripts: never the world's name for the thing or Claude's words
     const QString name = "material-" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd-HHmmss-zzz") + "-" +
                          QString::number(QRandomGenerator::global()->bounded(0x10000), 16).rightJustified(4, '0');
-    upload(text, "/claude-materials/" + name + ".json", [inputs, properties, then](const QString& url, const QString& error) mutable {
+    upload(text, "materials", name + ".json", "application/json",
+           [inputs, properties, then](const QString& url, const QString& error) mutable {
         if (!error.isEmpty()) {
             then(inputs);
             return;
@@ -944,9 +987,11 @@ void MakeLink::forward(const QString& tool, const QJsonObject& inputs, const Mak
             for (const QJsonValue& thing : result.value("things").toArray()) {
                 _names.insert(thing.toObject().value("id").toString(), thing.toObject().value("name").toString());
             }
-            // whether a script or a model can be stored here, so Claude knows before it tries (Caity's walkthrough)
+            // whether a script or a model can be stored now, and where, so Claude knows before it tries (Caity's
+            // walkthrough; My Files the default, 11-08)
             QJsonObject here = answer.value.value("here").toObject();
-            here["canKeepFiles"] = whyNoWorldFiles().isEmpty();
+            here["canKeepFiles"] = whyNoFiles().isEmpty();
+            here["filesGoTo"] = keepsInMyFiles() ? "my_files" : "world";
             answer.value["here"] = here;
         } else if (tool == "remove") {
             ++_removesThisRequest;
@@ -1129,16 +1174,26 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     }
     // a world that can't keep the script says so at once, before any copy is written (Caity's walkthrough, 11-08: a
     // file world answered with a network error, and two copies were left behind)
-    const QString noFiles = whyNoWorldFiles();
+    const QString noFiles = whyNoFiles();
     if (!noFiles.isEmpty()) {
         reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
                                             "Not saved: " + noFiles + ". The script isn't on it and isn't running. Tell the "
                                             "person it didn't work."));
         return;
     }
-    // marked as made with Claude, and kept as a readable file in the Make folder (security B7)
-    const QString header = QString("// made with Claude in Darkride's Make, %1, for %2\n")
-                               .arg(QDateTime::currentDateTime().toString(Qt::ISODate), by.value("name").toString());
+    // with My Files a file world keeps scripts, but nothing there runs a server script: said before it is saved
+    if (side == "server" && DependencyManager::get<NodeList>()->getDomainHandler().isServerless()) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
+                                            "Not saved: " + QString(NO_SERVER_IN_A_FILE_WORLD) + ". Do it in the thing's "
+                                            "client script instead, or tell the person it can't be done in this world."));
+        return;
+    }
+    // marked as made with Claude, and kept as a readable file in the Make folder (security B7); in My Files anyone with
+    // the link may read it, so the person's name stays out (pm 11-08)
+    const QString when = QDateTime::currentDateTime().toString(Qt::ISODate);
+    const QString header = keepsInMyFiles()
+        ? QString("// made with Claude in Darkride's Make, %1\n").arg(when)
+        : QString("// made with Claude in Darkride's Make, %1, for %2\n").arg(when, by.value("name").toString());
     const QByteArray text = (source.startsWith("// made with Claude") ? source : header + source).toUtf8();
     // a name the app makes (security's Make-folder must): never the world's name for the thing or Claude's words
     const QString name = side + "-" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd-HHmmss-zzz") + "-" +
@@ -1151,7 +1206,8 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     }
     file.close();
     const int request = _request;
-    upload(text, "/claude-scripts/" + name + ".js", [this, id, side, copy, by, request, reply](const QString& url, const QString& error) {
+    upload(text, "scripts", name + ".js", "application/javascript",
+           [this, id, side, copy, by, request, reply](const QString& url, const QString& error) {
         if (!error.isEmpty()) {
             QFile::remove(copy);   // not saved, so no readable copy of it either
             reply(MakeLinkServer::Result::error(MakeError::REFUSED, "Not saved: " + error +
@@ -1161,6 +1217,14 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
         _bridge.send("set_script", QJsonObject { { "id", id }, { "side", side }, { "url", url } }, request,
                      [this, id, side, copy, by, request, url, reply](bool ok, const QJsonObject& result) {
                          if (!ok) {
+                             // nothing points at the file it just kept in My Files (the thing was gone): it goes
+                             QList<QPair<QString, QString>>& kept = _myFiles[request];
+                             for (int i = 0; i < kept.size(); ++i) {
+                                 if (kept.at(i).second == url) {
+                                     deleteUnusedMyFiles({ kept.takeAt(i) });
+                                     break;
+                                 }
+                             }
                              reply(MakeLinkServer::Result::error(result.value("code").toString(), result.value("message").toString()));
                              return;
                          }
@@ -1176,8 +1240,193 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     });
 }
 
-void MakeLink::upload(const QByteArray& data, const QString& path,
+void MakeLink::upload(const QByteArray& data, const QString& kind, const QString& name, const QString& mimeType,
                       const std::function<void(const QString& url, const QString& error)>& done) {
+    if (keepsInMyFiles()) {
+        uploadToMyFiles(data, kind, name, mimeType, done);
+    } else {
+        uploadToWorldFiles(data, "/claude-" + kind + "/" + name, done);
+    }
+}
+
+void MakeLink::uploadToMyFiles(const QByteArray& data, const QString& kind, const QString& name, const QString& mimeType,
+                               const std::function<void(const QString& url, const QString& error)>& done) {
+    const QString why = whyNoFiles();
+    if (!why.isEmpty()) {
+        done(QString(), why);
+        return;
+    }
+    // the app uploads with the person's own sign-in (Build mode's upload); Claude only ever handed the bytes over.
+    // /Make/<world>/<kind>: the person finds what Make kept for each world together
+    const QString folder = "/Make/" + MakeFiles::folderName(worldName()) + "/" + kind;
+    const int request = _request;
+    auto start = [this, data, folder, name, mimeType, request, done] {
+        auto upload = new EditorUpload(this);
+        connect(upload, &EditorUpload::finished, this, [this, upload, folder, request, done](const QString& url) {
+            upload->deleteLater();
+            // only a link of the metaverse's own files host goes into a thing's field
+            if (!MakeFiles::isOwnFilesLink(QUrl(url), NetworkingConstants::METAVERSE_SERVER_URL())) {
+                qCWarning(makelog) << "Make: My Files answered with a link that isn't its files host's:" << url;
+                done(QString(), QString(MY_FILES_REFUSED) + ": its answer wasn't one of its own links");
+                return;
+            }
+            _myFiles[request].append({ folder + "/" + upload->fileName(), url });
+            done(url, QString());
+        });
+        connect(upload, &EditorUpload::failed, this, [upload, done](const QString& error) {
+            upload->deleteLater();
+            done(QString(), error.contains("Storage is full", Qt::CaseInsensitive) ? QString(MY_FILES_FULL)
+                                                                                     : QString(MY_FILES_REFUSED) + ": " + error);
+        });
+        QString error;
+        if (!upload->startData(data, name, folder, mimeType, error)) {
+            upload->deleteLater();
+            done(QString(), QString(MY_FILES_REFUSED) + ": " + error);
+        }
+    };
+    if (kind != "models") {
+        start();   // a script or a material is a few KB
+        return;
+    }
+    // a model may be tens of MB: a full store says so before it is sent
+    checkMyFilesRoom(data.size(), [start, done](const QString& full) {
+        if (full.isEmpty()) {
+            start();
+        } else {
+            done(QString(), full);
+        }
+    });
+}
+
+void MakeLink::checkMyFilesRoom(qint64 bytes, const std::function<void(const QString& why)>& done) {
+    QNetworkRequest request = DependencyManager::get<AccountManager>()->createRequest(MY_FILES_STATUS_API,
+                                                                                      AccountManagerAuth::Required);
+    if (request.url().isEmpty()) {
+        done(QString());
+        return;
+    }
+    QNetworkReply* reply = NetworkAccessManager::getInstance().get(request);
+    connect(reply, &QNetworkReply::finished, this, [reply, bytes, done] {
+        reply->deleteLater();
+        const QJsonObject status = QJsonDocument::fromJson(reply->readAll()).object();
+        const double used = status.value("usedSize").toDouble(-1.0);
+        const double most = status.value("maxSize").toDouble(-1.0);   // -1: no limit
+        const double MB = 1024.0 * 1024.0;
+        if (reply->error() == QNetworkReply::NoError && used >= 0.0 && most >= 0.0 && used + bytes > most) {
+            done(QString("%1 (%2 MB of %3 MB used; this is %4 MB)")
+                     .arg(MY_FILES_FULL)
+                     .arg(qRound(used / MB))
+                     .arg(qRound(most / MB))
+                     .arg(qMax(1, qRound(bytes / MB))));
+        } else {
+            done(QString());
+        }
+    });
+}
+
+void MakeLink::deleteUnusedMyFiles(const QList<QPair<QString, QString>>& files) {
+    if (files.isEmpty()) {
+        return;
+    }
+    QStringList links;
+    if (!fileLinksInTheWorld(links)) {
+        qCInfo(makelog) << "Make: kept" << files.size() << "file(s) in My Files: this world's things couldn't be read";
+        return;
+    }
+    auto accountManager = DependencyManager::get<AccountManager>();
+    for (const auto& file : files) {
+        const QString& path = file.first;
+        if (!path.startsWith("/Make/") || path.contains("/../")) {
+            continue;   // only Make's own, as it kept them
+        }
+        if (MakeFiles::usedBy(file.second, links)) {
+            qCInfo(makelog) << "Make: kept" << path << "in My Files: a thing still uses it";
+            continue;
+        }
+        QNetworkRequest request = accountManager->createRequest(MY_FILES_API, AccountManagerAuth::Required);
+        if (request.url().isEmpty()) {
+            return;
+        }
+        QUrl url = request.url();
+        QUrlQuery query(url);
+        query.addQueryItem("path", path);
+        url.setQuery(query);
+        request.setUrl(url);
+        QNetworkReply* reply = NetworkAccessManager::getInstance().deleteResource(request);
+        connect(reply, &QNetworkReply::finished, this, [reply, path] {
+            reply->deleteLater();
+            if (reply->error() == QNetworkReply::NoError) {
+                qCInfo(makelog) << "Make: deleted" << path << "from My Files (its request was undone)";
+            } else {
+                qCWarning(makelog) << "Make: couldn't delete" << path << "from My Files:" << reply->errorString();
+            }
+        });
+    }
+}
+
+bool MakeLink::fileLinksInTheWorld(QStringList& links) const {
+    auto renderer = qApp->getEntities();
+    EntityTreePointer tree = renderer ? renderer->getTree() : nullptr;
+    if (!tree) {
+        return false;
+    }
+    tree->withReadLock([&] {
+        // every entity reaches every client (ENTITY-STREAMING.md), so this world's whole tree is here
+        QVector<QUuid> ids;
+        tree->evalEntitiesInCube(tree->getRoot()->getAACube(), PickFilter(), ids);
+        for (const QUuid& id : ids) {
+            EntityItemPointer entity = tree->findEntityByEntityItemID(id);
+            if (!entity) {
+                continue;
+            }
+            links << entity->getScript() << entity->getServerScripts();
+            if (auto model = std::dynamic_pointer_cast<ModelEntityItem>(entity)) {
+                links << model->getModelURL() << model->getCompoundShapeURL();
+            }
+            if (auto material = std::dynamic_pointer_cast<MaterialEntityItem>(entity)) {
+                links << material->getMaterialURL();
+            }
+        }
+    });
+    return true;
+}
+
+QString MakeLink::whyNoFiles() const {
+    if (!keepsInMyFiles()) {
+        return whyNoWorldFiles();
+    }
+    if (!DependencyManager::get<AccountManager>()->isLoggedIn()) {
+        return NO_FILES_SIGNED_OUT;
+    }
+    return QString();
+}
+
+QString MakeLink::worldName() const {
+    const DomainHandler& domain = DependencyManager::get<NodeList>()->getDomainHandler();
+    auto addresses = DependencyManager::get<AddressManager>();
+    if (domain.isServerless()) {
+        return QFileInfo(addresses->currentAddress(true).path()).completeBaseName();   // the world's own file
+    }
+    const QString place = addresses->getPlaceName();
+    return place.isEmpty() ? domain.getHostname() : place;
+}
+
+QString MakeLink::filesPlace() const {
+    return Setting::Handle<QString>(FILES_PLACE_SETTING, "my_files").get() == "world" ? QString("world")
+                                                                                      : QString("my_files");
+}
+
+void MakeLink::setFilesPlace(const QString& place) {
+    const QString value = place == "world" ? QString("world") : QString("my_files");
+    if (value == filesPlace()) {
+        return;
+    }
+    Setting::Handle<QString>(FILES_PLACE_SETTING, "my_files").set(value);
+    emit filesPlaceChanged();
+}
+
+void MakeLink::uploadToWorldFiles(const QByteArray& data, const QString& path,
+                                  const std::function<void(const QString& url, const QString& error)>& done) {
     const QString noFiles = whyNoWorldFiles();
     if (!noFiles.isEmpty()) {
         done(QString(), noFiles);
@@ -1258,7 +1507,7 @@ void MakeLink::uploadModel(const QJsonObject& inputs, const MakeLinkServer::Repl
         reply(MakeLinkServer::Result::error(MakeError::BAD_INPUT, "the model was refused: " + why));
         return;
     }
-    const QString noFiles = whyNoWorldFiles();
+    const QString noFiles = whyNoFiles();
     if (!noFiles.isEmpty()) {
         reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE, "Not uploaded: " + noFiles +
                                             ". The model isn't in the world. Tell the person it didn't work."));
@@ -1266,7 +1515,8 @@ void MakeLink::uploadModel(const QJsonObject& inputs, const MakeLinkServer::Repl
     }
     const QString name = plainName(inputs.value("name").toString(), 40) + "-" + inputs.value("model_id").toString();
     const QJsonObject by = madeBy();
-    upload(bytes, "/claude-models/" + name + ".glb", [reply, by, size = bytes.size()](const QString& url, const QString& error) {
+    upload(bytes, "models", name + ".glb", "model/gltf-binary",
+           [reply, by, size = bytes.size()](const QString& url, const QString& error) {
         if (!error.isEmpty()) {
             reply(MakeLinkServer::Result::error(MakeError::REFUSED, "Not uploaded: " + error +
                                                 ". The model isn't in the world. Tell the person it didn't work."));
