@@ -62,7 +62,7 @@ def open_folder(path):
 
 targets = json.load(open(os.path.join(job, "targets.json")))
 # {"token": str, "loopback", "lan_closed", "lan_listener", "lan6_closed", "lan6_listener", "system_port",
-#  "mac": [address, port] or null, "public_name": str or null}
+#  "mac": [address, port] or null, "public_name": str or null, "make_pipe": str or null}
 
 
 def failure(e):
@@ -88,6 +88,21 @@ def connect(address, greeting=None, read=True):
     except ConnectionRefusedError as e:
         return True, "answered refused (%s)" % failure(e)
     except Exception as e:  # noqa: BLE001 - any other failure is not reaching it
+        return False, failure(e)
+
+
+MAKE_PIPE_CHECK = "Make's own pipe, by its name"
+
+
+def open_pipe(name):
+    """(reached, detail): Make's own named pipe opened as a client and closed at once, nothing sent or read. From the box
+    its access list (this user only, no AppContainer entry) must answer error 5; the unboxed control may open it (Make
+    takes it or refuses it as a second client, and closes it)."""
+    try:
+        with open(name, "r+b", buffering=0):
+            pass
+        return True, "connected"
+    except Exception as e:  # noqa: BLE001 - access denied (5) is the box's answer; anything else is not reaching it either
         return False, failure(e)
 
 
@@ -128,12 +143,25 @@ def network_checks(boxed):
         checks.append(("the Mac's listener (off the laptop)", lambda: connect(targets["mac"], None, False), "connected"))
     if targets.get("public_name"):
         checks.append(("a public name (DNS)", lambda: resolve(targets["public_name"]), "reached"))
+    if targets.get("make_pipe"):
+        checks.append((MAKE_PIPE_CHECK, lambda: open_pipe(targets["make_pipe"]), "connected"))
     # recorded, not scored, in the box (security, 11-07 after run 6; see the top)
     info = ("a closed port on this laptop's LAN address", "a closed port on this laptop's IPv6 address",
             "this laptop's own computer name (DNS)", "a public name (DNS)")
     for name, action, control_needs in checks:
         reached, detail = action()
-        if boxed:
+        score = None
+        if boxed and name == MAKE_PIPE_CHECK:
+            # the box's pass needs access denied, error 5, exactly: a busy pipe (231: Make has one instance, held by any
+            # client, the control's own open included), a missing one (2) or a timeout says nothing, so it scores unknown
+            if reached:
+                passed = False
+            elif detail == "PermissionError 5":
+                passed = True
+            else:
+                passed = None
+                score = "unknown"
+        elif boxed:
             passed = None if name in info else not reached
         elif control_needs == "connected":
             passed = reached and detail.startswith("connected")
@@ -144,6 +172,8 @@ def network_checks(boxed):
         entry = {"check": "network: " + name, "reached": reached, "pass": passed, "detail": detail}
         if boxed and name in info:
             entry["score"] = "info"
+        if score:
+            entry["score"] = score
         results.append(entry)
 
 

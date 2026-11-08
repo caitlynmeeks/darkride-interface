@@ -17,7 +17,7 @@
 //  Writes <test folder>\results.json (each check's pass and refused/opened, counts) and deletes the job folder, the
 //  container profile and its throwaway test credential afterwards.
 //    make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port] [--lan-listener]
-//                      [--public-name <name>]
+//                      [--public-name <name>] [--make-pipe <\\.\pipe\darkride-make-...>]
 //  The own-address targets come in both families (security, the second machine's run): a closed port on the laptop's
 //  IPv4 LAN address, and the same on its IPv6 address when it has one with a route (lan6_closed; none otherwise), and
 //  with --lan-listener a listener of this program's own on each.
@@ -35,6 +35,11 @@
 //                            person's OK for that alert
 //    --public-name <name>    run 7: a public name looked up from the box and from the control (resolved or not,
 //                            nothing kept; letters, digits, dots and hyphens only)
+//    --make-pipe <name>      security's (a), 11-08: Make's own pipe while a client listens, its name from the client's
+//                            <Make folder>\claude-code\.darkride-mcp.json (the --socket value). The box must get
+//                            error 5 opening it (its access list names this user only, and an AppContainer process is
+//                            not that); the control opens it (Make takes or refuses it as a client; closed at once,
+//                            nothing sent or read)
 //  Run 7 (security, 11-07 after run 6): the closed port, the own computer name and the public name are recorded in the
 //  box as INFO, not scored (probe.py's top says why).
 //  The installer proof kit (installer-kit.ps1 beside this file) runs the box in Make's real profile, where the
@@ -413,6 +418,7 @@ struct Options {
     bool lanListener = false;  // --lan-listener
     bool keepProfile = false;  // --keep-profile: the profile stays for the kit's own delete step
     std::string publicName;    // --public-name <name> (run 7)
+    std::string makePipe;      // --make-pipe <name>: Make's own pipe (security's (a))
 };
 
 // a host name only: letters, digits, dots and hyphens, as DNS allows; nothing that could reach the JSON or a shell
@@ -441,6 +447,19 @@ bool parseOptions(int argc, wchar_t** argv, Options& options) {
             options.publicName = narrow(argv[++i]);
             if (!hostName(options.publicName)) {
                 return false;
+            }
+        } else if (arg == L"--make-pipe" && i + 1 < argc) {
+            // only a name of Make's shape: the prefix and 32 hex digits, nothing that could reach the JSON or elsewhere
+            const std::string prefix = "\\\\.\\pipe\\darkride-make-";
+            options.makePipe = narrow(argv[++i]);
+            if (options.makePipe.size() != prefix.size() + 32 || options.makePipe.compare(0, prefix.size(), prefix) != 0) {
+                return false;
+            }
+            for (size_t at = prefix.size(); at < options.makePipe.size(); ++at) {
+                const char c = options.makePipe[at];
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                    return false;
+                }
             }
         } else if (arg == L"--profile" && i + 1 < argc) {
             boxProfile = argv[++i];
@@ -663,7 +682,8 @@ void openTargets(Targets& targets, const Options& options) {
          << ", \"lan6_listener\": " << (lan6ListenerPort ? addressJson(lan6Text.c_str(), lan6ListenerPort) : "null")
          << ", \"system_port\": " << (options.systemPort ? addressJson(lanText, 135) : "null")
          << ", \"mac\": " << (options.macPort ? addressJson(options.macAddress.c_str(), options.macPort) : "null")
-         << ", \"public_name\": " << (options.publicName.empty() ? "null" : jsonString(options.publicName)) << "}";
+         << ", \"public_name\": " << (options.publicName.empty() ? "null" : jsonString(options.publicName))
+         << ", \"make_pipe\": " << (options.makePipe.empty() ? "null" : jsonString(options.makePipe)) << "}";
     targets.json = json.str();
 }
 
@@ -777,7 +797,8 @@ int wmain(int argc, wchar_t** argv) {
     if (argc < 3 || !parseOptions(argc, argv, options)) {
         std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port> | [<ipv6>]:<port>]"
                       L" [--system-port]"
-                      L" [--lan-listener] [--public-name <name>] [--profile Darkride.MakeBoxTest|Darkride.MakeBlender]"
+                      L" [--lan-listener] [--public-name <name>] [--make-pipe <\\\\.\\pipe\\darkride-make-...>]"
+                      L" [--profile Darkride.MakeBoxTest|Darkride.MakeBlender]"
                       L" [--keep-profile]\n"
                       L"       make-box-test.exe --profile-create | --profile-delete   (Make's profile, the installer kit)\n";
         return 2;
@@ -814,7 +835,8 @@ int wmain(int argc, wchar_t** argv) {
               << ", lan listener " << (options.lanListener ? (targets.lan.socket != INVALID_SOCKET ? "open" : "not opened") : "no")
               << ", ipv6 own address " << targets.ipv6
               << ", ipv6 listener " << (options.lanListener ? (targets.lan6.socket != INVALID_SOCKET ? "open" : "not opened") : "no")
-              << ", public name " << (options.publicName.empty() ? "no" : "yes") << "\n";
+              << ", public name " << (options.publicName.empty() ? "no" : "yes")
+              << ", make pipe " << (options.makePipe.empty() ? "no" : "yes") << "\n";
     std::string form;
     bool lpacChosen = false;
     DWORD uiChosen = 0;
