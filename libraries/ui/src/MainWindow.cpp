@@ -26,6 +26,7 @@
 #include <QMimeData>
 #include <QtGui/QWindow>
 #include <QtCore/QDebug>
+#include <QtCore/QTimer>
 
 #include "ui/Logging.h"
 #include "DockWidget.h"
@@ -108,6 +109,44 @@ void MainWindow::checkStartGeometry() {
         resize(_startGeometry.size());
         move(_startGeometry.topLeft());
     }
+    fitOnScreen("after the start");
+}
+
+// A first start sizes the window's INNER area to the whole usable area (restoreGeometry), so a normal window's title
+// bar pushed its bottom under Windows' taskbar (or the Dock), and a quit saved that size for every later start
+// (windowz 11-08: 39 px under the taskbar at 125 %, the side edges off the screen). Moved in, and made smaller only
+// where it can't fit; maximised and full-screen windows stay the system's
+void MainWindow::fitOnScreen(const char* when) {
+    if (windowState() != Qt::WindowNoState || !isVisible()) {
+        return;
+    }
+    QScreen* screen = windowHandle() ? windowHandle()->screen() : nullptr;
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (!screen) {
+        return;
+    }
+    const QRect available = screen->availableGeometry();
+    const QRect inner = geometry();   // a top-level's geometry is its inner area, without the frame
+    const QRect frame = frameGeometry();
+    if (available.contains(inner) && frame.top() >= available.top()) {
+        return;
+    }
+    // room for the inner area: the usable area less the title bar and the frame's other edges
+    const QMargins edges(std::max(0, inner.left() - frame.left()), std::max(0, inner.top() - frame.top()),
+                         std::max(0, frame.right() - inner.right()), std::max(0, frame.bottom() - inner.bottom()));
+    const QRect room = available.marginsRemoved(edges);
+    if (room.width() < MIN_START_SIZE.width() || room.height() < MIN_START_SIZE.height()) {
+        return;   // a screen too small to hold a window of the smallest size: left as it is
+    }
+    const QSize size = inner.size().boundedTo(room.size());
+    const QPoint topLeft(std::clamp(inner.left(), room.left(), room.right() + 1 - size.width()),
+                         std::clamp(inner.top(), room.top(), room.bottom() + 1 - size.height()));
+    const QRect fitted(topLeft, size);
+    qCDebug(uiLogging) << "main window" << when << "outside the usable area" << available << "of its screen, at" << frame
+                       << "with its frame; fitted to" << fitted;
+    setGeometry(fitted);
 }
 
 void MainWindow::saveGeometry() {
@@ -183,6 +222,12 @@ void MainWindow::changeEvent(QEvent* event) {
             emit windowShown(true);
             if ((stateChangeEvent->oldState() & Qt::WindowMinimized) == Qt::WindowMinimized) {
                 emit windowMinimizedChanged(false);
+            }
+            // back to its normal size from maximised or full screen: that size was a first start's whole usable area
+            // (fitOnScreen); once the system has put it back
+            if ((stateChangeEvent->oldState() & (Qt::WindowMaximized | Qt::WindowFullScreen)) &&
+                windowState() == Qt::WindowNoState) {
+                QTimer::singleShot(0, this, [this] { fitOnScreen("after leaving maximised or full screen"); });
             }
         }
     } else if (event->type() == QEvent::ActivationChange) {
