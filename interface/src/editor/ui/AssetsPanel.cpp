@@ -98,6 +98,8 @@ namespace {
             }
             list->setMinimumWidth(std::max(width(), widest + 2 * list->frameWidth() + MENU_RIGHT_MARGIN));
             QComboBox::showPopup();
+            qCDebug(interfaceapp) << "My Files: the type filter opened" << list->width() << "wide, its names need" << widest
+                                  << "(the field" << width() << ")";
         }
     };
 
