@@ -976,7 +976,8 @@ void Application::setupInterface() {
     StartupProfiler::phase("constructor: chat started");
     // Darkride chat (libraries/chat) follows the account from here: signed in to chat while it is signed in; and the
     // friends, for the requests waiting (the bar's People badge)
-    DependencyManager::get<ChatService>()->start();
+    // (with "keep me signed in" off, what chat kept here is someone's who chose not to be remembered: it goes first)
+    DependencyManager::get<ChatService>()->start(Setting::Handle<bool>(KEEP_ME_LOGGED_IN_SETTING_NAME, true).get());
     DependencyManager::get<FriendsService>()->start();
     // the requests asked more often while the app is in front
     DependencyManager::get<FriendsService>()->setInFront(applicationState() == Qt::ApplicationActive);
