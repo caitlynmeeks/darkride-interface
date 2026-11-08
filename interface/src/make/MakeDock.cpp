@@ -65,8 +65,15 @@ namespace {
     // ... or this long after Claude's reply with nothing after it (the chat: a reply is Claude's turn's end as a rule;
     // a tool call after it waits TERMINAL_QUIET_MS again; mary + pm after Caity's try 11-07)
     const int TERMINAL_REPLY_QUIET_MS = 5000;
-    // the more menu's item that opens the Make folder (mary places the words)
-    const char SHOW_FOLDER_WORDS[] = "Show the Make folder";
+    // the more menu's item that opens the Make folder: each system's own name for its file browser, Title Case as the
+    // app's menus (mary 03:41 11-08)
+#if defined(Q_OS_MACOS)
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder in Finder";
+#elif defined(Q_OS_WIN)
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder in File Explorer";
+#else
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder";
+#endif
     const qint64 ASK_TIMEOUT_MS = 100000;    // MakeLink refuses a question after 100 s
     const qint64 PICTURE_MAX_BYTES = 20 * 1024 * 1024;
     const int PICTURE_MAX_SIDE = 8192;       // checked before decoding
