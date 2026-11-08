@@ -6,8 +6,9 @@
 #  Make's channel to Claude Code, from the Claude Code side, with no Claude and nothing spent: a scripted MCP client
 #  speaks to a running test client's Make through the darkride-mcp helper, as a Claude Code started with Make's chat
 #  line would. Prints one line per check or event and "CHANNEL KIT PASS" or "CHANNEL KIT FAIL n".
-#    python3 -I channel-kit.py <the test client's Make folder> [--mode check|chat|silent] [--line chat|plain|edited|none]
-#                              [--version 2.1.319] [--seconds 10] [--log <the test client's log>]
+#    python3 -I channel-kit.py <the test client's Make folder> [--mode check|chat|chat-late|silent]
+#                              [--line chat|plain|edited|none] [--version 2.1.319] [--seconds 10] [--late-seconds 6]
+#                              [--log <the test client's log>]
 #  --mode check  (default) what a channel client must see: the initialize reply (the protocol held at 2025-11-25 when
 #                2026-07-28 is asked, "claude/channel" the only experimental capability, never the permission relay),
 #                the reply tool taking msg_id and the picture tool taking reference, a reply by msg_id shown, a
@@ -17,6 +18,11 @@
 #                channel event the dock's Send makes, answers it with reply {msg_id, text}, and fetches the first
 #                attached picture by reference; one line per event.
 #  --mode silent the same, but it never calls a tool (the dock's "Claude didn't get your message" line after 30 s).
+#  --mode chat-late  chat, and after each reply it waits --late-seconds (default 6) and makes ONE world edit in the same
+#                request, the smallest that adds a named thing (add a 0.3 m box "Kit late box <msg_id>"), then prints
+#                what Make did with it (added with its id, or refused with the code). For editor-ui's Undo edge (qa):
+#                a Terminal request ends a while after Claude's reply, so a tool call of the same turn can land after
+#                the person pressed Undo; the dock kit judges, this kit only lands the late call and says what came back.
 #  --line chat   the kit re-runs itself with exactly Make's chat line as its arguments (its own settings kept in the
 #                environment), so the app, reading the helper's parent, sees channelFlag "on"; --line plain gives
 #                the plain line ("off"); none (default) leaves the kit's own arguments ("unknown": allowed).
@@ -52,6 +58,7 @@ mode = option("--mode", "check")
 line = option("--line", "none")
 version = option("--version", "2.1.319")
 seconds = float(option("--seconds", "10"))
+late = float(option("--late-seconds", "6"))   # chat-late: the wait between the reply and the one late world edit
 log = option("--log", "")   # the test client's log, for --line edited: the pass needs Make's own refusal line in it
 log_start = os.path.getsize(log) if log and os.path.exists(log) else 0
 
@@ -62,7 +69,7 @@ if line in ("chat", "plain", "edited") and not os.environ.get("CHANNEL_KIT_RERUN
     # and -I's isolation comes from the environment instead (no PYTHONPATH or PYTHONHOME, no user site, safe path)
     env = dict(os.environ, CHANNEL_KIT_RERUN="1", CHANNEL_KIT_FOLDER=folder, CHANNEL_KIT_MODE=mode,
                CHANNEL_KIT_LINE=line, CHANNEL_KIT_VERSION=version, CHANNEL_KIT_SECONDS=str(seconds),
-               CHANNEL_KIT_LOG=log, PYTHONSAFEPATH="1", PYTHONNOUSERSITE="1")
+               CHANNEL_KIT_LATE_SECONDS=str(late), CHANNEL_KIT_LOG=log, PYTHONSAFEPATH="1", PYTHONNOUSERSITE="1")
     for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE"):
         env.pop(name, None)
     argv = ["claude", os.path.abspath(sys.argv[0]),
@@ -80,6 +87,7 @@ if os.environ.get("CHANNEL_KIT_RERUN"):
     line = os.environ["CHANNEL_KIT_LINE"]
     version = os.environ["CHANNEL_KIT_VERSION"]
     seconds = float(os.environ["CHANNEL_KIT_SECONDS"])
+    late = float(os.environ["CHANNEL_KIT_LATE_SECONDS"])
 
 config = json.load(open(os.path.join(folder, ".darkride-mcp.json")))["mcpServers"]["darkride"]
 helper = subprocess.Popen([config["command"]] + config["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -210,10 +218,13 @@ if mode == "check":
             events.append(message)
     check("no channel event without a Send", len(events) == 0, "%d event(s)" % len(events))
 else:
-    # chat or silent: the other end of the dock's Send, for --seconds
-    say("mode", mode, "line", line, "version", version, "taking events for %.0f s" % seconds)
+    # chat, chat-late or silent: the other end of the dock's Send, for --seconds
+    say("mode", mode, "line", line, "version", version, "taking events for %.0f s" % seconds,
+        "late edit after %.1f s" % late if mode == "chat-late" else "")
     deadline = time.time() + seconds
     handled = 0
+    late_calls = 0
+    late_taken = 0
     while time.time() < deadline:
         message = read_line(0.5)
         if message is None or message.get("method") != "notifications/claude/channel":
@@ -234,7 +245,29 @@ else:
                                "text": "Kit reply to message %s: %s" % (meta.get("msg_id"), content[:80])})
         say("reply to msg_id %s: %s" % (meta.get("msg_id"), "shown" if not shown["error"] else shown["text"][:120]))
         handled += 1
-    say("events %d, answered %d" % (len(events), handled))
+        if mode == "chat-late":
+            # the one late world edit of this turn: wait (events that arrive meanwhile are counted, not answered, as
+            # ask() does), then the smallest add that names its thing, so the dock kit can look for it after Undo
+            waited = time.time()
+            while time.time() < waited + late:
+                stray = read_line(0.2)
+                if stray is not None and stray.get("method") == "notifications/claude/channel":
+                    events.append(stray)
+            name = "Kit late box %s" % meta.get("msg_id")
+            added = tool("add", {"properties": {"type": "Box", "name": name, "dimensions": {"x": 0.3, "y": 0.3, "z": 0.3},
+                                                "color": {"red": 40, "green": 40, "blue": 200}}})
+            late_calls += 1
+            try:
+                made_id = (json.loads(added["text"]) or {}).get("id", "") if not added["error"] else ""
+            except ValueError:
+                made_id = ""
+            if not added["error"]:
+                late_taken += 1
+            say("late add %.1f s after the reply to msg_id %s, name %r: %s" % (
+                time.time() - waited, meta.get("msg_id"), name,
+                ("added, id %s" % made_id) if not added["error"] else "refused %s: %s" % (added["code"], added["text"][:160])))
+    say("events %d, answered %d" % (len(events), handled) +
+        (", late adds %d, taken %d" % (late_calls, late_taken) if mode == "chat-late" else ""))
 
 print("CHANNEL KIT", "PASS" if failures == 0 else "FAIL %d" % failures)
 helper.stdin.close()
