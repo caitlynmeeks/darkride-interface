@@ -15,8 +15,10 @@
 #  Network targets (targets.json): the test's loopback listener, a closed port on the LAN address, the laptop's own
 #  computer name, a name under .invalid, and when the test was given them: a listener on the Mac, Windows' own port
 #  135 on the LAN address (a bare connect, closed at once, nothing sent or read), a listener of the test's own on the
-#  LAN address, and (run 7) a public name given with --public-name (resolved or not, nothing kept). Details keep an
-#  exception's type and number only, never an address or a message.
+#  LAN address, and (run 7) a public name given with --public-name (resolved or not, nothing kept). The closed port
+#  and the test's own listener come again on the laptop's own IPv6 address when it has one (lan6_closed,
+#  lan6_listener; security's second-machine item). Details keep an exception's type and number only, never an address
+#  or a message.
 #  Scoring (security, 11-07 after run 6): the closed port, the own computer name and the public name are INFO in the
 #  box ("pass": null, "score": "info"): their reached/not is recorded, never a pass or a fail. A closed port's RST is
 #  the laptop's own network stack with nothing listening, and whether names may resolve in the box is Caity's call.
@@ -59,8 +61,8 @@ def open_folder(path):
 
 
 targets = json.load(open(os.path.join(job, "targets.json")))
-# {"token": str, "loopback", "lan_closed", "lan_listener", "system_port", "mac": [address, port] or null,
-#  "public_name": str or null}
+# {"token": str, "loopback", "lan_closed", "lan_listener", "lan6_closed", "lan6_listener", "system_port",
+#  "mac": [address, port] or null, "public_name": str or null}
 
 
 def failure(e):
@@ -112,6 +114,12 @@ def network_checks(boxed):
     if targets.get("lan_listener"):
         checks.append(("the test's own listener on this laptop's LAN address",
                        lambda: connect(targets["lan_listener"], token), "connected"))
+    if targets.get("lan6_closed"):
+        checks.append(("a closed port on this laptop's IPv6 address",
+                       lambda: connect(targets["lan6_closed"], None, False), "reached"))
+    if targets.get("lan6_listener"):
+        checks.append(("the test's own listener on this laptop's IPv6 address",
+                       lambda: connect(targets["lan6_listener"], token), "connected"))
     if targets.get("system_port"):
         checks.append(("Windows' own port 135 on this laptop's LAN address",
                        lambda: connect(targets["system_port"], None, False), "connected"))
@@ -121,7 +129,8 @@ def network_checks(boxed):
     if targets.get("public_name"):
         checks.append(("a public name (DNS)", lambda: resolve(targets["public_name"]), "reached"))
     # recorded, not scored, in the box (security, 11-07 after run 6; see the top)
-    info = ("a closed port on this laptop's LAN address", "this laptop's own computer name (DNS)", "a public name (DNS)")
+    info = ("a closed port on this laptop's LAN address", "a closed port on this laptop's IPv6 address",
+            "this laptop's own computer name (DNS)", "a public name (DNS)")
     for name, action, control_needs in checks:
         reached, detail = action()
         if boxed:

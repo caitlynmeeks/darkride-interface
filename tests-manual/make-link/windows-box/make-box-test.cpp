@@ -18,11 +18,15 @@
 //  container profile and its throwaway test credential afterwards.
 //    make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port] [--lan-listener]
 //                      [--public-name <name>]
+//  The own-address targets come in both families (security, the second machine's run): a closed port on the laptop's
+//  IPv4 LAN address, and the same on its IPv6 address when it has one with a route (lan6_closed; none otherwise), and
+//  with --lan-listener a listener of this program's own on each.
 //  Run 6 (security, 11-07): every network check runs twice, boxed and as an UNBOXED control (the same Blender, the
 //  box's environment, no container, no job), so a refusal in the box means something. The checks: the program's own
 //  loopback listener, a closed port on the laptop's own LAN address, the laptop's own computer name (resolved or not,
 //  nothing kept), a name under .invalid, and with the flags:
-//    --mac <address>:<port>  a listener scripting runs on the Mac (off the laptop, on the home network)
+//    --mac <address>:<port>  a listener scripting runs on the Mac (off the laptop, on the home network); an IPv6
+//                            literal goes in brackets: [<address>]:<port>
 //    --system-port           Windows' own RPC endpoint mapper (TCP 135 on the LAN address): a bare connect, closed at
 //                            once, nothing sent or read; no listener of ours, so no firewall alert
 //    --lan-listener          a listener of this program's own on the LAN address (the Connect self-test's shape).
@@ -444,14 +448,33 @@ bool parseOptions(int argc, wchar_t** argv, Options& options) {
                 return false;
             }
         } else if (arg == L"--mac" && i + 1 < argc) {
+            // <ipv4>:<port>, or an IPv6 literal in brackets, [<ipv6>]:<port>, its scope (%<n>) allowed after the address
             const std::string value = narrow(argv[++i]);
-            const size_t colon = value.find(':');
-            in_addr check {};
-            if (colon == std::string::npos || inet_pton(AF_INET, value.substr(0, colon).c_str(), &check) != 1) {
-                return false;
+            std::string address, port;
+            if (!value.empty() && value.front() == '[') {
+                const size_t close = value.find("]:");
+                if (close == std::string::npos) {
+                    return false;
+                }
+                address = value.substr(1, close - 1);
+                port = value.substr(close + 2);
+                const size_t scope = address.find('%');
+                in6_addr check {};
+                if (inet_pton(AF_INET6, address.substr(0, scope).c_str(), &check) != 1 ||
+                    (scope != std::string::npos && !hostName(address.substr(scope + 1)))) {
+                    return false;
+                }
+            } else {
+                const size_t colon = value.find(':');
+                in_addr check {};
+                if (colon == std::string::npos || inet_pton(AF_INET, value.substr(0, colon).c_str(), &check) != 1) {
+                    return false;
+                }
+                address = value.substr(0, colon);
+                port = value.substr(colon + 1);
             }
-            options.macAddress = value.substr(0, colon);
-            options.macPort = std::atoi(value.substr(colon + 1).c_str());
+            options.macAddress = address;
+            options.macPort = std::atoi(port.c_str());
             if (options.macPort <= 0 || options.macPort > 65535) {
                 return false;
             }
@@ -472,7 +495,9 @@ struct Listener {
 // the flags the Mac's listener, Windows' own port 135 on the LAN address, and a listener of ours on the LAN address
 struct Targets {
     Listener loopback;
-    Listener lan;  // --lan-listener only
+    Listener lan;   // --lan-listener only
+    Listener lan6;  // --lan-listener only, on the laptop's own IPv6 address when it has one
+    std::string ipv6;  // the own IPv6 address: "yes", "none" (no address with a route) or "bind failed"
     std::string token;
     std::atomic<bool> stop { false };
     std::thread acceptor;
@@ -495,7 +520,7 @@ void acceptLoop(Targets* targets) {
     while (!targets->stop) {
         fd_set ready;
         FD_ZERO(&ready);
-        for (Listener* listener : { &targets->loopback, &targets->lan }) {
+        for (Listener* listener : { &targets->loopback, &targets->lan, &targets->lan6 }) {
             if (listener->socket != INVALID_SOCKET) {
                 FD_SET(listener->socket, &ready);
             }
@@ -508,7 +533,7 @@ void acceptLoop(Targets* targets) {
         if (count <= 0) {
             continue;
         }
-        for (Listener* listener : { &targets->loopback, &targets->lan }) {
+        for (Listener* listener : { &targets->loopback, &targets->lan, &targets->lan6 }) {
             if (listener->socket == INVALID_SOCKET || !FD_ISSET(listener->socket, &ready)) {
                 continue;
             }
@@ -578,11 +603,64 @@ void openTargets(Targets& targets, const Options& options) {
             targets.lan.socket = INVALID_SOCKET;
         }
     }
+    // the laptop's own IPv6 address, found the same way (a UDP socket "connected" to a documentation address): none
+    // when the laptop has no route for IPv6, and then the IPv6 targets are null (the second machine's item)
+    sockaddr_in6 lan6 {};
+    bool haveLan6 = false;
+    SOCKET probe6 = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (probe6 != INVALID_SOCKET) {
+        sockaddr_in6 documentation6 {};
+        documentation6.sin6_family = AF_INET6;
+        documentation6.sin6_port = htons(9);
+        inet_pton(AF_INET6, "2001:db8::1", &documentation6.sin6_addr);
+        length = sizeof lan6;
+        haveLan6 = connect(probe6, reinterpret_cast<sockaddr*>(&documentation6), sizeof documentation6) == 0 &&
+                   getsockname(probe6, reinterpret_cast<sockaddr*>(&lan6), &length) == 0 &&
+                   !IN6_IS_ADDR_UNSPECIFIED(&lan6.sin6_addr);
+        closesocket(probe6);
+    }
+    int closed6Port = 0;
+    int lan6ListenerPort = 0;
+    std::string lan6Text;
+    targets.ipv6 = "none";
+    if (haveLan6) {
+        char text[INET6_ADDRSTRLEN] {};
+        inet_ntop(AF_INET6, &lan6.sin6_addr, text, sizeof text);
+        lan6Text = text;
+        if (lan6.sin6_scope_id) {   // a link-local address is reached through its interface
+            lan6Text += "%" + std::to_string(lan6.sin6_scope_id);
+        }
+        SOCKET spare6 = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+        lan6.sin6_port = 0;
+        if (bind(spare6, reinterpret_cast<sockaddr*>(&lan6), sizeof lan6) == 0) {
+            length = sizeof lan6;
+            getsockname(spare6, reinterpret_cast<sockaddr*>(&lan6), &length);
+            closed6Port = ntohs(lan6.sin6_port);
+        }
+        closesocket(spare6);
+        targets.ipv6 = closed6Port ? "yes" : "bind failed";
+        if (options.lanListener && closed6Port) {
+            sockaddr_in6 listenOn6 = lan6;
+            listenOn6.sin6_port = 0;
+            targets.lan6.socket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+            if (bind(targets.lan6.socket, reinterpret_cast<sockaddr*>(&listenOn6), sizeof listenOn6) == 0 &&
+                listen(targets.lan6.socket, 4) == 0) {
+                length = sizeof listenOn6;
+                getsockname(targets.lan6.socket, reinterpret_cast<sockaddr*>(&listenOn6), &length);
+                lan6ListenerPort = ntohs(listenOn6.sin6_port);
+            } else {
+                closesocket(targets.lan6.socket);
+                targets.lan6.socket = INVALID_SOCKET;
+            }
+        }
+    }
     targets.acceptor = std::thread(acceptLoop, &targets);
     std::ostringstream json;
     json << "{\"token\": \"" << targets.token << "\", \"loopback\": " << addressJson("127.0.0.1", loopbackPort)
          << ", \"lan_closed\": " << addressJson(lanText, closedPort)
          << ", \"lan_listener\": " << (lanListenerPort ? addressJson(lanText, lanListenerPort) : "null")
+         << ", \"lan6_closed\": " << (closed6Port ? addressJson(lan6Text.c_str(), closed6Port) : "null")
+         << ", \"lan6_listener\": " << (lan6ListenerPort ? addressJson(lan6Text.c_str(), lan6ListenerPort) : "null")
          << ", \"system_port\": " << (options.systemPort ? addressJson(lanText, 135) : "null")
          << ", \"mac\": " << (options.macPort ? addressJson(options.macAddress.c_str(), options.macPort) : "null")
          << ", \"public_name\": " << (options.publicName.empty() ? "null" : jsonString(options.publicName)) << "}";
@@ -594,7 +672,7 @@ void closeTargets(Targets& targets) {
     if (targets.acceptor.joinable()) {
         targets.acceptor.join();
     }
-    for (Listener* listener : { &targets.loopback, &targets.lan }) {
+    for (Listener* listener : { &targets.loopback, &targets.lan, &targets.lan6 }) {
         if (listener->socket != INVALID_SOCKET) {
             closesocket(listener->socket);
             listener->socket = INVALID_SOCKET;
@@ -604,7 +682,8 @@ void closeTargets(Targets& targets) {
 
 std::string acceptedJson(const Targets& targets) {
     return "{\"loopback\": " + std::to_string(targets.loopback.accepted.load()) +
-           ", \"lan_listener\": " + std::to_string(targets.lan.accepted.load()) + "}";
+           ", \"lan_listener\": " + std::to_string(targets.lan.accepted.load()) +
+           ", \"lan6_listener\": " + std::to_string(targets.lan6.accepted.load()) + "}";
 }
 
 std::string readFile(const fs::path& path) {
@@ -696,7 +775,8 @@ int wmain(int argc, wchar_t** argv) {
     }
     Options options;
     if (argc < 3 || !parseOptions(argc, argv, options)) {
-        std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port>] [--system-port]"
+        std::wcerr << L"usage: make-box-test.exe <blender.exe> <test folder> [--mac <address>:<port> | [<ipv6>]:<port>]"
+                      L" [--system-port]"
                       L" [--lan-listener] [--public-name <name>] [--profile Darkride.MakeBoxTest|Darkride.MakeBlender]"
                       L" [--keep-profile]\n"
                       L"       make-box-test.exe --profile-create | --profile-delete   (Make's profile, the installer kit)\n";
@@ -732,6 +812,8 @@ int wmain(int argc, wchar_t** argv) {
     std::ofstream(job / L"targets.json") << targets.json;
     std::cout << "targets: mac " << (options.macPort ? "yes" : "no") << ", system port " << (options.systemPort ? "yes" : "no")
               << ", lan listener " << (options.lanListener ? (targets.lan.socket != INVALID_SOCKET ? "open" : "not opened") : "no")
+              << ", ipv6 own address " << targets.ipv6
+              << ", ipv6 listener " << (options.lanListener ? (targets.lan6.socket != INVALID_SOCKET ? "open" : "not opened") : "no")
               << ", public name " << (options.publicName.empty() ? "no" : "yes") << "\n";
     std::string form;
     bool lpacChosen = false;
