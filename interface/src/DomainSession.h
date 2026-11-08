@@ -195,6 +195,8 @@ private:
     int _minimumGPUTextureMemSizeStabilityCount{ 5 };  // at least this many checks (a few slow presents cannot pass on two readings)
     // the arrival trace (TIVOLI_ARRIVAL_TRACE): one gate line a second while physics is off
     QElapsedTimer _arrivalTraceTimer;
+    // the arrival trace's loading tail: started when physics turns on, the gate line goes on for 30 s more
+    QElapsedTimer _arrivalTraceTail;
     bool _domainLoadingInProgress{ false };   // the "Scene Loading" profile range is open
 
     // Whole-world loading, per arrival (reset with the physics-ready information). The choice is the domain's

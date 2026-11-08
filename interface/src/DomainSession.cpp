@@ -257,6 +257,7 @@ void DomainSession::resetPhysicsReadyInformation() {
     _gpuTextureMemSizeAtLastCheck = 0;
     _gpuTextureMemSizeStableFor.invalidate();
     _arrivalTraceTimer.invalidate();
+    _arrivalTraceTail.invalidate();
     _physicsEnabled = false;
     _octreeProcessor.stopSafeLanding();
     endWorldLoading();
@@ -677,7 +678,8 @@ void DomainSession::traceArrivalGate() {
             warmLeft += config->property("left").toInt();
         }
     }
-    qCDebug(interfaceapp).nospace().noquote() << "arrival trace: gate: presents=" << qApp->getRenderFrameCount()
+    qCDebug(interfaceapp).nospace().noquote() << "arrival trace: gate: physics=" << _physicsEnabled
+        << " presents=" << qApp->getRenderFrameCount()
         << " warmed=" << warmed << " warmLeft=" << warmLeft
         << " resourceMB=" << QString::number(renderStats->textureResourceGPUMemSize / MB, 'f', 1)
         << " populatedMB=" << QString::number(renderStats->textureResourcePopulatedGPUMemSize / MB, 'f', 1)
@@ -993,6 +995,19 @@ void DomainSession::enablePhysicsWhenReady() {
     } else if (_domainLoadingInProgress) {
         _domainLoadingInProgress = false;
         PROFILE_ASYNC_END(app, "Scene Loading", "");
+        if (arrivalTrace()) {
+            _arrivalTraceTail.start();   // the loading tail: 30 s more of gate lines beside the governor's
+        }
+    } else if (_arrivalTraceTail.isValid()) {
+        // the arrival trace's loading tail (the governor's drops land 10-16 s after the connect with physics on):
+        // one line a second for 30 s after physics turned on, then the timer is invalidated and this branch is one
+        // bool read; with the flag off the timer never starts
+        static const qint64 ARRIVAL_TRACE_TAIL_MS = 30 * MSECS_PER_SECOND;
+        if (_arrivalTraceTail.hasExpired(ARRIVAL_TRACE_TAIL_MS)) {
+            _arrivalTraceTail.invalidate();
+        } else {
+            traceArrivalGate();
+        }
     }
 }
 
