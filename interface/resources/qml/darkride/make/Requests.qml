@@ -79,12 +79,14 @@ QtObject {
             var request = info[row.request];
             if (!request) {
                 request = info[row.request] = {
-                    first: index, activities: [], done: false, cost: -1, undone: false, folded: false,
+                    first: index, activities: [], lastReply: -1, done: false, cost: -1, undone: false, folded: false,
                     startTime: row.time, endTime: 0, title: "", firstText: row.text
                 };
             }
             if (row.kind === "activity") {
                 request.activities.push(index);
+            } else if (row.kind === "reply") {
+                request.lastReply = index;   // Claude's reply: the step before it is done (NowView)
             } else if (row.kind === "ask" && request.title === "") {
                 request.title = row.text;
             } else if (row.kind === "done") {

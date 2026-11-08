@@ -2,9 +2,11 @@
 //  BuildButton.qml
 //  qml/darkride/editor
 //
-//  Build mode's one button, drawn as the Inspector's (Edit, Reload): flat grey, a 1 px bevel, square corners, 23 px,
-//  12 px regular text. Every kind is the same button: the default is the one Return presses and sits on the right, not
-//  a colour; a delete has its text in the problem red (mary's MAKE-PANEL-LOOK.md). Used by the Code and Make panels.
+//  Build mode's one button, drawn as the Build toolbar's (Grid, Gizmos): a #505050 fill, a 1 px #232323 edge, 3 px
+//  corners, no bevel and no shadow, 23 px tall, 12 px regular text with 9 px a side; hover #5a5a5a, pressed the
+//  selection blue (mary's team/mary/brand/make-panel/MAKE-POLISH.png, after Caity's Make try 11-07). Every kind is the
+//  same button: the default is the one Return presses and sits on the right, not a colour; a delete has its text in the
+//  problem red. Used by the Code and Make panels; editor.qss draws the Inspector's push buttons (Edit, Reload) alike.
 //
 //  Copyright 2026 Darkride.
 //
@@ -23,24 +25,19 @@ Item {
     property bool destructive: false   // deletes only: the text in red
     signal pressed()
 
-    implicitWidth: Math.max(text.length > 3 ? 64 : 30, label.implicitWidth + 24)
+    implicitWidth: Math.max(text.length > 3 ? 64 : 30, label.implicitWidth + 18)
     implicitHeight: 23
 
     Rectangle {
         anchors.fill: parent
-        color: buttonMouse.pressed || button.down ? BuildTheme.hover : BuildTheme.panel
-    }
-    Rectangle { width: parent.width; height: 1; color: "#404040" }
-    Rectangle { width: 1; height: parent.height - 1; color: "#404040" }
-    Rectangle { x: parent.width - 1; width: 1; height: parent.height - 1; color: "#252525" }
-    Rectangle { y: parent.height - 2; width: parent.width; height: 1; color: "#252525" }
-    Rectangle { y: parent.height - 1; width: parent.width; height: 1; color: "#131313" }
-    Rectangle {   // keyboard focus
-        anchors.fill: parent
-        visible: button.activeFocus
-        color: "transparent"
+        radius: BuildTheme.radius
+        color: !button.enabled ? "#424242"
+            : buttonMouse.pressed || button.down ? BuildTheme.selection
+            : buttonMouse.containsMouse ? "#5a5a5a" : "#505050"
         border.width: 1
-        border.color: BuildTheme.selection
+        // the keyboard's focus: the edge in the selection blue
+        border.color: button.activeFocus && button.enabled ? BuildTheme.selection
+            : !button.enabled ? BuildTheme.sectionLine : BuildTheme.edge
     }
     Text {
         id: label

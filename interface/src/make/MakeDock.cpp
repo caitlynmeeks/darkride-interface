@@ -61,6 +61,9 @@ namespace {
     const int REAL_INPUT_MS = 500;           // a real-input call must follow the person's own click or key this closely
     const int MAX_SHEET_BYTES = 8 * 1024 * 1024;   // a model's sheet of views (1024 px square), as MakeLink gives it
     const int TERMINAL_QUIET_MS = 45000;     // the Terminal route: a request is over after this long with no activity
+    // ... or this long after Claude's reply with nothing after it (the chat: a reply is Claude's turn's end as a rule;
+    // a tool call after it waits TERMINAL_QUIET_MS again; mary + pm after Caity's try 11-07)
+    const int TERMINAL_REPLY_QUIET_MS = 5000;
     const qint64 ASK_TIMEOUT_MS = 100000;    // MakeLink refuses a question after 100 s
     const qint64 PICTURE_MAX_BYTES = 20 * 1024 * 1024;
     const int PICTURE_MAX_SIDE = 8192;       // checked before decoding
@@ -292,7 +295,7 @@ MakeDock::MakeDock() {
         addRow(row);
         setWorking(true);
         if (_route == "terminal") {
-            _terminalQuiet.start();
+            _terminalQuiet.start(TERMINAL_QUIET_MS);
         }
     });
     QObject::connect(link.data(), &MakeLink::askPerson, this, [this](int id, const QString& what, const QString& exactly) {
@@ -358,6 +361,10 @@ MakeDock::MakeDock() {
         row.request = request;
         row.text = clean(MakeClaude::redact(text));
         addRow(row);
+        // the Terminal route can't see Claude's turn end: its reply ends the request after a short quiet, not 45 s
+        if (_route == "terminal" && _working && request >= DependencyManager::get<MakeLink>()->currentRequest()) {
+            _terminalQuiet.start(TERMINAL_REPLY_QUIET_MS);
+        }
     });
     QObject::connect(link.data(), &MakeLink::requestCost, this, [this](int request, double usd) {
         Q_UNUSED(request);
@@ -412,7 +419,6 @@ MakeDock::MakeDock() {
         }
     });
     _terminalQuiet.setSingleShot(true);
-    _terminalQuiet.setInterval(TERMINAL_QUIET_MS);
     QObject::connect(&_terminalQuiet, &QTimer::timeout, this, [this] {
         const int request = DependencyManager::get<MakeLink>()->currentRequest();
         requestDone(request, -1.0);
@@ -972,6 +978,12 @@ void MakeDock::showMoreMenu(qreal x, qreal y) {
     auto disconnectAction = menu->addAction("Disconnect");
     disconnectAction->setEnabled(DependencyManager::get<MakeLink>()->stateName() != "off");
     QObject::connect(disconnectAction, &QAction::triggered, this, &MakeDock::disconnect);
+    QObject::connect(menu, &QMenu::aboutToHide, this, [this] {
+        _moreMenuOpen = false;
+        emit moreMenuChanged();
+    });
+    _moreMenuOpen = true;
+    emit moreMenuChanged();
     menu->popup(QPoint(qRound(x), qRound(y)));
 }
 
