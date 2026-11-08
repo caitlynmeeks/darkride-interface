@@ -258,7 +258,11 @@ void DomainSession::resetPhysicsReadyInformation() {
     _gpuTextureMemSizeStableFor.invalidate();
     _arrivalTraceTimer.invalidate();
     _arrivalTraceTail.invalidate();
+    const bool wasEnabled = _physicsEnabled;
     _physicsEnabled = false;
+    if (wasEnabled) {
+        emit physicsEnabledChanged(false);   // the gate closes for a new arrival: the loading-time work may resume
+    }
     _octreeProcessor.stopSafeLanding();
     endWorldLoading();
     _worldLoading = WorldLoading();
@@ -840,6 +844,7 @@ void DomainSession::tryToEnablePhysics(bool skipTextureCheck) {
             _physicsEnabled = true;
             StartupProfiler::instant("physics enabled: in the world");
             setIsInterstitialMode(false);
+            emit physicsEnabledChanged(true);   // the world is presented: the loading-time work stops
             myAvatar->updateMotionBehaviorFromMenu();
             qDebug() << "Physics enabled" << "(ghosting" << DependencyManager::get<EntityTreeRenderer>()->getGhostingAllowed()
                 << "arrival waits for nearby" << _arrivalWaitsForNearby << "interstitial"

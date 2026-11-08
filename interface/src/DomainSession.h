@@ -136,6 +136,10 @@ public:
 signals:
     void interstitialModeChanged(bool isInInterstitialMode);
     void worldLoadingChanged(bool isWorldLoading);
+    // the arrival gate: true when the world is presented (physics on), false when a new arrival closes it again; the
+    // loading-time work keys on it (the shader warm-up, the texture engine's loading boost), since
+    // interstitialModeChanged fires only with the domain's interstitial setting or whole-world loading
+    void physicsEnabledChanged(bool enabled);
 
 private:
     // the arrival trace's gate line (TIVOLI_ARRIVAL_TRACE), once a second while physics is off; read-only

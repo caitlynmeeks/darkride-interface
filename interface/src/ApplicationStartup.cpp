@@ -638,22 +638,25 @@ void Application::connectServices() {
     connect(&domainHandler, &DomainHandler::resetting, &_domainSession, &DomainSession::resettingDomain);
     connect(&_domainSession, &DomainSession::worldLoadingChanged, this, &Application::worldLoadingChanged);   // relayed likewise
     connect(&_domainSession, &DomainSession::interstitialModeChanged, this, &Application::interstitialModeChanged);
-    connect(&_domainSession, &DomainSession::interstitialModeChanged, this, [this](bool interstitial) {
+    // (relayed: the Window scripting interface connects to Application in the essentials stage, before the session
+    // exists)
+    connect(&_domainSession, &DomainSession::physicsEnabledChanged, this, [this](bool physicsEnabled) {
         // entry 29 step 2a: the render tasks warm their programs while the loading screen is up, not while a world is
-        // presented. The main view's jobs by their full paths: every view task carries a warm-up job (the second
-        // camera, the mirrors), and a bare name found one of those, which never runs, so the main view's warm-up was
-        // never paused (item 53's trace, 2026-11-08).
+        // presented. Keyed to the arrival gate itself (physics on = the world presented), since interstitialModeChanged
+        // fires only with the domain's interstitial setting or whole-world loading, so the pause never ran by default.
+        // The main view's jobs by their full paths: every view task carries a warm-up job (the second camera, the
+        // mirrors), and a bare name found one of those, which never runs (item 53's trace, 2026-11-08).
         if (auto engine = getRenderEngine()) {
             static const char* const WARM_UP_JOBS[] = {
                 "RenderMainView.DeferredForwardSwitch.RenderForwardTask.WarmForwardPipelines",
                 "RenderMainView.DeferredForwardSwitch.RenderDeferredTask.WarmDeferredPipelines" };
             for (const char* name : WARM_UP_JOBS) {
                 if (auto config = dynamic_cast<render::Job::Config*>(engine->getConfiguration()->getConfig(name))) {
-                    config->setEnabled(interstitial);
+                    config->setEnabled(!physicsEnabled);
                 }
             }
         }
-    });   // relayed: the Window scripting interface connects to Application in the essentials stage, before the session exists
+    });
     connect(&domainHandler, &DomainHandler::connectedToDomain, &_display, &Display::updateWindowTitle);
     connect(&domainHandler, &DomainHandler::connectedToDomain, this, [] { StartupProfiler::instant("connected to a domain"); });
     connect(&domainHandler, &DomainHandler::connectedToDomain, this, [this] { getRefreshRateManager().noteArrival(); });   // the governor's arrival grace (entry 28)
