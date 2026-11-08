@@ -570,7 +570,13 @@ FocusScope {
         id: focusDebugger;
         objectName: "focusDebugger"
         z: 9999; visible: false; color: "red"
-        ColorAnimation on color { from: "#7fffff00"; to: "#7f0000ff"; duration: 1000; loops: 9999 }
+        // only while it shows (Ctrl+Shift+F with DebugQML): running hidden (9999 loops of 1 s, from the start), its
+        // colour changed every frame and the whole desktop surface rendered again with nothing new on it, every
+        // present, for hours (OPTIMIZE-LIST 36, entry 32; found with qt.quick.dirty, editor-ui 11-08)
+        ColorAnimation on color {
+            running: focusDebugger.visible
+            from: "#7fffff00"; to: "#7f0000ff"; duration: 1000; loops: Animation.Infinite
+        }
     }
 
     QQC2.Action {
