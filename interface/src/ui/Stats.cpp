@@ -119,6 +119,19 @@ extern std::atomic<size_t> RECTIFIED_TEXTURE_COUNT;
 
 // FROZEN (vehicle path): see the note at the top of this file.
 void Stats::updateStats(bool force) {
+    // entry 32 Amendment A: before both early returns, so "hidden" is written every frame. Shown = Show Statistics, or
+    // a forced update (the kits read the counts with Statistics hidden, forced every 250 ms) in the last second; never
+    // on the loading screen. The render thread reads it (setRenderDetails): a lone forced read after a quiet spell
+    // gets the counts of the last shown frame, current from the next frame on
+    const quint64 now = usecTimestampNow();
+    if (force) {
+        _lastForcedUpdate = now;
+    }
+    const quint64 FORCED_SHOWN_USECS = USECS_PER_SECOND;
+    _renderDetailsShown.store(!qApp->isInterstitialMode() &&
+                              (force || now - _lastForcedUpdate < FORCED_SHOWN_USECS ||
+                               Menu::getInstance()->isOptionChecked(MenuOption::Stats)),
+                              std::memory_order_relaxed);
 
     if (qApp->isInterstitialMode()) {
         return;
@@ -600,7 +613,12 @@ void Stats::updateStats(bool force) {
     }
 }
 
+// on the render thread, every frame: nothing while no one reads the counts (updateStats, entry 32 Amendment A), so
+// the hidden Statistics overlay isn't changed and redrawn every frame; no Menu or QObject call from here
 void Stats::setRenderDetails(const render::RenderDetails& details) {
+    if (!_renderDetailsShown.load(std::memory_order_relaxed)) {
+        return;
+    }
     STAT_UPDATE(triangles, details._trianglesRendered);
     STAT_UPDATE(instances, details._instancesDrawn);
     STAT_UPDATE(materialSwitches, details._materialSwitches);
