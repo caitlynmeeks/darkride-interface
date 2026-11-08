@@ -101,6 +101,8 @@ QtObject {
     readonly property real rowPadding: 7 * unit
     readonly property real controlHeight: 26 * unit
     readonly property real gap: 10 * unit
+    // a picker's open choices start this far past its label, so they read as its choices, not as the card's next rows
+    readonly property real choiceIndent: 16 * unit
 
     // the build tools' label scrub (editor/ui/PropertyEditors.cpp): a few pixels before it starts; Shift coarse, Alt fine
     readonly property real scrubSlop: 3
