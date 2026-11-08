@@ -96,6 +96,13 @@ public:
     bool blenderOffered() const;
     /// Why not, in plain words (empty when offered).
     QString blenderWhy() const;
+    /// The person's own choice of Blender (the dock's "Choose Blender…"): `path` the app (on a Mac the .app or the
+    /// program inside it; on Windows blender.exe or its folder). False with a plain `why` when Make can't use it
+    /// ("That's Blender 4.1; Make needs 5.2 or newer."); true when it's remembered in Settings, the found check is
+    /// re-run and, while Make is on, the Blender tools are decided again (on Windows through the box's self-test).
+    bool useBlender(const QString& path, QString& why);
+    /// Whether the person may choose a Blender here: the Mac and Windows, whose boxes are in; not Linux yet.
+    bool canChooseBlender() const;
     /// The key route's cap for one Connect, in dollars (Claude Code's --max-budget-usd holds for its whole run).
     double limitUsd() const { return claudeSettings().maxBudgetUsd; }
 
@@ -104,6 +111,10 @@ public:
     /// Claude Code's project folder, where it runs: only the two files below, rewritten at every Connect.
     QString projectFolder() const;
     /// What Connect writes there, for the dock to show first (security A5): the MCP line and the settings.
+    /// The app's own darkride-mcp beside its program, and Make's private copy of it in the Make folder, the one the
+    /// config names (writeFolder makes the copy at every Connect)
+    QString appHelper() const;
+    QString helperCopy() const;
     QString mcpConfigText() const;
     QString settingsText() const;
     /// The line the builder pastes into Terminal (the Claude-plan route; PowerShell on Windows): Claude Code in its

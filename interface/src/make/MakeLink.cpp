@@ -46,6 +46,8 @@
 #include <ScriptCaller.h>
 #include <ScriptEngine.h>
 #include <ScriptEngines.h>
+#include <MakeFolder.h>
+#include <SettingHandle.h>
 #include <MakeText.h>
 
 #include "Application.h"
@@ -70,6 +72,12 @@ const int ASK_NAME_LENGTH = 60;  // a thing's name (the world's words) in an ask
 const int ASK_WAIT_MS = 100 * 1000;
 const int MAX_LOG_LINES = 500;
 const int LOG_LINES_GIVEN = 120;
+// the person's own choice of Blender (useBlender), kept in Settings under the prefix a world's script may neither read
+// nor write (ScriptSettingsInterface's protected prefixes; the same on every platform): the path names the person's
+// user folder, and a program named here runs in Make's box
+const QString BLENDER_SETTING = "private/make/blender";
+// the key an earlier build kept it under, outside that prefix: never read again, removed when found
+const QString OLD_BLENDER_SETTING = "make/blender";
 const int MAX_INLINE_VALUE_BYTES = 1200;  // the same as make-tools.js MAX_VALUE_BYTES
 const QSize PICTURE_SIZE { 768, 512 };
 const float PICTURE_FIELD_OF_VIEW = 45.0f;
@@ -173,6 +181,17 @@ void MakeToolsBridge::ready() {
 MakeLink::MakeLink() {
     _folder = QDir(PathUtils::getAppDataPath()).absoluteFilePath("Make");
     _blender = new MakeBlender(_folder, this);
+    if (!_server.toolList().loadError().isEmpty()) {
+        // the list comes from the library's resources: a build that lost them would offer no tool at all, so say so once
+        qCWarning(makelog) << "Make: the tool list didn't load:" << _server.toolList().loadError();
+    }
+    // the person's own choice of Blender, when they made one (useBlender); the usual places otherwise. The old,
+    // unprotected key is dropped unread.
+    Setting::Handle<QString>(OLD_BLENDER_SETTING).remove();
+    const QString chosenBlender = Setting::Handle<QString>(BLENDER_SETTING).get();
+    if (!chosenBlender.isEmpty()) {
+        _blender->setBlender(chosenBlender);
+    }
     _server.setInstructions(
         "Darkride's Make: you build in the 3D world the person has open in Darkride, as them, with their rights there. "
         "Read the guide tool once before you build. Everything you add or change is live for everyone in that world, "
@@ -294,14 +313,32 @@ QString MakeLink::socketFolder() const {
     return QDir(QDir::tempPath()).absoluteFilePath("darkride-make-" + name);
 }
 
-QString MakeLink::mcpConfigText() const {
+namespace {
 #ifdef Q_OS_WIN
-    // the helper's program beside ours, and this Connect's own random pipe name (this file is the one place it's written)
-    const QString helper =
-        QDir::toNativeSeparators(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp.exe"));
+const char* HELPER_NAME = "darkride-mcp.exe";
+#else
+const char* HELPER_NAME = "darkride-mcp";
+#endif
+}  // namespace
+
+QString MakeLink::appHelper() const {
+    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(HELPER_NAME);
+}
+
+QString MakeLink::helperCopy() const {
+    return QDir(_folder).absoluteFilePath(QString("bin/") + HELPER_NAME);
+}
+
+QString MakeLink::mcpConfigText() const {
+    // the helper named here is Make's private copy of the app's own (writeFolder makes it, byte for byte): a path only
+    // this user can write, so a config left behind never names a place another account could fill, as an AppImage's
+    // temporary mount is after the app quits (security, 11-08). On Windows this Connect's own random pipe name goes
+    // with it (this file is the one place it's written)
+#ifdef Q_OS_WIN
+    const QString helper = QDir::toNativeSeparators(helperCopy());
     const QString socket = _pipeName;
 #else
-    const QString helper = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp");
+    const QString helper = helperCopy();
     const QString socket = QDir(socketFolder()).absoluteFilePath("link.sock");
 #endif
     const QJsonObject config { { "mcpServers", QJsonObject { { "darkride", QJsonObject {
@@ -437,9 +474,22 @@ bool MakeLink::writeFolder(QString& error) {
     // Make-folder must): its MCP line and its settings. No CLAUDE.md, no other settings file, no hooks, commands, agents
     // or skills: anything else found is removed. Scripts, models, pictures and Blender's jobs live beside it, outside.
     const QString project = projectFolder();
-    if (!realFolder(_folder) || !realFolder(project) || !realFolder(project + "/.claude") ||
-        !realFolder(_folder + "/scripts")) {
+    // the Make folder and Claude Code's project folder in it are this user's own and private (security's Make-folder
+    // rule, 11-08: 0700 on Unix; on Windows a protected access list of this user, SYSTEM and Administrators that the
+    // files made inside inherit): a link or junction in their place, another owner or a failed change refuses the Connect
+    QString why;
+    if (!MakeFolder::makePrivate(_folder, why) || !MakeFolder::makePrivate(project, why)) {
+        error = "can't make the Make folder private: " + why;
+        return false;
+    }
+    if (!realFolder(project + "/.claude") || !realFolder(_folder + "/scripts") || !realFolder(_folder + "/bin")) {
         error = "can't make the Make folder";
+        return false;
+    }
+    qCInfo(makelog) << "the Make folder's access:" << MakeFolder::access(_folder);
+    // Make's private copy of the helper, the one the config names (see mcpConfigText), made afresh at every Connect
+    if (!MakeFolder::copyProgram(appHelper(), helperCopy(), why)) {
+        error = "can't place Make's helper in the Make folder: " + why;
         return false;
     }
     auto clear = [](const QString& folder, const QStringList& keep) {
@@ -496,22 +546,69 @@ QString MakeLink::blenderWhy() const {
 }
 
 void MakeLink::offerBlender() {
-    _blenderWhy.clear();
-    _blenderOffered = _blender->available(_blenderWhy);
-    if (_blenderOffered) {
-        _blenderWhy.clear();
-        _server.setHandler("make_with_blender", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
-            makeWithBlender(inputs, reply);
-        });
-        // a model comes only from make_with_blender, so without Blender there's nothing to upload
-        _server.setHandler("upload_model", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
-            uploadModel(inputs, reply);
-        });
-    } else {
-        _server.removeHandler("make_with_blender");
-        _server.removeHandler("upload_model");
+    // the two tools are withdrawn while the answer is open: on the Mac it comes at once; on Windows the box's live
+    // self-test takes a few seconds, the dock says "Checking Blender…" meanwhile, and the answer offers or withdraws
+    // the two together. A tools/list asked meanwhile waits for the answer (the server's hold, 15 s at most, then the
+    // list as it stands), so a Claude Code started right after Connect sees the decided list too.
+    _blenderOffered = false;
+    _blenderWhy = MakeBlender::CHECKING_WORDS;
+    _server.removeHandler("make_with_blender");
+    _server.removeHandler("upload_model");
+    _server.setToolListHold(true);
+    _blender->selfTest([this](bool offered, const QString& why) {
+        _blenderOffered = offered;
+        _blenderWhy = offered ? QString() : why;
+        if (offered) {
+            _server.setHandler("make_with_blender", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
+                makeWithBlender(inputs, reply);
+            });
+            // a model comes only from make_with_blender, so without Blender there's nothing to upload
+            _server.setHandler("upload_model", [this](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
+                uploadModel(inputs, reply);
+            });
+        }
+        qCInfo(makelog) << "Make's Blender tools" << (_blenderOffered ? QString("offered") : "not offered: " + _blenderWhy);
+        _server.setToolListHold(false);   // the lists that waited go out now, with the decision in them
+        emit stateChanged();   // the dock re-reads its Blender row
+    });
+}
+
+bool MakeLink::useBlender(const QString& path, QString& why) {
+    QString chosen = path.trimmed();
+#ifdef Q_OS_MAC
+    // the .app, or the program inside it
+    const QString inside = "/Contents/MacOS/Blender";
+    if (chosen.endsWith(inside)) {
+        chosen.chop(inside.size());
     }
-    qCInfo(makelog) << "Make's Blender tools" << (_blenderOffered ? QString("offered") : "not offered: " + _blenderWhy);
+#endif
+    const QString found = MakeBlender::findBlender(why, chosen);
+    if (found.isEmpty()) {
+        const QString version = MakeBlender::blenderVersion(chosen);
+        if (!version.isEmpty() && !MakeBlender::versionIsEnough(version)) {
+            why = MakeBlender::tooOldLine(version);
+        } else if (why.isEmpty()) {
+            why = "That isn't a Blender Make can use.";
+        }
+        return false;
+    }
+    _blender->setBlender(found);
+    Setting::Handle<QString>(BLENDER_SETTING).set(found);
+    qCInfo(makelog) << "Make's Blender: the person's choice, version" << MakeBlender::blenderVersion(found);
+    if (_state == State::Listening || _state == State::Connected) {
+        offerBlender();   // decided again for this Connect, with the chosen one
+    } else {
+        emit stateChanged();
+    }
+    return true;
+}
+
+bool MakeLink::canChooseBlender() const {
+#if defined(Q_OS_MAC) || defined(Q_OS_WIN)
+    return true;
+#else
+    return false;
+#endif
 }
 
 bool MakeLink::connectLink() {
@@ -714,6 +811,7 @@ void MakeLink::startToolsEngine() {
     if (_engine) {
         return;
     }
+    initMakeLinkResources();
     QFile source(":/make-link/make-tools.js");
     if (!source.open(QIODevice::ReadOnly)) {
         qCWarning(makelog) << "the building tools' script is missing";
@@ -888,6 +986,7 @@ void MakeLink::setHandlers() {
         toEngine(tool);
     }
     _server.setHandler("guide", [](const QJsonObject&, const MakeLinkServer::Reply& reply) {
+        initMakeLinkResources();
         QFile guide(":/make-link/guide.md");
         MakeLinkServer::Result result;
         result.value = QJsonObject { { "text", guide.open(QIODevice::ReadOnly) ? QString::fromUtf8(guide.readAll())

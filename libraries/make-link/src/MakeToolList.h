@@ -33,6 +33,12 @@ const QString BUSY = "busy";
 const QString TIMEOUT = "timeout";
 }
 
+// The library's resources (make-link.qrc: TOOLS.json, the guide, make-tools.js, the Blender files) are in this library.
+// Where it is a static library (Windows), the linker keeps the resource object only when something names it, so every
+// reader of a ":/make-link/..." file calls this first; it names the initializer (Q_INIT_RESOURCE) and registering twice
+// is nothing. As a shared library (macOS) the object was always there, which is why the gap showed on Windows only.
+void initMakeLinkResources();
+
 class MakeToolList {
 public:
     /// The list from the resource (:/make-link/TOOLS.json), or from `json` (for tests). Empty with `error` set when it

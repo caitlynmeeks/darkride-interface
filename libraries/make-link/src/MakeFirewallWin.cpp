@@ -78,7 +78,6 @@ bool exactly(INetFwRule3* rule, NET_FW_RULE_DIRECTION direction, PSID sid, QStri
     VARIANT_BOOL edge = VARIANT_TRUE;
     long profiles = 0;
     long protocol = 0;
-    long secure = -1;
     Bstr local, remote, interfaces, group, application, service, localPorts, remotePorts, owner, users, remoteUsers,
         machines, package;
     auto empty = [](const Bstr& value) { return value.text().isEmpty(); };
@@ -106,7 +105,9 @@ bool exactly(INetFwRule3* rule, NET_FW_RULE_DIRECTION direction, PSID sid, QStri
         { "local users", SUCCEEDED(rule->get_LocalUserAuthorizedList(users.put())) && empty(users) },
         { "remote users", SUCCEEDED(rule->get_RemoteUserAuthorizedList(remoteUsers.put())) && empty(remoteUsers) },
         { "remote machines", SUCCEEDED(rule->get_RemoteMachineAuthorizedList(machines.put())) && empty(machines) },
-        { "secure flags", SUCCEEDED(rule->get_SecureFlags(&secure)) && secure == 0 },
+        // SecureFlags is NOT checked: Windows sets it non-zero on block rules (11-07 lab: netsh "Security: NotRequired"), and
+        // IPsec flags only mean anything on allow rules; an overriding allow rule is caught by "exactly 2 name the SID"
+        // (the installer's own read-back says the same, windows-installer-1)
         { "package", SUCCEEDED(rule->get_LocalAppPackageId(package.put())) && sameSid(package.text(), sid) },
     };
     for (const auto& check : checks) {

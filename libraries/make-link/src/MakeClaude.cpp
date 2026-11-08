@@ -20,6 +20,11 @@
 
 #include "MakeKey.h"
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shlobj.h>
+#endif
+
 Q_DECLARE_LOGGING_CATEGORY(makelink)
 
 namespace {
@@ -70,6 +75,27 @@ MakeClaude::~MakeClaude() {
     end();
 }
 
+QString MakeClaude::pathFor(const QString& program) {
+    const QString folder = QFileInfo(program).absolutePath();
+#ifdef Q_OS_WIN
+    // the program's folder, then the system's own tool folders (System32, Windows, System32\Wbem): the same rule as the
+    // fixed list on Unix; never the person's PATH (security, 11-08)
+    QStringList folders { QDir::toNativeSeparators(folder) };
+    wchar_t buffer[MAX_PATH];
+    if (GetSystemDirectoryW(buffer, MAX_PATH) > 0) {
+        const QString system = QString::fromWCharArray(buffer);
+        folders << system;
+        if (GetWindowsDirectoryW(buffer, MAX_PATH) > 0) {
+            folders << QString::fromWCharArray(buffer);
+        }
+        folders << system + "\\Wbem";
+    }
+    return folders.join(';');
+#else
+    return folder + ":/usr/bin:/bin:/usr/sbin:/sbin";
+#endif
+}
+
 bool MakeClaude::start(const Settings& settings, QString& why) {
     QByteArray key = MakeKey::readForChild();
     if (key.isEmpty()) {
@@ -93,8 +119,36 @@ bool MakeClaude::startWithKey(const Settings& settings, const QByteArray& key, Q
     }
     // built from nothing: nothing of the app's own environment, and the key only here (never on the command line)
     QProcessEnvironment environment;
-    environment.insert("PATH", QFileInfo(program).absolutePath() + ":/usr/bin:/bin:/usr/sbin:/sbin");
+    environment.insert("PATH", pathFor(program));
     environment.insert("HOME", QDir::homePath());
+#ifdef Q_OS_WIN
+    // what a Windows program needs to run at all, each from the system's own answer, none from this app's environment
+    wchar_t buffer[MAX_PATH];
+    const QString windows = GetWindowsDirectoryW(buffer, MAX_PATH) > 0 ? QString::fromWCharArray(buffer) : QString("C:\\Windows");
+    const QString system = GetSystemDirectoryW(buffer, MAX_PATH) > 0 ? QString::fromWCharArray(buffer) : windows + "\\System32";
+    environment.insert("SYSTEMROOT", windows);
+    environment.insert("WINDIR", windows);
+    environment.insert("SYSTEMDRIVE", windows.left(2));
+    environment.insert("COMSPEC", system + "\\cmd.exe");
+    environment.insert("PATHEXT", ".COM;.EXE;.BAT;.CMD");
+    environment.insert("TEMP", QDir::toNativeSeparators(QDir::tempPath()));
+    environment.insert("TMP", QDir::toNativeSeparators(QDir::tempPath()));
+    const QString home = QDir::toNativeSeparators(QDir::homePath());
+    environment.insert("USERPROFILE", home);
+    environment.insert("HOMEDRIVE", home.left(2));
+    environment.insert("HOMEPATH", home.mid(2));
+    auto known = [](const KNOWNFOLDERID& id) {
+        PWSTR path = nullptr;
+        QString result;
+        if (SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, nullptr, &path) == S_OK) {
+            result = QString::fromWCharArray(path);
+        }
+        CoTaskMemFree(path);
+        return result;
+    };
+    environment.insert("APPDATA", known(FOLDERID_RoamingAppData));
+    environment.insert("LOCALAPPDATA", known(FOLDERID_LocalAppData));
+#endif
     environment.insert("LANG", "en_US.UTF-8");
     environment.insert("TMPDIR", QDir::tempPath());
     environment.insert("ANTHROPIC_API_KEY", QString::fromUtf8(key));

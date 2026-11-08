@@ -52,6 +52,9 @@ public:
     static QString redact(const QString& text);
     /// The arguments it is started with (for the dock to show and the tests to check): never the key.
     static QStringList arguments(const Settings& settings);
+    /// The PATH the key route's Claude Code gets: the program's folder, then the system's own tool folders, never the
+    /// person's PATH (which can hold folders other programs or the person can write to).
+    static QString pathFor(const QString& program);
 
     explicit MakeClaude(QObject* parent = nullptr);
     ~MakeClaude() override;
