@@ -1257,7 +1257,14 @@ void MakeLinkTests::testToolListWaitsForTheOffer() {
     server.setToolListHoldCap(300);
     const QStringList capped = names(client.ask(3, "tools/list", QJsonObject(), 2000));
     QVERIFY2(capped.contains("guide") && !capped.contains("make_with_blender"), qPrintable(capped.join(',')));
+    // a chatty client while held: a few requests wait, the rest are answered at once as the list stands
+    server.setToolListHoldCap(5000);
+    for (int id = 10; id < 18; ++id) {
+        QVERIFY(client.ask(id, "tools/list", QJsonObject(), 50).isEmpty());   // the first eight wait
+    }
+    QVERIFY(!client.ask(18, "tools/list", QJsonObject(), 1000).isEmpty());    // the ninth doesn't
     server.setToolListHold(false);
+    QVERIFY(!client.waitFor(10, 1000).isEmpty());   // the waiting ones go out on the release
 }
 
 // the key route's Claude Code finds the program's folder and the system's tool folders, nothing of the person's PATH

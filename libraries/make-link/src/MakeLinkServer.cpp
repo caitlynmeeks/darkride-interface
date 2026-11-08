@@ -56,6 +56,7 @@ const int INVALID_REQUEST = -32600;
 const int METHOD_NOT_FOUND = -32601;
 const int INVALID_PARAMS = -32602;
 const int TOOL_LIST_HOLD_MS = 15000;   // a tools/list waits this long at most for the offer to be decided
+const int TOOL_LIST_HOLD_MOST = 8;     // how many tools/list requests wait at once; the rest are answered as the list stands
 
 }  // namespace
 
@@ -162,8 +163,11 @@ public:
         _notifier = new QWinEventNotifier(_overlapped.hEvent);
         QObject::connect(_notifier, &QWinEventNotifier::activated, [this] { ready(); });
         if (!wait(true)) {
-            error = GetLastError() == ERROR_ACCESS_DENIED ? "another program holds the link's name"
-                                                          : "can't open the link (" + QString::number(GetLastError()) + ")";
+            // the name held by another program: access denied when it exists, busy when its every instance is taken
+            // (a squatter made with one instance; windowz's final run, 11-08): both mean the name isn't ours
+            const DWORD why = GetLastError();
+            error = why == ERROR_ACCESS_DENIED || why == ERROR_PIPE_BUSY ? "another program holds the link's name"
+                                                                       : "can't open the link (" + QString::number(why) + ")";
             return false;
         }
         return true;
@@ -640,8 +644,9 @@ void MakeLinkServer::handle(const QJsonObject& message) {
     } else if (method == "ping") {
         answer(id, QJsonObject());
     } else if (method == "tools/list") {
-        if (_toolListHeld) {
-            // the offer is being decided (Make's Connect self-test): the answer waits for it, or for the cap
+        if (_toolListHeld && _heldToolLists.size() < TOOL_LIST_HOLD_MOST) {
+            // the offer is being decided (Make's Connect self-test): the answer waits for it, or for the cap; a few
+            // requests at most wait, so a chatty client can't grow the queue (security, 11-08)
             _heldToolLists.append(id);
             if (!_toolListCap->isActive()) {
                 _toolListCap->start(_toolListHoldMs);
