@@ -437,12 +437,29 @@ void CodeEditor::setDraft(const QString& text, bool has) {
     const bool had = _drafts.contains(key);
     if (has) {
         _drafts.insert(key, text);
+        _draftNames.insert(key, _fileName);
     } else {
         _drafts.remove(key);
+        _draftNames.remove(key);
     }
     if (had != has) {
         emit draftsChanged();
     }
+}
+
+QStringList CodeEditor::unsavedNames() const {
+    QStringList names;
+    QString openKey;
+    if (hasDocument() && (_dirty || hasDraft())) {
+        openKey = docDraftKey();
+        names.append(_fileName);
+    }
+    for (auto it = _drafts.cbegin(); it != _drafts.cend(); ++it) {
+        if (it.key() != openKey) {
+            names.append(_draftNames.value(it.key()));   // "" for one kept before its name was (never, but counted)
+        }
+    }
+    return names;
 }
 
 void CodeEditor::updateUsedBy() {
