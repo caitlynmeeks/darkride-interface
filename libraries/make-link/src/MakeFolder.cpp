@@ -92,11 +92,31 @@ bool makePrivate(const QString& path, QString& why) {
         why = QString("a link stands where the %1 folder goes").arg(name);
         return false;
     }
+#ifdef Q_OS_WIN
+    // protected (no inheritance from above), full access for this user, SYSTEM and Administrators, inherited by what
+    // is made inside (OICI), and nothing else: a new folder is born with it, an existing one is set to it below
+    const std::wstring user = thisUserSidText();
+    if (user.empty()) {
+        why = "can't read who this user is";
+        return false;
+    }
+    const std::wstring sddl = L"D:P(A;OICI;FA;;;" + user + L")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)";
+    PSECURITY_DESCRIPTOR wanted = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1, &wanted, nullptr)) {
+        why = QString("can't describe the %1 folder's access").arg(name);
+        return false;
+    }
+    struct Freed {   // the descriptor goes with the scope, whichever way out
+        PSECURITY_DESCRIPTOR descriptor;
+        ~Freed() { LocalFree(descriptor); }
+    } freed { wanted };
+#endif
     if (!QFileInfo::exists(path)) {
         // the parents are the app's own data folder; the folder itself is made here with its access
         QDir().mkpath(QFileInfo(path).path());
 #ifdef Q_OS_WIN
-        if (!CreateDirectoryW(QDir::toNativeSeparators(path).toStdWString().c_str(), nullptr) &&
+        SECURITY_ATTRIBUTES attributes { sizeof attributes, wanted, FALSE };
+        if (!CreateDirectoryW(QDir::toNativeSeparators(path).toStdWString().c_str(), &attributes) &&
             GetLastError() != ERROR_ALREADY_EXISTS) {
             why = QString("can't make the %1 folder").arg(name);
             return false;
@@ -119,23 +139,11 @@ bool makePrivate(const QString& path, QString& why) {
         why = QString("something that isn't a folder stands where the %1 folder goes").arg(name);
         return false;
     }
-    const std::wstring user = thisUserSidText();
-    if (user.empty()) {
-        why = "can't read who this user is";
-        return false;
-    }
     if (ownerText(native) != user) {
         why = QString("the %1 folder isn't this user's own").arg(name);
         return false;
     }
-    // protected (no inheritance from above), full access for this user, SYSTEM and Administrators, inherited by what
-    // is made inside (OICI), and nothing else
-    const std::wstring sddl = L"D:P(A;OICI;FA;;;" + user + L")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)";
-    PSECURITY_DESCRIPTOR wanted = nullptr;
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1, &wanted, nullptr)) {
-        why = QString("can't describe the %1 folder's access").arg(name);
-        return false;
-    }
+    // the access set (again) on the folder as it stands: the same list, protected
     BOOL present = FALSE;
     BOOL defaulted = FALSE;
     PACL dacl = nullptr;
@@ -144,7 +152,6 @@ bool makePrivate(const QString& path, QString& why) {
                                                        DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
                                                        nullptr, nullptr, dacl, nullptr)
                                : ERROR_INVALID_SECURITY_DESCR;
-    LocalFree(wanted);
     if (set != ERROR_SUCCESS) {
         why = QString("can't make the %1 folder private (%2)").arg(name).arg(set);
         return false;
@@ -210,7 +217,21 @@ bool copyProgram(const QString& source, const QString& copy, QString& why) {
         why = "the app's helper program is empty";
         return false;
     }
-    // whatever stands at the copy's place goes first, a file or a link alike: the folder is this user's own
+    // a copy already there that is a plain file (no link) with the program's bytes is kept: the folder is this user's own,
+    // so such a file there is ours, and Windows won't let a program be replaced while it runs (Claude Code may still be
+    // running the copy after a Disconnect). Anything else in the place goes first, a file or a link alike
+    if (!isLinkOrJunction(copy) && QFileInfo(copy).isFile()) {
+        QFile existing(copy);
+        if (existing.open(QIODevice::ReadOnly) && existing.readAll() == bytes) {
+#ifdef Q_OS_WIN
+            return true;
+#else
+            if (chmod(QFile::encodeName(copy).constData(), 0700) == 0) {
+                return true;
+            }
+#endif
+        }
+    }
     if (isLinkOrJunction(copy) || QFileInfo::exists(copy)) {
         if (!QFile::remove(copy)) {
             why = "an older copy of the helper can't be replaced";

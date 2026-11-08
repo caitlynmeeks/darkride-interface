@@ -1169,8 +1169,12 @@ void MakeLinkTests::testHelperCopyIsPrivateAndIdentical() {
 #else
     QCOMPARE(MakeFolder::access(copy), QString("700"));
 #endif
-    // made again over the old copy: still the program
+    // made again while an identical copy stands there: that copy is kept, not rewritten (Windows won't replace a running
+    // program, and Claude Code may still be running the copy after a Disconnect)
+    const QDateTime firstMade = QFileInfo(copy).lastModified();
+    QTest::qWait(1100);
     QVERIFY2(MakeFolder::copyProgram(program, copy, why), qPrintable(why));
+    QCOMPARE(QFileInfo(copy).lastModified(), firstMade);
     QVERIFY(QFileInfo(copy).size() == original.size());
     // a stale file of another content in its place is replaced
     QFile stale(copy);
