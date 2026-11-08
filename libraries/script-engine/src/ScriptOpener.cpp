@@ -183,7 +183,10 @@ void ScriptOpener::fetch(const Opened& judged, bool worldIsLocal, QObject* conte
         QMetaObject::invokeMethod(target, [callback, result] { callback(result); }, Qt::QueuedConnection);
     };
 
-    QTimer::singleShot(TIME_LIMIT_MS, context, [deliver, judged] {
+    QTimer::singleShot(TIME_LIMIT_MS, context, [pending, deliver, judged] {
+        if (pending->answered.load()) {
+            return;   // it was answered in time (loaded, or not): nothing ran late
+        }
         Opened late = judged;
         late.problem = "This script took too long to load.";
         qCDebug(scriptengine) << "ScriptOpener: time limit" << shown(judged.url);
