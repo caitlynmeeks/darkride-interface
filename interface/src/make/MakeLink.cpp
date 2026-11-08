@@ -1172,6 +1172,14 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
                      });
         return;
     }
+    // with My Files a file world keeps scripts, but nothing there runs a server script: said first, signed in or not,
+    // since no place to keep it would make it run
+    if (side == "server" && DependencyManager::get<NodeList>()->getDomainHandler().isServerless()) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
+                                            "Not saved: " + QString(NO_SERVER_IN_A_FILE_WORLD) + ". Do it in the thing's "
+                                            "client script instead, or tell the person it can't be done in this world."));
+        return;
+    }
     // a world that can't keep the script says so at once, before any copy is written (Caity's walkthrough, 11-08: a
     // file world answered with a network error, and two copies were left behind)
     const QString noFiles = whyNoFiles();
@@ -1179,13 +1187,6 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
         reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
                                             "Not saved: " + noFiles + ". The script isn't on it and isn't running. Tell the "
                                             "person it didn't work."));
-        return;
-    }
-    // with My Files a file world keeps scripts, but nothing there runs a server script: said before it is saved
-    if (side == "server" && DependencyManager::get<NodeList>()->getDomainHandler().isServerless()) {
-        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
-                                            "Not saved: " + QString(NO_SERVER_IN_A_FILE_WORLD) + ". Do it in the thing's "
-                                            "client script instead, or tell the person it can't be done in this world."));
         return;
     }
     // marked as made with Claude, and kept as a readable file in the Make folder (security B7); in My Files anyone with
