@@ -64,6 +64,13 @@ bool ScriptCache::isInlineScript(const QString& scriptOrURL) {
            scriptOrURL.simplified().replace(" ", "").contains(QRegularExpression(R"(\(function\([a-z]?[\w,]*\){)"));
 }
 
+// whether the app's scripts are stopping (nothing is delivered then); without the engines' singleton, as in a test
+// program, nothing is stopping
+bool scriptsStopping() {
+    auto engines = DependencyManager::get<ScriptEngines>();
+    return engines && engines->isStopped();
+}
+
 void ScriptCache::getScriptContents(const QString& scriptOrURL, contentAvailableCallback contentAvailable, bool forceDownload, int maxRetries) {
     #ifdef THREAD_DEBUGGING
     qCDebug(scriptengine) << "ScriptCache::getScriptContents() on thread [" << QThread::currentThread() << "] expected thread [" << thread() << "]";
@@ -142,14 +149,9 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
         if (alreadyWaiting && ruledCaller && scriptRequest.ruleKey() != callerKey) {
             // the running download is under no rule, or another: this caller waits for its own ruled download, which
             // starts when the running one ends (scriptContentAvailable)
-            if (contentAvailable) {
-                scriptRequest.ruledWaiters.push_back(contentAvailable);
-            }
-            if (bytesAvailable) {
-                scriptRequest.ruledByteWaiters.push_back(bytesAvailable);
-            }
-            scriptRequest.waitOrigin = pendingRule->origin;
-            scriptRequest.waitWorldIsLocal = pendingRule->worldIsLocal;
+            // each waiter keeps its own rule: two callers under different rules each re-fetch under their own
+            scriptRequest.ruledWaiters.push_back(
+                ScriptRequest::RuledWaiter { contentAvailable, bytesAvailable, pendingRule->origin, pendingRule->worldIsLocal });
             _fetchRules.erase(pendingRule);
             lock.unlock();
             qCDebug(scriptengine) << "Already downloading script, and a ruled fetch waits for its own download of:"
@@ -190,7 +192,7 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
                 auto allByteCallbacks = scriptRequest.byteUsers;
                 _activeScriptRequests.remove(url);
                 lock.unlock();
-                if (!DependencyManager::get<ScriptEngines>()->isStopped()) {
+                if (!scriptsStopping()) {
                     foreach(contentAvailableCallback thisCallback, allCallbacks) {
                         thisCallback(url.toString(), "", true, false, "!createResourceRequest");
                     }
@@ -220,11 +222,8 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
     QByteArray scriptBytes;
     std::vector<contentAvailableCallback> allCallbacks;
     std::vector<bytesAvailableCallback> allByteCallbacks;
-    // ruled callers that waited for this download to end: their own ruled download follows (below, lock free)
-    std::vector<contentAvailableCallback> ruledWaiters;
-    std::vector<bytesAvailableCallback> ruledByteWaiters;
-    QUrl waitOrigin;
-    bool waitWorldIsLocal = false;
+    // ruled callers that waited for this download to end: their own ruled downloads follow (below, lock free)
+    std::vector<ScriptRequest::RuledWaiter> ruledWaiters;
     QString status = QMetaEnum::fromType<ResourceRequest::Result>().valueToKey(req->getResult());
     bool success { false };
 
@@ -242,9 +241,6 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
                 allCallbacks = scriptRequest.scriptUsers;
                 allByteCallbacks = scriptRequest.byteUsers;
                 ruledWaiters = scriptRequest.ruledWaiters;
-                ruledByteWaiters = scriptRequest.ruledByteWaiters;
-                waitOrigin = scriptRequest.waitOrigin;
-                waitWorldIsLocal = scriptRequest.waitWorldIsLocal;
                 _activeScriptRequests.remove(url);
                 scriptBytes = req->getData();
                 scriptContent = QString::fromUtf8(scriptBytes);
@@ -298,9 +294,6 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
                     allCallbacks = scriptRequest.scriptUsers;
                     allByteCallbacks = scriptRequest.byteUsers;
                     ruledWaiters = scriptRequest.ruledWaiters;
-                    ruledByteWaiters = scriptRequest.ruledByteWaiters;
-                    waitOrigin = scriptRequest.waitOrigin;
-                    waitWorldIsLocal = scriptRequest.waitWorldIsLocal;
                     // an older copy, only one this download's callers may take: a ruled download that failed never
                     // hands out a copy fetched under no rule or another
                     if (_scriptCache.contains(url) &&
@@ -318,22 +311,19 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
 
     req->deleteLater();
 
-    if (!DependencyManager::get<ScriptEngines>()->isStopped()) {
+    if (!scriptsStopping()) {
         foreach(contentAvailableCallback thisCallback, allCallbacks) {
             thisCallback(url.toString(), scriptContent, true, success, status);
         }
         foreach(bytesAvailableCallback thisCallback, allByteCallbacks) {
             thisCallback(url.toString(), scriptBytes, success, status);
         }
-        // the ruled callers that waited: each fetch is ruled again from the start, so the copy just cached (fetched
-        // under no rule, or another) isn't theirs to take, and the first of them starts their ruled download
-        for (const contentAvailableCallback& waiter : ruledWaiters) {
-            ruleFetch(url, waitOrigin, waitWorldIsLocal);
-            request(url, waiter, nullptr, false, maxRetries);
-        }
-        for (const bytesAvailableCallback& waiter : ruledByteWaiters) {
-            ruleFetch(url, waitOrigin, waitWorldIsLocal);
-            request(url, nullptr, waiter, false, maxRetries);
+        // the ruled callers that waited: each fetch is ruled again from the start, under that caller's own rule, so
+        // the copy just cached (fetched under no rule, or another) isn't theirs to take; callers under one rule share
+        // the ruled download the first of them starts, callers under another rule wait for their own in turn
+        for (const ScriptRequest::RuledWaiter& waiter : ruledWaiters) {
+            ruleFetch(url, waiter.origin, waiter.worldIsLocal);
+            request(url, waiter.content, waiter.bytes, false, maxRetries);
         }
     }
 }

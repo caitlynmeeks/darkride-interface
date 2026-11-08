@@ -40,11 +40,14 @@ public:
     /// The rule this download runs under, as one key (ScriptCache::ruleKey); empty for a download under no rule.
     QString ruleKey() const;
     // ruled callers that may not join this download (it runs under no rule, or under another): each gets its own
-    // ruled download when this one ends
-    std::vector<contentAvailableCallback> ruledWaiters { };
-    std::vector<bytesAvailableCallback> ruledByteWaiters { };
-    QUrl waitOrigin;
-    bool waitWorldIsLocal { false };
+    // ruled download, under its own rule, when this one ends
+    struct RuledWaiter {
+        contentAvailableCallback content;
+        bytesAvailableCallback bytes;
+        QUrl origin;
+        bool worldIsLocal { false };
+    };
+    std::vector<RuledWaiter> ruledWaiters { };
 };
 
 /// Interface for loading scripts
