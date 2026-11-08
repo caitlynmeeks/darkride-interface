@@ -9,12 +9,17 @@
 #  (its readable copy kept) and clicked (its print in the log), an edit watched, a script that uses the web asked about
 #  first (the kit's client answers no), a model made in Blender, put in the world's files and placed, a picture, a walk,
 #  and undo. Prints one line per check and "MCP KIT PASS" or "MCP KIT FAIL n".
-#  A world that keeps no files (a serverless file:// world, no Asset Server: Make refuses a long value with its plain
-#  limit line there instead of putting it in the world's files) can't hold a set script or an uploaded model: those
-#  checks print SKIP with that reason and the end line counts them; everything else is checked as usual. The driver
-#  says which world it is with --world-files yes|no, and Make's answer to the long material must agree (a refusal at the
-#  limit in a world that keeps files is a FAIL, not a SKIP); without the flag the kit infers it and says so.
+#  Where Make keeps its files is the person's choice (scene's here.filesGoTo, from 11-08): "my_files", their own My
+#  Files (the default; it needs a signed-in client, and the kit's walled-off clients never sign in), or "world", the
+#  world's own files (a world on a server whose owner lets the person add files). Where Make can't keep files now (here.
+#  canKeepFiles false: signed out, since the world's files are used only where the world allows them and My Files
+#  otherwise; Make refuses a long value with its plain limit line instead of keeping it as a file), a set script or an
+#  uploaded model can't be held: those checks print SKIP with Make's reason and the end line counts them, and Make's
+#  answer must be its own not-saved line (signed out: "isn't signed in"). The driver says which world it is with
+#  --world-files yes|no (no: the serverless file:// world, where a server script is refused before it is saved) and
+#  whether the client is signed in with --signed-in yes|no (default no); Make's scene must agree.
 #    python3 -I mcp-kit.py <the test client's Make folder> [<folder for the made model's views>] [--world-files yes|no]
+#        [--signed-in yes|no]
 #  (the MCP line is in the Make folder's claude-code/, where Connect writes it)
 #
 #  Copyright 2026 Darkride.
@@ -31,6 +36,13 @@ if "--world-files" in arguments:
     declared = {"yes": True, "no": False}.get(arguments[at + 1] if at + 1 < len(arguments) else "")
     if declared is None:
         raise SystemExit("--world-files takes yes or no")
+    del arguments[at:at + 2]
+signed_in = False   # --signed-in yes|no: the kit's walled-off clients never sign in
+if "--signed-in" in arguments:
+    at = arguments.index("--signed-in")
+    signed_in = {"yes": True, "no": False}.get(arguments[at + 1] if at + 1 < len(arguments) else "")
+    if signed_in is None:
+        raise SystemExit("--signed-in takes yes or no")
     del arguments[at:at + 2]
 folder = arguments[0]
 if os.path.exists(os.path.join(folder, "claude-code", ".darkride-mcp.json")):
@@ -83,7 +95,9 @@ def check(name, ok, detail=""):
 
 
 skipped = 0
-NO_FILES = "this world keeps no files (no Asset Server)"
+NO_FILES = "Make can't keep files here now (scene's here.canKeepFiles false)"
+# Make's own not-saved lines (MakeLink): the world's files refused, or none, or the person signed out with My Files
+NOT_SAVED_LINES = ("keeps no files", "may not add files", "world's files", "isn't signed in to Darkride")
 
 
 def skip(name, why):
@@ -102,9 +116,17 @@ guide = tool("guide")
 check("guide", not guide["error"] and len(guide["value"]["text"]) > 2000)
 scene = tool("scene", {"radius": 30})
 check("scene", not scene["error"] and "here" in scene["value"], json.dumps(scene["value"]["here"]) if scene["value"] else scene["text"])
-# Make says up front whether the world keeps files (here.canKeepFiles, from 11-08); it must fit the declared world
-scene_files = ((scene["value"] or {}).get("here") or {}).get("canKeepFiles") if not scene["error"] else None
-if declared is not None and scene_files is not None:
+# Make says up front where files go and whether it can keep one now (here.filesGoTo, here.canKeepFiles, from 11-08);
+# with the world's files that must fit the declared world, with My Files the declared sign-in
+here = ((scene["value"] or {}).get("here") or {}) if not scene["error"] else {}
+scene_files = here.get("canKeepFiles")
+place = here.get("filesGoTo")
+if place is not None:
+    check("scene says where Make keeps files (filesGoTo %s)" % place, place in ("my_files", "world"))
+if place == "my_files" and scene_files is not None:
+    check("scene says My Files can keep files only when signed in (canKeepFiles %s, signed in %s)"
+          % (scene_files, "yes" if signed_in else "no"), scene_files == signed_in)
+elif declared is not None and scene_files is not None:
     check("scene says the world's files as declared (canKeepFiles %s)" % scene_files, scene_files == declared)
 
 box = tool("add", {"properties": {"type": "Box", "name": "Make kit box", "dimensions": {"x": 0.5, "y": 0.5, "z": 0.5},
@@ -128,7 +150,11 @@ material = tool("add", {"properties": {"type": "Material", "name": "Make kit lon
 # a refusal naming the limit comes only where the world can't keep files (MakeLink: the files route needs the
 # world's Asset Server): that tells the kit which world it is in for the checks below
 refused_at_limit = material["error"] and material["code"] == "bad_input" and "at most 1200 bytes" in material["text"]
-if declared is None:
+if scene_files is not None:
+    world_files = scene_files   # from here on: Make can keep a file now (where the person chose)
+    check("Make's answer fits its scene (keeps files %s)" % ("yes" if scene_files else "no"),
+          refused_at_limit != scene_files, material["text"][:160])
+elif declared is None:
     world_files = not refused_at_limit
     print("MCP KIT world files: inferred %s from Make's answer (give --world-files yes|no to check it)"
           % ("yes" if world_files else "no"))
@@ -136,6 +162,15 @@ else:
     world_files = declared
     check("Make's answer fits the world (files %s)" % ("yes" if declared else "no"), refused_at_limit != declared,
           material["text"][:160])
+
+
+def kept_link(url, folder):
+    # where the person chose: the world's own files (atp:/claude-<folder>/) or My Files' lasting link (files host /f/)
+    if place == "my_files":
+        return url.startswith("https://files.") and "/f/" in url
+    return url.startswith("atp:/claude-" + folder + "/")
+
+
 if world_files:
     check("a long materialData is added", not material["error"], material["text"][:200])
 else:
@@ -144,8 +179,8 @@ else:
 if not material["error"]:
     time.sleep(1)
     held = ((tool("get", {"id": material["value"]["id"]})["value"] or {}).get("properties") or {})
-    check("...into the world's files, the Material pointing at it",
-          str(held.get("materialURL", "")).startswith("atp:/claude-materials/") and len(held.get("materialData", "")) <= 1200,
+    check("...kept as a file, the Material pointing at it",
+          kept_link(str(held.get("materialURL", "")), "materials") and len(held.get("materialData", "")) <= 1200,
           "materialURL %s, materialData %d chars" % (held.get("materialURL"), len(held.get("materialData", ""))))
 # a long material naming a web address is asked about first, and on "no" nothing goes into the world's files (the
 # runner counts the /claude-materials/ files in the client's log: this one adds none)
@@ -158,15 +193,27 @@ check("a long material with a web address is asked first (the kit says no)", web
 script = tool("set_script", {"id": box_id, "side": "client", "source":
                              "(function () { this.clickDownOnEntity = function () { print('MAKE KIT CLICKED'); }; })"})
 if world_files:
-    check("set_script", not script["error"] and script["value"]["url"].startswith("atp:/claude-scripts/")
+    check("set_script", not script["error"] and kept_link(script["value"]["url"], "scripts")
           and os.path.exists(script["value"]["saved_copy"] or ""), script["text"][:300])
 else:
-    skip("set_script", NO_FILES + ("" if script["error"] and ("keeps no files" in script["text"] or "may not add files"
-                                                               in script["text"] or "world's files" in script["text"])
-                                   else "; but Make's answer wasn't the world's files' refusal: " + script["text"][:160]))
+    skip("set_script", NO_FILES + ("" if script["error"] and any(line in script["text"] for line in NOT_SAVED_LINES)
+                                   else "; but Make's answer wasn't its not-saved line: " + script["text"][:160]))
+    if place == "my_files" and not signed_in:
+        check("...Make says the person isn't signed in (My Files)", script["error"]
+              and "isn't signed in to Darkride" in script["text"] and script["text"].startswith("Not saved"),
+              script["text"][:200])
 if not script["error"]:
     copy = open(script["value"]["saved_copy"]).read()
     check("script marked made with Claude", copy.startswith("// made with Claude"))
+    if place == "my_files":
+        # anyone with a My Files link may read it: the person's name stays out of the stamp (pm 11-08)
+        check("...without the person's name (My Files)", " for " not in copy.splitlines()[0], copy.splitlines()[0])
+if declared is False:
+    # the file world (--world-files no): it has no server, so a server script is refused before it is saved
+    server = tool("set_script", {"id": box_id, "side": "server", "source": "(function () {})"})
+    check("a server script in a file world is refused (no server)", server["error"]
+          and "server scripts need a world on a server" in server["text"] and server["text"].startswith("Not saved"),
+          server["text"][:200])
 time.sleep(2)
 clicked = tool("click", {"id": box_id})
 check("click", not clicked["error"] and clicked["value"]["clicked"])
@@ -200,10 +247,11 @@ if not blender["error"]:
         base64.b64decode(blender["images"][0]["data"]))
     uploaded = tool("upload_model", {"model_id": blender["value"]["model_id"], "name": "kit stool"})
     if world_files:
-        check("upload_model", not uploaded["error"] and uploaded["value"]["url"].startswith("atp:/claude-models/"),
+        check("upload_model", not uploaded["error"] and kept_link(uploaded["value"]["url"], "models"),
               uploaded["text"][:200])
     else:
-        skip("upload_model", NO_FILES)
+        skip("upload_model", NO_FILES + ("" if uploaded["error"] and any(line in uploaded["text"] for line in NOT_SAVED_LINES)
+                                         else "; but Make's answer wasn't its not-saved line: " + uploaded["text"][:160]))
     if not uploaded["error"]:
         model = tool("add", {"properties": {"type": "Model", "name": "Make kit stool", "modelURL": uploaded["value"]["url"],
                                             "dimensions": {"x": 0.4, "y": 0.45, "z": 0.4}}})
