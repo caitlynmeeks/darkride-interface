@@ -55,6 +55,7 @@ const int PARSE_ERROR = -32700;
 const int INVALID_REQUEST = -32600;
 const int METHOD_NOT_FOUND = -32601;
 const int INVALID_PARAMS = -32602;
+const int TOOL_LIST_HOLD_MS = 15000;   // a tools/list waits this long at most for the offer to be decided
 
 }  // namespace
 
@@ -274,6 +275,13 @@ QString MakeLinkServer::newPipeName() {
 }
 
 MakeLinkServer::MakeLinkServer(QObject* parent) : QObject(parent) {
+    _toolListHoldMs = TOOL_LIST_HOLD_MS;
+    _toolListCap = new QTimer(this);
+    _toolListCap->setSingleShot(true);
+    connect(_toolListCap, &QTimer::timeout, this, [this] {
+        qCInfo(makelink) << "the tool list was asked for before the offer was decided and waited its cap: answered as it stands";
+        answerHeldToolLists();
+    });
 }
 
 MakeLinkServer::~MakeLinkServer() {
@@ -487,7 +495,34 @@ void MakeLinkServer::adopt(QLocalSocket* socket, QString refused) {
     emit connectedChanged(true);
 }
 
+void MakeLinkServer::setToolListHold(bool held) {
+    _toolListHeld = held;
+    if (!held) {
+        _toolListCap->stop();
+        answerHeldToolLists();
+    }
+}
+
+void MakeLinkServer::answerToolList(const QJsonValue& requestId) {
+    QSet<QString> offered;
+    for (auto it = _handlers.begin(); it != _handlers.end(); ++it) {
+        offered.insert(it.key());
+    }
+    answer(requestId, QJsonObject { { "tools", _tools.mcpTools(offered) } });
+}
+
+void MakeLinkServer::answerHeldToolLists() {
+    const QList<QJsonValue> waiting = _heldToolLists;
+    _heldToolLists.clear();
+    for (const QJsonValue& requestId : waiting) {
+        answerToolList(requestId);
+    }
+}
+
 void MakeLinkServer::dropClient() {
+    // a list the gone client was waiting for has nowhere to go
+    _heldToolLists.clear();
+    _toolListCap->stop();
     // the running calls end with the connection: their answers have nowhere to go
     for (auto it = _calls.begin(); it != _calls.end(); ++it) {
         if (it->timer) {
@@ -605,11 +640,15 @@ void MakeLinkServer::handle(const QJsonObject& message) {
     } else if (method == "ping") {
         answer(id, QJsonObject());
     } else if (method == "tools/list") {
-        QSet<QString> offered;
-        for (auto it = _handlers.begin(); it != _handlers.end(); ++it) {
-            offered.insert(it.key());
+        if (_toolListHeld) {
+            // the offer is being decided (Make's Connect self-test): the answer waits for it, or for the cap
+            _heldToolLists.append(id);
+            if (!_toolListCap->isActive()) {
+                _toolListCap->start(_toolListHoldMs);
+            }
+            return;
         }
-        answer(id, QJsonObject { { "tools", _tools.mcpTools(offered) } });
+        answerToolList(id);
     } else if (method == "tools/call") {
         callTool(id, params);
     } else if (method == "resources/list" || method == "prompts/list") {

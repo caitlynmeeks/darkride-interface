@@ -532,6 +532,9 @@ QString MakeLink::blenderWhy() const {
 }
 
 void MakeLink::offerBlender() {
+    // the tool list Claude Code asks for waits while this is decided (the Windows self-test takes seconds; here the
+    // answer is at once), so a Claude started right after Connect still sees the Blender tools when they're offered
+    _server.setToolListHold(true);
     _blenderWhy.clear();
     _blenderOffered = _blender->available(_blenderWhy);
     if (_blenderOffered) {
@@ -548,6 +551,7 @@ void MakeLink::offerBlender() {
         _server.removeHandler("upload_model");
     }
     qCInfo(makelog) << "Make's Blender tools" << (_blenderOffered ? QString("offered") : "not offered: " + _blenderWhy);
+    _server.setToolListHold(false);
 }
 
 bool MakeLink::connectLink() {

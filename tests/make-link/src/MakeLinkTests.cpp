@@ -605,6 +605,25 @@ void MakeLinkTests::testKeyHiddenInClaudeCodeErrors() {
 // its own start; and the key route's line is --bare with its cap, never the key
 void MakeLinkTests::testClaudeStartedOncePerRun() {
     QTemporaryDir dir;
+#ifdef Q_OS_WIN
+    // the fake Claude on Windows: a command script that answers the same lines (a shell script isn't a program there)
+    const QString program = dir.filePath("claude.cmd");
+    QFile script(program);
+    QVERIFY(script.open(QIODevice::WriteOnly));
+    script.write("@echo off\r\n"
+                 "setlocal enabledelayedexpansion\r\n"
+                 "set n=0\r\n"
+                 ":loop\r\n"
+                 "set \"line=\"\r\n"
+                 "set /p line=\r\n"
+                 "if errorlevel 1 goto end\r\n"
+                 "set /a n+=1\r\n"
+                 "echo {\"type\":\"system\",\"subtype\":\"init\",\"model\":\"kit-model\"}\r\n"
+                 "echo {\"type\":\"result\",\"subtype\":\"success\",\"total_cost_usd\":!n!.5,"
+                 "\"is_error\":false,\"result\":\"ok\"}\r\n"
+                 "goto loop\r\n"
+                 ":end\r\n");
+#else
     const QString program = dir.filePath("claude");
     QFile script(program);
     QVERIFY(script.open(QIODevice::WriteOnly));
@@ -616,6 +635,7 @@ void MakeLinkTests::testClaudeStartedOncePerRun() {
                  "  echo \"{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"total_cost_usd\\\":$n.5,"
                  "\\\"is_error\\\":false,\\\"result\\\":\\\"ok\\\"}\"\n"
                  "done\n");
+#endif
     script.close();
     QVERIFY(QFile::setPermissions(program, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
 
@@ -1200,4 +1220,68 @@ void MakeLinkTests::testHelperCopyIsPrivateAndIdentical() {
     // a source that can't be read is refused with a why
     QVERIFY(!MakeFolder::copyProgram(dir.filePath("no-such-program"), copy, why));
     QVERIFY2(why.contains("can't be read"), qPrintable(why));
+}
+
+
+// the Blender tools are decided by a self-test at Connect: a tools/list asked meanwhile waits for the decision, or for
+// the cap, and lists what is offered then (security's bounded hold, 11-08; a Claude started right after Connect saw no
+// make_with_blender in windowz's run 2)
+void MakeLinkTests::testToolListWaitsForTheOffer() {
+    QTemporaryDir dir(shortFolderTemplate());
+    MakeLinkServer server;
+    server.setHandler("guide", [](const QJsonObject&, const MakeLinkServer::Reply& reply) { reply({}); });
+    server.setToolListHold(true);
+    QString error;
+    QVERIFY(server.listen(socketFolder(dir), error));
+    Client client;
+    QVERIFY(client.connectTo(server.socketPath()));
+    QVERIFY(!client.ask(1, "initialize", QJsonObject { { "protocolVersion", "2025-06-18" },
+                                                       { "clientInfo", QJsonObject { { "name", "claude-code" }, { "version", "2" } } } }).isEmpty());
+    auto names = [](const QJsonObject& listed) {
+        QStringList result;
+        for (const QJsonValue& tool : listed.value("result").toObject().value("tools").toArray()) {
+            result << tool.toObject().value("name").toString();
+        }
+        return result;
+    };
+    // held: no answer for 400 ms
+    QVERIFY(client.ask(2, "tools/list", QJsonObject(), 400).isEmpty());
+    // the offer decided and the hold released: the answer comes, with the tool offered meanwhile
+    server.setHandler("make_with_blender", [](const QJsonObject&, const MakeLinkServer::Reply& reply) { reply({}); });
+    server.setToolListHold(false);
+    const QStringList decided = names(client.waitFor(2, 2000));
+    QVERIFY2(decided.contains("make_with_blender") && decided.contains("guide"), qPrintable(decided.join(',')));
+    // held again with a short cap and no decision: answered at the cap without the tool that comes later
+    server.removeHandler("make_with_blender");
+    server.setToolListHold(true);
+    server.setToolListHoldCap(300);
+    const QStringList capped = names(client.ask(3, "tools/list", QJsonObject(), 2000));
+    QVERIFY2(capped.contains("guide") && !capped.contains("make_with_blender"), qPrintable(capped.join(',')));
+    server.setToolListHold(false);
+}
+
+// the key route's Claude Code finds the program's folder and the system's tool folders, nothing of the person's PATH
+// (security, 11-08; on Windows the old line was the Unix one, a broken PATH)
+void MakeLinkTests::testClaudePathIsSystemFoldersOnly() {
+    const QString program = QDir::tempPath() + "/claude-kit/claude";
+    const QString path = MakeClaude::pathFor(program);
+#ifdef Q_OS_WIN
+    wchar_t buffer[MAX_PATH];
+    QVERIFY(GetSystemDirectoryW(buffer, MAX_PATH) > 0);
+    const QString system = QString::fromWCharArray(buffer);
+    QVERIFY(GetWindowsDirectoryW(buffer, MAX_PATH) > 0);
+    const QString windows = QString::fromWCharArray(buffer);
+    const QStringList allowed { QDir::toNativeSeparators(QFileInfo(program).absolutePath()), system, windows,
+                                system + "\\Wbem" };
+    const QStringList entries = path.split(';');
+    QCOMPARE(entries.size(), 4);
+    for (const QString& entry : entries) {
+        QVERIFY2(allowed.contains(entry), qPrintable(entry));
+    }
+    for (const QString& theirs : qEnvironmentVariable("PATH").split(';', Qt::SkipEmptyParts)) {
+        QVERIFY2(allowed.contains(theirs, Qt::CaseInsensitive) || !entries.contains(theirs, Qt::CaseInsensitive), qPrintable(theirs));
+    }
+#else
+    QCOMPARE(path, QFileInfo(program).absolutePath() + ":/usr/bin:/bin:/usr/sbin:/sbin");
+#endif
 }
