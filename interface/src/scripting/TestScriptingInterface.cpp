@@ -1188,7 +1188,8 @@ bool TestScriptingInterface::makeDockTry(const QString& call) {
         // window's top left corner, a release with no press: nothing in the dock is clicked by it
         auto panel = makeDockPanel();
         if (QWindow* content = panel ? panel->contentWindow() : nullptr) {
-            QMouseEvent release(QEvent::MouseButtonRelease, QPointF(1, 1), content->mapToGlobal(QPointF(1, 1)),
+            // mapToGlobal takes a QPoint on Qt 5 (QPointF is Qt 6 only)
+            QMouseEvent release(QEvent::MouseButtonRelease, QPointF(1, 1), content->mapToGlobal(QPoint(1, 1)),
                                 Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
             QCoreApplication::sendEvent(content, &release);
             QKeyEvent key(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
