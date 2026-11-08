@@ -687,7 +687,7 @@ Page {
                 : list.searching ? "No avatar in My Avatars matches “" + avatarBar.search + "”."
                 : "Avatars you keep and put in My Files show here."
             footer: [library.privateCount > 0 ? "Private avatars are seen on you in Darkride 1.1 or newer, and have no public link." : "",
-                     list.keepsLinks ? "Web links you keep are kept on this computer." : ""]
+                     list.keepsLinks ? "Web links you keep are stored on this computer." : ""]
                 .filter(function (line) { return line !== ""; }).join(" ")
             onActivated: avatar.wearEntry(item)
             onStarToggled: list.toggleStar(item)
