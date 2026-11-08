@@ -127,6 +127,22 @@ QObject* ContextAwareProfile::radioProfile() {
     }();
     return profile;
 }
+
+QObject* ContextAwareProfile::codeProfile() {
+    // As the radio's, for the Code panel's page (html/code/, team/editor-ui/CODE-EDITOR-PLAN.md): one object for the
+    // run, its own folder, memory cache, no cookies kept, no interceptor. The page is the app's own (qrc:) and reaches
+    // nothing: its view turns file and remote access off and its policy allows no connections (security,
+    // team/security/reviews/make-v1-editor-page.md).
+    static QQuickWebEngineProfile* profile = [] {
+        auto result = new QQuickWebEngineProfile();
+        result->setHttpCacheType(QQuickWebEngineProfile::MemoryHttpCache);
+        result->setPersistentCookiesPolicy(QQuickWebEngineProfile::NoPersistentCookies);
+        useStorage(result, "DarkrideCode");
+        QQmlEngine::setObjectOwnership(result, QQmlEngine::CppOwnership);
+        return result;
+    }();
+    return profile;
+}
 #endif
 
 void ContextAwareProfile::separateWebEntitySurface(QQmlContext* context) {

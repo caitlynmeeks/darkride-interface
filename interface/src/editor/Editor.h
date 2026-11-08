@@ -376,6 +376,7 @@ private:
     // Use Stable Links, once the listing is in
     void rewriteStableLinks(const UserFiles& files);
     void showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos);
+    void addScriptActions(QMenu& menu);
     void addSelectionActions(QMenu& menu, const glm::vec3* pasteTarget);
     // a note in the middle of the toolbar; one with a timeout clears itself
     void setStatus(const QString& text, int clearAfterMs = 0);

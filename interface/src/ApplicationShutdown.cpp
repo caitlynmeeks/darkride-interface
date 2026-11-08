@@ -13,6 +13,7 @@
 //  Distributed under the MIT License.
 //
 
+#include "make/MakeDock.h"
 #include "make/MakeLink.h"
 #include "Application.h"
 #include "ApplicationConstants.h"
@@ -175,6 +176,7 @@ void Application::cleanupBeforeQuit() {
     // so this doesn't shut down properly
 
     // Make first: Claude Code's connection, a running Blender and the building tools' engine end with it
+    DependencyManager::destroy<MakeDock>();   // the dock's object first: it listens to MakeLink
     DependencyManager::destroy<MakeLink>();
     DependencyManager::get<ScriptEngines>()->shutdownScripting(); // stop all currently running global scripts
 

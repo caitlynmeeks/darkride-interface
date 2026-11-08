@@ -9,8 +9,11 @@
 
 #include "Panels.h"
 
+#include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
+#include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
 #include <QtWidgets/QDockWidget>
 
 #include <gl/GLHelpers.h>
@@ -18,6 +21,7 @@
 #include <SettingHandle.h>
 
 #include "Application.h"
+#include "CodeEditor.h"
 #include "InterfaceLogging.h"
 #include "PanelTheme.h"
 #include "QmlDock.h"
@@ -25,11 +29,15 @@
 #include "WindowLayout.h"
 #include "chat/ChatWindow.h"
 #include "editor/Editor.h"
+#include "make/MakeBadge.h"
+#include "make/MakeDock.h"
 
 namespace {
     const QString CHAT = "Chat";
     const QString MY_FILES = "My Files";
     const QString CONSOLE = "Console";
+    const QString CODE = "Code";   // the Code panel (Make v1): Qt 6's web engine only (ui/CodeEditor.h)
+    const QString MAKE = "Make";   // the Make dock (Make v1, make/MakeDock.h): Qt 6 only, with the Code panel
     const QString PEOPLE = "People";
     // People's saved person and tab (PeoplePanel.qml), and its Profile tab
     const QString PEOPLE_PROFILE = "io.darkride.peoplePanel.profile";
@@ -54,6 +62,10 @@ namespace {
         { "People", "qrc:///qml/darkride/PeoplePanel.qml", 560 },
         { "Explore", "qrc:///qml/darkride/ExplorePanel.qml", 760 },
         { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 320, 640 },
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        { CODE, "qrc:///qml/darkride/CodePanel.qml", 640 },
+        { MAKE, "qrc:///qml/darkride/MakePanel.qml", 420 },
+#endif
     };
 
     const QString TABS_BEGIN = "/* dock tabs: begin */";
@@ -121,12 +133,22 @@ QStringList Panels::names() const {
     // chat's button sits between People's and Explore's; then My Files, and Build mode's own
     QStringList result;
     for (const auto& panel : QML_PANELS) {
+        if (panel.name == CODE || panel.name == MAKE) {
+            continue;   // with the tools, after My Files
+        }
         if (panel.name == "Explore") {
             result << CHAT;
         }
         result << panel.name;
     }
-    result << MY_FILES << CONSOLE << HIERARCHY << INSPECTOR;
+    result << MY_FILES;
+    if (MakeDock::isAvailable()) {
+        result << MAKE;
+    }
+    if (CodeEditor::isAvailable()) {
+        result << CODE;
+    }
+    result << CONSOLE << HIERARCHY << INSPECTOR;
     return result;
 }
 
@@ -189,6 +211,26 @@ QDockWidget* Panels::dock(const QString& name) {
         }
         gl::ViewChangeGuard guard;
         auto made = new QmlDock(panel.name, QUrl(panel.source), window);
+        if (name == CODE) {
+            made->setContextObject("CodeEditor", DependencyManager::get<CodeEditor>().data());
+        }
+        if (name == MAKE) {
+            // MakeDock on the Make dock's own context alone; it watches the dock's window for real input and gives
+            // the engine its picture provider once the view is made
+            made->setContextObject("MakeDock", DependencyManager::get<MakeDock>().data());
+            // the Make badge shows only while this panel is out of sight (closed, or a tab behind another)
+            connect(made, &QDockWidget::visibilityChanged, this, [](bool visible) {
+                if (auto dock = DependencyManager::get<MakeDock>()) {
+                    dock->badge()->setPanelInSight(visible);
+                }
+            });
+            connect(made, &QmlDock::contentMade, this, [made] {
+                if (auto dock = DependencyManager::get<MakeDock>()) {
+                    dock->watchWindow(qobject_cast<QQuickWindow*>(made->contentWindow()),
+                                      made->panel() ? qmlEngine(made->panel()) : nullptr);
+                }
+            });
+        }
         // hidden until it's opened or the saved layout shows it
         made->hide();
         // where the saved layout had it (restored after sign-in), open or closed as it was; asked before it's added
@@ -292,9 +334,14 @@ void Panels::change(const QString& name, Change how) {
         return;
     }
     panel->show();
-    // in front of the other windows when floating; docked among others as tabs, the tab in front
-    panel->raise();
-    if (panel->isFloating()) {
+    // in front of the other windows when floating; docked among others as tabs, the tab in front. Raising or activating
+    // a floating window brings the whole app to the front on the Mac, so a floating one only while Darkride is the app
+    // in use (a click on the bar is), never from a script while Darkride is behind (a background test client took the
+    // focus from the person's app, 11-07)
+    if (!panel->isFloating()) {
+        panel->raise();
+    } else if (QGuiApplication::applicationState() == Qt::ApplicationActive) {
+        panel->raise();
         panel->activateWindow();
     }
 }

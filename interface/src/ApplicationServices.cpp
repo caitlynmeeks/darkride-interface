@@ -93,6 +93,7 @@
 #include "ui/Skins.h"
 #include "ui/MetaverseRequests.h"
 #include "ui/PanelTheme.h"
+#include "ui/CodeEditor.h"
 #include "ui/Panels.h"
 #include "chat/FriendsScriptingInterface.h"
 #include "scripting/HMDScriptingInterface.h"
@@ -109,6 +110,7 @@
 #include "ui/TabletScriptingInterface.h"
 #include "ui/ToolbarScriptingInterface.h"
 #include "make/MakeLink.h"
+#include "make/MakeDock.h"
 
 // the controller's state names (Application's state device reads them too)
 const QString STATE_IN_HMD = "InHMD";
@@ -307,6 +309,8 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
     DependencyManager::set<PanelTheme>();          // the QML panels' colour scheme
     DependencyManager::set<Skins>();               // skins (ui/Skins.h), put on once the main window exists
     DependencyManager::set<Panels>();              // the window's panels by name (ui/Panels.h)
+    DependencyManager::set<CodeEditor>();          // the Code panel's document (ui/CodeEditor.h), after Build mode's
+    DependencyManager::set<MakeDock>();            // the Make dock's one object (make/MakeDock.h), after MakeLink's
     PanelTheme::registerWithQml();
 
 

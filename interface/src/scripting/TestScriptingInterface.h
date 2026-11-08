@@ -396,6 +396,211 @@ public slots:
     Q_INVOKABLE bool saveDockPicture(const QString& objectName, const QString& path);
 
     /**jsdoc
+     * Opens an entity's script in the Code panel, as its Edit button in the Inspector does (Qt 6 builds only).
+     * @function Test.openInCode
+     * @param {Uuid} id - The entity.
+     * @param {string} which - <code>"script"</code> or <code>"serverScripts"</code>.
+     * @returns {boolean} Whether it opened.
+     */
+    Q_INVOKABLE bool openInCode(const QUuid& id, const QString& which);
+
+    /**jsdoc
+     * The Code panel's document as the panel shows it: <code>hasDocument, pageReady, fileName, kind, where, canSave,
+     * readOnlyReason, problem, saving, savedText, note, status, statusState, errorLine, errorText, claudeWriting,
+     * showingChange, nearby</code> (Code near you's row count), <code>rows</code> (its rows), <code>path, usedBy, sharedBy, isShader, language,
+     * openKey, loading, drafts</code> (how many files have an unsaved change kept).
+     * @function Test.codePanel
+     * @returns {object} The panel's state.
+     */
+    Q_INVOKABLE QVariantMap codePanel();
+
+    /**jsdoc
+     * Runs JavaScript in the Code panel's page, as a test probe (the page's own content security policy applies to
+     * what it does); its result comes later from Test.codePageAnswer.
+     * @function Test.codePageRun
+     * @param {string} source - The JavaScript.
+     * @returns {number} The run's number; 0 when the page isn't there.
+     */
+    Q_INVOKABLE int codePageRun(const QString& source);
+
+    /**jsdoc
+     * A Test.codePageRun's result, as JSON text, once the page has answered.
+     * @function Test.codePageAnswer
+     * @param {number} run - The run's number.
+     * @returns {string|null} The result as JSON, or <code>null</code> until it has come.
+     */
+    Q_INVOKABLE QVariant codePageAnswer(int run);
+
+    /**jsdoc
+     * Presses the Code panel's Save, as the person's click does.
+     * @function Test.codeSave
+     */
+    Q_INVOKABLE void codeSave();
+
+    /**jsdoc
+     * Opens the Code panel on Code near you alone, unfolded, with no script open (a timing run's case).
+     * @function Test.codeShowNearby
+     */
+    Q_INVOKABLE void codeShowNearby();
+
+    /**jsdoc
+     * Clicks a row of the Code panel's list, as the person does: the open file's unsaved typing is kept first.
+     * @function Test.codeOpenRow
+     * @param {Uuid} id - The row's entity (the nearest thing using the file).
+     * @param {string} which - <code>"script"</code>, <code>"serverScripts"</code>, <code>"fragmentShader"</code> or
+     *     <code>"vertexShader"</code>.
+     */
+    Q_INVOKABLE void codeOpenRow(const QUuid& id, const QString& which);
+
+    /**jsdoc
+     * Unfolds or folds the Code panel's list, as its sidebar button does.
+     * @function Test.codeShowList
+     * @param {boolean} shown - Whether the list shows.
+     */
+    Q_INVOKABLE void codeShowList(bool shown);
+
+    /**jsdoc
+     * Makes the Code panel act as if in another world (<code>""</code>: the real one again), as arriving there does:
+     * the open document is cleared, and unsaved changes are kept per world.
+     * @function Test.codeSetWorld
+     * @param {string} name - A name for the stand-in world, or <code>""</code>.
+     */
+    Q_INVOKABLE void codeSetWorld(const QString& name);
+
+    /**jsdoc
+     * The Make dock as its QML sees it (Qt 6 builds; make/MakeDock.h): <code>available, dockMade, open, floating, area,
+     * state, reason, route, hasKey, claudeFound, blenderFound, blenderSealed, blenderWhy, keyStoreName, working,
+     * timeline, made</code> (row counts), <code>timelineRows, madeRows, watching</code> (its window is watched for real
+     * input), <code>provider</code> (its engine has the "make" picture provider), <code>windowActive</code> (the dock's
+     * Qt Quick window), <code>dockWindowActive</code> (the dock widget's window), <code>folder</code> (the Make folder).
+     * @function Test.makeDock
+     * @returns {object} The dock's state.
+     */
+    Q_INVOKABLE QVariantMap makeDock();
+
+    /**jsdoc
+     * Calls one of the Make dock's real-input calls from a test, as its QML would but with no person's input: it must
+     * be refused. <code>"setRoute"</code> (to the route it isn't on) or <code>"answer"</code> (a question that was never
+     * asked); <code>"events:setRoute"</code> first gives the dock's window a mouse release and a key press made by the
+     * test (not by the window system). Only calls whose doing would change nothing outside the client's own settings.
+     * @function Test.makeDockTry
+     * @param {string} call - The call.
+     * @returns {boolean} The call's answer: <code>true</code> means it was NOT refused.
+     */
+    Q_INVOKABLE bool makeDockTry(const QString& call);
+
+    /**jsdoc
+     * Gives the Make dock a made card as Make's link does when Claude's tools make something (MakeLink::made):
+     * <code>{ kind: "script", id, side, name, file }</code> or <code>{ kind: "thing", id, name }</code>.
+     * @function Test.makeDockCard
+     * @param {number} request - The request it belongs to.
+     * @param {object} card - The card.
+     */
+    Q_INVOKABLE void makeDockCard(int request, const QVariantMap& card);
+
+    /**jsdoc
+     * Does what a script card's Open does in the Make dock: the card's script in the Code panel.
+     * @function Test.makeDockOpenCard
+     * @param {string} cardId - The card's item id (Test.makeDock's madeRows).
+     */
+    Q_INVOKABLE void makeDockOpenCard(const QString& cardId);
+
+    /**jsdoc
+     * The file the Make dock's picture provider would serve for <code>image://make/&lt;what&gt;/&lt;id&gt;</code>, or
+     * <code>""</code> when it would serve none (MakeDock::servedFile).
+     * @function Test.makeDockServed
+     * @param {string} what - <code>"sheet"</code>, <code>"thumb"</code> or <code>"picture"</code>.
+     * @param {string} id - The picture's or model's id.
+     * @returns {string} The file's path, or <code>""</code>.
+     */
+    Q_INVOKABLE QString makeDockServed(const QString& what, const QString& id);
+
+    /**jsdoc
+     * Connects the Make dock on the Terminal route without the person's click, for a kit that then speaks to Make as
+     * Claude Code would (scripting's mcp-kit.py). From then on every question Claude asks is answered no. The key route
+     * is never connected this way. <code>"chat"</code> connects with the chat line for this run only (the person's own
+     * choice isn't changed), whether or not the connect screen offers chat yet. <code>"off"</code> is the dock's
+     * Disconnect (which ends a test's chat).
+     * @function Test.makeDockConnect
+     * @param {string} route - <code>"terminal"</code>, <code>"chat"</code> or <code>"off"</code>; anything else is
+     *     refused.
+     * @returns {boolean} Whether Make is listening (<code>"off"</code>: true).
+     */
+    Q_INVOKABLE bool makeDockConnect(const QString& route);
+
+    /**jsdoc
+     * Sends text as the Make dock's Send does, without the person's click, for a kit that has Make's chat on the other
+     * end (scripting's channel-kit.py). Only into the chat <code>Test.makeDockConnect("chat")</code> turned on, which
+     * ends with Disconnect, a refused connect or a route chosen; never the key route; text only. Every check of Send
+     * applies (connected, the chat line, not already working). Any refusal returns 0 alike.
+     * @function Test.makeDockSend
+     * @param {string} text - What to send.
+     * @returns {number} The request's number, or 0.
+     */
+    Q_INVOKABLE int makeDockSend(const QString& text);
+
+    /**jsdoc
+     * An item of the Make dock's view, found by its objectName: whether it's shown, its place in the dock's window,
+     * its text and selected text (a text item's).
+     * @function Test.makeDockItem
+     * @param {string} name - The item's objectName (e.g. <code>"makeStartLine"</code>, <code>"makeCopy"</code>).
+     * @returns {object} <code>{ found, visible, x, y, width, height, text, selectedText }</code>.
+     */
+    Q_INVOKABLE QVariantMap makeDockItem(const QString& name);
+
+    /**jsdoc
+     * A press, a drag and a release of the left button in the Make dock's window, over an item found by its objectName,
+     * from and to points given as fractions of the item's width and height (a click when they're the same). Sent as
+     * Qt events, not the system's: MakeDock's real-input check refuses any call they lead to, so a kit sees whether
+     * the click reached its target (the refusal's log line) without anything happening.
+     * @function Test.makeDockMouse
+     * @param {string} name - The item's objectName.
+     * @param {number} fromX - From, 0 to 1 across the item.
+     * @param {number} fromY - From, 0 to 1 down the item.
+     * @param {number} toX - To, 0 to 1 across the item.
+     * @param {number} toY - To, 0 to 1 down the item.
+     * @returns {boolean} Whether the item was found and shown, and the events were sent.
+     */
+    Q_INVOKABLE bool makeDockMouse(const QString& name, double fromX, double fromY, double toX, double toY);
+
+    /**jsdoc
+     * Shows the Make badge (the view's bottom right) in one state without a connected Make, whatever the Make panel,
+     * for a timing run or a picture; <code>""</code> gives it back to Make.
+     * @function Test.makeBadge
+     * @param {string} state - <code>"working"</code>, <code>"answer"</code>, <code>"done"</code>,
+     *     <code>"failed"</code>, <code>"off"</code> (hidden) or <code>""</code>.
+     * @returns {string} The badge's state now, or <code>"unavailable"</code> without the Make dock.
+     */
+    Q_INVOKABLE QString makeBadge(const QString& state);
+
+    /**jsdoc
+     * The Make badge as the view's QML has it, for a kit's check that it shows and spins:
+     * <code>{ found, visible, words, lead, badgeState }</code> (lead: the spinner's step, 0 to 11, one step a second
+     * while it spins).
+     * @function Test.makeBadgeItem
+     * @returns {object} The badge item's values, or <code>{ found: false }</code>.
+     */
+    Q_INVOKABLE QVariantMap makeBadgeItem();
+
+    /**jsdoc
+     * Copy as the Make dock's Copy does (MakeDock.copyLine), without its real-input check: writes the system's clipboard,
+     * which is the person's, so only in a run that has a clipboard slot.
+     * @function Test.makeDockCopy
+     * @param {string} which - <code>"start"</code> (the start line) or <code>"setup"</code>.
+     * @returns {string} The text put on the clipboard, or <code>""</code>.
+     */
+    Q_INVOKABLE QString makeDockCopy(const QString& which);
+
+    /**jsdoc
+     * Saves a picture of the Code panel's menu, drawn as it would show but without showing it.
+     * @function Test.saveCodeMenuPicture
+     * @param {string} which - <code>"more"</code> (the &bull;&bull;&bull; menu).
+     * @param {string} path - Where to save it (PNG).
+     * @returns {boolean} Whether it was saved.
+     */
+    Q_INVOKABLE bool saveCodeMenuPicture(const QString& which, const QString& path);
+
+    /**jsdoc
      * Shows a count on the bar's Chat button's badge (ui/ChatButton.h), as chat's unread count would, until chat's
      * next count.
      * @function Test.setChatBadge
