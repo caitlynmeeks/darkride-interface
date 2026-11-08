@@ -7,11 +7,14 @@
 //    My Files: the .fst files in the person's files on the metaverse, each with the picture beside it when there is one;
 //    favourites: AvatarBookmarks, kept on this computer: a star on any avatar (star), or "Keep in My Avatars" on a web
 //      link worn (keep), which keeps it by its link (copying it into My Files is for later);
-//    Recent: the ten avatars worn last, kept in a setting (recentSetting) and written when the avatar changes; the
-//      newest five are `recent`, the default avatar among them, and the ten (without it) are in `items` for the search.
-//  The panel (AvatarPanel.qml) draws it: it works out what's worn and ticked (with keyOf), puts favourites first, folds
-//  the old files (`legacy`) into one row and shows a Recent-only entry only while the search has text. Nothing here
-//  runs while the panel is closed but the one setting written when the avatar changes. My Files is asked for once per
+//    Recent: the ten avatars worn last, kept in a private setting per account (recentKey), written when the avatar
+//      changes; the newest five are `recent`, the default avatar among them, and the ten (without it) are in `items`
+//      for the search.
+//  Each entry's picture is the one beside it in My Files, else the one the app took by itself when it was worn
+//  (AvatarThumbnails.autoPictures, kept on this computer). The panel (AvatarPanel.qml) draws it: it works out what's
+//  worn and ticked (with keyOf), puts favourites first, folds the old files (`legacy`) into one row and shows a
+//  Recent-only entry only while the search has text. Nothing here runs while the panel is closed but the one setting
+//  written when the avatar changes, and the lists' one change when a picture is taken. My Files is asked for once per
 //  opening (refresh), and `items` and `recent` are replaced only when what they hold changed, so an opening with nothing
 //  new, or wearing an avatar that is listed already, rebuilds no row.
 //
@@ -38,7 +41,8 @@ QtObject {
     //                 its folder in My Files without the avatar's own folder ("made/avatars"), the web link's host, or
     //                 "On this computer"
     //   keywords      what the search looks in: title, file name, folder and link
-    //   picture       ready to draw (a files-host picture through the engine's loader, so a private one loads), or ""
+    //   picture       ready to draw, or "": its picture in My Files (through the engine's loader, so a private one
+    //                 loads), else the one taken by itself when it was worn (a file:// address on this computer)
     //   updated       its date in My Files (ms), 0 when it isn't there
     //   isPrivate, badge   as My Files' list had them ("private" or "")
     //   inMyFiles, favorite, favoriteName, local, legacy (in My Files under legacy/: the old files)
@@ -56,7 +60,11 @@ QtObject {
     property int privateCount: 0
     property int legacyCount: 0
 
-    readonly property string recentSetting: "io.darkride.avatarPanel.recent"
+    // Recent is kept per account (security, 11-08: on a shared computer each person sees only their own), under
+    // private/, which a world's scripts can neither read nor write (security's rule 28: the links someone wore are
+    // theirs, and only her own lists may give star() a link): this, then "/" and the signed-in account's name hashed,
+    // or "/signed-out" (recentKey)
+    readonly property string recentSetting: "private/avatarPanel/recent"
     readonly property int recentKept: 10
     readonly property int recentShown: 5
 
@@ -64,6 +72,7 @@ QtObject {
     property var filesRead: []           // My Files' avatars: [{ key, url, title, folder, picture, updated, isPrivate, legacy }]
     property var favoritesRead: ({})     // AvatarBookmarks.getBookmarks()
     property var recentRead: []          // [{ url, name, worn, isDefault }], newest first
+    property var autoPicturesRead: ({})  // the pictures taken by themselves, by key: "file:///…jpg?<taken>"
     property var entriesByKey: ({})      // the entries of `items` and `recent` by key, for entryFor
     property string itemsSignature: ""
     property string recentSignature: ""
@@ -75,17 +84,25 @@ QtObject {
         return "https://files." + String(MetaverseRequests.metaverseUrl()).replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
     }
 
-    // The link as one key: a tea:// address becomes the files host's https one, and the scheme and host are lower
-    // case. The rest is kept as it is: a web path's case matters.
+    // The link as one key: a tea:// address becomes the files host's https one, the scheme and host are lower case,
+    // and the rest is read as decoded ("TEST%20AVATAR.fst" and "TEST AVATAR.fst" are one avatar; decodeURI leaves
+    // the characters that shape an address, such as %2F, as they are). A web path's case matters, so it is kept.
     function keyOf(url) {
         var address = String(url || "").trim();
+        var decoded = function (rest) {
+            try {
+                return decodeURI(rest);
+            } catch (e) {
+                return rest;   // a stray %
+            }
+        };
         var tea = /^tea:\/\/([^\/?#]*)(.*)$/i.exec(address);
         if (tea) {
-            return filesHost() + "/" + tea[1].toLowerCase() + tea[2];
+            return filesHost() + "/" + tea[1].toLowerCase() + decoded(tea[2]);
         }
         var parts = /^([a-z][a-z0-9+.\-]*):\/\/([^\/?#]*)(.*)$/i.exec(address);
         if (parts) {
-            return parts[1].toLowerCase() + "://" + parts[2].toLowerCase() + parts[3];
+            return parts[1].toLowerCase() + "://" + parts[2].toLowerCase() + decoded(parts[3]);
         }
         return address;
     }
@@ -136,8 +153,23 @@ QtObject {
         favoritesRead = AvatarBookmarks.getBookmarks() || {};
     }
 
+    // the pictures the app took by itself of the avatars worn, by key
+    function readAutoPictures() {
+        var taken = typeof AvatarThumbnails !== "undefined" && AvatarThumbnails.autoPictures ? AvatarThumbnails.autoPictures() || {} : {};
+        var byKey = {};
+        Object.keys(taken).forEach(function (url) {
+            byKey[keyOf(url)] = String(taken[url]);
+        });
+        autoPicturesRead = byKey;
+    }
+
+    function recentKey() {
+        var name = AccountServices.loggedIn ? String(AccountServices.username || "").toLowerCase() : "";
+        return recentSetting + "/" + (name !== "" ? Qt.md5(name) : "signed-out");
+    }
+
     function readRecent() {
-        var stored = Settings.getValue(recentSetting, "[]");
+        var stored = Settings.getValue(recentKey(), "[]");
         var list = [];
         try {
             list = typeof stored === "string" ? JSON.parse(stored) : stored;
@@ -176,7 +208,7 @@ QtObject {
         var list = [{ url: url, name: name, worn: Date.now(), isDefault: isDefault }].concat(recentRead.filter(function (r) {
             return keyOfRecord(r) !== key;
         })).slice(0, recentKept);
-        Settings.setValue(recentSetting, JSON.stringify(list));
+        Settings.setValue(recentKey(), JSON.stringify(list));
         recentRead = list;
     }
 
@@ -332,7 +364,7 @@ QtObject {
                 key: key, url: raw.url, link: link, title: title, fileName: fileName, folder: raw.folder,
                 host: hostOf(raw.url), source: source, subtitle: subtitle,
                 keywords: [title, fileName, raw.folder, link].join(" "),
-                picture: raw.picture, updated: raw.updated, isPrivate: raw.isPrivate, badge: raw.isPrivate ? "private" : "",
+                picture: raw.picture || autoPicturesRead[key] || "", updated: raw.updated, isPrivate: raw.isPrivate, badge: raw.isPrivate ? "private" : "",
                 inMyFiles: raw.inMyFiles, favorite: raw.favorite, favoriteName: raw.favoriteName, local: local,
                 legacy: raw.legacy, savedLook: raw.savedLook, recentOnly: !raw.inMyFiles && !raw.favorite
             };
@@ -344,7 +376,7 @@ QtObject {
             if (record.isDefault) {
                 return { key: "default", url: record.url, link: webUrl(record.url), title: "Default", fileName: fileNameOf(record.url),
                          folder: "", host: hostOf(record.url), source: "default", subtitle: "Default", keywords: "Default",
-                         picture: "", updated: 0, isPrivate: false, badge: "", inMyFiles: false, favorite: false,
+                         picture: autoPicturesRead[keyOf(record.url)] || "", updated: 0, isPrivate: false, badge: "", inMyFiles: false, favorite: false,
                          favoriteName: "", local: false, legacy: false, savedLook: false, recentOnly: false,
                          lastWorn: record.worn || 0 };
             }
@@ -377,6 +409,7 @@ QtObject {
     // when the panel shows: the worn avatar into Recent, favourites and Recent read again, My Files asked for once
     function refresh() {
         readFavorites();
+        readAutoPictures();
         remember();
         readRecent();
         rebuild();
@@ -478,15 +511,33 @@ QtObject {
             library.rebuild();
         }
     }
-    // signed out: My Files' avatars (some of them private) leave the list
+    // a picture taken by itself of the avatar worn (once per avatar): the lists change once
+    property Connections pictureChanges: Connections {
+        target: typeof AvatarThumbnails !== "undefined" ? AvatarThumbnails : null
+        ignoreUnknownSignals: true
+        function onAutoPicturesChanged() {
+            library.readAutoPictures();
+            library.rebuild();
+        }
+    }
+    // another account, or none: its own Recent and pictures; signed out, My Files' avatars (some of them private) leave
+    // the list
     property Connections accountChanges: Connections {
         target: AccountServices
         ignoreUnknownSignals: true
         function onLoggedInChanged() {
             if (!AccountServices.loggedIn) {
                 library.filesRead = [];
-                library.rebuild();
             }
+            library.accountChanged();
         }
+        function onMyUsernameChanged() {
+            library.accountChanged();
+        }
+    }
+    function accountChanged() {
+        readRecent();
+        readAutoPictures();
+        rebuild();
     }
 }
