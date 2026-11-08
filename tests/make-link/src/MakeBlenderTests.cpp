@@ -42,10 +42,12 @@
 
 namespace {
 
+// the watcher these tests drive: MAKE_TESTS_WATCHER names one (an installed app's, so a test box checks the program
+// that ships), else the one built with the tests
 #ifdef DARKRIDE_MAKE_WATCH_PATH
-const QString WATCH_PROGRAM = DARKRIDE_MAKE_WATCH_PATH;
+const QString WATCH_PROGRAM = qEnvironmentVariable("MAKE_TESTS_WATCHER", DARKRIDE_MAKE_WATCH_PATH);
 #else
-const QString WATCH_PROGRAM;
+const QString WATCH_PROGRAM = qEnvironmentVariable("MAKE_TESTS_WATCHER");
 #endif
 
 // this test program, started again with this set, plays the app for testBlenderEndsWithTheApp: it starts a runaway

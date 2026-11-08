@@ -55,6 +55,16 @@ QString socketFolder(QTemporaryDir& dir) {
 #endif
 }
 
+// the darkride-mcp helper these tests start: MAKE_TESTS_HELPER names one (an installed app's, so a test box checks the
+// program that ships), else the one built with the tests; empty when neither
+QString helperProgram() {
+#ifdef DARKRIDE_MCP_PATH
+    return qEnvironmentVariable("MAKE_TESTS_HELPER", DARKRIDE_MCP_PATH);
+#else
+    return qEnvironmentVariable("MAKE_TESTS_HELPER");
+#endif
+}
+
 QJsonObject request(int id, const QString& method, const QJsonObject& params = QJsonObject()) {
     return QJsonObject { { "jsonrpc", "2.0" }, { "id", id }, { "method", method }, { "params", params } };
 }
@@ -522,9 +532,10 @@ void MakeLinkTests::testSecondClientRefused() {
 }
 
 void MakeLinkTests::testHelperCarriesMcp() {
-#ifndef DARKRIDE_MCP_PATH
-    QSKIP("the darkride-mcp helper isn't built with these tests");
-#else
+    const QString program = helperProgram();
+    if (program.isEmpty()) {
+        QSKIP("the darkride-mcp helper isn't built with these tests (or set MAKE_TESTS_HELPER)");
+    }
     QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     server.setHandler("guide", [](const QJsonObject&, const MakeLinkServer::Reply& reply) {
@@ -535,7 +546,7 @@ void MakeLinkTests::testHelperCarriesMcp() {
     QString error;
     QVERIFY(server.listen(socketFolder(dir), error));
     QProcess helper;
-    helper.start(DARKRIDE_MCP_PATH, { "--socket", server.socketPath() });
+    helper.start(program, { "--socket", server.socketPath() });
     QVERIFY(helper.waitForStarted(2000));
     helper.write(line(request(1, "initialize", QJsonObject { { "protocolVersion", "2025-11-25" } })));
     helper.write(line(request(2, "tools/call", call("guide", QJsonObject()))));
@@ -556,15 +567,16 @@ void MakeLinkTests::testHelperCarriesMcp() {
     server.disconnectClient();
     QVERIFY(helper.waitForFinished(3000));
     QCOMPARE(helper.exitCode(), 0);
-#endif
 }
 
 void MakeLinkTests::testHelperRefusesAnOpenSocket() {
-#ifndef DARKRIDE_MCP_PATH
-    QSKIP("the darkride-mcp helper isn't built with these tests");
-#elif defined(Q_OS_WIN)
+#ifdef Q_OS_WIN
     QSKIP("the link is a named pipe on Windows: the helper checks the app's user, not a folder's mode");
 #else
+    const QString program = helperProgram();
+    if (program.isEmpty()) {
+        QSKIP("the darkride-mcp helper isn't built with these tests (or set MAKE_TESTS_HELPER)");
+    }
     QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     QString error;
@@ -574,14 +586,14 @@ void MakeLinkTests::testHelperRefusesAnOpenSocket() {
                                   QFileDevice::ExeOwner | QFileDevice::ReadOther | QFileDevice::ExeOther));
     QSignalSpy connected(&server, &MakeLinkServer::connectedChanged);
     QProcess helper;
-    helper.start(DARKRIDE_MCP_PATH, { "--socket", server.socketPath() });
+    helper.start(program, { "--socket", server.socketPath() });
     QVERIFY(helper.waitForFinished(8000));
     QCOMPARE(helper.exitCode(), 1);
     QVERIFY(QString::fromUtf8(helper.readAllStandardError()).contains("not this user's own"));
     QCOMPARE(connected.count(), 0);
     // no socket path at all: it says how it's used
     QProcess bare;
-    bare.start(DARKRIDE_MCP_PATH, QStringList());
+    bare.start(program, QStringList());
     QVERIFY(bare.waitForFinished(3000));
     QCOMPARE(bare.exitCode(), 1);
 #endif
