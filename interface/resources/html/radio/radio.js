@@ -529,7 +529,7 @@
 
     // the playlist as tall as the panel allows, under the main window
     function layout() {
-        var room = window.innerHeight - 16 - MAIN_HEIGHT - PLAYLIST_HEIGHT;
+        var room = window.innerHeight - MAIN_HEIGHT - PLAYLIST_HEIGHT;   // the page has no padding: the panel's margin
         var steps = Math.max(0, Math.floor(room / PLAYLIST_STEP));
         playerElement.style.height = MAIN_HEIGHT + PLAYLIST_HEIGHT + steps * PLAYLIST_STEP + "px";
         webamp.store.dispatch({ type: "WINDOW_SIZE_CHANGED", windowId: "playlist", size: [0, steps] });

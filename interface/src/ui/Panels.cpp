@@ -61,7 +61,7 @@ namespace {
         { "Avatar", "qrc:///qml/darkride/AvatarPanel.qml", 560 },
         { "People", "qrc:///qml/darkride/PeoplePanel.qml", 560 },
         { "Explore", "qrc:///qml/darkride/ExplorePanel.qml", 760 },
-        { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 320, 640 },
+        { "Radio", "qrc:///qml/darkride/RadioPanel.qml", 295, 640 },   // the player's 275 + the margin each side
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         { CODE, "qrc:///qml/darkride/CodePanel.qml", 640 },
         { MAKE, "qrc:///qml/darkride/MakePanel.qml", 420 },
