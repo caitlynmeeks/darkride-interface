@@ -135,6 +135,13 @@ static void openSettingsTab(int tab) {
 }
 
 Menu::Menu() {
+#if !defined(Q_OS_MACOS)
+    // Windows' and Linux's menu bar is a strip in the window. Qt 6's Windows 11 style draws it with no background of
+    // its own (it expects the window to paint one) and the main window paints none, so the strip was black with its
+    // names drawn black: unreadable, though it worked (windowz 11-08). It fills its own background, as Qt 5's style
+    // did: the system's colour, or what a skin's style sheet gives it
+    setAutoFillBackground(true);
+#endif
     auto dialogsManager = DependencyManager::get<DialogsManager>();
     auto accountManager = DependencyManager::get<AccountManager>();
 
