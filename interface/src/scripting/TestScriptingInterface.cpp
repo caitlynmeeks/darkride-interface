@@ -1135,6 +1135,17 @@ void TestScriptingInterface::codeSetWorld(const QString& name) {
     DependencyManager::get<CodeEditor>()->testSetWorld(name);
 }
 
+QString TestScriptingInterface::makeSetFilesPlace(const QString& place) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeSetFilesPlace", Q_RETURN_ARG(QString, result), Q_ARG(QString, place));
+        return result;
+    }
+    auto link = DependencyManager::get<MakeLink>();
+    link->setFilesPlace(place);
+    return link->filesPlace();
+}
+
 bool TestScriptingInterface::codeOpenMyFile(const QString& path, const QString& link, const QString& name, double size) {
     if (QThread::currentThread() != thread()) {
         bool result = false;

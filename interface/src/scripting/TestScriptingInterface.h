@@ -499,6 +499,15 @@ public slots:
     Q_INVOKABLE bool codeOpenMyFile(const QString& path, const QString& link, const QString& name, double size);
 
     /**jsdoc
+     * Sets where Make keeps its work, as the person's choice in Make's place row does (MakeLink keeps it under private/,
+     * which a world's script can't write: security 11-08); New Script follows it.
+     * @function Test.makeSetFilesPlace
+     * @param {string} place - <code>"my_files"</code> or <code>"world"</code>.
+     * @returns {string} The place as it is now.
+     */
+    Q_INVOKABLE QString makeSetFilesPlace(const QString& place);
+
+    /**jsdoc
      * The Make dock as its QML sees it (Qt 6 builds; make/MakeDock.h): <code>available, dockMade, open, floating, area,
      * state, reason, route, hasKey, claudeFound, blenderFound, blenderSealed, blenderWhy, keyStoreName, working,
      * timeline, made</code> (row counts), <code>timelineRows, madeRows, watching</code> (its window is watched for real
