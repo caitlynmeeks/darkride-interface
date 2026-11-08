@@ -659,7 +659,8 @@ namespace {
     // the shown one of the items by that name (the start line is in two places, one shown at a time), else the first
     QQuickItem* testFind(QQuickWindow* window, const QString& objectName) {
         // only the dock's own named parts a kit needs: never "" (every unnamed item, the key's field among them)
-        static const QStringList NAMES { "makeStartLine", "makeCopy", "makeComposer" };
+        static const QStringList NAMES { "makeStartLine", "makeCopy", "makeComposer", "makeFilesPlaceWords",
+                                         "makeFilesPlaceButton" };
         if (!window || !NAMES.contains(objectName)) {
             return nullptr;
         }
