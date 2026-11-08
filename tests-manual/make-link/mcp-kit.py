@@ -11,8 +11,10 @@
 #  and undo. Prints one line per check and "MCP KIT PASS" or "MCP KIT FAIL n".
 #  A world that keeps no files (a serverless file:// world, no Asset Server: Make refuses a long value with its plain
 #  limit line there instead of putting it in the world's files) can't hold a set script or an uploaded model: those
-#  checks print SKIP with that reason and the end line counts them; everything else is checked as usual.
-#    python3 -I mcp-kit.py <the test client's Make folder> [<folder for the made model's views>]
+#  checks print SKIP with that reason and the end line counts them; everything else is checked as usual. The driver
+#  says which world it is with --world-files yes|no, and Make's answer to the long material must agree (a refusal at the
+#  limit in a world that keeps files is a FAIL, not a SKIP); without the flag the kit infers it and says so.
+#    python3 -I mcp-kit.py <the test client's Make folder> [<folder for the made model's views>] [--world-files yes|no]
 #  (the MCP line is in the Make folder's claude-code/, where Connect writes it)
 #
 #  Copyright 2026 Darkride.
@@ -22,10 +24,18 @@
 
 import base64, json, os, subprocess, sys, time
 
-folder = sys.argv[1]
+arguments = sys.argv[1:]
+declared = None   # --world-files yes|no: which world the driver started the client in
+if "--world-files" in arguments:
+    at = arguments.index("--world-files")
+    declared = {"yes": True, "no": False}.get(arguments[at + 1] if at + 1 < len(arguments) else "")
+    if declared is None:
+        raise SystemExit("--world-files takes yes or no")
+    del arguments[at:at + 2]
+folder = arguments[0]
 if os.path.exists(os.path.join(folder, "claude-code", ".darkride-mcp.json")):
     folder = os.path.join(folder, "claude-code")
-out = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(os.path.abspath(sys.argv[0]))
+out = arguments[1] if len(arguments) > 1 else os.path.dirname(os.path.abspath(sys.argv[0]))
 config = json.load(open(os.path.join(folder, ".darkride-mcp.json")))["mcpServers"]["darkride"]
 helper = subprocess.Popen([config["command"]] + config["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE)
@@ -113,7 +123,15 @@ material = tool("add", {"properties": {"type": "Material", "name": "Make kit lon
                                        "materialData": '{"materials":{"name":"' + "m" * 5000 + '"}}'}})
 # a refusal naming the limit comes only where the world can't keep files (MakeLink: the files route needs the
 # world's Asset Server): that tells the kit which world it is in for the checks below
-world_files = not (material["error"] and material["code"] == "bad_input" and "at most 1200 bytes" in material["text"])
+refused_at_limit = material["error"] and material["code"] == "bad_input" and "at most 1200 bytes" in material["text"]
+if declared is None:
+    world_files = not refused_at_limit
+    print("MCP KIT world files: inferred %s from Make's answer (give --world-files yes|no to check it)"
+          % ("yes" if world_files else "no"))
+else:
+    world_files = declared
+    check("Make's answer fits the world (files %s)" % ("yes" if declared else "no"), refused_at_limit != declared,
+          material["text"][:160])
 if world_files:
     check("a long materialData is added", not material["error"], material["text"][:200])
 else:
@@ -199,7 +217,7 @@ check("undo took them all back", not gone["error"] and len(gone["value"]["things
 tool("add", {"properties": {"type": "Box", "name": "Make kit done", "dimensions": {"x": 0.1, "y": 0.1, "z": 0.1}}})
 
 if skipped:
-    print("MCP KIT skipped %d: %s" % (skipped, NO_FILES))
+    print("MCP KIT skipped %d: %s%s" % (skipped, NO_FILES, "" if declared is not None else " (inferred)"))
 print("MCP KIT", "PASS" if failures == 0 else "FAIL %d" % failures)
 helper.stdin.close()
 helper.wait(5)
