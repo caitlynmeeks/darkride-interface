@@ -229,6 +229,11 @@ public:
     /// route. The request's number, or 0 whichever check refused it (a kit can't learn which); the log counts
     /// characters, never the text.
     int testSend(const QString& text);
+    /// Tests only (Test.makeDockUndo; security 02:06 11-08): undoRequest() without the real-input check, only for a
+    /// request the test's own Connect led to (testConnectTerminal, numbered from then on) while that run lasts: it
+    /// ends wherever a test's chat ends and with any Connect not made by a test. The same checks as the button. The
+    /// log names the request when done, one line alike for any refusal.
+    bool testUndo(int request);
 
     /// The Make dock's view, once made (Panels): MakeDock watches its input and gives its engine the image provider.
     void watchWindow(QQuickWindow* window, QQmlEngine* engine);
@@ -268,8 +273,15 @@ private:
     bool canSend(const QString& text) const;
     /// send()'s work after its checks and the gate: the pictures, the link's send, the ask's row
     int sendNow(const QString& text, const QStringList& pictureIds);
-    /// A test's chat ends (Disconnect, a refused connect, the person's route): the chat line is the person's own again
+    /// A test's chat ends (Disconnect, a refused connect, the person's route): the chat line is the person's own again;
+    /// a test's Undo ends with it
     void endTestChat();
+    /// A test's Undo ends (endTestChat's places and any Connect not made by a test)
+    void endTestUndo();
+    /// undoRequest()'s checks before the real-input gate: not working, the newest finished request, not undone yet
+    bool canUndo(int request) const;
+    /// undoRequest()'s work after its checks and the gate: the link's undo, the rows marked undone
+    void undoNow(int request);
     void linkStateChanged();
     void readFound();
     void addRow(MakeDockRows::Row row);
@@ -291,6 +303,8 @@ private:
     bool _starting { false };       // the key route: Claude Code started, not ready yet
     bool _testRefusesAsks { false }; // connected by a test: every question answered no
     bool _testChat { false };        // connected by a test with the chat line, for that run only
+    bool _testUndo { false };        // a test's Connect: testUndo may undo its requests, for that run only
+    int _testFirstRequest { 0 };     // the first request number after that Connect; testUndo refuses any below it
     QString _reason;
     QString _route;
     bool _hasKey { false };

@@ -540,6 +540,18 @@ public slots:
     Q_INVOKABLE int makeDockSend(const QString& text);
 
     /**jsdoc
+     * Undo for a request, as the Make dock's Undo does, without the person's click, for a kit that checks Undo while
+     * Claude may still edit the world (scripting's channel-kit.py <code>--mode chat-late</code>). Only a request made
+     * after <code>Test.makeDockConnect</code> connected, while that run lasts: it ends with Disconnect, a refused
+     * connect, a route chosen or any Connect not made by a test. Every check of Undo applies (not working, the newest
+     * finished request, not undone yet). Any refusal returns false alike.
+     * @function Test.makeDockUndo
+     * @param {number} request - The request's number (<code>Test.makeDockSend</code>'s answer).
+     * @returns {boolean} Whether the request was undone.
+     */
+    Q_INVOKABLE bool makeDockUndo(int request);
+
+    /**jsdoc
      * An item of the Make dock's view, found by its objectName: whether it's shown, its place in the dock's window,
      * its text and selected text (a text item's).
      * @function Test.makeDockItem

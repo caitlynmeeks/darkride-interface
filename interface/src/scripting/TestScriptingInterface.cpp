@@ -1249,6 +1249,15 @@ int TestScriptingInterface::makeDockSend(const QString& text) {
     return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testSend(text) : 0;
 }
 
+bool TestScriptingInterface::makeDockUndo(int request) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockUndo", Q_RETURN_ARG(bool, result), Q_ARG(int, request));
+        return result;
+    }
+    return MakeDock::isAvailable() && DependencyManager::get<MakeDock>()->testUndo(request);
+}
+
 QVariantMap TestScriptingInterface::makeDockItem(const QString& name) {
     if (QThread::currentThread() != thread()) {
         QVariantMap result;

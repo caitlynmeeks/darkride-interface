@@ -613,6 +613,7 @@ bool MakeDock::takeRealInput(const char* call) {
 }
 
 bool MakeDock::connect() {
+    endTestUndo();   // any Connect not made by a test ends a test's Undo (security 02:06 11-08)
     if (!takeRealInput("connect")) {
         return false;
     }
@@ -624,6 +625,9 @@ bool MakeDock::testConnectTerminal(bool chat) {
     // answered no from now on, so a kit never gets a silent yes (scripting's rule); chat for this run only, whether or
     // not the connect screen offers it
     _testRefusesAsks = true;
+    // Test.makeDockUndo: only requests from here on, until this run ends (endTestUndo); a refused connect ends it
+    _testUndo = true;
+    _testFirstRequest = DependencyManager::get<MakeLink>()->currentRequest() + 1;
     if (_route != "terminal" || chat != _testChat) {
         _route = "terminal";   // not saved: the person's own route setting stays as it was
         _testChat = chat;
@@ -720,6 +724,7 @@ bool MakeDock::connectNow() {
 }
 
 void MakeDock::endTestChat() {
+    endTestUndo();
     if (!_testChat) {
         return;
     }
@@ -727,6 +732,11 @@ void MakeDock::endTestChat() {
     qCWarning(interfaceapp) << "Make: a test's chat ended";
     emit routeChanged();       // chat()
     emit setupTextChanged();   // the start line
+}
+
+void MakeDock::endTestUndo() {
+    _testUndo = false;
+    _testFirstRequest = 0;
 }
 
 void MakeDock::disconnect() {
@@ -881,25 +891,44 @@ void MakeDock::stop() {
     }
 }
 
-bool MakeDock::undoRequest(int request) {
+bool MakeDock::canUndo(int request) const {
     if (_working || request <= 0 || request != _doneRequest) {
         return false;   // only the newest finished request, never while Claude works
     }
-    bool undone = false;
     for (const auto& row : _timeline.rows()) {
         if (row.request == request && row.undone) {
-            undone = true;
+            return false;
         }
     }
-    if (undone || !takeRealInput("undoRequest")) {
+    return true;
+}
+
+bool MakeDock::undoRequest(int request) {
+    if (!canUndo(request) || !takeRealInput("undoRequest")) {
         return false;
     }
+    undoNow(request);
+    return true;
+}
+
+bool MakeDock::testUndo(int request) {
+    // only a request the test's own Connect led to, while its run lasts (_testUndo: set by testConnectTerminal alone,
+    // ended with a test's chat and by any other Connect), and every check of the button (security 02:06 11-08)
+    if (!_testUndo || request < _testFirstRequest || !canUndo(request)) {
+        qCWarning(interfaceapp) << "Make: a test's undo refused";
+        return false;
+    }
+    undoNow(request);
+    qCWarning(interfaceapp) << "Make: a test's undo of request" << request;
+    return true;
+}
+
+void MakeDock::undoNow(int request) {
     DependencyManager::get<MakeLink>()->undoRequest(request);
     _timeline.update([&](const MakeDockRows::Row& row) { return row.request == request; },
                      [](MakeDockRows::Row& row) { row.undone = true; });
     _made.update([&](const MakeDockRows::Row& row) { return row.request == request; },
                  [](MakeDockRows::Row& row) { row.undone = true; });
-    return true;
 }
 
 void MakeDock::openInCode(const QString& cardId) {
