@@ -13,6 +13,7 @@
 //  Distributed under the MIT License.
 //
 
+#include "make/MakeLink.h"
 #include "Application.h"
 #include "ApplicationConstants.h"
 #include <thread>
@@ -173,6 +174,8 @@ void Application::cleanupBeforeQuit() {
     // FIXME: Something is still holding on to the ScriptEnginePointers contained in ScriptEngines, and they hold backpointers to ScriptEngines,
     // so this doesn't shut down properly
 
+    // Make first: Claude Code's connection, a running Blender and the building tools' engine end with it
+    DependencyManager::destroy<MakeLink>();
     DependencyManager::get<ScriptEngines>()->shutdownScripting(); // stop all currently running global scripts
 
     // These classes hold ScriptEnginePointers, so they must be destroyed before ScriptEngines

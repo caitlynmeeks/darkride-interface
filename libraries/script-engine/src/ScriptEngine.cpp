@@ -246,7 +246,7 @@ bool ScriptEngine::entityScriptsMayBeLocal() const {
 }
 
 bool ScriptEngine::worldIsLocal() const {
-    if (!isClientSide()) {
+    if (!isClientSide() || _heldToNetworkWorld) {
         return false;   // a server is in no world of a visitor's
     }
     return _context == ENTITY_CLIENT_SCRIPT ? entityScriptsMayBeLocal() : ScriptNetworkPolicy::isWorldLocal();
