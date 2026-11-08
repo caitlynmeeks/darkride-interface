@@ -236,6 +236,41 @@ Rectangle {
             }
         }
 
+        // where Make keeps its work (Caity 11-08: My Files by default, a link that works in any world; the world's own
+        // files a choice): one row above the box, as a Save sheet's "Where:" (mary 15:36). A pop-up only where this world
+        // offers its files and no request is working (a change mid-request would leave half the work in each place);
+        // plain words otherwise. Signed out, the band's "Sign in to keep Make's work in My Files." covers it
+        RowLayout {
+            id: placeRow
+            objectName: "makeFilesPlace"
+            Layout.fillWidth: true
+            visible: !!composer.dock && composer.dock.filesPlace !== undefined
+            spacing: 6
+            readonly property bool choice: !!composer.dock && composer.dock.filesChoice === true && !composer.working
+            readonly property string placeWords: !!composer.dock && composer.dock.filesPlace === "world"
+                ? "This World's Files" : "My Files"
+            Text {
+                objectName: "makeFilesPlaceWords"
+                text: placeRow.choice ? "Keep Make's work in:" : "Keep Make's work in: " + placeRow.placeWords
+                textFormat: Text.PlainText
+                color: "#8f8f8f"
+                font.pixelSize: 12
+            }
+            BuildButton {
+                id: placeButton
+                objectName: "makeFilesPlaceButton"
+                visible: placeRow.choice
+                text: placeRow.placeWords + " \u25BE"
+                onPressed: {
+                    var at = placeButton.mapToGlobal(0, placeButton.height + 2);
+                    composer.dock.showFilesPlaceMenu(at.x, at.y);
+                }
+            }
+            Item {
+                Layout.fillWidth: true
+            }
+        }
+
         // the text box, add a picture, send: the API key route, and the Claude-plan route's chat
         RowLayout {
             Layout.fillWidth: true

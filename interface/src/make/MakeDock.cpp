@@ -40,6 +40,8 @@
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QMenu>
 
+#include <NodeList.h>
+
 #include <MainWindow.h>
 #include <MakeBlender.h>
 #include <MakeClaude.h>
@@ -273,6 +275,13 @@ MakeDock::MakeDock() {
     QObject::connect(link.data(), &MakeLink::claudeVersionChanged, this, &MakeDock::stateChanged);
     // a step that ran and didn't work: its row says so (stepFailed)
     QObject::connect(link.data(), &MakeLink::callFailed, this, &MakeDock::stepFailed);
+    // where Make keeps its work: the person's choice, and whether this world offers its own files (the world, the
+    // person's rights in it)
+    QObject::connect(link.data(), &MakeLink::filesPlaceChanged, this, &MakeDock::filesPlaceChanged);
+    auto nodeList = DependencyManager::get<NodeList>();
+    QObject::connect(nodeList.data(), &LimitedNodeList::canWriteAssetsChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::domainURLChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::connectedToDomain, this, &MakeDock::filesPlaceChanged);
     // an Allow covers one signed-in account (allowHash)
     QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
                      [this] { emit setupTextChanged(); });
@@ -995,6 +1004,39 @@ void MakeDock::showMoreMenu(qreal x, qreal y) {
     });
     _moreMenuOpen = true;
     emit moreMenuChanged();
+    menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
+QString MakeDock::filesPlace() const {
+    // MakeLink::filesGoTo's rule, from its public parts (as New Script reads it, CodeEditor::newScriptPlace)
+    auto link = DependencyManager::get<MakeLink>();
+    return link->filesPlace() == "world" && link->worldFilesAllowed() ? QString("world") : QString("my_files");
+}
+
+bool MakeDock::filesChoice() const {
+    return DependencyManager::get<MakeLink>()->worldFilesAllowed();
+}
+
+void MakeDock::showFilesPlaceMenu(qreal x, qreal y) {
+    if (_working || !filesChoice()) {
+        return;   // the row says where without a pop-up then
+    }
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const QString place = filesPlace();
+    auto add = [this, menu, &place](const QString& text, const QString& value) {
+        auto action = menu->addAction(text);
+        action->setCheckable(true);
+        action->setChecked(place == value);
+        // the person's own click in the app's menu (a script can't reach it): the choice is remembered (MakeLink)
+        QObject::connect(action, &QAction::triggered, this, [this, value] {
+            if (!_working) {
+                DependencyManager::get<MakeLink>()->setFilesPlace(value);
+            }
+        });
+    };
+    add("My Files", "my_files");
+    add("This World's Files", "world");
     menu->popup(QPoint(qRound(x), qRound(y)));
 }
 

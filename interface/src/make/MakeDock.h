@@ -137,6 +137,10 @@ class MakeDock : public QObject, public Dependency {
     Q_PROPERTY(QObject* made READ made CONSTANT)
     // the more menu (•••) is showing: its button is drawn lit, as the Build toolbar's tools while their menu is open
     Q_PROPERTY(bool moreMenuOpen READ moreMenuOpen NOTIFY moreMenuChanged)
+    // where Make keeps its work now (Caity 11-08): "my_files" (the default) or "world", the person's choice where this
+    // world allows its own files; and whether it does (the row's pop-up, mary 15:36, only then)
+    Q_PROPERTY(QString filesPlace READ filesPlace NOTIFY filesPlaceChanged)
+    Q_PROPERTY(bool filesChoice READ filesChoice NOTIFY filesPlaceChanged)
 
 public:
     MakeDock();
@@ -175,6 +179,8 @@ public:
     bool sentWaiting() const { return _sentWaiting; }
     bool notGotIt() const { return _notGotIt; }
     bool moreMenuOpen() const { return _moreMenuOpen; }
+    QString filesPlace() const;
+    bool filesChoice() const;
 
     // ---- the dock's calls (contract). "Real input" ones answer false when refused. ----
 
@@ -216,6 +222,9 @@ public:
     Q_INVOKABLE void stopAllowing();
     /// The more menu (•••): the app's own menu at (x, y) on the screen, as the Code panel's. Disconnect.
     Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
+    // the "Keep Make's work in:" pop-up (the app's own menu): My Files, This World's Files, a check on the current one;
+    // nothing while a request is working (a change mid-request would leave half the work in each place)
+    Q_INVOKABLE void showFilesPlaceMenu(qreal x, qreal y);
 
     /// Tests only (Test.makeDockConnect, with --testScript): Connect on the Terminal route without the person's click;
     /// from then on every question Claude asks is answered no at once. Never the key route. Not on the QML's context.
@@ -250,6 +259,7 @@ signals:
     void workingChanged();
     void channelChanged();
     void moreMenuChanged();
+    void filesPlaceChanged();
     /// a question was asked, answered or timed out
     void questionsChanged();
     /// a request came to its end by itself: finished (true) or couldn't finish (false); never after the person's Stop
