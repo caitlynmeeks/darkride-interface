@@ -1008,9 +1008,7 @@ void MakeDock::showMoreMenu(qreal x, qreal y) {
 }
 
 QString MakeDock::filesPlace() const {
-    // MakeLink::filesGoTo's rule, from its public parts (as New Script reads it, CodeEditor::newScriptPlace)
-    auto link = DependencyManager::get<MakeLink>();
-    return link->filesPlace() == "world" && link->worldFilesAllowed() ? QString("world") : QString("my_files");
+    return DependencyManager::get<MakeLink>()->filesGoTo();   // as New Script reads it (CodeEditor::newScriptPlace)
 }
 
 bool MakeDock::filesChoice() const {
