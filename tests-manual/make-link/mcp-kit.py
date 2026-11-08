@@ -102,6 +102,10 @@ guide = tool("guide")
 check("guide", not guide["error"] and len(guide["value"]["text"]) > 2000)
 scene = tool("scene", {"radius": 30})
 check("scene", not scene["error"] and "here" in scene["value"], json.dumps(scene["value"]["here"]) if scene["value"] else scene["text"])
+# Make says up front whether the world keeps files (here.canKeepFiles, from 11-08); it must fit the declared world
+scene_files = ((scene["value"] or {}).get("here") or {}).get("canKeepFiles") if not scene["error"] else None
+if declared is not None and scene_files is not None:
+    check("scene says the world's files as declared (canKeepFiles %s)" % scene_files, scene_files == declared)
 
 box = tool("add", {"properties": {"type": "Box", "name": "Make kit box", "dimensions": {"x": 0.5, "y": 0.5, "z": 0.5},
                                   "color": {"red": 200, "green": 40, "blue": 40}}})
@@ -157,7 +161,8 @@ if world_files:
     check("set_script", not script["error"] and script["value"]["url"].startswith("atp:/claude-scripts/")
           and os.path.exists(script["value"]["saved_copy"] or ""), script["text"][:300])
 else:
-    skip("set_script", NO_FILES + ("" if script["error"] and "world's files" in script["text"]
+    skip("set_script", NO_FILES + ("" if script["error"] and ("keeps no files" in script["text"] or "may not add files"
+                                                               in script["text"] or "world's files" in script["text"])
                                    else "; but Make's answer wasn't the world's files' refusal: " + script["text"][:160]))
 if not script["error"]:
     copy = open(script["value"]["saved_copy"]).read()
