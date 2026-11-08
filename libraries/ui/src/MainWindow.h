@@ -58,6 +58,10 @@ protected:
     virtual void dropEvent(QDropEvent *e) override;
 
 private:
+    // a normal window (not maximised or full screen) whose inner area or title bar is outside the usable part of its
+    // screen is moved in, and made smaller only where it can't fit
+    void fitOnScreen(const char* when);
+
     Setting::Handle<QRect> _windowGeometry;
     Setting::Handle<int> _windowState;
     QRect _startGeometry;
