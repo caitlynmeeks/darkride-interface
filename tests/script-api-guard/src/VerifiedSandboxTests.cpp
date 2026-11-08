@@ -44,6 +44,10 @@
 #include <controllers/impl/RouteBuilderProxy.h>
 #include <controllers/UserInputMapper.h>
 #include <ScriptCache.h>
+#include <ResourceRequestObserver.h>
+#include <StatTracker.h>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
 #include <ScriptCaller.h>
 #include <controllers/ScriptingInterface.h>
 #include <ScriptNetworkPolicy.h>
@@ -105,6 +109,9 @@ QString refusedFrom(const QUrl& origin, const QString& target) {
 
 void VerifiedSandboxTests::initTestCase() {
     DependencyManager::set<ResourceManager>(false);
+    // a real download (testRuledWaitersKeepTheirOwnRule fetches from a server of its own) reports to these two
+    DependencyManager::set<ResourceRequestObserver>();
+    DependencyManager::set<StatTracker>();
     QVERIFY(_dir.isValid());
     _root = QFileInfo(_dir.path()).canonicalFilePath();
     // a world served from this machine (its entity script a file here), and a folder beside it
@@ -555,6 +562,59 @@ void VerifiedSandboxTests::testEntityScriptDownloadIsRuled() {
     // a visitor's own scripts' engine never loads entity scripts; an operator's own agent keeps every address
     WasmScriptEngine ownAgent(ScriptEngine::AGENT_SCRIPT, NO_SCRIPT, "http://127.0.0.1:8797/body.js");
     QVERIFY(ownAgent.ruleEntityScriptFetch("http://127.0.0.1:8000/entity.js").isEmpty());
+    DependencyManager::destroy<ScriptCache>();
+}
+
+void VerifiedSandboxTests::testRuledWaitersKeepTheirOwnRule() {
+    // two ruled fetches that meet a download of the same address under no rule each re-fetch under their own rule
+    // when it ends: one from a world on the internet (this machine's address is refused), one from a world on this
+    // machine (allowed), the allowed one asked last, so a single shared rule would have covered the refused one
+    DependencyManager::set<ScriptCache>();
+    // a slow web server on this machine: it answers each request after a moment, so the fetches queue up behind the
+    // first; it counts the requests that reach it
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    int requests = 0;
+    const QByteArray body = "var fetched = 1;";
+    connect(&server, &QTcpServer::newConnection, &server, [&] {
+        while (QTcpSocket* socket = server.nextPendingConnection()) {
+            ++requests;
+            connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            QTimer::singleShot(700, socket, [socket, body] {
+                socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: " +
+                              QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                socket->disconnectFromHost();
+            });
+        }
+    });
+    const QUrl url(QString("http://127.0.0.1:%1/entity.js").arg(server.serverPort()));
+    auto cache = DependencyManager::get<ScriptCache>();
+    int plainAnswers = 0, internetAnswers = 0, localAnswers = 0;
+    bool plainOk = false, internetOk = true, localOk = false;
+    cache->getScriptContents(url.toString(), [&](const QString&, const QString& contents, bool, bool success, const QString&) {
+        ++plainAnswers;
+        plainOk = success && contents == body;
+    });
+    cache->ruleFetch(url, QUrl("about:Entities"), false);
+    cache->getScriptContents(url.toString(), [&](const QString&, const QString&, bool, bool success, const QString&) {
+        ++internetAnswers;
+        internetOk = success;
+    });
+    cache->ruleFetch(url, QUrl("about:Entities"), true);
+    cache->getScriptContents(url.toString(), [&](const QString&, const QString& contents, bool, bool success, const QString&) {
+        ++localAnswers;
+        localOk = success && contents == body;
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(plainAnswers, 1, 10000);
+    QVERIFY(plainOk);
+    // the decisive check: the internet world's fetch is refused under its own rule (with one shared rule both waiters
+    // would have re-fetched under the local world's and it would have succeeded); the request count only shows that
+    // the refused fetch made no request: the plain download and the local world's own
+    QTRY_COMPARE_WITH_TIMEOUT(internetAnswers, 1, 10000);
+    QVERIFY2(!internetOk, "a fetch from a world on the internet took this machine's address under another's rule");
+    QTRY_COMPARE_WITH_TIMEOUT(localAnswers, 1, 10000);
+    QVERIFY(localOk);
+    QCOMPARE(requests, 2);
     DependencyManager::destroy<ScriptCache>();
 }
 
