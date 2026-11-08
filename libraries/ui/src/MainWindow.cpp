@@ -130,13 +130,20 @@ void MainWindow::fitOnScreen(const char* when) {
     const QRect available = screen->availableGeometry();
     const QRect inner = geometry();   // a top-level's geometry is its inner area, without the frame
     const QRect frame = frameGeometry();
-    if (available.contains(inner) && frame.top() >= available.top()) {
-        return;
-    }
     // room for the inner area: the usable area less the title bar and the frame's other edges
-    const QMargins edges(std::max(0, inner.left() - frame.left()), std::max(0, inner.top() - frame.top()),
-                         std::max(0, frame.right() - inner.right()), std::max(0, frame.bottom() - inner.bottom()));
+    QMargins edges(std::max(0, inner.left() - frame.left()), std::max(0, inner.top() - frame.top()),
+                   std::max(0, frame.right() - inner.right()), std::max(0, frame.bottom() - inner.bottom()));
+#if defined(Q_OS_WIN)
+    // Windows draws a thin border round a normal window (1-2 px) that Qt counts in no frame margin: kept on the
+    // screen too (windowz 11-08: 1 px off each side and 2 px under the taskbar without this)
+    const int VISIBLE_BORDER = 2;
+    edges = QMargins(std::max(edges.left(), VISIBLE_BORDER), edges.top(), std::max(edges.right(), VISIBLE_BORDER),
+                     std::max(edges.bottom(), VISIBLE_BORDER));
+#endif
     const QRect room = available.marginsRemoved(edges);
+    if (room.contains(inner)) {
+        return;   // the window, its frame and borders all on the usable area
+    }
     if (room.width() < MIN_START_SIZE.width() || room.height() < MIN_START_SIZE.height()) {
         return;   // a screen too small to hold a window of the smallest size: left as it is
     }
