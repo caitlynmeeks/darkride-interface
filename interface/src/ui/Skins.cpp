@@ -222,13 +222,13 @@ bool fourNumbers(const QJsonValue& value, int out[4]) {
 // a picture of the skin's: its absolute path, if it is one the skin holds and isn't too big; else the problem
 QString picture(const Skin& skin, const QString& name, QString& error) {
     if (!allowedName(name) || QFileInfo(name).suffix().toLower() == "json") {
-        error = "\"" + name + "\" isn't a picture in the skin";
+        error = "\"" + name + "\" isn't an image in the skin";
         return QString();
     }
     const QString path = QDir(skin.folder).filePath(name);
     const QSize size = QImageReader(path).size();
     if (!size.isValid()) {
-        error = "the skin has no picture \"" + name + "\"";
+        error = "the skin has no image \"" + name + "\"";
         return QString();
     }
     if (size.width() > MAX_PICTURE_SIDE || size.height() > MAX_PICTURE_SIDE) {

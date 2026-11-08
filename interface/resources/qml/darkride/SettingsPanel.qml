@@ -1177,7 +1177,7 @@ Page {
         Section {
             title: "Skin"
             footer: appearance.skinStatus !== "" ? appearance.skinStatus
-                : "A skin is pictures, colours and fonts only: nothing in it runs, so a skin from anyone is safe to load."
+                : "A skin is images, colours and fonts only: nothing in it runs, so a skin from anyone is safe to load."
 
             PickerRow {
                 label: "Skin"
