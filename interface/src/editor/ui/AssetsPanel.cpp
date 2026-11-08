@@ -62,6 +62,7 @@
 #include "../EditorCreate.h"
 #include "AssetThumbnails.h"
 #include "../../ui/DockTitleBar.h"
+#include "../../ui/CodeEditor.h"
 
 const char* AssetItemModel::ASSET_MIME_TYPE = "application/x-darkride-asset";
 
@@ -745,7 +746,7 @@ AssetsPanel::AssetsPanel(QWidget* parent) : QDockWidget("My Files", parent) {
             _search->clear();
             setFolder(file->path);
         } else {
-            openInBrowser(*file);
+            openFile(*file);
         }
     });
     connect(_grid, &QListView::customContextMenuRequested, this, [this](const QPoint& pos) {
@@ -1428,6 +1429,20 @@ void AssetsPanel::copyIds(const QList<const UserFile*>& files) {
     emit status(ids.size() == 1 ? "Id copied" : QString("%1 ids copied").arg(ids.size()), STATUS_MS);
 }
 
+bool AssetsPanel::opensInCode(const UserFile& file) const {
+    return !file.folder && !file.url.isEmpty() && CodeEditor::isAvailable() && CodeEditor::opensInCode(file.name) &&
+           DependencyManager::isSet<CodeEditor>();
+}
+
+void AssetsPanel::openFile(const UserFile& file) {
+    // a script opens in the Code panel (Caity 11-08, 1.1.4), a private one too; everything else in the browser for now
+    // (the files viewer is 1.1.5's)
+    if (opensInCode(file) && DependencyManager::get<CodeEditor>()->openMyFile(file.path, QUrl(file.url), file.name, file.size)) {
+        return;
+    }
+    openInBrowser(file);
+}
+
 void AssetsPanel::openInBrowser(const UserFile& file) {
     QString url = file.url.isEmpty() ? file.pathUrl : file.url;
     if (!url.isEmpty()) {
@@ -1610,6 +1625,9 @@ void AssetsPanel::showGridMenu(const QPoint& globalPos) {
                 _search->clear();
                 setFolder(path);
             });
+        }
+        if (one && !one->folder && opensInCode(*one)) {
+            menu.addAction("Open in Code", this, [this, file = *one] { openFile(file); });
         }
         if (one && !one->folder) {
             menu.addAction("Open in Browser", this, [this, file = *one] { openInBrowser(file); });
