@@ -1360,7 +1360,17 @@ void CodeEditor::refreshAfterUndo() {
             return;
         }
         if (_isNew && !value.trimmed().isEmpty() && !_dirty) {
-            open(_entity, _which);   // Redo (or anyone's edit): the field holds a script now, shown as any other
+            // Redo (or anyone's edit): the field holds a script now, shown as any other. When it's this document's own
+            // file, the document still knows it made it, so another Undo and Save use it again
+            const QString madePath = _madePath;
+            const QString madeHash = _madeHash;
+            const QString base = _newBase;
+            open(_entity, _which);
+            if (!madePath.isEmpty() && value.trimmed() == "atp:" + madePath) {
+                _madePath = madePath;
+                _madeHash = madeHash;
+                _newBase = base;
+            }
         }
         return;
     }
