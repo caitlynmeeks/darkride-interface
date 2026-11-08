@@ -16,7 +16,7 @@
 #include <QtCore/QEventLoop>
 #include <QtCore/QTimer>
 #include <QtGui/QGuiApplication>
-#ifndef QT_NO_SESSIONMANAGER
+#if !defined(Q_OS_MACOS) && !defined(QT_NO_SESSIONMANAGER)
 #include <QtGui/QSessionManager>
 #endif
 
@@ -162,9 +162,12 @@ void install() {
     if (auto window = qApp->getWindow()) {
         window->setCloseCheck([] { return mayQuit(); });
     }
-#ifndef QT_NO_SESSIONMANAGER
-    // the session ends (Windows, Linux): the quit that follows doesn't ask; if it doesn't come, it's forgotten
+#if !defined(Q_OS_MACOS) && !defined(QT_NO_SESSIONMANAGER)
+    // the session ends (Windows, Linux): the quit that follows doesn't ask; if it doesn't come, it's forgotten. Not on
+    // macOS, where Qt asks for it at every quit from outside the app, the Dock's too (the kit's 17:10 run): there the
+    // quit Apple event's own reason says whether the system is ending the session
     QObject::connect(qApp, &QGuiApplication::commitDataRequest, qApp, [](QSessionManager&) {
+        qCDebug(interfaceapp) << "QuitCheck: the session is ending";
         sessionEnding = true;
         QTimer::singleShot(SESSION_END_MS, qApp, [] { sessionEnding = false; });
     });
@@ -208,7 +211,11 @@ void askThenQuit() {
 bool isOutsideRequest() {
 #if defined(Q_OS_MACOS)
     bool fromSystem = false;
-    return mac::isQuitEvent(fromSystem) && !fromSystem;
+    if (!mac::isQuitEvent(fromSystem)) {
+        return false;
+    }
+    qCDebug(interfaceapp) << "QuitCheck: a quit from outside the app," << (fromSystem ? "the system's" : "a person's");
+    return !fromSystem;
 #else
     return false;
 #endif
