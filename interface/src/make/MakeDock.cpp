@@ -667,7 +667,9 @@ bool MakeDock::testMouse(const QString& objectName, const QPointF& from, const Q
         return item->mapToScene(QPointF(fraction.x() * item->width(), fraction.y() * item->height()));
     };
     auto send = [this](QEvent::Type type, const QPointF& point, Qt::MouseButtons buttons) {
-        QMouseEvent event(type, point, point, _window->mapToGlobal(point), Qt::LeftButton, buttons, Qt::NoModifier);
+        // mapToGlobal takes a QPoint on Qt 5 (QPointF is Qt 6 only): main builds on both
+        const QPointF global = _window->mapToGlobal(point.toPoint());
+        QMouseEvent event(type, point, point, global, Qt::LeftButton, buttons, Qt::NoModifier);
         QCoreApplication::sendEvent(_window, &event);
     };
     const QPointF start = at(from);
