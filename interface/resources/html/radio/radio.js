@@ -372,9 +372,13 @@
 
     // ---- stations ----
 
-    var builtinUrls = {};
+    // any of a built-in station's official streams stands for its row (its first): with every SomaFM channel listed, a
+    // SomaFM station found or typed in is nearly always one of them, and plays that row instead of a second one
+    var builtinRowOf = {};
     var stationTracks = (window.RADIO_STATIONS || []).map(function (station) {
-        builtinUrls[station.streams[0]] = true;
+        station.streams.forEach(function (stream) {
+            builtinRowOf[stream] = station.streams[0];
+        });
         // a length of 0: Webamp shows none, and doesn't open the stream to find one
         return { url: station.streams[0], duration: 0, metaData: { artist: "SomaFM", title: station.name } };
     });
@@ -424,6 +428,7 @@
     var addedNow = {};   // stream addresses put in the list this visit
     var heard = {};      // stream addresses that have played this visit
     function playStream(url, title) {
+        url = builtinRowOf[url] || url;
         var trackWith = function () {
             var state = webamp.store.getState();
             return state.playlist.trackOrder.find(function (id) { return state.tracks[id].url === url; });
