@@ -9,6 +9,9 @@
 #  (its readable copy kept) and clicked (its print in the log), an edit watched, a script that uses the web asked about
 #  first (the kit's client answers no), a model made in Blender, put in the world's files and placed, a picture, a walk,
 #  and undo. Prints one line per check and "MCP KIT PASS" or "MCP KIT FAIL n".
+#  A world that keeps no files (a serverless file:// world, no Asset Server: Make refuses a long value with its plain
+#  limit line there instead of putting it in the world's files) can't hold a set script or an uploaded model: those
+#  checks print SKIP with that reason and the end line counts them; everything else is checked as usual.
 #    python3 -I mcp-kit.py <the test client's Make folder> [<folder for the made model's views>]
 #  (the MCP line is in the Make folder's claude-code/, where Connect writes it)
 #
@@ -69,6 +72,17 @@ def check(name, ok, detail=""):
     sys.stdout.flush()
 
 
+skipped = 0
+NO_FILES = "this world keeps no files (no Asset Server)"
+
+
+def skip(name, why):
+    global skipped
+    skipped += 1
+    print("MCP KIT", name, "SKIP", why)
+    sys.stdout.flush()
+
+
 init = ask("initialize", {"protocolVersion": "2025-11-25", "clientInfo": {"name": "make-mcp-kit", "version": "1"}})
 check("initialize", init["result"]["serverInfo"]["name"] == "darkride")
 names = [t["name"] for t in ask("tools/list")["result"]["tools"]]
@@ -97,7 +111,14 @@ refused_edit = tool("edit", {"id": box_id, "properties": {"userData": long_ud}})
 check("a too-long edit is refused", refused_edit["error"] and refused_edit["code"] == "bad_input", refused_edit["text"][:200])
 material = tool("add", {"properties": {"type": "Material", "name": "Make kit long material", "parentID": box_id,
                                        "materialData": '{"materials":{"name":"' + "m" * 5000 + '"}}'}})
-check("a long materialData is added", not material["error"], material["text"][:200])
+# a refusal naming the limit comes only where the world can't keep files (MakeLink: the files route needs the
+# world's Asset Server): that tells the kit which world it is in for the checks below
+world_files = not (material["error"] and material["code"] == "bad_input" and "at most 1200 bytes" in material["text"])
+if world_files:
+    check("a long materialData is added", not material["error"], material["text"][:200])
+else:
+    skip("a long materialData is added", NO_FILES)
+    check("...refused instead with the plain limit line", True, material["text"][:120])
 if not material["error"]:
     time.sleep(1)
     held = ((tool("get", {"id": material["value"]["id"]})["value"] or {}).get("properties") or {})
@@ -114,8 +135,12 @@ check("a long material with a web address is asked first (the kit says no)", web
 
 script = tool("set_script", {"id": box_id, "side": "client", "source":
                              "(function () { this.clickDownOnEntity = function () { print('MAKE KIT CLICKED'); }; })"})
-check("set_script", not script["error"] and script["value"]["url"].startswith("atp:/claude-scripts/")
-      and os.path.exists(script["value"]["saved_copy"] or ""), script["text"][:300])
+if world_files:
+    check("set_script", not script["error"] and script["value"]["url"].startswith("atp:/claude-scripts/")
+          and os.path.exists(script["value"]["saved_copy"] or ""), script["text"][:300])
+else:
+    skip("set_script", NO_FILES + ("" if script["error"] and "world's files" in script["text"]
+                                   else "; but Make's answer wasn't the world's files' refusal: " + script["text"][:160]))
 if not script["error"]:
     copy = open(script["value"]["saved_copy"]).read()
     check("script marked made with Claude", copy.startswith("// made with Claude"))
@@ -124,7 +149,11 @@ clicked = tool("click", {"id": box_id})
 check("click", not clicked["error"] and clicked["value"]["clicked"])
 time.sleep(1)
 log = tool("log")
-check("log has the click", not log["error"] and any("MAKE KIT CLICKED" in line for line in log["value"]["client"]), log["text"][:300])
+if world_files:
+    check("log has the click", not log["error"] and any("MAKE KIT CLICKED" in line for line in log["value"]["client"]),
+          log["text"][:300])
+else:
+    skip("log has the click", NO_FILES + ": the click script was never set")
 # the person's own scripts stay out of the log (the kit client's script prints "MAKE KIT RUNNING" lines by then)
 check("log leaves out the person's own scripts", not log["error"] and not any("MAKE KIT RUNNING" in line or "MAKE KIT CLIENT" in line
       for line in log["value"]["client"]))
@@ -147,7 +176,11 @@ if not blender["error"]:
     open(os.path.join(out, "results-kit-views.jpg"), "wb").write(
         base64.b64decode(blender["images"][0]["data"]))
     uploaded = tool("upload_model", {"model_id": blender["value"]["model_id"], "name": "kit stool"})
-    check("upload_model", not uploaded["error"] and uploaded["value"]["url"].startswith("atp:/claude-models/"), uploaded["text"][:200])
+    if world_files:
+        check("upload_model", not uploaded["error"] and uploaded["value"]["url"].startswith("atp:/claude-models/"),
+              uploaded["text"][:200])
+    else:
+        skip("upload_model", NO_FILES)
     if not uploaded["error"]:
         model = tool("add", {"properties": {"type": "Model", "name": "Make kit stool", "modelURL": uploaded["value"]["url"],
                                             "dimensions": {"x": 0.4, "y": 0.45, "z": 0.4}}})
@@ -158,12 +191,15 @@ check("picture", not picture["error"] and len(picture["images"]) == 1, picture["
 walked = tool("walk", {"id": box_id})
 check("walk", not walked["error"] and walked["value"]["arrived"], walked["text"][:200])
 undone = tool("undo", {"steps": 50})
-check("undo", not undone["error"] and len(undone["value"]["undone"]) >= 3, undone["text"][:300])
+# with files: the box, its material, its script and the edit at least; without: the box and the edit
+check("undo", not undone["error"] and len(undone["value"]["undone"]) >= (3 if world_files else 2), undone["text"][:300])
 gone = tool("scene", {"radius": 30, "name": "Make kit"})
 check("undo took them all back", not gone["error"] and len(gone["value"]["things"]) == 0, gone["text"][:300])
 # the kit client's script quits when it sees this (a throwaway world)
 tool("add", {"properties": {"type": "Box", "name": "Make kit done", "dimensions": {"x": 0.1, "y": 0.1, "z": 0.1}}})
 
+if skipped:
+    print("MCP KIT skipped %d: %s" % (skipped, NO_FILES))
 print("MCP KIT", "PASS" if failures == 0 else "FAIL %d" % failures)
 helper.stdin.close()
 helper.wait(5)
