@@ -11,10 +11,16 @@
 
 #include <memory>
 
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtCore/QBuffer>
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFutureWatcher>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QSaveFile>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
 
@@ -26,6 +32,8 @@
 
 #include "Application.h"
 #include "AvatarManager.h"
+#include "InterfaceLogging.h"
+#include "MainWindow.h"
 #include "MyAvatar.h"
 #include "SecondaryCamera.h"
 #include "editor/EditorCreate.h"
@@ -39,6 +47,16 @@ namespace {
     const int SETTLE_MS = 1500;              // after an avatar just put on has loaded: its textures
     const int CAMERA_SETTLE_MS = 300;        // the camera's new place and size reach the render
     const int JPEG_QUALITY = 88;
+    // automatic pictures (autoPictureFor)
+    const int AUTO_FIRST_MS = 4000;          // after the avatar worn has loaded: its textures, and you, settle
+    const int AUTO_POLL_MS = 2000;           // then tried again until you've settled
+    const int AUTO_TRIES = 60;               // two minutes of that, then left until it's worn again
+    const float AUTO_STILL_SPEED = 0.2f;     // m/s: standing, not walking or carried by something moving
+    const int AUTO_KEPT = 300;               // pictures kept; the oldest go (about 40 KB each)
+    const int AUTO_FRAMES = 6;               // frames rendered with the secondary camera on before the picture
+    const int FRAME_POLL_MS = 4;             // how often those frames are counted
+    const qint64 AUTO_AFTER_PHYSICS_MS = 20000;  // after physics turns on: an arrival's loading tail (performance)
+    const char* AUTO_INDEX = "index.json";
 
     void answer(QJSValue& callback, const QString& error, const QString& url) {
         if (callback.isCallable()) {
@@ -56,6 +74,23 @@ namespace {
 
 QString AvatarThumbnails::pictureName(const QString& name) {
     return EditorUpload::safeFileName(name + ".preview.jpg");
+}
+
+AvatarThumbnails::AvatarThumbnails() {
+    _autoTimer = new QTimer(this);
+    _autoTimer->setSingleShot(true);
+    connect(_autoTimer, &QTimer::timeout, this, &AvatarThumbnails::tryAutoPicture);
+    // the avatar worn (made with the avatar manager, before this) says when a model and its animations have loaded
+    auto avatarManager = DependencyManager::get<AvatarManager>();
+    auto myAvatar = avatarManager ? avatarManager->getMyAvatar() : nullptr;
+    if (myAvatar) {
+        connect(myAvatar.get(), &MyAvatar::onLoadComplete, this, [this]() {
+            auto myAvatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+            if (myAvatar) {
+                autoPictureFor(myAvatar->getFullAvatarURLFromPreferences().toString());
+            }
+        }, Qt::QueuedConnection);
+    }
 }
 
 QByteArray AvatarThumbnails::fit(const QImage& image) {
@@ -97,7 +132,7 @@ void AvatarThumbnails::capture(Done done) {
     timer->start();
 }
 
-void AvatarThumbnails::shoot(Done done) {
+void AvatarThumbnails::shoot(Done done, int frames) {
     auto renderConfig = qApp->getRenderEngine()->getConfiguration();
     auto camera = renderConfig ? dynamic_cast<SecondaryCameraJobConfig*>(renderConfig->getConfig("SecondaryCamera")) : nullptr;
     auto myAvatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
@@ -154,7 +189,9 @@ void AvatarThumbnails::shoot(Done done) {
     camera->resetSizeSpectatorCamera(WIDTH, HEIGHT);
     camera->enableSecondaryCameraRenderConfigs(true);
 
-    QTimer::singleShot(CAMERA_SETTLE_MS, this, [this, camera, was, done]() {
+    // the picture once the camera's new place and size have reached the render: after CAMERA_SETTLE_MS, or after a
+    // number of rendered frames (an automatic picture: as few frames of the scene drawn twice as will do, performance)
+    auto request = [this, camera, was, done]() {
         qApp->getSnapshotRequests().add(std::make_tuple([this, camera, was, done](const QImage& image) {
             // on the display's thread: the rest on the main one
             const QImage picture = image.copy();
@@ -171,11 +208,34 @@ void AvatarThumbnails::shoot(Done done) {
                 camera->resetSizeSpectatorCamera(was->width, was->height);
                 camera->enableSecondaryCameraRenderConfigs(was->enabled);
                 _taking = false;
-                const QByteArray jpeg = fit(picture);
-                done(jpeg, jpeg.isEmpty() ? "the camera gave no picture" : QString());
+                // scaled and made a JPEG on a worker thread: tens of milliseconds for a whole window's picture
+                auto watcher = new QFutureWatcher<QByteArray>(this);
+                connect(watcher, &QFutureWatcher<QByteArray>::finished, this, [watcher, done]() {
+                    const QByteArray jpeg = watcher->result();
+                    watcher->deleteLater();
+                    done(jpeg, jpeg.isEmpty() ? "the camera gave no picture" : QString());
+                });
+                watcher->setFuture(QtConcurrent::run([picture]() { return AvatarThumbnails::fit(picture); }));
             });
         }, 0.0f, false));
+    };
+    if (frames <= 0) {
+        QTimer::singleShot(CAMERA_SETTLE_MS, this, request);
+        return;
+    }
+    const size_t until = qApp->getRenderFrameCount() + (size_t)frames;
+    const qint64 giveUpAt = QDateTime::currentMSecsSinceEpoch() + CAMERA_SETTLE_MS;
+    auto poll = new QTimer(this);
+    poll->setInterval(FRAME_POLL_MS);
+    connect(poll, &QTimer::timeout, this, [poll, until, giveUpAt, request]() {
+        // the frames drawn, or CAMERA_SETTLE_MS when they don't come (a render held back)
+        if (qApp->getRenderFrameCount() >= until || QDateTime::currentMSecsSinceEpoch() >= giveUpAt) {
+            poll->stop();
+            poll->deleteLater();
+            request();
+        }
     });
+    poll->start();
 }
 
 QString AvatarThumbnails::keep(const QByteArray& jpeg, QString& error) const {
@@ -285,4 +345,157 @@ void AvatarThumbnails::upload(const QString& pictureUrl, const QString& fstUrl, 
         upload->deleteLater();
         answer(callback, QString(), url);
     });
+}
+
+// ---- automatic pictures -------------------------------------------------------------------------------------------
+
+QString AvatarThumbnails::autoFolder() const {
+    // the app's data folder, as the pictures taken above (a walled-off test client keeps its own), one folder per
+    // account: on a shared computer each person sees only the avatars they wore (security, 11-08, as chat's data);
+    // the signed-in account's name hashed, or "signed-out"
+    auto accountManager = DependencyManager::get<AccountManager>();
+    const QString username = accountManager && accountManager->isLoggedIn()
+        ? accountManager->getAccountInfo().getUsername().toLower() : QString();
+    const QString who = username.isEmpty() ? QString("signed-out")
+        : QString::fromLatin1(QCryptographicHash::hash(username.toUtf8(), QCryptographicHash::Sha1).toHex());
+    return PathUtils::getAppLocalDataPath() + "avatar-pictures/" + who;
+}
+
+const QVariantMap& AvatarThumbnails::autoIndex() const {
+    // read again when the account (its folder) changed
+    const QString folder = autoFolder();
+    if (folder != _autoIndexFolder) {
+        _autoIndexFolder = folder;
+        _autoIndex.clear();
+        QFile file(QDir(folder).filePath(AUTO_INDEX));
+        if (file.open(QIODevice::ReadOnly)) {
+            _autoIndex = QJsonDocument::fromJson(file.readAll()).object().toVariantMap();
+        }
+    }
+    return _autoIndex;
+}
+
+QVariantMap AvatarThumbnails::autoPictures() const {
+    QVariantMap pictures;
+    const QDir folder(autoFolder());
+    const QVariantMap& index = autoIndex();
+    for (auto it = index.cbegin(); it != index.cend(); ++it) {
+        const QVariantMap entry = it.value().toMap();
+        const QString name = entry.value("file").toString();
+        // a name this wrote: <hash>.jpg, nothing with a folder in it
+        if (name.isEmpty() || name.contains('/') || name.contains('\\') || !name.endsWith(".jpg")) {
+            continue;
+        }
+        // the time it was taken in the address, so a new picture of the same avatar isn't the old one cached
+        pictures.insert(it.key(), QUrl::fromLocalFile(folder.filePath(name)).toString() + "?" +
+                                      QString::number(entry.value("taken").toLongLong()));
+    }
+    return pictures;
+}
+
+void AvatarThumbnails::autoPictureFor(const QString& url) {
+    // DARKRIDE_AUTO_AVATAR_PICTURES=0: none (a timing run's clients, whose secondary camera mustn't switch on)
+    static const bool off = qEnvironmentVariable("DARKRIDE_AUTO_AVATAR_PICTURES") == "0";
+    if (off || url.isEmpty() || url == _autoUrl || autoIndex().contains(url)) {
+        return;   // being waited for already, or it has its picture
+    }
+    _autoUrl = url;
+    _autoTries = 0;
+    _autoTimer->start(AUTO_FIRST_MS);
+}
+
+void AvatarThumbnails::tryAutoPicture() {
+    auto myAvatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+    if (_autoUrl.isEmpty() || !myAvatar || myAvatar->getFullAvatarURLFromPreferences().toString() != _autoUrl ||
+        autoIndex().contains(_autoUrl)) {
+        _autoUrl.clear();   // another avatar's load starts its own wait
+        return;
+    }
+    auto renderConfig = qApp->getRenderEngine()->getConfiguration();
+    auto camera = renderConfig ? dynamic_cast<SecondaryCameraJobConfig*>(renderConfig->getConfig("SecondaryCamera")) : nullptr;
+    MainWindow* window = qApp->getWindow();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!qApp->isPhysicsEnabled()) {
+        _physicsOnAt = 0;
+    } else if (_physicsOnAt == 0) {
+        _physicsOnAt = now;
+    }
+    const RefreshRateManager& refresh = qApp->getRefreshRateManager();
+    // settled: the model loaded, not seated or riding (a seat parents you), standing still (not walking, not carried by
+    // something moving), the spectator camera not in use (its view isn't borrowed unasked), the window shown (a
+    // minimized one draws no frame for the picture), and no picture being taken. And frame time to spare
+    // (performance, 11-08): physics on for 20 s (past an arrival's loading tail), the refresh governor at full rate
+    // and past its arrival grace (a doubled render could drop it to half rate for the rest of the stay), and not in a
+    // headset (a third render of the scene at the headset's rate)
+    const bool settled = avatarLoaded() && myAvatar->getParentID().isNull() &&
+                         glm::length(myAvatar->getWorldVelocity()) < AUTO_STILL_SPEED && camera && !camera->isEnabled() &&
+                         window && window->isVisible() && !window->isMinimized() && !_taking &&
+                         _physicsOnAt > 0 && now - _physicsOnAt >= AUTO_AFTER_PHYSICS_MS && !refresh.isHalfRate() &&
+                         !refresh.inArrivalGrace() && !qApp->isHMDMode();
+    if (!settled) {
+        if (++_autoTries < AUTO_TRIES) {
+            _autoTimer->start(AUTO_POLL_MS);
+        } else {
+            qCDebug(interfaceapp) << "Avatar picture: not taken, never settled for" << _autoUrl;
+            _autoUrl.clear();
+        }
+        return;
+    }
+    const QString url = _autoUrl;
+    const QString folder = autoFolder();
+    shoot([this, url, folder](const QByteArray& jpeg, const QString& error) {
+        if (_autoUrl == url) {
+            _autoUrl.clear();
+        }
+        if (!error.isEmpty()) {
+            qCDebug(interfaceapp) << "Avatar picture: not taken for" << url << error;
+            return;
+        }
+        if (folder != autoFolder()) {
+            return;   // the account changed while it was taken: it isn't the new one's
+        }
+        keepAutoPicture(url, jpeg);
+    }, AUTO_FRAMES);
+}
+
+void AvatarThumbnails::keepAutoPicture(const QString& url, const QByteArray& jpeg) {
+    QDir folder(autoFolder());
+    if (jpeg.isEmpty() || !folder.mkpath(".")) {
+        return;
+    }
+    // named by the link's hash: no part of a link in a file name
+    const QString name = QString::fromLatin1(QCryptographicHash::hash(url.toUtf8(), QCryptographicHash::Sha1).toHex()) + ".jpg";
+    QSaveFile picture(folder.filePath(name));
+    if (!picture.open(QIODevice::WriteOnly) || picture.write(jpeg) != jpeg.size() || !picture.commit()) {
+        qCDebug(interfaceapp) << "Avatar picture: couldn't keep it for" << url;
+        return;
+    }
+    autoIndex();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    _autoIndex.insert(url, QVariantMap { { "file", name }, { "taken", now } });
+    // the oldest go past AUTO_KEPT
+    while (_autoIndex.size() > AUTO_KEPT) {
+        // the first as a start, so one always goes (whatever times a changed clock left in the index)
+        QString oldest = _autoIndex.firstKey();
+        qint64 oldestTaken = _autoIndex.first().toMap().value("taken").toLongLong();
+        for (auto it = _autoIndex.cbegin(); it != _autoIndex.cend(); ++it) {
+            const qint64 taken = it.value().toMap().value("taken").toLongLong();
+            if (taken < oldestTaken) {
+                oldestTaken = taken;
+                oldest = it.key();
+            }
+        }
+        const QString oldName = _autoIndex.value(oldest).toMap().value("file").toString();
+        if (!oldName.isEmpty() && !oldName.contains('/') && !oldName.contains('\\')) {
+            folder.remove(oldName);
+        }
+        _autoIndex.remove(oldest);
+    }
+    QSaveFile index(folder.filePath(AUTO_INDEX));
+    if (index.open(QIODevice::WriteOnly)) {
+        index.write(QJsonDocument(QJsonObject::fromVariantMap(_autoIndex)).toJson(QJsonDocument::Compact));
+        index.commit();
+    }
+    qCDebug(interfaceapp) << "Avatar picture: kept for" << url;
+    emit autoPicturesChanged();
 }
