@@ -47,6 +47,7 @@
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QSplitter>
 #include <QtWidgets/QStyle>
+#include <QtWidgets/QStyleOption>
 #include <QtWidgets/QStyledItemDelegate>
 #include <QtWidgets/QToolButton>
 #include <QtWidgets/QTreeView>
@@ -70,6 +71,35 @@ namespace {
     const int STATUS_MS = 6000;
     const int MAX_SEARCH_RESULTS = 2000;
     const QString ROOT_LABEL = "My Files";
+    const int MENU_RIGHT_MARGIN = 10;   // room after the longest name, as a Mac menu has
+
+    // The type filter. Qt sizes a style-sheeted combo's pop-up from its text alone, but on macOS the items are drawn as
+    // menu items with a check-mark column, so the names were cut ("Picture", "Avatar": Caity 17:32 11-08, Qt 6; measured
+    // off screen: a 61 px pop-up under a 77 px field, its items needing 73). As it opens, the pop-up is made as wide as
+    // the style's menu item needs for the longest name, and never narrower than the field, as a Mac pop-up button's menu
+    class FilterCombo : public QComboBox {
+    public:
+        using QComboBox::QComboBox;
+        void showPopup() override {
+            QAbstractItemView* list = view();
+            int widest = 0;
+            for (int i = 0; i < count(); ++i) {
+                QStyleOptionMenuItem item;
+                item.initFrom(list);
+                item.menuItemType = QStyleOptionMenuItem::Normal;
+                item.checkType = QStyleOptionMenuItem::Exclusive;
+                item.checked = true;
+                item.text = itemText(i);
+                item.font = list->font();
+                item.fontMetrics = list->fontMetrics();
+                item.maxIconWidth = 0;   // and no shortcut column (0 by default; its name differs in Qt 5 and 6)
+                const QSize text(list->fontMetrics().horizontalAdvance(item.text), list->fontMetrics().height());
+                widest = std::max(widest, list->style()->sizeFromContents(QStyle::CT_MenuItem, &item, text, list).width());
+            }
+            list->setMinimumWidth(std::max(width(), widest + 2 * list->frameWidth() + MENU_RIGHT_MARGIN));
+            QComboBox::showPopup();
+        }
+    };
 
     QString kindText(UserFile::Kind kind) {
         return UserFile::kindName(kind);
@@ -537,9 +567,9 @@ AssetsPanel::AssetsPanel(QWidget* parent) : QDockWidget("My Files", parent) {
     _search->setClearButtonEnabled(true);
     _search->setFixedWidth(180);
     top->addWidget(_search);
-    _kind = new QComboBox(body);
+    _kind = new FilterCombo(body);
     _kind->addItem("All", -1);
-    _kind->addItem("Pictures", (int)UserFile::Kind::Picture);
+    _kind->addItem("Images", (int)UserFile::Kind::Picture);
     _kind->addItem("Models", (int)UserFile::Kind::Model);
     _kind->addItem("Avatars", (int)UserFile::Kind::Avatar);
     _kind->addItem("Sounds", (int)UserFile::Kind::Sound);

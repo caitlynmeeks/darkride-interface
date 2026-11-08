@@ -862,7 +862,7 @@ ImageEditor::ImageEditor(const PropertySpec& spec, QWidget* parent) : PropertyEd
     _thumbnail->setFrameShape(QFrame::StyledPanel);
     if (!spec.readOnly) {
         _thumbnail->setCursor(Qt::PointingHandCursor);
-        _thumbnail->setToolTip("Click to choose a picture on this computer, or to clear the field");
+        _thumbnail->setToolTip("Click to choose an image on this computer, or to clear the field");
         _thumbnail->installEventFilter(this);
     }
     layout->addWidget(_thumbnail);
@@ -872,7 +872,7 @@ ImageEditor::ImageEditor(const PropertySpec& spec, QWidget* parent) : PropertyEd
     // the field takes a dropped picture itself: the line edit would paste its link in as typing, which commits nothing
     _url->setAcceptDrops(false);
     if (!spec.readOnly) {
-        _url->setToolTip("A picture by its link. Drag one here from the Assets panel or Finder, or hold the left button down "
+        _url->setToolTip("An image by its link. Drag one here from the Assets panel or Finder, or hold the left button down "
                          "in the field to choose one on this computer");
         _url->installEventFilter(this);
     }
@@ -883,7 +883,7 @@ ImageEditor::ImageEditor(const PropertySpec& spec, QWidget* parent) : PropertyEd
     connect(_holdTimer, &QTimer::timeout, this, [this] { showMenu(); });
     auto clear = new QToolButton(this);
     clear->setText(QStringLiteral("×"));
-    clear->setToolTip("No picture");
+    clear->setToolTip("No image");
     clear->setEnabled(!spec.readOnly);
     layout->addWidget(clear);
 
@@ -940,7 +940,7 @@ void ImageEditor::showMenu() {
     QMenu menu(this);
     menu.setToolTipsVisible(true);
     QAction* choose = menu.addAction("Choose File…");
-    choose->setToolTip("A picture on this computer, uploaded to your files");
+    choose->setToolTip("An image on this computer, uploaded to your files");
     QAction* clear = menu.addAction("Clear");
     clear->setEnabled(!_shown.isEmpty());
     // the choice is acted on once the menu has gone, so that the file dialog does not open inside it
@@ -953,8 +953,8 @@ void ImageEditor::showMenu() {
 }
 
 void ImageEditor::chooseFile() {
-    QString path = QFileDialog::getOpenFileName(this, "Choose a picture", QDir::homePath(),
-        "Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tga *.tif *.tiff *.ktx *.exr *.hdr)");
+    QString path = QFileDialog::getOpenFileName(this, "Choose an Image", QDir::homePath(),
+        "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tga *.tif *.tiff *.ktx *.exr *.hdr)");
     if (!path.isEmpty()) {
         takeFile(path);
     }

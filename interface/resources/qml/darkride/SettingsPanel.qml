@@ -277,7 +277,7 @@ Page {
 
         Section {
             title: "Cache"
-            footer: "The cache keeps the models, sounds and pictures of the worlds you visit, so a second visit loads "
+            footer: "The cache keeps the models, sounds and images of the worlds you visit, so a second visit loads "
                 + "from this computer. Clearing it makes every world download again."
 
             ListRow {

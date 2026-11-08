@@ -4250,7 +4250,7 @@ bool Editor::handleDrop(QDropEvent* event) {
     qCDebug(interfaceapp) << "editor drop:" << mime->formats() << "links" << offered << "placing" << placing;
     if (remote.isEmpty() && local.isEmpty()) {
         if (mime->hasHtml() || mime->hasImage()) {
-            setStatus("Nothing to place: no picture or model found in what was dropped", STATUS_CLEAR_MS);
+            setStatus("Nothing to place: no image or model found in what was dropped", STATUS_CLEAR_MS);
         }
         return false;   // a script or a place, perhaps: the client's own handling
     }
