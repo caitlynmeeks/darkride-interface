@@ -603,9 +603,9 @@ bool CodeEditor::isFileWorld() {
 }
 
 QString CodeEditor::newScriptPlace() {
-    // MakeLink::filesGoTo's rule, from its public parts: the person's choice where this world allows it, else My Files
+    // Make's own: the person's choice where this world allows it, else My Files
     auto link = DependencyManager::get<MakeLink>();
-    return link && link->filesPlace() == WORLD_FILES && link->worldFilesAllowed() ? WORLD_FILES : MY_FILES;
+    return link && link->filesGoTo() == WORLD_FILES ? WORLD_FILES : MY_FILES;
 }
 
 QString CodeEditor::whyNoNewScript(const QUuid& entityId, const QString& which) {
