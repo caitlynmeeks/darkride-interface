@@ -91,7 +91,6 @@
 #include "scripting/DiskCacheScriptingInterface.h"
 #include "avatar/AvatarThumbnails.h"
 #include "ui/Skins.h"
-#include "ui/MetaverseRequests.h"
 #include "ui/PanelTheme.h"
 #include "ui/CodeEditor.h"
 #include "ui/Panels.h"
@@ -304,7 +303,6 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
     DependencyManager::set<TTSScriptingInterface>();
     DependencyManager::set<ChatScriptingInterface>();
     DependencyManager::set<DiskCacheScriptingInterface>();
-    DependencyManager::set<MetaverseRequests>();   // the QML panels' metaverse API calls
     DependencyManager::set<AvatarThumbnails>();    // the QML panels' avatar pictures
     DependencyManager::set<PanelTheme>();          // the QML panels' colour scheme
     DependencyManager::set<Skins>();               // skins (ui/Skins.h), put on once the main window exists

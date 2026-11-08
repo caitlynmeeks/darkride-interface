@@ -133,7 +133,8 @@ void Application::onDesktopRootContextCreated(QQmlContext* surfaceContext) {
     surfaceContext->setContextProperty("Performance", new PerformanceScriptingInterface());
     // Darkride's own panels (the Settings panel first): the disk cache's size and place, and the metaverse's API
     surfaceContext->setContextProperty("DiskCache", DependencyManager::get<DiskCacheScriptingInterface>().data());
-    surfaceContext->setContextProperty("MetaverseRequests", DependencyManager::get<MetaverseRequests>().data());
+    // one per engine, its answers made in that engine (ui/MetaverseRequests.h)
+    surfaceContext->setContextProperty("MetaverseRequests", new MetaverseRequests(engine, surfaceContext));
     surfaceContext->setContextProperty("Friends", DependencyManager::get<FriendsScriptingInterface>().data());
     surfaceContext->setContextProperty("AvatarThumbnails", DependencyManager::get<AvatarThumbnails>().data());
     surfaceContext->setContextProperty("SystemToolbar", SystemToolbar::instance());
@@ -262,7 +263,8 @@ void Application::setupQmlSurface(QQmlContext* surfaceContext, bool setAdditiona
         surfaceContext->setContextProperty("MenuInterface", MenuScriptingInterface::getInstance());
         surfaceContext->setContextProperty("Performance", new PerformanceScriptingInterface());
         surfaceContext->setContextProperty("DiskCache", DependencyManager::get<DiskCacheScriptingInterface>().data());
-        surfaceContext->setContextProperty("MetaverseRequests", DependencyManager::get<MetaverseRequests>().data());
+        surfaceContext->setContextProperty("MetaverseRequests",
+                                           new MetaverseRequests(surfaceContext->engine(), surfaceContext));
         surfaceContext->setContextProperty("Friends", DependencyManager::get<FriendsScriptingInterface>().data());
         surfaceContext->setContextProperty("AvatarThumbnails", DependencyManager::get<AvatarThumbnails>().data());
         surfaceContext->setContextProperty("SystemToolbar", SystemToolbar::instance());
