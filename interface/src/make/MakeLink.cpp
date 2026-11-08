@@ -194,7 +194,8 @@ MakeLink::MakeLink() {
     connect(&_server, &MakeLinkServer::clientIdentified, this, [this] {
         // Claude Code's hello, after the connection: the version is known only now (editor-ui's catch, 11-07: read at
         // the connection it was always empty, and the dock's "Update Claude Code" line never showed)
-        const QString version = _server.clientVersion().isEmpty() ? QStringLiteral("(no version)") : _server.clientVersion();
+        const QString version = _server.clientVersion().isEmpty() ? QStringLiteral("(no version)")
+                                                                   : _server.clientVersion();
         qCInfo(makelog) << "Make: Claude Code" << version << "(" << _server.clientName() << ")";
         emit claudeVersionChanged();
     });
@@ -1119,10 +1120,12 @@ void MakeLink::picture(const QJsonObject& inputs, const MakeLinkServer::Reply& r
         return;
     }
     auto myAvatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
-    // a second view of the scene costs a held frame or two: never during a ride, nor when the app is already struggling
-    if (!myAvatar || myAvatar->isSeated() || qApp->getRefreshRateManager().isHalfRate()) {
-        reply(MakeLinkServer::Result::error(MakeError::BUSY, "no picture while the person is riding or the app is busy; "
-                                                             "try again in a while"));
+    // a second view of the scene costs a held frame or two: never during a ride (vehicles first; a station's seat
+    // counts). The refresh governor's half rate doesn't refuse it (performance's ruling, 11-08): the picture is a
+    // one-off that a governor hold doesn't make worse, and a refusal breaks Make's check of its own work, which is
+    // what Caity met when the dock's docking tripped the governor for its five seconds
+    if (!myAvatar || myAvatar->isSeated()) {
+        reply(MakeLinkServer::Result::error(MakeError::BUSY, "no picture while the person is riding; try again in a while"));
         return;
     }
     auto renderConfig = qApp->getRenderEngine()->getConfiguration();

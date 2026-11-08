@@ -11,11 +11,6 @@
 
 #include <cerrno>
 #include <cstdio>
-#include <signal.h>
-#include <unistd.h>
-#ifdef Q_OS_MAC
-#include <libproc.h>
-#endif
 
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -29,6 +24,16 @@
 
 #include <MakeBlender.h>
 #include <MakeToolList.h>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#else
+#include <signal.h>
+#include <unistd.h>
+#endif
+#ifdef Q_OS_MAC
+#include <libproc.h>
+#endif
 
 namespace {
 
@@ -67,11 +72,27 @@ int playTheApp(int argc, char** argv) {
     return app.exec();
 }
 
+// whether a process with this id is still there (one this user may not signal or open counts as there)
+bool processExists(qint64 pid) {
+#ifdef Q_OS_WIN
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (!process) {
+        return GetLastError() == ERROR_ACCESS_DENIED;
+    }
+    DWORD exitCode = 0;
+    const bool running = GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(process);
+    return running;
+#else
+    return ::kill(static_cast<pid_t>(pid), 0) == 0 || errno != ESRCH;
+#endif
+}
+
 bool processGone(qint64 pid, int waitMs) {
     QElapsedTimer timer;
     timer.start();
     while (timer.elapsed() < waitMs) {
-        if (::kill(static_cast<pid_t>(pid), 0) != 0 && errno == ESRCH) {
+        if (!processExists(pid)) {
             return true;
         }
         QTest::qWait(100);
@@ -509,6 +530,9 @@ void MakeBlenderTests::testCpuCapInTheBox() {
 
 // the app killed mid-make (kill -9): Blender ends by itself, through the watcher, and the watcher ends too
 void MakeBlenderTests::testBlenderEndsWithTheApp() {
+#ifdef Q_OS_WIN
+    QSKIP("the watcher is macOS and Linux's: on Windows a job object ends Blender with the app");
+#else
     QTemporaryDir dir;
     MakeBlender probe(dir.path());
     if (!haveBlender(probe)) {
@@ -534,13 +558,14 @@ void MakeBlenderTests::testBlenderEndsWithTheApp() {
     const qint64 watcherPid = ids.captured(2).toLongLong();
     QVERIFY(blenderPid > 0 && watcherPid > 0);
     QTest::qWait(1500);
-    QVERIFY2(::kill(static_cast<pid_t>(blenderPid), 0) == 0, "Blender should be running its runaway script");
-    QVERIFY2(::kill(static_cast<pid_t>(watcherPid), 0) == 0, "the watcher should be waiting");
+    QVERIFY2(processExists(blenderPid), "Blender should be running its runaway script");
+    QVERIFY2(processExists(watcherPid), "the watcher should be waiting");
 
     QCOMPARE(::kill(static_cast<pid_t>(app.processId()), SIGKILL), 0);
     QVERIFY(app.waitForFinished(5000));
     QVERIFY2(processGone(blenderPid, 5000), "Blender ran on after the app was killed");
     QVERIFY2(processGone(watcherPid, 5000), "the watcher ran on after the app was killed");
+#endif
 }
 
 void MakeBlenderTests::testOneMakeAtATime() {
@@ -587,6 +612,9 @@ void MakeBlenderTests::testTextureNamesChecked() {
 
 // the watcher by itself, with a plain box line and no Blender: what it passes on, what ends its child, what it refuses
 void MakeBlenderTests::testWatcherPassesTheExitOn() {
+#ifdef Q_OS_WIN
+    QSKIP("the watcher is macOS and Linux's");
+#else
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -607,9 +635,13 @@ void MakeBlenderTests::testWatcherPassesTheExitOn() {
 
     watched = watch(boxLine(dir.filePath("b.pid"), { "/usr/bin/true" }));
     QCOMPARE(watched.exit, 0);
+#endif
 }
 
 void MakeBlenderTests::testWatcherEndsItsChild() {
+#ifdef Q_OS_WIN
+    QSKIP("the watcher is macOS and Linux's");
+#else
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -655,9 +687,13 @@ void MakeBlenderTests::testWatcherEndsItsChild() {
                     });
     QCOMPARE(watched.exit, 128 + SIGKILL);
     QVERIFY(watched.ms < 5000);
+#endif
 }
 
 void MakeBlenderTests::testWatcherRefuses() {
+#ifdef Q_OS_WIN
+    QSKIP("the watcher is macOS and Linux's");
+#else
     if (WATCH_PROGRAM.isEmpty()) {
         QSKIP("the watcher isn't built with these tests");
     }
@@ -688,10 +724,14 @@ void MakeBlenderTests::testWatcherRefuses() {
     QVERIFY(!QFile::exists(dir.filePath("elsewhere")));
     QTest::qWait(300);
     QVERIFY(!QFile::exists(marker));
+#endif
 }
 
 // in a make, Blender is the watcher's child, its id written outside the folder the box may write
 void MakeBlenderTests::testWatcherIsBlendersParent() {
+#ifdef Q_OS_WIN
+    QSKIP("the watcher is macOS and Linux's");
+#else
     QTemporaryDir dir;
     MakeBlender blender(dir.path());
     if (!haveBlender(blender)) {
@@ -718,7 +758,7 @@ void MakeBlenderTests::testWatcherIsBlendersParent() {
     }
     QVERIFY2(programOf(pid).endsWith("/Contents/MacOS/Blender"), qPrintable(programOf(pid)));
     QCOMPARE(parentOf(pid), blender.watcherId());
-    QCOMPARE(parentOf(blender.watcherId()), static_cast<qint64>(getpid()));
+    QCOMPARE(parentOf(blender.watcherId()), QCoreApplication::applicationPid());
     const QStringList jobs = QDir(dir.filePath("jobs")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     QCOMPARE(jobs.size(), 1);
     QVERIFY(QFile::exists(dir.filePath("jobs/" + jobs.first() + "/blender.pid")));
@@ -727,6 +767,7 @@ void MakeBlenderTests::testWatcherIsBlendersParent() {
     QVERIFY(done);
     QCOMPARE(made.code, MakeError::REFUSED);
     QVERIFY(processGone(pid, 3000));
+#endif
 }
 
 int main(int argc, char** argv) {

@@ -370,7 +370,8 @@ void MakeLinkServer::accept() {
 #ifdef Q_OS_LINUX
             struct ucred credentials;
             socklen_t length = sizeof credentials;
-            thisUser = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) == 0 && credentials.uid == getuid();
+            thisUser = getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) == 0 &&
+                       length == sizeof credentials && credentials.uid == getuid();
 #else
             uid_t uid = 0;
             gid_t gid = 0;
