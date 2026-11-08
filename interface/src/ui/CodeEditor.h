@@ -152,6 +152,8 @@ public:
     // what a quit would lose (ui/QuitCheck.cpp): the names of the files with typing that isn't saved, in every world,
     // the open one first (a new script by the name its first Save gives it)
     QStringList unsavedNames() const;
+    // the open file's name there: the header's, but "Cube's script" for one written into Cube's field (mary 11-08)
+    QString unsavedName() const;
     QString problem() const { return _problem; }
     bool hasLink() const {
         return !_isNew && (_place == Place::WorldFiles || _place == Place::MyFiles || _place == Place::Web);

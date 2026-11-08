@@ -106,7 +106,7 @@ QString saveTerrain() {
     }
     QString reason = terrain.saveFailures() > failuresBefore ? terrain.lastSaveError() : QString();
     if (reason.isEmpty()) {
-        reason = "it took too long";
+        reason = "My Files took too long to answer";   // the terrain's file goes to the person's My Files
     }
     while (reason.endsWith('.')) {
         reason.chop(1);

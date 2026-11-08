@@ -437,7 +437,7 @@ void CodeEditor::setDraft(const QString& text, bool has) {
     const bool had = _drafts.contains(key);
     if (has) {
         _drafts.insert(key, text);
-        _draftNames.insert(key, _fileName);
+        _draftNames.insert(key, unsavedName());
     } else {
         _drafts.remove(key);
         _draftNames.remove(key);
@@ -447,12 +447,21 @@ void CodeEditor::setDraft(const QString& text, bool has) {
     }
 }
 
+QString CodeEditor::unsavedName() const {
+    if (_place != Place::WrittenIn) {
+        return _fileName;
+    }
+    // written into the field: the thing's script, never the thing's bare name (mary 11-08)
+    const QString script = _which == SERVER_SCRIPTS ? QStringLiteral("server script") : QStringLiteral("script");
+    return _entityName.isEmpty() ? "a " + script : _entityName + "'s " + script;
+}
+
 QStringList CodeEditor::unsavedNames() const {
     QStringList names;
     QString openKey;
     if (hasDocument() && (_dirty || hasDraft())) {
         openKey = docDraftKey();
-        names.append(_fileName);
+        names.append(unsavedName());
     }
     for (auto it = _drafts.cbegin(); it != _drafts.cend(); ++it) {
         if (it.key() != openKey) {
