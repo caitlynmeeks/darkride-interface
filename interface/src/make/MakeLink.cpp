@@ -89,7 +89,7 @@ const char* NO_SERVER_IN_A_FILE_WORLD = "server scripts need a world on a server
 const char* TOO_LONG_REASON = "a value is too long for the world to keep.";
 const char* LONG_MATERIAL_NO_FILE_REASON = "you're signed out.";
 // where Make keeps its files: "my_files" (the default) or "world"
-const char* FILES_PLACE_SETTING = "Make/filesPlace";
+const char* FILES_PLACE_SETTING = "private/make/filesPlace";   // private/: no world's script may change it
 const char* MY_FILES_API = "/api/user/files";
 const char* MY_FILES_STATUS_API = "/api/user/files/status";
 // how long after an Undo its own changes are surely in this world's tree, before its files are looked for there
