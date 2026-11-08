@@ -520,7 +520,7 @@ bool CodeEditor::readEntity(QString& value, QString& name, bool& locked) const {
     return true;
 }
 
-bool CodeEditor::open(const QUuid& entityId, const QString& which) {
+bool CodeEditor::open(QUuid entityId, QString which) {
     if (!isAvailable() || entityId.isNull() ||
         (which != SCRIPT && which != SERVER_SCRIPTS && which != FRAGMENT_SHADER && which != VERTEX_SHADER)) {
         return false;
@@ -639,7 +639,7 @@ QString CodeEditor::whyNoNewScript(const QUuid& entityId, const QString& which) 
     return QString();
 }
 
-bool CodeEditor::openNew(const QUuid& entityId, const QString& which) {
+bool CodeEditor::openNew(QUuid entityId, QString which) {
     if (!isAvailable() || entityId.isNull() || (which != SCRIPT && which != SERVER_SCRIPTS) ||
         !whyNoNewScript(entityId, which).isEmpty()) {
         return false;

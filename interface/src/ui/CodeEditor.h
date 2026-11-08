@@ -115,11 +115,12 @@ public:
     // from the Inspector, the Hierarchy, Code near you and Make's cards: opens the panel on that entity's script
     // ("script" or "serverScripts") or shader ("fragmentShader" or "vertexShader", read only: its address read from the
     // entity itself, never given); answers false for an entity that isn't there or a script it doesn't have
-    Q_INVOKABLE bool open(const QUuid& entityId, const QString& which);
+    // (by value: callers may pass this document's own entity and field, which opening clears first)
+    Q_INVOKABLE bool open(QUuid entityId, QString which);
     // the Inspector's New beside an empty Script ("script") or Server Script ("serverScripts") field: the panel opens
     // a starter script for that entity, made in the world's files at its first Save; false when it can't
     // (whyNoNewScript says why). open() on an empty field comes here too (the Hierarchy's New Script)
-    Q_INVOKABLE bool openNew(const QUuid& entityId, const QString& which);
+    Q_INVOKABLE bool openNew(QUuid entityId, QString which);
     // the header's New Script: a new entity script for the one thing selected in Build mode
     Q_INVOKABLE void newScript();
     // why a new script can't be made for that entity's field now ("" when it can): the words the Inspector's New and
