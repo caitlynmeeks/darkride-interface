@@ -33,6 +33,8 @@ ColumnLayout {
 
     // [{ key, label, value }]: an action row in blue, or with a value, a row that opens more (its value and › at the right)
     property var actions: []
+    // long names wrap and long details are cut, so a card's or row's tick and star stay at its right (the Avatar panel)
+    property bool wrapLabels: false
 
     signal activated(var item)
     signal actionChosen(string key)
@@ -81,6 +83,7 @@ ColumnLayout {
                 }
             }
             ListRow {
+                wrapLabel: collection.wrapLabels
                 label: entry.title || ""
                 detail: entry.subtitle || ""
                 clickable: true

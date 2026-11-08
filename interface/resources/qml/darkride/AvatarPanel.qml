@@ -678,6 +678,7 @@ Page {
             items: list.shown
             view: avatarBar.view
             row: avatarRow
+            wrapLabels: true
             actions: list.actions
             empty: library.status !== "" ? library.status : library.busy ? "…"
                 : list.searching ? "No avatar in My Avatars matches “" + avatarBar.search + "”."
