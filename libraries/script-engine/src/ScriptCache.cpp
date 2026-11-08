@@ -98,6 +98,12 @@ void ScriptCache::getScriptBytes(const QString& scriptURL, bytesAvailableCallbac
 void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvailable, bytesAvailableCallback bytesAvailable,
                           bool forceDownload, int maxRetries) {
     Lock lock(_containerLock);
+    // a ruled caller (ruleFetch, just before this call) takes a cached copy only when that copy was fetched under the
+    // same rule, and never joins a download under no rule or another one; otherwise it makes its own ruled download.
+    // So the rule judges every fetch, cached or shared, not only a fresh download
+    const auto pendingRule = _fetchRules.find(url);
+    const bool ruledCaller = pendingRule != _fetchRules.end();
+    const QString callerKey = ruledCaller ? ruleKey(pendingRule->origin, pendingRule->worldIsLocal) : QString();
     if (_scriptCache.contains(url) && !forceDownload) {
         auto entry = _scriptCache[url];
         if (url.isLocalFile() || url.scheme().isEmpty()) {
@@ -110,9 +116,14 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
                                       << "(memory:" << cachedTime << "disk:" << localTime << ")";
             }
         }
+        if (!forceDownload && ruledCaller && entry["rule"].toString() != callerKey) {
+            // the copy was fetched under no rule, or another: this caller's own ruled download instead
+            forceDownload = true;
+            qCDebug(scriptengine) << "Found script in cache, but a ruled fetch needs its own copy:" << url.fileName();
+        }
         if (!forceDownload) {
-            // a rule given for this fetch has nothing to rule: the copy is the cache's (a caller that must have a
-            // ruled download asks for a fresh one, as ScriptOpener does)
+            // the copy is this caller's to take: fetched under its rule, or the caller has none (a caller that must
+            // have a fresh download asks for one, as ScriptOpener does)
             _fetchRules.remove(url);
             lock.unlock();
             qCDebug(scriptengine) << "Found script in cache:" << url.fileName();
@@ -128,6 +139,23 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
     {
         auto& scriptRequest = _activeScriptRequests[url];
         bool alreadyWaiting = scriptRequest.scriptUsers.size() + scriptRequest.byteUsers.size() > 0;
+        if (alreadyWaiting && ruledCaller && scriptRequest.ruleKey() != callerKey) {
+            // the running download is under no rule, or another: this caller waits for its own ruled download, which
+            // starts when the running one ends (scriptContentAvailable)
+            if (contentAvailable) {
+                scriptRequest.ruledWaiters.push_back(contentAvailable);
+            }
+            if (bytesAvailable) {
+                scriptRequest.ruledByteWaiters.push_back(bytesAvailable);
+            }
+            scriptRequest.waitOrigin = pendingRule->origin;
+            scriptRequest.waitWorldIsLocal = pendingRule->worldIsLocal;
+            _fetchRules.erase(pendingRule);
+            lock.unlock();
+            qCDebug(scriptengine) << "Already downloading script, and a ruled fetch waits for its own download of:"
+                                  << url.fileName();
+            return;
+        }
         if (contentAvailable) {
             scriptRequest.scriptUsers.push_back(contentAvailable);
         }
@@ -138,8 +166,8 @@ void ScriptCache::request(const QUrl& url, contentAvailableCallback contentAvail
         lock.unlock();
 
         if (alreadyWaiting) {
-            // the running download carries its own rule (the record's); a rule given for this call isn't left for
-            // the next, unrelated fetch of the address
+            // the running download is under this caller's rule, or the caller has none: joined; a rule given for this
+            // call isn't left for the next, unrelated fetch of the address
             {
                 Lock dropLock(_containerLock);
                 _fetchRules.remove(url);
@@ -192,6 +220,11 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
     QByteArray scriptBytes;
     std::vector<contentAvailableCallback> allCallbacks;
     std::vector<bytesAvailableCallback> allByteCallbacks;
+    // ruled callers that waited for this download to end: their own ruled download follows (below, lock free)
+    std::vector<contentAvailableCallback> ruledWaiters;
+    std::vector<bytesAvailableCallback> ruledByteWaiters;
+    QUrl waitOrigin;
+    bool waitWorldIsLocal = false;
     QString status = QMetaEnum::fromType<ResourceRequest::Result>().valueToKey(req->getResult());
     bool success { false };
 
@@ -203,10 +236,15 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
 
         if (_activeScriptRequests.contains(url)) {
             auto& scriptRequest = _activeScriptRequests[url];
+            const QString fetchedUnder = scriptRequest.ruleKey();   // the rule this copy was fetched under, if any
 
             if (success) {
                 allCallbacks = scriptRequest.scriptUsers;
                 allByteCallbacks = scriptRequest.byteUsers;
+                ruledWaiters = scriptRequest.ruledWaiters;
+                ruledByteWaiters = scriptRequest.ruledByteWaiters;
+                waitOrigin = scriptRequest.waitOrigin;
+                waitWorldIsLocal = scriptRequest.waitWorldIsLocal;
                 _activeScriptRequests.remove(url);
                 scriptBytes = req->getData();
                 scriptContent = QString::fromUtf8(scriptBytes);
@@ -214,6 +252,7 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
                     { "data", scriptContent },
                     { "bytes", scriptBytes },
                     { "last-modified", req->property("last-modified") },
+                    { "rule", fetchedUnder },   // a ruled fetch takes this copy only under the same rule (request)
                 };
             } else {
                 auto result = req->getResult();
@@ -258,7 +297,14 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
 
                     allCallbacks = scriptRequest.scriptUsers;
                     allByteCallbacks = scriptRequest.byteUsers;
-                    if (_scriptCache.contains(url)) {
+                    ruledWaiters = scriptRequest.ruledWaiters;
+                    ruledByteWaiters = scriptRequest.ruledByteWaiters;
+                    waitOrigin = scriptRequest.waitOrigin;
+                    waitWorldIsLocal = scriptRequest.waitWorldIsLocal;
+                    // an older copy, only one this download's callers may take: a ruled download that failed never
+                    // hands out a copy fetched under no rule or another
+                    if (_scriptCache.contains(url) &&
+                        (!scriptRequest.ruled || _scriptCache[url]["rule"].toString() == fetchedUnder)) {
                         scriptContent = _scriptCache[url]["data"].toString();
                         scriptBytes = _scriptCache[url]["bytes"].toByteArray();
                     }
@@ -279,7 +325,25 @@ void ScriptCache::scriptContentAvailable(int maxRetries) {
         foreach(bytesAvailableCallback thisCallback, allByteCallbacks) {
             thisCallback(url.toString(), scriptBytes, success, status);
         }
+        // the ruled callers that waited: each fetch is ruled again from the start, so the copy just cached (fetched
+        // under no rule, or another) isn't theirs to take, and the first of them starts their ruled download
+        for (const contentAvailableCallback& waiter : ruledWaiters) {
+            ruleFetch(url, waitOrigin, waitWorldIsLocal);
+            request(url, waiter, nullptr, false, maxRetries);
+        }
+        for (const bytesAvailableCallback& waiter : ruledByteWaiters) {
+            ruleFetch(url, waitOrigin, waitWorldIsLocal);
+            request(url, nullptr, waiter, false, maxRetries);
+        }
     }
+}
+
+QString ScriptRequest::ruleKey() const {
+    return ruled ? ScriptCache::ruleKey(ruleOrigin, ruleWorldIsLocal) : QString();
+}
+
+QString ScriptCache::ruleKey(const QUrl& origin, bool worldIsLocal) {
+    return origin.toString() + (worldIsLocal ? "|local" : "|remote");
 }
 
 void ScriptCache::ruleFetch(const QUrl& unnormalizedURL, const QUrl& origin, bool worldIsLocal) {

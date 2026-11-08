@@ -37,6 +37,14 @@ public:
     bool ruled { false };
     QUrl ruleOrigin;
     bool ruleWorldIsLocal { false };
+    /// The rule this download runs under, as one key (ScriptCache::ruleKey); empty for a download under no rule.
+    QString ruleKey() const;
+    // ruled callers that may not join this download (it runs under no rule, or under another): each gets its own
+    // ruled download when this one ends
+    std::vector<contentAvailableCallback> ruledWaiters { };
+    std::vector<bytesAvailableCallback> ruledByteWaiters { };
+    QUrl waitOrigin;
+    bool waitWorldIsLocal { false };
 };
 
 /// Interface for loading scripts
@@ -64,9 +72,13 @@ public:
 
     void deleteScript(const QUrl& unnormalizedURL);
 
-    /// The next download of this URL is a ruled script's own (ScriptNetworkPolicy): it judges and pins each address
-    /// it goes to. A download several scripts wait for is ruled when any of them is.
+    /// The next fetch of this URL is a ruled script's own (ScriptNetworkPolicy): its download judges and pins each
+    /// address it goes to, and the rule holds for the cache too: a ruled fetch takes a cached copy only when that copy
+    /// was fetched under the same rule, and never joins a download under no rule or another one; otherwise it makes
+    /// its own ruled download.
     void ruleFetch(const QUrl& url, const QUrl& origin, bool worldIsLocal);
+    /// A rule as one key, "origin|local" or "origin|remote": what a cached copy records and a ruled fetch asks for.
+    static QString ruleKey(const QUrl& origin, bool worldIsLocal);
 
 private:
     void applyRule(ResourceRequest* request, const QUrl& url);
