@@ -259,7 +259,7 @@ else:
             late_calls += 1
             try:
                 made_id = (json.loads(added["text"]) or {}).get("id", "") if not added["error"] else ""
-            except ValueError:
+            except (ValueError, AttributeError):   # not JSON, or JSON that isn't an object
                 made_id = ""
             if not added["error"]:
                 late_taken += 1
