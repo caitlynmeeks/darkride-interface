@@ -225,12 +225,12 @@
               },
               "canKeepFiles": {
                 "type": "boolean",
-                "description": "False where a script or a model can't be stored now: with my_files the person isn't signed in; with world, the world is a file on this computer or the person may not add files to it. Build with what things can do on their own then, and say so."
+                "description": "False where a script or a model can't be stored now: the person isn't signed in, so My Files can't be used. Build with what things can do on their own then, and say so."
               },
               "filesGoTo": {
                 "type": "string",
                 "enum": ["my_files", "world"],
-                "description": "Where Make keeps the scripts and models it saves, the person's choice: my_files (their own My Files: an https link that works in any world, readable by anyone with it) or world (this world's own files)."
+                "description": "Where Make keeps the scripts and models it saves: my_files (the person's own My Files: an https link that works in any world, readable by anyone with it) or world (this world's own files, where the person chose them and the world allows them)."
               }
             },
             "required": [

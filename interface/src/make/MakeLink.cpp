@@ -82,8 +82,8 @@ const char* NO_FILES_SIGNED_OUT = "the person isn't signed in to Darkride, and M
 const char* MY_FILES_FULL = "the person's My Files are full";
 const char* MY_FILES_REFUSED = "My Files didn't take it";
 // a world opened from a file has no server, so nothing runs a server script there
-const char* NO_SERVER_IN_A_FILE_WORLD = "this world is a file on this computer and has no server, so a server script "
-                                        "can't run in it";
+const char* NO_SERVER_IN_A_FILE_WORLD = "server scripts need a world on a server, and this world is a file on this "
+                                        "computer";
 // where Make keeps its files: "my_files" (the default) or "world"
 const char* FILES_PLACE_SETTING = "Make/filesPlace";
 const char* MY_FILES_API = "/api/user/files";
@@ -267,7 +267,8 @@ MakeLink::MakeLink() {
     connect(&_server, &MakeLinkServer::callStarted, this, [this](int call, const QString& tool, const QJsonObject& inputs) {
         // the call's request was decided in gate(), before it ran (MakeRequests)
         const QString line = activityLine(tool, inputs);
-        _runningCalls.insert(call, RunningCall { _request, line, failedPhrase(tool, inputs) });
+        const bool myFiles = (tool == "set_script" || tool == "upload_model") && keepsInMyFiles();
+        _runningCalls.insert(call, RunningCall { _request, line, failedPhrase(tool, inputs), myFiles });
         _requests.touched();
         if (!line.isEmpty()) {
             emit activity(_request, line);
@@ -290,16 +291,16 @@ MakeLink::MakeLink() {
             // the person's words for why (mary, 11-08): who said no and, where there is one, the way on; each ends with
             // its own full stop; the server's own words stay in Claude's answer only
             QString reason;
-            if (message.contains(NO_FILES_IN_A_FILE_WORLD)) {
-                reason = "this world is a file on your computer, so it can't keep files.";
-            } else if (message.contains(NO_SERVER_IN_A_FILE_WORLD)) {
-                reason = "this world is a file on your computer, so it has no server to run it.";
+            if (message.contains(NO_SERVER_IN_A_FILE_WORLD)) {
+                reason = "server scripts need a world on a server.";
             } else if (message.contains(NO_FILES_SIGNED_OUT)) {
-                reason = "you aren't signed in, so Make can't keep files in your My Files.";
+                reason = "you're signed out.";
             } else if (message.contains(MY_FILES_FULL)) {
-                reason = "your My Files are full.";
+                reason = "My Files is full.";
             } else if (message.contains(MY_FILES_REFUSED)) {
                 reason = "My Files turned it down.";
+            } else if (code == MakeError::TIMEOUT && entry.myFiles) {
+                reason = "My Files took too long to answer.";
             } else if (message.contains(NO_FILES_ALLOWED)) {
                 reason = "you can't add files to this world. Its owner can allow it.";
             } else if (message.contains("the world's files didn't take")) {
@@ -991,7 +992,7 @@ void MakeLink::forward(const QString& tool, const QJsonObject& inputs, const Mak
             // walkthrough; My Files the default, 11-08)
             QJsonObject here = answer.value.value("here").toObject();
             here["canKeepFiles"] = whyNoFiles().isEmpty();
-            here["filesGoTo"] = keepsInMyFiles() ? "my_files" : "world";
+            here["filesGoTo"] = filesGoTo();
             answer.value["here"] = here;
         } else if (tool == "remove") {
             ++_removesThisRequest;
@@ -1176,8 +1177,8 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     // since no place to keep it would make it run
     if (side == "server" && DependencyManager::get<NodeList>()->getDomainHandler().isServerless()) {
         reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
-                                            "Not saved: " + QString(NO_SERVER_IN_A_FILE_WORLD) + ". Do it in the thing's "
-                                            "client script instead, or tell the person it can't be done in this world."));
+                                            "Not saved: " + QString(NO_SERVER_IN_A_FILE_WORLD) + ". A client script works "
+                                            "here if it can do the job; otherwise tell the person it didn't work."));
         return;
     }
     // a world that can't keep the script says so at once, before any copy is written (Caity's walkthrough, 11-08: a
@@ -1410,6 +1411,12 @@ QString MakeLink::worldName() const {
     }
     const QString place = addresses->getPlaceName();
     return place.isEmpty() ? domain.getHostname() : place;
+}
+
+QString MakeLink::filesGoTo() const {
+    // the world's files where the person chose them and this world allows them; My Files everywhere else (a file world,
+    // a world that doesn't let them add files): Make keeps its work somewhere it can
+    return filesPlace() == "world" && worldFilesAllowed() ? QString("world") : QString("my_files");
 }
 
 QString MakeLink::filesPlace() const {
@@ -1648,6 +1655,11 @@ QString MakeLink::whyNoWorldFiles() const {
 }
 
 // the step's words for its "Couldn't …" row, as activityLine words it while it runs
+QString MakeLink::modelNamed(const QJsonObject& inputs) const {
+    const QString name = inputs.value("name").toString().simplified();
+    return name.isEmpty() ? QString("the model") : "the " + name + " model";
+}
+
 QString MakeLink::failedPhrase(const QString& tool, const QJsonObject& a) const {
     auto thing = [this](const QJsonValue& id) {
         const QString name = _names.value(id.toString());
@@ -1668,7 +1680,7 @@ QString MakeLink::failedPhrase(const QString& tool, const QJsonObject& a) const 
     if (tool == "picture") return "take a picture";
     if (tool == "log") return "read the scripts' log";
     if (tool == "undo") return "undo";
-    if (tool == "upload_model") return "put the model into the world's files";
+    if (tool == "upload_model") return "save " + modelNamed(a) + " to " + filesPlaceWords();
     if (tool == "scene") return "look around";
     if (tool == "guide") return "read the building guide";
     return "finish that step";
@@ -1696,6 +1708,6 @@ QString MakeLink::activityLine(const QString& tool, const QJsonObject& a) const 
     if (tool == "picture") return "taking a picture to check";
     if (tool == "log") return "reading the scripts' log";
     if (tool == "undo") return "undoing";
-    if (tool == "upload_model") return "putting the model into the world's files";
+    if (tool == "upload_model") return "saving " + modelNamed(a) + " to " + filesPlaceWords();
     return QString();
 }

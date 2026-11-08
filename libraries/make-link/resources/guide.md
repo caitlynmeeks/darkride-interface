@@ -70,13 +70,13 @@ A thing's script is one expression, a function the engine calls with `new`:
 `set_script` saves the script as a file, marked as made with Claude, and keeps a readable copy on the person's
 computer; `get` shows a thing's scripts' text. Where Make keeps scripts and models is the person's choice (`scene`'s
 `here.filesGoTo`): `my_files`, their own My Files (an https link that works in any world, and anyone with the link can
-read it), or `world`, this world's own files (`atp:/claude-scripts/...`).
+read it), or `world`, this world's own files (`atp:/claude-scripts/...`, where the person chose them and the world
+allows them).
 
-Where `scene` says `here.canKeepFiles` is false, a script or a model can't be stored now: the person isn't signed in
-(My Files), or the world is a file on this computer or doesn't let them add files (the world's files). Build with what
-things do on their own (their properties, physics) and tell the person plainly why. A world opened from a file has no
-server, so put everything in client scripts there. A step that didn't work answers with "Not saved" or "Not
-uploaded": say so, and never describe it as done.
+Where `scene` says `here.canKeepFiles` is false, a script or a model can't be stored now: the person isn't signed in,
+so My Files can't be used. Build with what things do on their own (their properties, physics) and tell the person
+plainly why. A world opened from a file has no server, so a server script can't run there: put everything in client
+scripts. A step that didn't work answers with "Not saved" or "Not uploaded": say so, and never describe it as done.
 
 Each thing has two script slots (`set_script` side):
 

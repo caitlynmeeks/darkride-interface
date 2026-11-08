@@ -112,7 +112,8 @@ public:
 
     /// Where Make keeps the files it makes (scripts, models, long materials), the person's choice in Settings:
     /// "my_files" (the default, Caity 11-08: the person's My Files, a link that works in any world) or "world" (this
-    /// world's own files, where its owner allows it).
+    /// world's own files). "world" holds only where this world allows it (worldFilesAllowed()); elsewhere Make keeps
+    /// its files in My Files.
     QString filesPlace() const;
     void setFilesPlace(const QString& place);
     /// Whether this world lets the person add files, so the dock offers "This world's files" only where it can work.
@@ -240,7 +241,9 @@ private:
     /// Every file link this world's things hold (script, server scripts, model, collision model, material).
     /// False when this world's things can't be read now (then no file is deleted).
     bool fileLinksInTheWorld(QStringList& links) const;
-    bool keepsInMyFiles() const { return filesPlace() == "my_files"; }
+    /// Where Make keeps its files now: the person's choice where it can work here, else "my_files"
+    QString filesGoTo() const;
+    bool keepsInMyFiles() const { return filesGoTo() == "my_files"; }
     /// Why a file of Make's can't be kept now in the place the person chose (empty when it can).
     QString whyNoFiles() const;
     /// This world's name for its folder in My Files (/Make/<world>).
@@ -277,11 +280,16 @@ private:
         int request { 0 };
         QString line;     // its activity line ("writing …")
         QString failed;   // its "couldn't" phrase ("write …")
+        bool myFiles { false };   // it keeps a file in My Files (a time-out is My Files' then)
     };
     QHash<int, RunningCall> _runningCalls;   // the server's calls that started (ran past the gate)
     bool _stopping { false };                // Stop is answering the running calls: not failures to show
     QString whyNoWorldFiles() const;
     QString failedPhrase(const QString& tool, const QJsonObject& inputs) const;
+    /// "the Lantern model" (upload_model's name), or "the model" (mary, 11-08)
+    QString modelNamed(const QJsonObject& inputs) const;
+    /// "My Files" or "the world's files": where Make keeps its files now
+    QString filesPlaceWords() const { return keepsInMyFiles() ? QString("My Files") : QString("the world's files"); }
     QHash<int, std::function<void(bool)>> _asks;
     int _nextAsk { 1 };
     int _removesThisRequest { 0 };
