@@ -20,6 +20,7 @@
 #include <QtCore/QFutureWatcher>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QSaveFile>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -57,6 +58,12 @@ namespace {
     const int FRAME_POLL_MS = 4;             // how often those frames are counted
     const qint64 AUTO_AFTER_PHYSICS_MS = 20000;  // after physics turns on: an arrival's loading tail (performance)
     const char* AUTO_INDEX = "index.json";
+
+    // a name keepAutoPicture writes: the link's SHA-1 in hex and ".jpg", nothing else (no folder, drive or stream)
+    bool isAutoPictureName(const QString& name) {
+        static const QRegularExpression ONLY("^[0-9a-f]{40}\\.jpg$");
+        return ONLY.match(name).hasMatch();
+    }
 
     void answer(QJSValue& callback, const QString& error, const QString& url) {
         if (callback.isCallable()) {
@@ -382,8 +389,7 @@ QVariantMap AvatarThumbnails::autoPictures() const {
     for (auto it = index.cbegin(); it != index.cend(); ++it) {
         const QVariantMap entry = it.value().toMap();
         const QString name = entry.value("file").toString();
-        // a name this wrote: <hash>.jpg, nothing with a folder in it
-        if (name.isEmpty() || name.contains('/') || name.contains('\\') || !name.endsWith(".jpg")) {
+        if (!isAutoPictureName(name)) {
             continue;
         }
         // the time it was taken in the address, so a new picture of the same avatar isn't the old one cached
@@ -486,7 +492,7 @@ void AvatarThumbnails::keepAutoPicture(const QString& url, const QByteArray& jpe
             }
         }
         const QString oldName = _autoIndex.value(oldest).toMap().value("file").toString();
-        if (!oldName.isEmpty() && !oldName.contains('/') && !oldName.contains('\\')) {
+        if (isAutoPictureName(oldName)) {
             folder.remove(oldName);
         }
         _autoIndex.remove(oldest);
