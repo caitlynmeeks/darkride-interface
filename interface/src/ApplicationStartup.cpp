@@ -20,6 +20,7 @@
 #include <shared/NsightHelpers.h>
 #include <QtGui/QWindow>
 #include <gl/OffscreenGLCanvas.h>
+#include <gpu/Texture.h>
 #include "ApplicationServices.h"
 #include "ApplicationConstants.h"
 #include "ClientOptions.h"
@@ -656,6 +657,9 @@ void Application::connectServices() {
                 }
             }
         }
+        // entry 33: the texture engine's loading boost (allocate and upload in turns, larger budgets) runs while the
+        // loading screen is up and stops the frame the world is presented; the engine's normal rule and caps are back
+        gpu::Texture::setTransferBoost(!physicsEnabled);
     });
     connect(&domainHandler, &DomainHandler::connectedToDomain, &_display, &Display::updateWindowTitle);
     connect(&domainHandler, &DomainHandler::connectedToDomain, this, [] { StartupProfiler::instant("connected to a domain"); });

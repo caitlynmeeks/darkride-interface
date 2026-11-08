@@ -21,6 +21,9 @@
 #define THREADED_TEXTURE_BUFFERING 1
 
 static const size_t DEFAULT_ALLOWED_TEXTURE_MEMORY = MB_TO_BYTES(DEFAULT_ALLOWED_TEXTURE_MEMORY_MB);
+// the loading boost (gpu::Texture::getTransferBoost, entry 33): the per-frame allocation and upload budgets times this
+// while the loading screen is up; the GPU and the present thread have nothing else to show then
+static const size_t TRANSFER_BOOST_FACTOR = 4;
 
 namespace gpu { namespace gl {
 
@@ -229,7 +232,12 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     }
 
     auto newState = MemoryPressureState::Idle;
-    if (pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && (unallocated != 0 && canPromote)) {
+    if (Texture::getTransferBoost() && hasTransfers) {
+        // under the loading screen (entry 33): upload what is allocated before allocating more, so allocation and
+        // upload alternate frame by frame instead of every allocation coming first (item 53: the uploads waited ~2 s
+        // behind the shader warm-up's slow frames); in a presented world the order below is as before
+        newState = MemoryPressureState::Transfer;
+    } else if (pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && (unallocated != 0 && canPromote)) {
         newState = MemoryPressureState::Undersubscribed;
     } else if (hasTransfers) {
         newState = MemoryPressureState::Transfer;
@@ -320,8 +328,12 @@ void GLTextureTransferEngineDefault::processTransferQueues() {
 void GLTextureTransferEngineDefault::populateActiveBufferQueue() {
     size_t queuedBufferSize = _queuedBufferSize;
     static const auto& MAX_BUFFER_SIZE = GLVariableAllocationSupport::MAX_BUFFER_SIZE;
-    Q_ASSERT(queuedBufferSize <= MAX_BUFFER_SIZE);
-    size_t availableBufferSize = MAX_BUFFER_SIZE - queuedBufferSize;
+    // entry 33: the loading screen's budget; the queue may hold a boosted frame's worth when the boost ends, so the
+    // limit the asserts hold is the boosted one and the available size never underflows
+    static const size_t MAX_QUEUED_BUFFER_SIZE = MAX_BUFFER_SIZE * TRANSFER_BOOST_FACTOR;
+    const size_t frameBufferSize = MAX_BUFFER_SIZE * (Texture::getTransferBoost() ? TRANSFER_BOOST_FACTOR : 1);
+    Q_ASSERT(queuedBufferSize <= MAX_QUEUED_BUFFER_SIZE);
+    size_t availableBufferSize = queuedBufferSize < frameBufferSize ? frameBufferSize - queuedBufferSize : 0;
 
     // Queue up buffering jobs
     ActiveTransferQueue newBufferJobs;
@@ -357,10 +369,10 @@ void GLTextureTransferEngineDefault::populateActiveBufferQueue() {
             break;
         }
         availableBufferSize -= transferSize;
-        Q_ASSERT(availableBufferSize <= MAX_BUFFER_SIZE);
-        Q_ASSERT(newTransferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(availableBufferSize <= MAX_QUEUED_BUFFER_SIZE);
+        Q_ASSERT(newTransferSize <= MAX_QUEUED_BUFFER_SIZE);
         newTransferSize += transferSize;
-        Q_ASSERT(newTransferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(newTransferSize <= MAX_QUEUED_BUFFER_SIZE);
         newBufferJobs.emplace_back(texture, transferJob);
         textureTransferQueue.pop();
         ++itr;
@@ -369,9 +381,9 @@ void GLTextureTransferEngineDefault::populateActiveBufferQueue() {
     {
         Lock lock(_bufferMutex);
         _activeBufferQueue.splice(_activeBufferQueue.end(), newBufferJobs);
-        Q_ASSERT(_queuedBufferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(_queuedBufferSize <= MAX_QUEUED_BUFFER_SIZE);
         _queuedBufferSize += newTransferSize;
-        Q_ASSERT(_queuedBufferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(_queuedBufferSize <= MAX_QUEUED_BUFFER_SIZE);
     }
 }
 
@@ -426,6 +438,7 @@ void GLTextureTransferEngineDefault::processPromotes() {
     // FIXME use max allocated memory per frame instead of promotion count
     static const size_t MAX_ALLOCATED_BYTES_PER_FRAME = GLVariableAllocationSupport::MAX_BUFFER_SIZE;
     static const size_t MAX_ALLOCATIONS_PER_FRAME = 8;
+    const size_t boost = Texture::getTransferBoost() ? TRANSFER_BOOST_FACTOR : 1;   // entry 33: the loading screen's
     size_t allocatedBytes{ 0 };
     size_t allocations{ 0 };
 
@@ -449,10 +462,10 @@ void GLTextureTransferEngineDefault::processPromotes() {
             _promoteQueue.push({ texture, 1.0f / (float)gltexture->size() });
         }
         allocatedBytes += allocationDelta;
-        if (++allocations >= MAX_ALLOCATIONS_PER_FRAME) {
+        if (++allocations >= MAX_ALLOCATIONS_PER_FRAME * boost) {
             break;
         }
-        if (allocatedBytes >= MAX_ALLOCATED_BYTES_PER_FRAME) {
+        if (allocatedBytes >= MAX_ALLOCATED_BYTES_PER_FRAME * boost) {
             break;
         }
     }
