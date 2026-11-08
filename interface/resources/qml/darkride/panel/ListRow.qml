@@ -6,6 +6,8 @@
 //  don't fit side by side, the control goes under the label. A row with a number can be scrubbed: dragging its label
 //  sideways changes the number, as the build tools' labels do (editor/ui/PropertyEditors.cpp ScrubLabel: one step per
 //  pixel, Shift ten, Alt a tenth). An action row is a whole-row button: its label in blue, or red when it deletes.
+//  A large row is a card's headline (the avatar worn): its picture and title bigger (Theme.largeIconSize,
+//  Theme.headlineSize), the title wrapping rather than cut.
 //
 //  Copyright 2026 Darkride.
 //
@@ -23,9 +25,13 @@ Item {
     property string detail: ""
     property int detailFormat: Text.PlainText   // Text.StyledText for a detail with a link (Explore's "by <author>")
     signal linkActivated(string link)
+    property bool large: false
+    // the label wraps and the detail is cut to fit beside the controls, rather than the controls going under it
+    // (a large row always does; a list of things with long names does too)
+    property bool wrapLabel: large
     property url icon: ""          // a small picture left of the label (an avatar menu's control)
-    property real iconSize: 26 * Theme.unit
-    property real iconRadius: 0    // rounded (a thing's picture in a collection's list), or square as it comes
+    property real iconSize: large ? Theme.largeIconSize : 26 * Theme.unit
+    property real iconRadius: large ? Theme.cardRadius : 0   // rounded (a collection's picture), or square as it comes
     property string iconPlaceholder: ""
     // the control fills the room beside the label (a slider, a text field) rather than sitting at the right
     property bool fill: false
@@ -99,7 +105,7 @@ Item {
         }
         return Theme.cardPadding + indent;
     }
-    readonly property bool stacked: !action && width > 0 && contentRow.visibleChildrenWidth > 0
+    readonly property bool stacked: !action && !wrapLabel && width > 0 && contentRow.visibleChildrenWidth > 0
         && Math.max(labelWidth, labelColumn.implicitWidth) + Theme.gap + contentRow.visibleChildrenWidth
            > width - 2 * Theme.cardPadding - indent
 
@@ -176,7 +182,9 @@ Item {
         Row {
             id: labelColumn
             Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-            Layout.preferredWidth: row.labelWidth > 0 && !row.stacked ? row.labelWidth : implicitWidth
+            // a large row's title takes the room the controls leave, and wraps in it
+            Layout.fillWidth: row.wrapLabel
+            Layout.preferredWidth: row.wrapLabel ? 1 : row.labelWidth > 0 && !row.stacked ? row.labelWidth : implicitWidth
             visible: row.label !== ""
             spacing: 10 * Theme.unit
 
@@ -192,15 +200,22 @@ Item {
             }
 
             Column {
+                id: labelTexts
                 anchors.verticalCenter: parent.verticalCenter
+                width: row.wrapLabel ? Math.max(0, labelColumn.width - (pictureShown ? row.iconSize + labelColumn.spacing : 0))
+                                 : implicitWidth
+                readonly property bool pictureShown: row.icon.toString() !== "" || row.iconPlaceholder !== ""
 
                 Text {
                     id: labelText
+                    width: row.wrapLabel ? labelTexts.width : implicitWidth
                     text: row.label
                     textFormat: Text.PlainText
                     color: row.action ? (row.destructive ? Theme.destructive : Theme.tint) : Theme.text
                     opacity: row.enabled ? 1 : 0.4
-                    font.pixelSize: Theme.bodySize
+                    font.pixelSize: row.large ? Theme.headlineSize : Theme.bodySize
+                    font.bold: row.large
+                    wrapMode: row.wrapLabel ? Text.Wrap : Text.NoWrap
 
                     MouseArea {
                         id: scrubArea
@@ -246,6 +261,8 @@ Item {
 
                 Text {
                     visible: row.detail !== ""
+                    width: row.wrapLabel ? labelTexts.width : implicitWidth
+                    elide: row.wrapLabel ? Text.ElideRight : Text.ElideNone
                     text: row.detail
                     textFormat: row.detailFormat
                     color: Theme.secondaryText
@@ -264,7 +281,7 @@ Item {
 
         RowLayout {
             id: contentRow
-            Layout.fillWidth: true
+            Layout.fillWidth: !row.wrapLabel
             Layout.alignment: Qt.AlignVCenter
             spacing: 8 * Theme.unit
             visible: !row.action

@@ -52,7 +52,7 @@ Rectangle {
             roundBottom: false
             placeholder: tile.placeholder
             source: tile.picture
-            opacity: tile.dim ? 0.45 : 1
+            opacity: tile.dim ? Theme.dimmed : 1
 
             Rectangle {
                 visible: tile.badge !== ""

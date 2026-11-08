@@ -83,12 +83,8 @@ Column {
                     }
                 }
             }
-            Text {
-                text: "✓"   // ✓
-                color: Theme.tint
-                font.pixelSize: Theme.bodySize
-                font.bold: true
-                opacity: modelData.value === picker.current ? 1 : 0
+            Checkmark {
+                checked: modelData.value === picker.current
             }
         }
     }
