@@ -17,6 +17,14 @@
 //  files back to its path with the asset server's own upload rights, then reloaded for everyone as the Inspector's
 //  Reload does. A script on the web is read only.
 //
+//  New Script (Caity's walkthrough 11-08, 1.1.4; mary's words): "New" beside an empty Script or Server Script field in
+//  the Inspector, "New Script" in the panel's header for the one selected thing (an entity script). The panel opens a
+//  starter script, named for the thing ("Cube.js", "not saved yet"), and nothing is made until the first Save: then the
+//  text goes into the world's files at a free /scripts/ name and the field points at it, as ONE Build mode edit that
+//  Build's Undo takes back (the file stays in the world's files). A world opened from a file has no files, so New is
+//  off there, and nothing is written into the field instead (a written-in script over about 1 KB never reaches
+//  visitors).
+//
 //  It lives on the main thread and emits only there (the panel's QML connects to it, and on Qt 6 a QML connection to an
 //  object of another thread is fatal): everything from other threads reaches it queued, and MakeDock calls it on the
 //  main thread only.
@@ -55,13 +63,19 @@ class CodeEditor : public QObject, public Dependency {
 
     Q_PROPERTY(bool hasDocument READ hasDocument NOTIFY documentChanged)
     Q_PROPERTY(bool loading READ isLoading NOTIFY documentChanged)
-    Q_PROPERTY(QString fileName READ fileName NOTIFY documentChanged)
+    // the header's: they change with every document, and on a new script's first Save without the text changing
+    Q_PROPERTY(QString fileName READ fileName NOTIFY headerChanged)
     Q_PROPERTY(QString kind READ kind NOTIFY documentChanged)
-    Q_PROPERTY(QString where READ where NOTIFY documentChanged)
+    Q_PROPERTY(QString where READ where NOTIFY headerChanged)
     Q_PROPERTY(QString entityName READ entityName NOTIFY documentChanged)
     Q_PROPERTY(QString language READ language NOTIFY documentChanged)
     Q_PROPERTY(QString problem READ problem NOTIFY documentChanged)
-    Q_PROPERTY(bool hasLink READ hasLink NOTIFY documentChanged)
+    Q_PROPERTY(bool hasLink READ hasLink NOTIFY headerChanged)
+    // a new script not saved yet: nothing of it is in the world (the header says "not saved yet"; Save is on as it is)
+    Q_PROPERTY(bool isNew READ isNew NOTIFY headerChanged)
+    // the header's New Script: why it's off for Build mode's selection now ("" when it's on), and its tip when on
+    Q_PROPERTY(QString newScriptOff READ newScriptOff NOTIFY newScriptChanged)
+    Q_PROPERTY(QString newScriptTip READ newScriptTip NOTIFY newScriptChanged)
     Q_PROPERTY(bool canSave READ canSave NOTIFY rightsChanged)
     Q_PROPERTY(QString readOnlyReason READ readOnlyReason NOTIFY rightsChanged)
     Q_PROPERTY(bool saving READ isSaving NOTIFY savingChanged)
@@ -77,8 +91,8 @@ class CodeEditor : public QObject, public Dependency {
     Q_PROPERTY(QObject* nearby READ nearby CONSTANT)
     // the list on the left (Caity 11-07, mockups/code-panel-list): the open file's key (its row), its path for the
     // header's first line, what uses it and how far for its second, and how many things use it (a save changes them all)
-    Q_PROPERTY(QString openKey READ openKey NOTIFY documentChanged)
-    Q_PROPERTY(QString path READ path NOTIFY documentChanged)
+    Q_PROPERTY(QString openKey READ openKey NOTIFY headerChanged)
+    Q_PROPERTY(QString path READ path NOTIFY headerChanged)
     Q_PROPERTY(bool isShader READ isShader NOTIFY documentChanged)
     Q_PROPERTY(QString usedBy READ usedBy NOTIFY usedByChanged)
     Q_PROPERTY(int sharedBy READ sharedBy NOTIFY usedByChanged)
@@ -86,7 +100,7 @@ class CodeEditor : public QObject, public Dependency {
     Q_PROPERTY(QStringList draftKeys READ draftKeys NOTIFY draftsChanged)
     // changes with every document opened or cleared: an answer from the page about the text is kept as a draft only
     // while it's still the same document (the file key alone is the same for one atp: path in two worlds)
-    Q_PROPERTY(QString openStamp READ openStamp NOTIFY documentChanged)
+    Q_PROPERTY(QString openStamp READ openStamp NOTIFY headerChanged)
 
 public:
     CodeEditor();
@@ -99,6 +113,19 @@ public:
     // ("script" or "serverScripts") or shader ("fragmentShader" or "vertexShader", read only: its address read from the
     // entity itself, never given); answers false for an entity that isn't there or a script it doesn't have
     Q_INVOKABLE bool open(const QUuid& entityId, const QString& which);
+    // the Inspector's New beside an empty Script ("script") or Server Script ("serverScripts") field: the panel opens
+    // a starter script for that entity, made in the world's files at its first Save; false when it can't
+    // (whyNoNewScript says why). open() on an empty field comes here too (the Hierarchy's New Script)
+    Q_INVOKABLE bool openNew(const QUuid& entityId, const QString& which);
+    // the header's New Script: a new entity script for the one thing selected in Build mode
+    Q_INVOKABLE void newScript();
+    // why a new script can't be made for that entity's field now ("" when it can): the words the Inspector's New and
+    // the header's New Script show while they're off (mary 11-08)
+    static QString whyNoNewScript(const QUuid& entityId, const QString& which);
+    // a world opened from a file (serverless): it has no files to keep a script in
+    static bool isFileWorld();
+    QString newScriptOff() const { return _newScriptOff; }
+    QString newScriptTip() const { return _newScriptTip; }
 
     bool hasDocument() const { return !_entity.isNull(); }
     bool isLoading() const { return _loading; }
@@ -116,7 +143,8 @@ public:
     QString openStamp() const;
     int allDraftCount() const { return _drafts.size(); }   // every world's (for Test)
     QString problem() const { return _problem; }
-    bool hasLink() const { return _place == Place::WorldFiles || _place == Place::Web; }
+    bool hasLink() const { return !_isNew && (_place == Place::WorldFiles || _place == Place::Web); }
+    bool isNew() const { return _isNew; }
     bool canSave() const { return _canSave; }
     QString readOnlyReason() const { return _readOnlyReason; }
     bool isSaving() const { return _saving; }
@@ -194,6 +222,8 @@ public:
     QVariant testAnswerFor(int run) const { return _testAnswers.contains(run) ? QVariant(_testAnswers.value(run)) : QVariant(); }
     Q_INVOKABLE void testAnswer(int run, const QString& json) { _testAnswers.insert(run, json); }
     void testSave() { emit testRequest("save", QString(), 0); }
+    // the header's New Script pressed, through the panel's own press (which keeps unsaved typing first)
+    void testNewScript() { emit testRequest("newScript", QString(), 0); }
     // the panel open on Code near you alone, unfolded, no script (performance's ride row)
     void testShowNearby();
     // a row of the list clicked, through the panel's own click (which keeps unsaved typing first)
@@ -206,6 +236,8 @@ public:
 
 signals:
     void documentChanged();   // a new document, or the same one's text replaced (Undo of a save): the page shows text()
+    void headerChanged();     // with documentChanged, and alone when a new script's first Save names its file
+    void newScriptChanged();
     void rightsChanged();
     void savingChanged();
     void savedChanged();
@@ -234,6 +266,10 @@ private:
     void enterWorld();   // another world: its entities aren't this document's, so the document goes
     void finishLeaving();
     void fetchShader();
+    void updateNewScript();   // the header's New Script, for the selection now
+    void saveNew(const QString& text);
+    void pickFreePath(const QString& hash, const QString& text, int generation);
+    void pointAtNewFile(const QString& path, const QString& hash, const QString& text);
 
     enum class Place { None, WrittenIn, WorldFiles, Web };
 
@@ -253,6 +289,13 @@ private:
     QUuid _entity;
     QString _which;            // "script" or "serverScripts"
     QString _value;            // the entity's field as it was when opened or saved: the address, or the script itself
+    bool _isNew { false };     // a new script, not saved yet: _value is the empty field, _fileName the name it will get
+    QString _newBase;          // its name without ".js" ("Cube", "Cube server")
+    QString _madePath;         // its file once saved, and the text's hash there: an Undo then Save again reuses the
+    QString _madeHash;         //   file it made if nothing has changed it since (no "Cube 2.js" for the same script)
+    bool _pushingEdit { false };   // the first Save's Build mode edit going onto the stack
+    QString _newScriptOff;
+    QString _newScriptTip;
     QUrl _url;
     Place _place { Place::None };
     QString _fileName;

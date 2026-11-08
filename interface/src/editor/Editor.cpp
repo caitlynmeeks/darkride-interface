@@ -4409,7 +4409,9 @@ void Editor::showHierarchyMenu(const QPoint& globalPos) {
     menu.exec(globalPos);
 }
 
-// Edit Script and Edit Server Script: one selected entity's script in the Code panel (Make v1; Qt 6 only)
+// Edit Script and Edit Server Script: one selected entity's script in the Code panel (Make v1; Qt 6 only). A field
+// without a script says New Script instead (11-08, as the Inspector's New): a starter script, made in the world's
+// files at its first Save, off with why it can't be (mary's words)
 void Editor::addScriptActions(QMenu& menu) {
     if (!CodeEditor::isAvailable()) {
         return;
@@ -4417,13 +4419,46 @@ void Editor::addScriptActions(QMenu& menu) {
     const QList<QUuid> ids = _selection.ids();
     const bool one = ids.size() == 1;
     menu.addSeparator();
-    menu.addAction("Edit Script", this, [ids] {
-        DependencyManager::get<CodeEditor>()->open(ids.first(), "script");
-    })->setEnabled(one);
-    // a world's server scripts are its editors' only (Caity, 22:25 11-06), by the entity server's own rule
-    menu.addAction("Edit Server Script", this, [ids] {
-        DependencyManager::get<CodeEditor>()->open(ids.first(), "serverScripts");
-    })->setEnabled(one && entity_script_rights::mayChangeScriptsOf(EditorUndo::isLocked(ids.first())));
+    bool hasScript = true;
+    bool hasServerScript = true;
+    if (one) {
+        EntityPropertyFlags flags;
+        flags += PROP_SCRIPT;
+        flags += PROP_SERVER_SCRIPTS;
+        const auto properties = DependencyManager::get<EntityScriptingInterface>()->getEntityProperties(ids.first(), flags);
+        hasScript = !properties.getScript().trimmed().isEmpty();
+        hasServerScript = !properties.getServerScripts().trimmed().isEmpty();
+    }
+    bool tips = false;
+    auto addNew = [&](const QString& text, const QString& which) {
+        const QString why = CodeEditor::whyNoNewScript(ids.first(), which);
+        auto action = menu.addAction(text, this, [ids, which] {
+            DependencyManager::get<CodeEditor>()->openNew(ids.first(), which);
+        });
+        action->setEnabled(why.isEmpty());
+        if (!why.isEmpty()) {
+            action->setToolTip("<qt>" + why.toHtmlEscaped() + "</qt>");   // a thing's name is world text: plain
+            tips = true;
+        }
+    };
+    if (one && !hasScript) {
+        addNew("New Script", "script");
+    } else {
+        menu.addAction("Edit Script", this, [ids] {
+            DependencyManager::get<CodeEditor>()->open(ids.first(), "script");
+        })->setEnabled(one);
+    }
+    if (one && !hasServerScript) {
+        addNew("New Server Script", "serverScripts");
+    } else {
+        // a world's server scripts are its editors' only (Caity, 22:25 11-06), by the entity server's own rule
+        menu.addAction("Edit Server Script", this, [ids] {
+            DependencyManager::get<CodeEditor>()->open(ids.first(), "serverScripts");
+        })->setEnabled(one && entity_script_rights::mayChangeScriptsOf(EditorUndo::isLocked(ids.first())));
+    }
+    if (tips) {
+        menu.setToolTipsVisible(true);
+    }
 }
 
 void Editor::showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos) {

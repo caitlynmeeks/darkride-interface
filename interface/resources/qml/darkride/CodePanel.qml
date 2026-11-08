@@ -5,7 +5,8 @@
 //  Darkride's Code panel (Make v1, team/editor-ui/CODE-EDITOR-PLAN.md): on the left, Code near you, every script and
 //  shader within 50 m (Caity 11-07, team/editor-ui/mockups/code-panel-list); on the right, one file at a time in
 //  Monaco, the editor inside VS Code, under a two-line header (its path; its kind, running status and what uses it)
-//  with Save, Reload for everyone and •••. Shaders are read only. Opened from the list, the Inspector, the Hierarchy
+//  with New Script (11-08: a starter script for the one thing selected, made in the world's files at its first Save),
+//  Save, Reload for everyone and •••. Shaders are read only. Opened from the list, the Inspector, the Hierarchy
 //  and Make's cards, through CodeEditor (ui/CodeEditor.h), which only this panel's context has. Qt 6 only: Panels lists the panel on Qt 6 alone, as the page needs Qt 6's web
 //  engine, so this file uses Qt 6's versionless imports and has no Qt 5 twin.
 //
@@ -254,6 +255,8 @@ Rectangle {
         function onTestRequest(what, source, run) {
             if (what === "save") {
                 root.save();
+            } else if (what === "newScript") {
+                root.newScript();
             } else if (what === "list") {
                 root.listOpen = source === "open";
             } else if (what === "run" && loader.item && root.pageReady) {
@@ -323,6 +326,62 @@ Rectangle {
             });
         } else {
             CodeEditor.open(entity, which);
+        }
+    }
+
+    // the header's New Script (mary 11-08): a starter entity script for the one thing selected in Build mode; the typing
+    // in the open file is kept first, as moving to another file keeps it
+    function newScript() {
+        if (!hasEditor || CodeEditor.newScriptOff !== "") {
+            return;
+        }
+        draftTimer.stop();
+        if (root.dirty && root.pageReady) {
+            var stamp = CodeEditor.openStamp;
+            call("text", [], function (text) {
+                if (typeof text === "string" && stamp !== "" && CodeEditor.openStamp === stamp) {
+                    CodeEditor.setDraft(text, true);
+                }
+                CodeEditor.newScript();
+            });
+        } else {
+            CodeEditor.newScript();
+        }
+    }
+
+    // a header button whose tip shows while it's off too (mary 11-08: why New Script or Save can't be pressed; Qt
+    // Quick sends no hover to a disabled item, so the tip is this wrapper's). The tip is plain text: it can hold a
+    // thing's name, which is world text
+    component HeaderButton: Item {
+        id: holder
+        property string text: ""
+        property string tip: ""
+        property bool isOn: true
+        signal pressed()
+        implicitWidth: inner.implicitWidth
+        implicitHeight: inner.implicitHeight
+        BuildButton {
+            id: inner
+            anchors.fill: parent
+            text: holder.text
+            enabled: holder.isOn
+            onPressed: holder.pressed()
+        }
+        HoverHandler {
+            id: hover
+        }
+        ToolTip {
+            id: holderTip
+            visible: hover.hovered && holder.tip !== ""
+            delay: 600
+            text: holder.tip
+            contentItem: Text {
+                text: holderTip.text
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                font: holderTip.font
+                color: holderTip.palette.toolTipText
+            }
         }
     }
 
@@ -621,15 +680,33 @@ Rectangle {
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
-                Text {
+                Item {
                     width: parent.width
-                    text: !root.hasEditor || !CodeEditor.hasDocument ? "No script open"
-                        : CodeEditor.path !== "" ? CodeEditor.path : CodeEditor.fileName
-                    textFormat: Text.PlainText
-                    elide: Text.ElideMiddle
-                    color: root.hasEditor && CodeEditor.hasDocument ? "#e8e8e8" : root.mutedColor
-                    font.pixelSize: 13
-                    font.bold: root.hasEditor && CodeEditor.hasDocument
+                    height: titleText.implicitHeight
+                    readonly property bool isNew: root.hasEditor && CodeEditor.hasDocument && CodeEditor.isNew
+                    Text {
+                        id: titleText
+                        width: Math.min(implicitWidth, parent.width - (notSaved.visible ? notSaved.implicitWidth + 7 : 0))
+                        text: !root.hasEditor || !CodeEditor.hasDocument ? "No script open"
+                            : CodeEditor.path !== "" ? CodeEditor.path : CodeEditor.fileName
+                        textFormat: Text.PlainText
+                        elide: Text.ElideMiddle
+                        color: root.hasEditor && CodeEditor.hasDocument ? "#e8e8e8" : root.mutedColor
+                        font.pixelSize: 13
+                        font.bold: root.hasEditor && CodeEditor.hasDocument
+                    }
+                    // a new script: nothing of it is in the world until the first Save (mary 11-08)
+                    Text {
+                        id: notSaved
+                        anchors.left: titleText.right
+                        anchors.leftMargin: 7
+                        anchors.baseline: titleText.baseline
+                        visible: parent.isNew
+                        text: "not saved yet"
+                        textFormat: Text.PlainText
+                        color: root.mutedColor
+                        font.pixelSize: 12
+                    }
                 }
                 // the kind, where it lives (written in, on the web), whether it's running, Edited, then what uses it
                 // and how far: cut short first, the list has it in full
@@ -717,18 +794,34 @@ Rectangle {
                     tip: "Claude's change side by side: back to the script itself"
                     onPressed: CodeEditor.closeChange()
                 }
-                BuildButton {
+                // two groups (mary 11-08): make a new one | this file
+                HeaderButton {
+                    text: "New Script"
+                    isOn: root.hasEditor && CodeEditor.newScriptOff === ""
+                    tip: !root.hasEditor ? "" : CodeEditor.newScriptOff !== "" ? CodeEditor.newScriptOff : CodeEditor.newScriptTip
+                    onPressed: root.newScript()
+                }
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 1
+                    height: 17
+                    color: BuildTheme.edge   // the Build toolbar's separator
+                }
+                // a new script's Save is on as it is: its first Save makes it
+                HeaderButton {
                     text: root.hasEditor && CodeEditor.saving ? "Saving…" : "Save"
                     visible: !root.hasEditor || CodeEditor.where !== "On the web, read only"
-                    enabled: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave &&
-                        root.dirty && !CodeEditor.saving && !CodeEditor.claudeWriting
+                    isOn: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave &&
+                        (root.dirty || CodeEditor.isNew) && !CodeEditor.saving && !CodeEditor.claudeWriting
                     tip: root.hasEditor && CodeEditor.hasDocument && !CodeEditor.canSave ? CodeEditor.readOnlyReason : "Save (⌘S)"
                     onPressed: root.save()
                 }
-                BuildButton {
+                HeaderButton {
                     text: "Reload"
-                    enabled: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave
-                    tip: "Load it again for everyone in the world"
+                    isOn: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave &&
+                        !CodeEditor.isNew
+                    tip: root.hasEditor && CodeEditor.isNew ? "Not in the world yet: Save makes it"
+                        : "Load it again for everyone in the world"
                     onPressed: CodeEditor.reloadForEveryone()
                 }
                 BuildButton {
@@ -769,8 +862,8 @@ Rectangle {
                 text: !root.hasEditor ? ""
                     : CodeEditor.hasDocument && CodeEditor.loading ? "Loading…"
                     : problem ? CodeEditor.problem
-                    : root.listOpen ? "Click a script or shader on the left, or Edit beside Script in the Inspector."
-                    : "Show the code near you with the button at the top left, or Edit beside Script in the Inspector."
+                    : root.listOpen ? "Click a script or shader on the left, Edit beside Script in the Inspector, or New Script for the thing selected."
+                    : "Show the code near you with the button at the top left, Edit beside Script in the Inspector, or New Script for the thing selected."
                 textFormat: Text.PlainText
                 color: "#7a7a7a"
                 font.pixelSize: 12
