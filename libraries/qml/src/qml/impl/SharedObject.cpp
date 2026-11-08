@@ -322,6 +322,20 @@ void SharedObject::setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& 
     Q_UNUSED(fbo);
     _quickWindow->setRenderTarget(QQuickRenderTarget::fromOpenGLTexture(texture, size));
 }
+
+// Qt 6 draws the scene at the pixel ratio of the surface's render window (the proxy window; the desktop's is the main
+// window, so 1.25 at Windows' 125 % and 2 on a Retina screen) and shows the target's pixels / that ratio of the scene.
+// A target sized in the surface's own units showed only the scene's top-left part, enlarged by the ratio, while
+// clicks are read in the surface's units: the sign-in page and the loading screen drawn off-centre, their buttons
+// dead. (Qt 5 fitted the whole scene to the target.) So the target is the surface's size times the ratio Qt takes:
+// the render window's, read on the render thread as Qt reads it for the same frame. Without a render window Qt takes
+// the target's own ratio, left at 1
+QSize SharedObject::getPixelSize() const {
+    const QSize size = getSize();
+    QWindow* renderWindow = QQuickRenderControl::renderWindowFor(_quickWindow);
+    const qreal ratio = renderWindow ? renderWindow->devicePixelRatio() : 1.0;
+    return ratio == 1.0 ? size : size * ratio;
+}
 #else
 void SharedObject::setRenderTarget(uint32_t fbo, const QSize& size) {
     _quickWindow->setRenderTarget(fbo, size);
