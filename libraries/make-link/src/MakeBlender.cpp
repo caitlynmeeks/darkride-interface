@@ -402,6 +402,7 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
 
     _limit = new QTimer(this);
     _limit->setSingleShot(true);
+    _limit->setTimerType(Qt::PreciseTimer);   // the limit means what it says (a coarse timer may fire 5% early)
     connect(_limit, &QTimer::timeout, this, [this] {
         _stopCode = MakeError::TIMEOUT;
         _stopReason = QString("Blender ran past its %1 s limit and was stopped: make it simpler or faster")

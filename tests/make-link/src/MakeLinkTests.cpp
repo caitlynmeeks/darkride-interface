@@ -17,23 +17,38 @@
 #include <QtTest/QSignalSpy>
 #include <QtNetwork/QLocalSocket>
 
-#include <sys/stat.h>
-
 #include <MakeClaude.h>
 #include <MakeLinkServer.h>
 #include <MakePeer.h>
 #include <MakeText.h>
 #include <MakeToolList.h>
 
-#include <unistd.h>
+#ifndef Q_OS_WIN
+#include <sys/stat.h>
+#endif
 
 QTEST_MAIN(MakeLinkTests)
 
 namespace {
 
-// a short folder for the socket (a socket's path has a length limit): under /tmp, this test's own
+// this test's own folder, short (a socket's path has a length limit): under /tmp; on Windows the link is a named pipe,
+// so the usual temporary folder does for the files
+QString shortFolderTemplate() {
+#ifdef Q_OS_WIN
+    return QDir::tempPath() + "/mlt-XXXXXX";
+#else
+    return QStringLiteral("/tmp/mlt-XXXXXX");
+#endif
+}
+
+// what the server listens on: a folder of this test's own for the socket; on Windows a pipe name of Make's
 QString socketFolder(QTemporaryDir& dir) {
+#ifdef Q_OS_WIN
+    Q_UNUSED(dir);
+    return MakeLinkServer::newPipeName();
+#else
     return dir.path() + "/link";
+#endif
 }
 
 QJsonObject request(int id, const QString& method, const QJsonObject& params = QJsonObject()) {
@@ -296,7 +311,10 @@ void MakeLinkTests::testWorldContentKeptShortAndLabelled() {
 }
 
 void MakeLinkTests::testSocketIsPrivate() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+#ifdef Q_OS_WIN
+    QSKIP("the link is a named pipe on Windows, with a security descriptor instead of a mode");
+#else
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     QString error;
     QVERIFY2(server.listen(socketFolder(dir), error), qPrintable(error));
@@ -313,10 +331,11 @@ void MakeLinkTests::testSocketIsPrivate() {
     QVERIFY(file.open(QIODevice::WriteOnly));
     file.close();
     QVERIFY(!server.listen(dir.path() + "/notafolder", error));
+#endif
 }
 
 void MakeLinkTests::testInitializeAndList() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     server.setInstructions("Build with Darkride's tools.");
     server.setHandler("scene", [](const QJsonObject&, const MakeLinkServer::Reply& reply) { reply({}); });
@@ -361,7 +380,7 @@ void MakeLinkTests::testInitializeAndList() {
 }
 
 void MakeLinkTests::testCallRunsCheckedInputsOnly() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     int runs = 0;
     server.setHandler("get", [&runs](const QJsonObject& inputs, const MakeLinkServer::Reply& reply) {
@@ -396,7 +415,7 @@ void MakeLinkTests::testCallRunsCheckedInputsOnly() {
 }
 
 void MakeLinkTests::testGateCanRefuse() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     int runs = 0;
     QString gated;
@@ -428,7 +447,7 @@ void MakeLinkTests::testGateCanRefuse() {
 }
 
 void MakeLinkTests::testStopAnswersRunningCalls() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     MakeLinkServer::Reply held;
     server.setHandler("watch", [&held](const QJsonObject&, const MakeLinkServer::Reply& reply) { held = reply; });
@@ -458,7 +477,7 @@ void MakeLinkTests::testStopAnswersRunningCalls() {
 }
 
 void MakeLinkTests::testTimeLimit() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     server.setHandler("picture", [](const QJsonObject&, const MakeLinkServer::Reply&) {});  // never answers
     server.setTimeLimit("picture", 150);
@@ -475,7 +494,7 @@ void MakeLinkTests::testTimeLimit() {
 }
 
 void MakeLinkTests::testSecondClientRefused() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     server.setHandler("guide", [](const QJsonObject&, const MakeLinkServer::Reply& reply) { reply({}); });
     QString error;
@@ -502,7 +521,7 @@ void MakeLinkTests::testHelperCarriesMcp() {
 #ifndef DARKRIDE_MCP_PATH
     QSKIP("the darkride-mcp helper isn't built with these tests");
 #else
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     server.setHandler("guide", [](const QJsonObject&, const MakeLinkServer::Reply& reply) {
         MakeLinkServer::Result result;
@@ -539,8 +558,10 @@ void MakeLinkTests::testHelperCarriesMcp() {
 void MakeLinkTests::testHelperRefusesAnOpenSocket() {
 #ifndef DARKRIDE_MCP_PATH
     QSKIP("the darkride-mcp helper isn't built with these tests");
+#elif defined(Q_OS_WIN)
+    QSKIP("the link is a named pipe on Windows: the helper checks the app's user, not a folder's mode");
 #else
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     QString error;
     QVERIFY(server.listen(socketFolder(dir), error));
@@ -645,7 +666,7 @@ QJsonObject nextMessage(Client& client, int waitMs = 2000) {
 }  // namespace
 
 void MakeLinkTests::testChannelCapabilityAndEvents() {
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     server.setInstructions("Build with Darkride's tools.");
     QString error;
@@ -958,7 +979,7 @@ void MakeLinkTests::testPeerLineJudgement() {
 void MakeLinkTests::testPeerOfThisProcess() {
     // a client from this very process: the server learns its pid from the socket (macOS and Linux); its parents
     // (the test runner, a shell) aren't a claude, so the line is unknown, never a refusal
-    QTemporaryDir dir("/tmp/mlt-XXXXXX");
+    QTemporaryDir dir(shortFolderTemplate());
     MakeLinkServer server;
     QString error;
     QVERIFY(server.listen(socketFolder(dir), error));
@@ -967,11 +988,7 @@ void MakeLinkTests::testPeerOfThisProcess() {
     wait(50);
     QVERIFY(server.isConnected());
     const MakePeer::Line peer = server.peer();
-#ifdef Q_OS_WIN
-    QCOMPARE(peer.peerPid, qint64(0));
-#else
-    QCOMPARE(peer.peerPid, qint64(getpid()));
-#endif
+    QCOMPARE(peer.peerPid, QCoreApplication::applicationPid());
     bool joinedOption = false;   // the joined forms count as Make's line too (security 21:48 11-07)
     for (const QString& argument : peer.arguments) {
         joinedOption = joinedOption || argument.startsWith("--mcp-config=") ||
@@ -982,8 +999,8 @@ void MakeLinkTests::testPeerOfThisProcess() {
     const MakePeer::Judgement judged = MakePeer::judge(peer, "/x/.darkride-mcp.json", "/x/settings.json");
     QVERIFY(judged.verdict == MakePeer::Verdict::Unknown || judged.verdict == MakePeer::Verdict::Mismatch);
     // the walk itself, from this process: a parent exists and is read (the runner), within the hop limit
-    const MakePeer::Line walked = MakePeer::readFrom(getpid(), 1);
-    QCOMPARE(walked.peerPid, qint64(getpid()));
+    const MakePeer::Line walked = MakePeer::readFrom(QCoreApplication::applicationPid(), 1);
+    QCOMPARE(walked.peerPid, QCoreApplication::applicationPid());
     QVERIFY(walked.hops <= 1);
 }
 

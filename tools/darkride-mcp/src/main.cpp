@@ -249,7 +249,8 @@ bool peerIsThisUser(int fd) {
 #if defined(__linux__)
     struct ucred credentials;
     socklen_t length = sizeof credentials;
-    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) == 0 && credentials.uid == getuid();
+    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &length) == 0 &&
+           length == sizeof credentials && credentials.uid == getuid();
 #else
     uid_t uid = 0;
     gid_t gid = 0;
