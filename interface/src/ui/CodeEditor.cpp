@@ -639,8 +639,8 @@ void CodeEditor::updateNewScript() {
             QString typeName;
             bool locked = false;
             readForNew(ids.first(), SCRIPT, value, name, typeName, locked);
-            tip = name.simplified().isEmpty() ? QStringLiteral("Start a new script for this thing")
-                                              : "Start a new script for " + thingName(name);
+            tip = name.simplified().isEmpty() ? QStringLiteral("Starts a new script for the selected thing")
+                                              : "Starts a new script for " + thingName(name);
         }
     }
     if (off != _newScriptOff || tip != _newScriptTip) {
@@ -919,6 +919,20 @@ void CodeEditor::saveToWorldFiles(const QString& text) {
 // a new script's first Save (New Script, 11-08): the text into the world's files, then a free name under /scripts/
 // for it, then the field pointed at it as ONE Build mode edit (Build's Undo takes the field back; the file stays)
 void CodeEditor::saveNew(const QString& text) {
+    // the file's name is fixed at the first Save, from the thing's name now (scripting's rule): a rename since New counts
+    QString value;
+    QString name;
+    QString typeName;
+    bool locked = false;
+    if (readForNew(_entity, _which, value, name, typeName, locked)) {
+        _entityName = name;
+        _newBase = newScriptBase(name, typeName, _which == SERVER_SCRIPTS);
+        const QString fileName = _newBase + ".js";
+        if (fileName != _fileName && _madePath.isEmpty()) {
+            _fileName = fileName;
+            emit headerChanged();
+        }
+    }
     setSaving(true);
     setNote("Saving…", false);
     const int generation = _generation;
@@ -980,7 +994,8 @@ void CodeEditor::pickFreePath(const QString& hash, const QString& text, int gene
         }
         if (path.isEmpty()) {
             setSaving(false);
-            setNote("Couldn't save: no free name for it in the world's files.", true);
+            setNote("Couldn't save: the world's files have no free name for it. Rename " + thingName(_entityName) +
+                " and save again.", true);
             return;
         }
         auto set = DependencyManager::get<AssetClient>()->createSetMappingRequest(path, hash);
@@ -1011,13 +1026,13 @@ void CodeEditor::pointAtNewFile(const QString& path, const QString& hash, const 
     QString typeName;
     bool locked = false;
     if (!readForNew(_entity, _which, value, name, typeName, locked)) {
-        setNote("Saved in the world's files as " + path + ", but this thing isn't in the world any more.", true);
+        setNote("Saved as " + path + ", but " + thingName(_entityName) + " isn't in the world any more.", true);
         return;
     }
     if (!value.trimmed().isEmpty()) {
         // someone gave it a script meanwhile: never written over
-        setNote("Saved in the world's files as " + path + ", but " + thingName(name) +
-            " got a script meanwhile, so this one wasn't added.", true);
+        setNote("Saved as " + path + ", but " + thingName(name) + " got another script meanwhile, so this one wasn't "
+            "added to it.", true);
         return;
     }
     const QString address = "atp:" + path;
@@ -1327,7 +1342,7 @@ void CodeEditor::refreshAfterUndo() {
             _isNew = true;
             _value = value;
             _url = QUrl();
-            _fileName = _newBase + ".js";
+            _fileName = QUrl("atp:" + _madePath).fileName();   // the file Save uses again, if nothing changed it
             _savedText.clear();
             _status.clear();
             _statusState.clear();

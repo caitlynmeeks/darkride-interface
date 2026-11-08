@@ -820,7 +820,7 @@ Rectangle {
                     text: "Reload"
                     isOn: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave &&
                         !CodeEditor.isNew
-                    tip: root.hasEditor && CodeEditor.isNew ? "Not in the world yet: Save makes it"
+                    tip: root.hasEditor && CodeEditor.isNew ? "Not in the world yet. Save adds it."
                         : "Load it again for everyone in the world"
                     onPressed: CodeEditor.reloadForEveryone()
                 }
@@ -862,8 +862,8 @@ Rectangle {
                 text: !root.hasEditor ? ""
                     : CodeEditor.hasDocument && CodeEditor.loading ? "Loading…"
                     : problem ? CodeEditor.problem
-                    : root.listOpen ? "Click a script or shader on the left, Edit beside Script in the Inspector, or New Script for the thing selected."
-                    : "Show the code near you with the button at the top left, Edit beside Script in the Inspector, or New Script for the thing selected."
+                    : root.listOpen ? "Click a script or shader on the left, or select a thing and press New Script."
+                    : "Show the code near you with the button at the top left, or select a thing and press New Script."
                 textFormat: Text.PlainText
                 color: "#7a7a7a"
                 font.pixelSize: 12
