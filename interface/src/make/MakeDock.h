@@ -131,6 +131,8 @@ class MakeDock : public QObject, public Dependency {
     Q_PROPERTY(double costSoFar READ costSoFar NOTIFY workingChanged)
     Q_PROPERTY(QObject* timeline READ timeline CONSTANT)
     Q_PROPERTY(QObject* made READ made CONSTANT)
+    // the more menu (•••) is showing: its button is drawn lit, as the Build toolbar's tools while their menu is open
+    Q_PROPERTY(bool moreMenuOpen READ moreMenuOpen NOTIFY moreMenuChanged)
 
 public:
     MakeDock();
@@ -168,6 +170,7 @@ public:
     QString claudeVersion() const;
     bool sentWaiting() const { return _sentWaiting; }
     bool notGotIt() const { return _notGotIt; }
+    bool moreMenuOpen() const { return _moreMenuOpen; }
 
     // ---- the dock's calls (contract). "Real input" ones answer false when refused. ----
 
@@ -242,6 +245,7 @@ signals:
     void setupTextChanged();
     void workingChanged();
     void channelChanged();
+    void moreMenuChanged();
     /// a question was asked, answered or timed out
     void questionsChanged();
     /// a request came to its end by itself: finished (true) or couldn't finish (false); never after the person's Stop
@@ -305,7 +309,10 @@ private:
     QElapsedTimer _sinceFoundRead;  // the last re-read of what's on this computer on show or activation
     QList<QUrl> _droppedUrls;
     QPointer<QFileDialog> _chooser;
-    QTimer _terminalQuiet;          // the Terminal route: a request is over after 45 s with no activity
+    // the Terminal route: a request is over after 45 s with no activity, or 5 s after Claude's reply with none (Make
+    // can't see Claude's turn end there; an activity after the reply waits 45 s again)
+    QTimer _terminalQuiet;
+    bool _moreMenuOpen { false };
     // the channel: a message sent and not yet taken up by Claude (from the link's "sent to Claude" to the request's
     // next activity or reply); the first message of a Connect not taken up in 30 s (not got: org policy, no flag)
     bool _sentWaiting { false };

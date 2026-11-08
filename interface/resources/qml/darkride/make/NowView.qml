@@ -330,7 +330,9 @@ Item {
                 }
             }
 
-            // Claude's words, on the left; selectable to copy
+            // Claude's words, on the left; selectable to copy. The box is at most 90% of the timeline and the text wraps
+            // at the box's width less its 12 px sides, one number (mary's MAKE-POLISH.png: it wrapped at the row's
+            // width before, past the box's edge)
             Component {
                 id: replyBubble
                 Item {
@@ -345,7 +347,7 @@ Item {
                             id: replyText
                             x: 12
                             y: 9
-                            width: Math.min(implicitWidth, row.width * 0.9 - 24)
+                            width: replyBack.width - 24
                             text: row.model.text || ""
                             textFormat: TextEdit.PlainText
                             readOnly: true
@@ -361,7 +363,8 @@ Item {
                 }
             }
 
-            // a step: a tick when done; the newest step of the running request turns while Claude works
+            // a step: a tick when done; the newest step of the running request turns while Claude works, until Claude's
+            // reply comes after it ("sent to Claude" is done once Claude answers)
             Component {
                 id: activityLine
                 RowLayout {
@@ -369,6 +372,7 @@ Item {
                     readonly property bool current: !!row.info && !row.info.done && !!view.dock && view.dock.working
                         && row.request === requests.newestRequest
                         && row.info.activities[row.info.activities.length - 1] === row.index
+                        && !(row.info.lastReply > row.index)
                     spacing: 8
                     Item {
                         Layout.alignment: Qt.AlignTop

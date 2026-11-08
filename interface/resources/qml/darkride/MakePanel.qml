@@ -104,7 +104,9 @@ Rectangle {
                 Text {
                     id: status
                     Layout.fillWidth: true
-                    text: root.refusedLine ? root.dock.reason
+                    // a refused line: "Not connected" here, its reason in full in the band under the header (mary
+                    // 23:47 11-07: the reason was cut off here)
+                    text: root.refusedLine ? "Not connected"
                         : root.linkState === "connected" && root.dock && root.dock.sentWaiting ? "Sent, waiting for Claude"
                         : root.linkState === "connected" ? "Connected"
                         : root.linkState === "starting" ? "Starting your Claude…"
@@ -125,12 +127,16 @@ Rectangle {
                     checked: root.tab === "made"
                     onToggled: root.tab = "made"
                 }
-                MakeButton {
+                // a header tool beside Now and Made, as Exit Build Mode beside Grid: no fill at rest, lit while its menu
+                // is open (mary's MAKE-POLISH.png)
+                BuildToggle {
                     id: moreButton
                     text: "•••"
-                    tip: "More"
+                    checked: !!root.dock && root.dock.moreMenuOpen === true
                     Accessible.name: "More"
-                    onClicked: {
+                    Accessible.role: Accessible.ButtonMenu
+                    Accessible.checkable: false
+                    onToggled: {
                         if (root.dock && root.dock.showMoreMenu !== undefined) {
                             var at = moreButton.mapToGlobal(moreButton.width, moreButton.height + 2);
                             root.dock.showMoreMenu(at.x, at.y);
@@ -141,10 +147,12 @@ Rectangle {
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: BuildTheme.edge }
         }
 
-        // what the chat needs, under the header: one line and its way on (plain words; security's and docs' paths)
+        // what the chat needs, under the header: one line and its way on (plain words; security's and docs' paths); a
+        // refused line's reason, word for word, wrapped, no button (MakePeer::REFUSED_WORDS: copying Make's line again is
+        // the way on)
         Rectangle {
             Layout.fillWidth: true
-            visible: root.notGotIt || root.plainClaude || root.oldClaude
+            visible: root.refusedLine || root.notGotIt || root.plainClaude || root.oldClaude
             implicitHeight: notice.implicitHeight + 16
             color: BuildTheme.panel
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: BuildTheme.edge }
@@ -156,19 +164,20 @@ Rectangle {
                 spacing: 6
                 Text {
                     Layout.fillWidth: true
-                    text: root.notGotIt
+                    text: root.refusedLine ? root.dock.reason
+                        : root.notGotIt
                         ? "Claude didn't get your message. Your Claude account may not allow chat here."
                         : root.plainClaude
                         ? "This Claude was started without the chat. Type in Terminal, or start it with Make's line again."
                         : "Update Claude Code: in Terminal, claude update"
                     textFormat: Text.PlainText
-                    color: root.notGotIt || root.plainClaude ? BuildTheme.text : BuildTheme.mutedText
+                    color: root.refusedLine || root.notGotIt || root.plainClaude ? BuildTheme.text : BuildTheme.mutedText
                     font.pixelSize: BuildTheme.textSize
                     wrapMode: Text.WordWrap
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    visible: root.notGotIt || root.plainClaude
+                    visible: !root.refusedLine && (root.notGotIt || root.plainClaude)
                     spacing: 6
                     Item { Layout.fillWidth: true }
                     MakeButton {
