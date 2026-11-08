@@ -61,6 +61,9 @@ namespace {
 const int MAX_SOCKET_PATH = 100;  // a socket's path holds 104 bytes on macOS
 // the Terminal route: Claude's next call after this long is the person's next request
 const int NEW_REQUEST_AFTER_MS = 45 * 1000;
+// a request the dock's Send started stays open for Claude's calls until that Send is answered (the reply tool with its
+// msg_id, or the key route's turn ending); only a silence this long while it's open starts a new one (Claude gone quiet)
+const int OPEN_SEND_GAP_MS = 10 * 60 * 1000;
 // one request removes this many things before the person is asked
 const int REMOVES_BEFORE_ASKING = 5;
 // Claude Code's project folder, inside the Make folder: only the app's two files in it
@@ -234,7 +237,12 @@ MakeLink::MakeLink() {
         setState(connected ? State::Connected : State::Listening);
     });
     connect(&_server, &MakeLinkServer::callStarted, this, [this](int, const QString& tool, const QJsonObject& inputs) {
-        if (_sinceCall.isValid() && _sinceCall.elapsed() > NEW_REQUEST_AFTER_MS) {
+        // a pause between Claude's calls means the person asked again in Terminal (a new request), except while a Send
+        // of the dock's is unanswered: its calls are its own however long Claude thought first (phase F, 11-08: the
+        // first call after a Send came over 45 s after the previous one and was filed under a new number, so the
+        // Send's Undo missed everything made for it)
+        const int gap = _openSendRequest == _request ? OPEN_SEND_GAP_MS : NEW_REQUEST_AFTER_MS;
+        if (_sinceCall.isValid() && _sinceCall.elapsed() > gap) {
             newRequest();
         }
         _sinceCall.restart();
@@ -254,6 +262,9 @@ MakeLink::MakeLink() {
         setModel(model);
     });
     connect(&_claude, &MakeClaude::turnEnded, this, [this](double total, bool, const QString&, const QString& subtype) {
+        if (_claudeRequest == _openSendRequest) {
+            sendAnswered();   // the key route's turn is over: its Send is answered
+        }
         _claudeTotal = total;
         emit requestCost(_claudeRequest, std::max(0.0, total - _costAtRequestStart));
         // the run's cap: every later message in this run would be refused at once, so the run ends here and the
@@ -739,6 +750,7 @@ int MakeLink::send(const QString& text, const QStringList& pictureIds) {
             images.append({ path.endsWith(".png") ? QString("image/png") : QString("image/jpeg"), picture.readAll() });
         }
         const int request = newRequest();
+        sendStarted(request);
         _claudeRequest = request;
         _costAtRequestStart = _claudeTotal;
         _claude.send(text, images);
@@ -750,6 +762,7 @@ int MakeLink::send(const QString& text, const QStringList& pictureIds) {
         return 0;
     }
     const int request = newRequest();
+    sendStarted(request);
     QStringList numbers;
     for (const QString& id : pictureIds) {
         if (numbers.size() >= MAX_PICTURES_SENT || pictureFile(_folder, id).isEmpty() || _nextPictureNumber > 999) {
@@ -779,6 +792,16 @@ void MakeLink::stop() {
     }
     _asks.clear();
     emit activity(_request, "stopped");
+}
+
+void MakeLink::sendStarted(int request) {
+    _openSendRequest = request;
+    _sinceCall.restart();
+}
+
+void MakeLink::sendAnswered() {
+    _openSendRequest = 0;
+    _sinceCall.restart();
 }
 
 int MakeLink::newRequest() {
@@ -1017,6 +1040,9 @@ void MakeLink::setHandlers() {
             if (given >= 1 && given <= _request) {
                 request = given;
             }
+        }
+        if (request == _openSendRequest) {
+            sendAnswered();   // the chat route's Send is answered; a late call within the usual pause still counts for it
         }
         emit this->reply(request, inputs.value("text").toString());
         MakeLinkServer::Result result;
