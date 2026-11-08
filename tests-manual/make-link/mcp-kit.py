@@ -20,7 +20,8 @@
 #  whether the client is signed in with --signed-in yes|no (default no); Make's scene must agree.
 #    python3 -I mcp-kit.py <the test client's Make folder> [<folder for the made model's views>] [--world-files yes|no]
 #        [--signed-in yes|no]
-#  (the MCP line is in the Make folder's claude-code/, where Connect writes it)
+#  (the MCP line is in the Make folder's claude-code/, where Connect writes it). The kit then runs again as a process
+#  whose arguments are Make's plain line, as Make lets in only that (its options pass through the environment).
 #
 #  Copyright 2026 Darkride.
 #
@@ -29,7 +30,11 @@
 
 import base64, json, os, subprocess, sys, time
 
-arguments = sys.argv[1:]
+# a run that became Make's line (below) takes its own arguments from the environment
+arguments = sys.argv[1:] if not os.environ.get("MCP_KIT_RERUN") else \
+    [os.environ["MCP_KIT_FOLDER"], os.environ["MCP_KIT_OUT"]] + \
+    (["--world-files", os.environ["MCP_KIT_WORLD_FILES"]] if os.environ.get("MCP_KIT_WORLD_FILES") else []) + \
+    ["--signed-in", os.environ.get("MCP_KIT_SIGNED_IN", "no")]
 declared = None   # --world-files yes|no: which world the driver started the client in
 if "--world-files" in arguments:
     at = arguments.index("--world-files")
@@ -48,6 +53,22 @@ folder = arguments[0]
 if os.path.exists(os.path.join(folder, "claude-code", ".darkride-mcp.json")):
     folder = os.path.join(folder, "claude-code")
 out = arguments[1] if len(arguments) > 1 else os.path.dirname(os.path.abspath(sys.argv[0]))
+
+if not os.environ.get("MCP_KIT_RERUN"):
+    # Make lets in only a Claude Code started with its own line (MakePeer reads the helper's parent's arguments from the
+    # system), so the kit becomes a process whose arguments are Make's plain line (argv[0] "claude" too), as
+    # channel-kit.py does: python's own -I can't be on the line, so the script runs by path (the first operand) and
+    # -I's isolation comes from the environment instead (no PYTHONPATH or PYTHONHOME, no user site, safe path)
+    env = dict(os.environ, MCP_KIT_RERUN="1", MCP_KIT_FOLDER=os.path.abspath(folder), MCP_KIT_OUT=os.path.abspath(out),
+               MCP_KIT_WORLD_FILES="" if declared is None else ("yes" if declared else "no"),
+               MCP_KIT_SIGNED_IN="yes" if signed_in else "no", PYTHONSAFEPATH="1", PYTHONNOUSERSITE="1")
+    for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE"):
+        env.pop(name, None)
+    os.execve(sys.executable, ["claude", os.path.abspath(sys.argv[0]),
+                               "--restricted", "--strict-mcp-config", "--mcp-config",
+                               os.path.join(os.path.abspath(folder), ".darkride-mcp.json"),
+                               "--settings", os.path.join(os.path.abspath(folder), ".claude", "settings.json"),
+                               "--tools", ""], env)
 config = json.load(open(os.path.join(folder, ".darkride-mcp.json")))["mcpServers"]["darkride"]
 helper = subprocess.Popen([config["command"]] + config["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE)
