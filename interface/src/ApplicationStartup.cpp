@@ -639,9 +639,15 @@ void Application::connectServices() {
     connect(&_domainSession, &DomainSession::worldLoadingChanged, this, &Application::worldLoadingChanged);   // relayed likewise
     connect(&_domainSession, &DomainSession::interstitialModeChanged, this, &Application::interstitialModeChanged);
     connect(&_domainSession, &DomainSession::interstitialModeChanged, this, [this](bool interstitial) {
-        // entry 29 step 2a: the render tasks warm their programs while the loading screen is up, not while a world is presented
+        // entry 29 step 2a: the render tasks warm their programs while the loading screen is up, not while a world is
+        // presented. The main view's jobs by their full paths: every view task carries a warm-up job (the second
+        // camera, the mirrors), and a bare name found one of those, which never runs, so the main view's warm-up was
+        // never paused (item 53's trace, 2026-11-08).
         if (auto engine = getRenderEngine()) {
-            for (const char* name : { "WarmForwardPipelines", "WarmDeferredPipelines" }) {
+            static const char* const WARM_UP_JOBS[] = {
+                "RenderMainView.DeferredForwardSwitch.RenderForwardTask.WarmForwardPipelines",
+                "RenderMainView.DeferredForwardSwitch.RenderDeferredTask.WarmDeferredPipelines" };
+            for (const char* name : WARM_UP_JOBS) {
                 if (auto config = dynamic_cast<render::Job::Config*>(engine->getConfiguration()->getConfig(name))) {
                     config->setEnabled(interstitial);
                 }
