@@ -61,6 +61,9 @@ namespace {
 const int MAX_SOCKET_PATH = 100;  // a socket's path holds 104 bytes on macOS
 // the Terminal route: Claude's next call after this long is the person's next request
 // one request removes this many things before the person is asked
+// the answer a change gets when the person undid its request while Claude was still working (mary's words, 11-08)
+const char* UNDONE_LINE = "Not applied: the person undid this request while you were working on it. Stop working on it, "
+                          "and don't redo it unless they ask again.";
 const int REMOVES_BEFORE_ASKING = 5;
 // Claude Code's project folder, inside the Make folder: only the app's two files in it
 const QString PROJECT_FOLDER = "claude-code";
@@ -232,21 +235,20 @@ MakeLink::MakeLink() {
         }
         setState(connected ? State::Connected : State::Listening);
     });
-    connect(&_server, &MakeLinkServer::callStarted, this, [this](int, const QString& tool, const QJsonObject& inputs) {
-        // a pause between Claude's calls means the person asked again in Terminal (a new request), except while a Send
-        // of the dock's is unanswered: its calls are its own however long Claude thought first (MakeRequests; phase F,
-        // 11-08: the first call after a Send came over 45 s after the previous one and was filed under a new number)
-        if (_requests.newRequestDue()) {
-            newRequest();
-        }
+    connect(&_server, &MakeLinkServer::callStarted, this, [this](int call, const QString& tool, const QJsonObject& inputs) {
+        // the call's request was decided in gate(), before it ran (MakeRequests)
+        _runningCalls.insert(call);
         _requests.touched();
         const QString line = activityLine(tool, inputs);
         if (!line.isEmpty()) {
             emit activity(_request, line);
         }
     });
-    connect(&_server, &MakeLinkServer::callFinished, this, [this](int, const QString&, bool, const QString&) {
-        _requests.touched();
+    connect(&_server, &MakeLinkServer::callFinished, this, [this](int call, const QString&, bool, const QString&) {
+        // only a call that ran counts as activity: a refused one (an undone request's change) mustn't keep it alive
+        if (_runningCalls.remove(call)) {
+            _requests.touched();
+        }
     });
 
     // the key route's cost per request: Claude Code's total is for its whole run
@@ -796,6 +798,7 @@ void MakeLink::undoRequest(int request) {
     if (!_engine) {
         return;
     }
+    _requests.undone(request);   // from now, a late change Claude makes for it is refused, not landed with no Undo
     _bridge.send("undo_request", QJsonObject { { "request", request } }, _request, [this, request](bool ok, const QJsonObject& result) {
         emit activity(request, ok ? QString("undid %1 change(s)").arg(result.value("undone").toArray().size())
                                   : "couldn't undo: " + result.value("message").toString());
@@ -937,6 +940,22 @@ QString MakeLink::ask(const QString& what, const QString& exactly, const std::fu
 
 void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
                     const std::function<void(bool, const QString&)>& proceed) {
+    // which request the call belongs to, before anything else (MakeRequests): a pause between Claude's calls means the
+    // person asked again in Terminal, except while a Send of the dock's is unanswered (phase F, 11-08); and a change for
+    // the request the person just undid is refused, since it would land with no Undo (phase F's rerun, 11-08)
+    const bool changes = tool == "add" || tool == "edit" || tool == "remove" || tool == "set_script" ||
+                         tool == "upload_model";
+    switch (_requests.fileCall(changes)) {
+        case MakeRequests::Filing::New:
+            newRequest();
+            break;
+        case MakeRequests::Filing::Refuse:
+            qCInfo(makelog) << "Make: a change for a request the person undid wasn't applied:" << tool;
+            proceed(false, UNDONE_LINE);
+            return;
+        case MakeRequests::Filing::Same:
+            break;
+    }
     QStringList why;
     QString exactly;
     // a name the world gave it, kept short in the ask
@@ -954,10 +973,8 @@ void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
     if (tool == "remove" && _removesThisRequest >= REMOVES_BEFORE_ASKING) {
         why.append(QString("remove more than %1 things in one request (the next: %2)").arg(REMOVES_BEFORE_ASKING).arg(named));
     }
-    // every tool that puts something into the world or changes it asks once a request in a world that isn't the
-    // person's own (security B10): add and upload_model as well as edit, remove and set_script
-    const bool changes = tool == "add" || tool == "edit" || tool == "remove" || tool == "set_script" ||
-                         tool == "upload_model";
+    // every tool that puts something into the world or changes it (`changes`, above) asks once a request in a world that
+    // isn't the person's own (security B10): add and upload_model as well as edit, remove and set_script
     const bool outside = changes && !DependencyManager::get<NodeList>()->getThisNodeCanReplaceContent() &&
                          _askedOutsideFor != _request;
     if (outside) {
