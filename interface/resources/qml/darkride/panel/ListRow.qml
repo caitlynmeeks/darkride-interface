@@ -103,17 +103,30 @@ Item {
         && Math.max(labelWidth, labelColumn.implicitWidth) + Theme.gap + contentRow.visibleChildrenWidth
            > width - 2 * Theme.cardPadding - indent
 
-    readonly property bool lastShown: {
-        var column = cardItem ? cardItem.parent : null;
+    // the last shown item of its column
+    function lastOf(item) {
+        var column = item ? item.parent : null;
         if (!column) {
             return true;
         }
         for (var i = column.children.length - 1; i >= 0; i--) {
             if (shown(column.children[i])) {
-                return column.children[i] === cardItem;
+                return column.children[i] === item;
             }
         }
         return true;
+    }
+    // the card's last row, so its pressed shade rounds the card's bottom corners: a picker's own row is not while its
+    // choices show under it, and a picker's choice (its column has fullWidthSeparatorBelow) only when the picker is last
+    readonly property bool lastShown: {
+        if (!lastOf(cardItem)) {
+            return false;
+        }
+        if (cardItem !== row && cardItem.fullWidthSeparatorBelow === true) {
+            return false;
+        }
+        var column = cardItem ? cardItem.parent : null;
+        return !column || column.fullWidthSeparatorBelow === undefined || lastOf(column);
     }
 
     // pressed: the row darkens, rounded where it meets the card's corners
