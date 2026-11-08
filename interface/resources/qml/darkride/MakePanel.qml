@@ -104,8 +104,9 @@ Rectangle {
                 Text {
                     id: status
                     Layout.fillWidth: true
-                    // a refused line: "Not connected" here, its reason in full in the band under the header (mary
-                    // 23:47 11-07: the reason was cut off here)
+                    // listening with a reason (a refused start line; on the key route a failed start or "Claude Code
+                    // stopped"): "Not connected" here, the reason in full in the band under the header (mary 23:47
+                    // 11-07: the reason was cut off here)
                     text: root.refusedLine ? "Not connected"
                         : root.linkState === "connected" && root.dock && root.dock.sentWaiting ? "Sent, waiting for Claude"
                         : root.linkState === "connected" ? "Connected"
@@ -127,8 +128,8 @@ Rectangle {
                     checked: root.tab === "made"
                     onToggled: root.tab = "made"
                 }
-                // a header tool beside Now and Made, as Exit Build Mode beside Grid: no fill at rest, lit while its menu
-                // is open (mary's MAKE-POLISH.png)
+                // a header tool beside Now and Made, as Exit Build Mode beside Grid: no fill at rest, lit while its
+                // menu is open (mary's MAKE-POLISH.png)
                 BuildToggle {
                     id: moreButton
                     text: "•••"
@@ -147,9 +148,10 @@ Rectangle {
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: BuildTheme.edge }
         }
 
-        // what the chat needs, under the header: one line and its way on (plain words; security's and docs' paths); a
-        // refused line's reason, word for word, wrapped, no button (MakePeer::REFUSED_WORDS: copying Make's line again is
-        // the way on)
+        // what the chat needs, under the header: one line and its way on (plain words; security's and docs' paths); or,
+        // while listening with a reason, that reason word for word, wrapped, no button: MakeDock::reason, the link's
+        // (MakePeer::REFUSED_WORDS: copying Make's line again is the way on) or the dock's own (the key route's failed
+        // start, "Claude Code stopped: ..."; the next Connect clears it) (security 01:59 11-08)
         Rectangle {
             Layout.fillWidth: true
             visible: root.refusedLine || root.notGotIt || root.plainClaude || root.oldClaude
@@ -171,7 +173,8 @@ Rectangle {
                         ? "This Claude was started without the chat. Type in Terminal, or start it with Make's line again."
                         : "Update Claude Code: in Terminal, claude update"
                     textFormat: Text.PlainText
-                    color: root.refusedLine || root.notGotIt || root.plainClaude ? BuildTheme.text : BuildTheme.mutedText
+                    color: root.refusedLine || root.notGotIt || root.plainClaude ? BuildTheme.text
+                        : BuildTheme.mutedText
                     font.pixelSize: BuildTheme.textSize
                     wrapMode: Text.WordWrap
                 }
