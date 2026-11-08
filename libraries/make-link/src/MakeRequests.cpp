@@ -46,6 +46,22 @@ void MakeRequests::touched() {
     _last = _now();
 }
 
+void MakeRequests::undone(int request) {
+    if (request != 0 && request == _current) {
+        _undone = request;
+    }
+}
+
+MakeRequests::Filing MakeRequests::fileCall(bool changesTheWorld) {
+    if (newRequestDue()) {
+        return Filing::New;
+    }
+    if (changesTheWorld && _undone != 0 && _undone == _current) {
+        return Filing::Refuse;   // still the undone request's: it would land with no Undo
+    }
+    return Filing::Same;
+}
+
 bool MakeRequests::newRequestDue() const {
     if (_last < 0) {
         return false;   // no call yet: the first one belongs to the request that's there

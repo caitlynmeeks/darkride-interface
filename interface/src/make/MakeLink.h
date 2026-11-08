@@ -27,6 +27,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QVariantMap>
@@ -236,6 +237,7 @@ private:
 
     int _request { 0 };
     MakeRequests _requests;   // when a call belongs to a new request (the pause; a Send open until answered)
+    QSet<int> _runningCalls;  // the server's calls that started (ran past the gate)
     QHash<int, std::function<void(bool)>> _asks;
     int _nextAsk { 1 };
     int _removesThisRequest { 0 };

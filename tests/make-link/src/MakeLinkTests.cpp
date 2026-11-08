@@ -1356,3 +1356,93 @@ void MakeLinkTests::testRequestsFollowTheSend() {
     requests.answered(6);
     QVERIFY(!requests.sendOpen());
 }
+
+// a change Claude makes that would be filed under the request the person just undid is refused: it would land with no
+// Undo (phase F's rerun, 11-08). The request's life is the usual one (a Send's until its answer or the long silence, then
+// the pause; a Terminal request's through the pause), and a refused call doesn't count as activity (the test calls
+// touched() only for calls that ran, as MakeLink does)
+void MakeLinkTests::testUndoneRequestRefusesLateChanges() {
+    using Filing = MakeRequests::Filing;
+    qint64 now = 0;
+    MakeRequests requests([&now] { return now; });
+    auto at = [&now](qint64 ms) { now = ms; };
+    const qint64 PAUSE = MakeRequests::PAUSE_MS;
+    const qint64 OPEN = MakeRequests::OPEN_SEND_MS;
+
+    // a Send's request 10; the person undoes it while Claude is still working, before its answer
+    at(0);
+    requests.started(10, true);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+    requests.touched();
+    at(3000);
+    requests.undone(10);
+    at(3000 + 20 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // a change 20 s after the Undo, before the answer
+    at(3000 + 2 * 60 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // and 2 min after
+    QCOMPARE(requests.fileCall(false), Filing::Same);     // a look around runs (and counts)
+    requests.touched();
+    at(180 * 1000);
+    requests.answered(10);                                // the reply naming 10 ends the turn
+    at(180 * 1000 + 25 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // 25 s after the answer: still 10's, refused
+    at(180 * 1000 + PAUSE);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // the pause exactly: still 10's
+    at(180 * 1000 + PAUSE + 1);
+    QCOMPARE(requests.fileCall(true), Filing::New);       // over the pause since the last call that ran: new work
+    requests.started(11, false);
+
+    // phase F's case: the Send's request 20 answered, Undo in the gap 5 s later, a late add 25 s after the Undo
+    at(1000 * 1000);
+    requests.started(20, true);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+    requests.touched();
+    at(1002 * 1000);
+    QCOMPARE(requests.fileCall(false), Filing::Same);     // the reply runs
+    requests.touched();
+    requests.answered(20);
+    at(1007 * 1000);
+    requests.undone(20);
+    at(1032 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // --late-seconds 30: refused
+    at(1002 * 1000 + PAUSE);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);    // refused calls kept nothing alive: the pause still counts
+    at(1002 * 1000 + PAUSE + 1);                          //   from the answer
+    QCOMPARE(requests.fileCall(true), Filing::New);       // a late add after more than 45 s of quiet: new work
+    requests.started(21, false);
+    requests.touched();
+
+    // the Terminal route: request 30 from the pause rule; Undo 5 s after its last call; a change 20 s later refused,
+    // one after the pause new work
+    at(2000 * 1000);
+    requests.started(30, false);
+    requests.touched();
+    at(2005 * 1000);
+    requests.undone(30);
+    at(2020 * 1000);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);
+    at(2000 * 1000 + PAUSE + 1);
+    QCOMPARE(requests.fileCall(true), Filing::New);
+    requests.started(31, false);
+    requests.touched();
+
+    // an Undo of an older request (30) refuses nothing: nothing later is filed under it
+    requests.undone(30);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+
+    // an undone Send left unanswered: refused up to its long silence, new work after it
+    at(3000 * 1000);
+    requests.started(40, true);
+    requests.touched();
+    requests.undone(40);
+    at(3000 * 1000 + OPEN);
+    QCOMPARE(requests.fileCall(true), Filing::Refuse);
+    at(3000 * 1000 + OPEN + 1);
+    QCOMPARE(requests.fileCall(true), Filing::New);
+    requests.started(41, false);
+
+    // a Send after an Undo is a request of its own: its changes run
+    requests.undone(41);
+    requests.started(42, true);
+    QCOMPARE(requests.fileCall(true), Filing::Same);
+}

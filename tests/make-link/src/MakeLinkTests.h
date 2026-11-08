@@ -49,6 +49,7 @@ private slots:
     void testToolListWaitsForTheOffer();
     void testClaudePathIsSystemFoldersOnly();
     void testRequestsFollowTheSend();
+    void testUndoneRequestRefusesLateChanges();
 };
 
 #endif // hifi_MakeLinkTests_h
