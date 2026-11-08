@@ -55,6 +55,9 @@ public:
     bool has(const QString& name) const { return _tools.contains(name); }
     /// The tool's entry as TOOLS.json has it.
     QJsonObject tool(const QString& name) const { return _tools.value(name); }
+    /// The tool puts something into the world or changes it (TOOLS.json "changes", which every tool must have): what
+    /// the outside-world ask and the undone-request refusal go by. False for a tool not on the list.
+    bool changesTheWorld(const QString& name) const { return _tools.value(name).value("changes").toBool(); }
 
     /// The MCP tools/list entries for `offered` (in the list's order): name, description and inputSchema, with every
     /// $ref replaced by what it names, so each schema stands alone.

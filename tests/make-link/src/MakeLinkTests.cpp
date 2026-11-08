@@ -1446,3 +1446,34 @@ void MakeLinkTests::testUndoneRequestRefusesLateChanges() {
     requests.started(42, true);
     QCOMPARE(requests.fileCall(true), Filing::Same);
 }
+
+// every tool says whether it puts something into the world or changes it (TOOLS.json "changes"): the outside-world ask
+// and the undone-request refusal go by it, so a new tool can't slip past both by being forgotten (security, 11-08)
+void MakeLinkTests::testEveryToolSaysWhetherItChanges() {
+    const MakeToolList tools;
+    QVERIFY2(tools.isValid(), qPrintable(tools.loadError()));
+    QStringList changing;
+    for (const QString& name : tools.names()) {
+        QVERIFY2(tools.tool(name).value("changes").isBool(), qPrintable(name));
+        if (tools.changesTheWorld(name)) {
+            changing << name;
+        }
+    }
+    changing.sort();
+    QCOMPARE(changing, QStringList({ "add", "edit", "remove", "set_script", "upload_model" }));
+    QVERIFY(!tools.changesTheWorld("no_such_tool"));
+    // a list with a tool that doesn't say doesn't load at all
+    const QByteArray silent = R"({"version": 1, "tools": [
+        {"name": "look", "changes": false, "inputs": {"type": "object"}},
+        {"name": "build", "inputs": {"type": "object"}}]})";
+    const MakeToolList broken(silent);
+    QVERIFY(!broken.isValid());
+    QVERIFY2(broken.loadError().contains("build"), qPrintable(broken.loadError()));
+    // and one that says, does
+    const QByteArray said = R"({"version": 1, "tools": [
+        {"name": "look", "changes": false, "inputs": {"type": "object"}},
+        {"name": "build", "changes": true, "inputs": {"type": "object"}}]})";
+    const MakeToolList whole(said);
+    QVERIFY2(whole.isValid(), qPrintable(whole.loadError()));
+    QVERIFY(whole.changesTheWorld("build") && !whole.changesTheWorld("look"));
+}

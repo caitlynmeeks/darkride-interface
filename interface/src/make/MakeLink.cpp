@@ -943,8 +943,8 @@ void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
     // which request the call belongs to, before anything else (MakeRequests): a pause between Claude's calls means the
     // person asked again in Terminal, except while a Send of the dock's is unanswered (phase F, 11-08); and a change for
     // the request the person just undid is refused, since it would land with no Undo (phase F's rerun, 11-08)
-    const bool changes = tool == "add" || tool == "edit" || tool == "remove" || tool == "set_script" ||
-                         tool == "upload_model";
+    // the tools that put something into the world or change it, as the tool list declares them (TOOLS.json "changes")
+    const bool changes = _server.toolList().changesTheWorld(tool);
     switch (_requests.fileCall(changes)) {
         case MakeRequests::Filing::New:
             newRequest();
@@ -974,7 +974,7 @@ void MakeLink::gate(const QString& tool, const QJsonObject& inputs,
         why.append(QString("remove more than %1 things in one request (the next: %2)").arg(REMOVES_BEFORE_ASKING).arg(named));
     }
     // every tool that puts something into the world or changes it (`changes`, above) asks once a request in a world that
-    // isn't the person's own (security B10): add and upload_model as well as edit, remove and set_script
+    // isn't the person's own (security B10)
     const bool outside = changes && !DependencyManager::get<NodeList>()->getThisNodeCanReplaceContent() &&
                          _askedOutsideFor != _request;
     if (outside) {
