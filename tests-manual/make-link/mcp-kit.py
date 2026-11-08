@@ -221,7 +221,7 @@ else:
                                    else "; but Make's answer wasn't its not-saved line: " + script["text"][:160]))
     if place == "my_files" and not signed_in:
         check("...Make says the person isn't signed in (My Files)", script["error"]
-              and "isn't signed in to Darkride" in script["text"] and script["text"].startswith("Not saved"),
+              and "isn't signed in to Darkride" in script["text"] and "Not saved: " in script["text"],
               script["text"][:200])
 if not script["error"]:
     copy = open(script["value"]["saved_copy"]).read()
@@ -233,7 +233,7 @@ if declared is False:
     # the file world (--world-files no): it has no server, so a server script is refused before it is saved
     server = tool("set_script", {"id": box_id, "side": "server", "source": "(function () {})"})
     check("a server script in a file world is refused (no server)", server["error"]
-          and "server scripts need a world on a server" in server["text"] and server["text"].startswith("Not saved"),
+          and "server scripts need a world on a server" in server["text"] and "Not saved: " in server["text"],
           server["text"][:200])
 time.sleep(2)
 clicked = tool("click", {"id": box_id})
