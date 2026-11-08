@@ -210,7 +210,8 @@ public:
     Q_INVOKABLE bool copyLine(const QString& which);
     /// "Stop allowing" in the Allow's Details: forgets the Allow, so the next Connect shows the whole card (security R3).
     Q_INVOKABLE void stopAllowing();
-    /// The more menu (•••): the app's own menu at (x, y) on the screen, as the Code panel's. Disconnect.
+    /// The more menu (•••): the app's own menu at (x, y) on the screen, as the Code panel's. Show the Make folder (the
+    /// system's own file browser on MakeLink's folder), Disconnect.
     Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
 
     /// Tests only (Test.makeDockConnect, with --testScript): Connect on the Terminal route without the person's click;

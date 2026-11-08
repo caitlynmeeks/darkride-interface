@@ -28,6 +28,7 @@
 #include <QtCore/QThreadPool>
 #include <QtCore/QUuid>
 #include <QtGui/QClipboard>
+#include <QtGui/QDesktopServices>
 #include <QtGui/QDropEvent>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QMouseEvent>
@@ -64,6 +65,8 @@ namespace {
     // ... or this long after Claude's reply with nothing after it (the chat: a reply is Claude's turn's end as a rule;
     // a tool call after it waits TERMINAL_QUIET_MS again; mary + pm after Caity's try 11-07)
     const int TERMINAL_REPLY_QUIET_MS = 5000;
+    // the more menu's item that opens the Make folder (mary places the words)
+    const char SHOW_FOLDER_WORDS[] = "Show the Make folder";
     const qint64 ASK_TIMEOUT_MS = 100000;    // MakeLink refuses a question after 100 s
     const qint64 PICTURE_MAX_BYTES = 20 * 1024 * 1024;
     const int PICTURE_MAX_SIDE = 8192;       // checked before decoding
@@ -975,6 +978,22 @@ QString MakeDock::testCopyLine(const QString& which) {
 void MakeDock::showMoreMenu(qreal x, qreal y) {
     auto menu = new QMenu(qApp->getWindow());
     menu->setAttribute(Qt::WA_DeleteOnClose);
+    // the Make folder in Finder, Explorer or the file manager (docs 11-08): MakeLink's own folder in the app's data,
+    // never an address from anywhere else; opened as a folder by the system (no script, no shell, no path pasted into
+    // a command), and only while it is a real folder, not a link
+    const QString folder = DependencyManager::get<MakeLink>()->folder();
+    auto realFolder = [](const QString& path) {
+        const QFileInfo info(path);
+        return !path.isEmpty() && info.isAbsolute() && info.isDir() && !info.isSymLink();
+    };
+    auto folderAction = menu->addAction(SHOW_FOLDER_WORDS);
+    folderAction->setEnabled(realFolder(folder));
+    QObject::connect(folderAction, &QAction::triggered, this, [folder, realFolder] {
+        if (realFolder(folder)) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        }
+    });
+    menu->addSeparator();
     auto disconnectAction = menu->addAction("Disconnect");
     disconnectAction->setEnabled(DependencyManager::get<MakeLink>()->stateName() != "off");
     QObject::connect(disconnectAction, &QAction::triggered, this, &MakeDock::disconnect);
