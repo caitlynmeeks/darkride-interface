@@ -434,7 +434,9 @@ Page {
                 enabled: linkField.text.trim() !== "" && linkField.text.trim() !== avatar.url
                 onClicked: avatar.wearLink(linkField.text)
             }
+            // the open link box is one task: the card holds only it until Wear or Cancel (mary, 11-08)
             ListRow {
+                visible: !avatar.linking
                 action: true
                 label: "Wear the Default Avatar"
                 onClicked: avatar.wearDefault()
