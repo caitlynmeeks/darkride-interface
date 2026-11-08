@@ -111,7 +111,7 @@ static const qint64 GROUP_GAP_MS = 7 * 60 * 1000;
 static const QStringList QUICK_REACTIONS { "\U0001F44D", "\u2764\uFE0F", "\U0001F602", "\U0001F62E", "\U0001F622", "\U0001F389" };
 // the sidebar's first row, the Friends page
 static const QString FRIENDS_ROW = "friends:";
-// the list's "This world" (WorldChat): no Matrix room has an id like it
+// the list's "Local Chat" (WorldChat): no Matrix room has an id like it
 static const QString WORLD_ROOM = "world:";
 // a friend's lists again at most this often when the window comes forward
 static const qint64 FRIENDS_FRESH_MS = 15 * 1000;
@@ -141,7 +141,6 @@ static const qint64 PICTURE_MAX_PIXELS = 60 * 1000 * 1000;
 static const int AVATAR_FETCH_SIZE = 96;
 
 static Setting::Handle<QByteArray> chatWindowGeometry("chat/windowGeometry");
-static Setting::Handle<QString> chatLastRoom("chat/room");
 
 enum RoomRole {
     RoomIdRole = Qt::UserRole,
@@ -190,7 +189,7 @@ static QImage friendsIcon(int size, qreal pixelRatio) {
     return image;
 }
 
-// This world's picture: a globe
+// Local Chat's picture: a globe
 static QImage worldIcon(int size, qreal pixelRatio) {
     QImage image(QSize(size, size) * pixelRatio, QImage::Format_ARGB32_Premultiplied);
     image.setDevicePixelRatio(pixelRatio);
@@ -426,11 +425,12 @@ public:
 
         // the count on the right: red for mentions and direct messages, as Discord's
         QString badge;
-        QColor badgeColour = COLOUR_SELECTION;
+        // (on a selected row, a dark inset: the selection's own colour would hide it; mary 11-08)
+        QColor badgeColour = selected ? COLOUR_RAIL : COLOUR_SELECTION;
         if (notifications > 0) {
             badge = QString::number(notifications);
             badgeColour = COLOUR_RED;
-        } else if (kind == "dm" && unread > 0) {
+        } else if ((kind == "dm" || kind == "world") && unread > 0) {
             badge = QString::number(unread);
         }
         int right = row.right() - 8;
@@ -651,6 +651,12 @@ void ChatWindow::toggle() {
     if (panel->isFloating()) {
         panel->activateWindow();
     }
+    // it opens on Local Chat, the conversation of the place you're in (Caity 11-08); brought to the front, it stays
+    // where it was
+    if (!inSight) {
+        chat->selectRoom(WORLD_ROOM);
+        chat->showRooms(false);
+    }
     if (chat->_composer->isEnabled()) {
         chat->_composer->setFocus();
     }
@@ -744,7 +750,11 @@ ChatWindow::ChatWindow(QWidget* parent) : QWidget(parent) {
     _roomTitle->setObjectName("ChatRoomTitle");
     _roomTitle->setTextFormat(Qt::PlainText);
     _roomTitle->installEventFilter(this);   // a direct message's title shows the person's card
-    roomHeadLayout->addWidget(_roomTitle, 1);
+    roomHeadLayout->addWidget(_roomTitle);
+    _roomTopic = new QLabel(roomHead);
+    _roomTopic->setObjectName("ChatRoomTopic");
+    _roomTopic->setTextFormat(Qt::PlainText);
+    roomHeadLayout->addWidget(_roomTopic, 1);
     mainLayout->addWidget(roomHead);
     connect(_roomsButton, &QToolButton::clicked, this, [this] { showRooms(true); });
     _pages = new QStackedWidget(main);
@@ -1041,6 +1051,7 @@ ChatWindow::ChatWindow(QWidget* parent) : QWidget(parent) {
             }
         }
     });
+    connect(world, &WorldChat::peopleChanged, this, &ChatWindow::updateRoomTopic);
     connect(world, &WorldChat::unreadChanged, this, [this](int unread) {
         for (int i = 0; i < _roomList->count(); i++) {
             if (_roomList->item(i)->data(RoomIdRole).toString() == WORLD_ROOM) {
@@ -1081,6 +1092,7 @@ void ChatWindow::updateState() {
         _rooms = QJsonArray();
         _roomList->clear();
         _roomTitle->clear();
+        _roomTopic->clear();
         // the media folder goes with a sign-out (the library's forget), so nothing fetched before is known any more:
         // after signing in again, pictures and files are asked for again, and the last account's pictures are gone
         _mediaFiles.clear();
@@ -1091,7 +1103,7 @@ void ChatWindow::updateState() {
         _avatarImages.clear();
         qDeleteAll(_movies);
         _movies.clear();
-        // This world needs no chat account: it stays in the list, and in sight when it was
+        // Local Chat needs no chat account: it stays in the list, and in sight when it was
         QListWidgetItem* worldRow = nullptr;
         addWorldRow(worldRow);
         if (inWorld) {
@@ -1217,29 +1229,9 @@ void ChatWindow::updateRooms(const QJsonArray& rooms) {
     if (_friendsShown) {
         // the Friends page stays up
     } else if (_room.isEmpty() || !current) {
-        // the room shown last time, else the first channel (General)
-        QString wanted = chatLastRoom.get();
-        QString chosen = wanted == WORLD_ROOM ? wanted : QString();
-        for (const QJsonValue& value : rooms) {
-            if (value.toObject().value("id").toString() == wanted) {
-                chosen = wanted;
-            }
-        }
-        if (chosen.isEmpty() && !channels.isEmpty()) {
-            chosen = channels.first().value("id").toString();
-        }
-        if (chosen.isEmpty() && !dms.isEmpty()) {
-            chosen = dms.first().value("id").toString();
-        }
-        if (!chosen.isEmpty()) {
-            selectRoom(chosen);
-        } else {
-            _room.clear();
-            _roomTitle->clear();
-            _stateText->setText("No rooms yet.");
-            _retryButton->hide();
-            _pages->setCurrentIndex(0);
-        }
+        // chat starts on Local Chat, the conversation of the place you're in (Caity 11-08), and goes back to it when
+        // the room in sight goes (left, or taken away)
+        selectRoom(WORLD_ROOM);
     } else {
         // an invitation accepted here or elsewhere becomes a room to talk in
         showRoomPage();
@@ -1247,7 +1239,7 @@ void ChatWindow::updateRooms(const QJsonArray& rooms) {
 }
 
 void ChatWindow::addWorldRow(QListWidgetItem*& current) {
-    auto item = new QListWidgetItem("This world", _roomList);
+    auto item = new QListWidgetItem("Local Chat", _roomList);
     item->setData(RoomIdRole, WORLD_ROOM);
     item->setData(RoomKindRole, "world");
     item->setData(RoomAvatarRole, worldIcon(28, devicePixelRatioF()));
@@ -1260,7 +1252,7 @@ void ChatWindow::addWorldRow(QListWidgetItem*& current) {
 
 QJsonObject ChatWindow::roomById(const QString& room) const {
     if (room == WORLD_ROOM) {
-        return { { "id", WORLD_ROOM }, { "name", "This world" }, { "world", true },
+        return { { "id", WORLD_ROOM }, { "name", "Local Chat" }, { "world", true },
                  { "unread", WorldChat::instance()->unread() } };
     }
     for (const QJsonValue& value : _rooms) {
@@ -1306,7 +1298,6 @@ void ChatWindow::selectRoom(const QString& room) {
     _anchorBottom = false;
     _stickToBottom = true;
     stopEditing();
-    chatLastRoom.set(room);
     for (int i = 0; i < _roomList->count(); i++) {
         if (_roomList->item(i)->data(RoomIdRole).toString() == room) {
             QSignalBlocker blocker(_roomList);
@@ -1335,6 +1326,7 @@ void ChatWindow::showRoomPage() {
         ? name + " · " + username
         : name;
     _roomTitle->setText(mark.isEmpty() ? title : mark + " " + title);
+    updateRoomTopic();
     // a direct message's title is the person: a click shows their card
     _roomTitle->setCursor(dm ? Qt::PointingHandCursor : Qt::ArrowCursor);
     _roomTitle->setToolTip(dm ? "Show " + name + "'s profile" : QString());
@@ -1351,6 +1343,14 @@ void ChatWindow::showRoomPage() {
             _composer->setFocus();
         }
     }
+}
+
+void ChatWindow::updateRoomTopic() {
+    if (_room != WORLD_ROOM || _friendsShown) {
+        _roomTopic->clear();
+        return;
+    }
+    _roomTopic->setText(WorldChat::instance()->hereLine());
 }
 
 void ChatWindow::updateTimeline(const QString& room, const QJsonArray& items) {
@@ -1381,7 +1381,6 @@ void ChatWindow::commandDone(const QJsonObject& done) {
         selectRoom(room);
     } else if (op == "leave" && room == _room) {
         _room.clear();
-        chatLastRoom.set(QString());
         updateRooms(_rooms);
     }
 }
@@ -1696,7 +1695,7 @@ void ChatWindow::renderTimeline() {
         html += QString("<p style=\"color:%1; margin:24px 16px;\">Loading…</p>").arg(muted);
     }
     if (_roomStart && world) {
-        html += QString("<p style=\"margin:32px 16px 4px 16px; font-size:28px; font-weight:bold;\">This world</p>"
+        html += QString("<p style=\"margin:32px 16px 4px 16px; font-size:28px; font-weight:bold;\">Local Chat</p>"
                         "<p style=\"color:%1; margin:0 16px 8px 16px;\">What the people here type, and what AI "
                         "residents and bots say. Everyone in this world sees what you write here. It isn't kept: "
                         "each world starts empty. Press Enter in the world to talk, / for a command.</p>")
@@ -1734,10 +1733,10 @@ void ChatWindow::renderTimeline() {
 
         QString kind = item.value("kind").toString();
         QString body = item.value("body").toString();
-        // in This world, a sender the world hasn't named yet is told apart by their session
+        // in Local Chat, a sender the world hasn't named yet is told apart by their session
         QString group = sender.isEmpty() ? item.value("session").toString() : sender;
         if (kind == "notice" && group.isEmpty()) {
-            // a line only you see: a command's answer in This world
+            // a line only you see: a command's answer in Local Chat
             _tableItems.append(-1);
             html += QString("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"margin-top:10px;\"><tr>"
                             "<td width=\"72\"></td><td style=\"color:%1; padding-right:16px;\">"
@@ -1820,7 +1819,7 @@ void ChatWindow::renderTimeline() {
                 nameHtml += QString("&nbsp;<span style=\"color:%1; font-size:12px;\">%2</span>")
                                 .arg(muted, username.toHtmlEscaped());
             }
-            // an AI resident's or a bot's mark in This world, as their nametag shows it (WorldChat)
+            // an AI resident's or a bot's mark in Local Chat, as their nametag shows it (WorldChat)
             QString mark = item.value("mark").toString();
             if (!mark.isEmpty()) {
                 nameHtml += QString("&nbsp;<span style=\"color:%1; font-size:12px;\">%2</span>")
@@ -2189,6 +2188,7 @@ void ChatWindow::showFriendsPage() {
         }
     }
     _roomTitle->setText("Friends");
+    _roomTopic->clear();
     _roomTitle->setCursor(Qt::ArrowCursor);
     _roomTitle->setToolTip(QString());
     _pages->setCurrentIndex(3);
@@ -2499,6 +2499,7 @@ void ChatWindow::applyColours() {
         #ChatSidebar { background: %2; }
         #ChatSidebarHead, #ChatRoomHead { border-bottom: 1px solid rgba(0, 0, 0, 0.35); }
         #ChatSidebarHead, #ChatRoomTitle { color: %3; font-size: 15px; font-weight: 500; padding: 0 16px; }
+        #ChatRoomTopic { color: %4; font-size: 13px; }
         QToolButton#ChatRoomsButton {
             background: transparent; color: %3; border: none; font-size: 26px; padding: 0 0 4px 12px;
         }
