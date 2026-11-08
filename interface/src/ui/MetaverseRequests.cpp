@@ -9,7 +9,10 @@
 
 #include "MetaverseRequests.h"
 
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonValue>
 #include <QtQml/QJSValue>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
@@ -21,20 +24,31 @@
 #include "InterfaceLogging.h"
 #include "RightsLine.h"
 
+MetaverseRequests::MetaverseRequests(QJSEngine* engine, QObject* parent) : QObject(parent), _engine(engine) {
+}
+
 void MetaverseRequests::send(const QString& method, const QString& path, const QVariant& body, QJSValue callback) {
-    // the engine that owns this object (the panels' QML engine), which made the callback: QJSValue::engine() is gone in Qt 6
-    QJSEngine* engine = qjsEngine(this);
-    auto answer = [callback, engine](const QJSValue& error, int status, const QVariant& data) mutable {
-        if (callback.isCallable()) {
-            callback.call({ error, QJSValue(status), engine ? engine->toScriptValue(data) : QJSValue() });
+    // the answer is made in this object's engine, the one its panels (and so the callback) run in. Not qjsEngine(this):
+    // that is the first engine to see the object, and Qt 6 refuses a call whose argument was made in another engine
+    QPointer<QJSEngine> engine = _engine;
+    auto answer = [callback, engine](const QJSValue& error, int status, const QJsonValue& data) mutable {
+        if (!callback.isCallable()) {
+            return;
         }
+        if (!engine) {
+            qCWarning(interfaceapp) << "Metaverse request answered after its panels' QML engine was gone";
+            return;
+        }
+        // from the JSON, not a QVariant: Qt 6 makes a QVariantList a list-like object for which Array.isArray is
+        // false, and Explore showed no worlds (11-08); a QJsonArray becomes a real array on Qt 5 and Qt 6
+        callback.call({ error, QJSValue(status), engine->toScriptValue(data) });
     };
     if (!path.startsWith("/api/") || path.contains("..")) {
-        answer(QJSValue("not a metaverse API path: " + path), 0, QVariant());
+        answer(QJSValue("not a metaverse API path: " + path), 0, QJsonValue());
         return;
     }
     if (method != "GET" && method != "POST" && method != "PUT" && method != "DELETE") {
-        answer(QJSValue("unsupported method: " + method), 0, QVariant());
+        answer(QJSValue("unsupported method: " + method), 0, QJsonValue());
         return;
     }
 
@@ -61,9 +75,12 @@ void MetaverseRequests::send(const QString& method, const QString& path, const Q
         : method == "PUT" ? networkAccessManager.put(request, json)
         : method == "DELETE" ? networkAccessManager.deleteResource(request)
         : networkAccessManager.get(request);
+    reply->setParent(this);   // a surface that closes takes its panels' unanswered requests with it
     connect(reply, &QNetworkReply::finished, this, [reply, answer]() mutable {
         int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        QVariant data = QJsonDocument::fromJson(reply->readAll()).toVariant();
+        const QJsonDocument document = QJsonDocument::fromJson(reply->readAll());
+        const QJsonValue data = document.isArray() ? QJsonValue(document.array())
+            : document.isObject() ? QJsonValue(document.object()) : QJsonValue();   // null when it isn't JSON
         if (reply->error() == QNetworkReply::NoError && status >= 200 && status < 300) {
             answer(QJSValue(QJSValue::NullValue), status, data);
         } else {
