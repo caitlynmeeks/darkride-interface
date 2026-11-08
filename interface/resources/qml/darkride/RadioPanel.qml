@@ -50,6 +50,14 @@ Rectangle {
     readonly property int playerScale: Qt.platform.os !== "windows" && width >= 2 * playerWidth + 2 * Theme.gap &&
         loader.height >= 500 ? 2 : 1
     readonly property real column: Math.max(0, Math.min(playerWidth * playerScale, width - 2 * Theme.gap))
+    // the column in the log once a resize settles (qa's pass line)
+    onColumnChanged: columnLog.restart()
+    Timer {
+        id: columnLog
+        interval: 600
+        onTriggered: console.log("Radio: the column is", root.column, "wide, the player", root.playerScale + "x, in a",
+            Math.round(root.width), "x", Math.round(root.height), "panel")
+    }
     onPanelOpenChanged: {
         if (panelOpen) {
             on = true;
@@ -455,6 +463,15 @@ Rectangle {
             backgroundColor: Theme.background
             // the skin's pixels at a whole size (root.playerScale)
             zoomFactor: root.playerScale
+            // the stations the page lists, in the log once it has loaded (qa's pass line): read as text only
+            onLoadProgressChanged: {
+                if (loadProgress === 100) {
+                    view.runJavaScript("JSON.stringify([(window.RADIO_STATIONS || []).length, " +
+                        "((window.RADIO_STATIONS || [])[0] || {}).name || ''])", function (text) {
+                        console.log("Radio: stations listed (how many, the first):", String(text).slice(0, 80));
+                    });
+                }
+            }
 
             // one profile for the whole run, a walled-off client's folders set before it opens them (ContextAwareProfile)
             profile: TivoliWebEngineProfile.radioProfile
