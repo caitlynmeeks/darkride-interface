@@ -80,7 +80,11 @@ void RenderEventHandler::onInitalize() {
 
 void RenderEventHandler::resize() {
     PROFILE_RANGE(render_qml_gl, __FUNCTION__);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    auto targetSize = _shared->getPixelSize();   // in pixels (SharedObject::getPixelSize): a ratio change resizes too
+#else
     auto targetSize = _shared->getSize();
+#endif
     if (_currentSize != targetSize) {
         auto& offscreenTextures = SharedObject::getTextureCache();
         // Release hold on the textures of the old size
