@@ -161,7 +161,8 @@ void Application::onDesktopRootContextCreated(QQmlContext* surfaceContext) {
     surfaceContext->setContextProperty("Quat", new Quat());
     surfaceContext->setContextProperty("Vec3", new Vec3());
     surfaceContext->setContextProperty("Uuid", new ScriptUUID());
-    surfaceContext->setContextProperty("Assets", DependencyManager::get<AssetMappingsScriptingInterface>().data());
+    // one per engine, its answers made in that engine (scripting/AssetMappingsScriptingInterface.h)
+    surfaceContext->setContextProperty("Assets", new AssetMappingsQmlInterface(engine, surfaceContext));
     surfaceContext->setContextProperty("Keyboard", DependencyManager::get<KeyboardScriptingInterface>().data());
 
     surfaceContext->setContextProperty("AvatarList", DependencyManager::get<AvatarManager>().data());
@@ -282,7 +283,7 @@ void Application::setupQmlSurface(QQmlContext* surfaceContext, bool setAdditiona
         surfaceContext->setContextProperty("AudioStats", DependencyManager::get<AudioClient>()->getStats().data());
         surfaceContext->setContextProperty("fileDialogHelper", new FileDialogHelper());
         surfaceContext->setContextProperty("ScriptDiscoveryService", DependencyManager::get<ScriptEngines>().data());
-        surfaceContext->setContextProperty("Assets", DependencyManager::get<AssetMappingsScriptingInterface>().data());
+        surfaceContext->setContextProperty("Assets", new AssetMappingsQmlInterface(surfaceContext->engine(), surfaceContext));
         surfaceContext->setContextProperty("LODManager", DependencyManager::get<LODManager>().data());
         surfaceContext->setContextProperty("OctreeStats", DependencyManager::get<OctreeStatsProvider>().data());
         surfaceContext->setContextProperty("DCModel", DependencyManager::get<DomainConnectionModel>().data());
