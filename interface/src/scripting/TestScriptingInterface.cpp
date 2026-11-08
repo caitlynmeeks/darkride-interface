@@ -653,6 +653,14 @@ void TestScriptingInterface::editorUndo() {
     DependencyManager::get<Editor>()->undo();
 }
 
+void TestScriptingInterface::editorRedo() {
+    if (QThread::currentThread() != thread()) {
+        BLOCKING_INVOKE_METHOD(this, "editorRedo");
+        return;
+    }
+    DependencyManager::get<Editor>()->redo();
+}
+
 QString TestScriptingInterface::hierarchyRowColor(const QUuid& id) {
     if (QThread::currentThread() != thread()) {
         QString result;

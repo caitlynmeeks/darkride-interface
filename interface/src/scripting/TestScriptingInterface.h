@@ -714,6 +714,12 @@ public slots:
     Q_INVOKABLE void editorUndo();
 
     /**jsdoc
+     * Redoes the editor's last undone step, as Shift+Cmd+Z does in build mode.
+     * @function Test.editorRedo
+     */
+    Q_INVOKABLE void editorRedo();
+
+    /**jsdoc
      * Puts an installed skin on (ui/Skins.h), or Darkride's own look with "", as the Skins panel does, so a scripted
      * test can picture build mode's panels under a skin and back.
      * @function Test.setSkin
