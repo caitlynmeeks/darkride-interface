@@ -449,6 +449,9 @@ bpy.ops.mesh.primitive_cube_add(size=1)
 // "item not found" would mean the Keychain answered, so that fails too. The same script without the box must get
 // "item not found" (the control), so the difference is the box's.
 void MakeBlenderTests::testKeychainUnreachableInTheBox() {
+#ifndef Q_OS_MAC
+    QSKIP("the Keychain is macOS's; testTheBoxHolds checks a key in the app's environment and a port outside the box");
+#else
     QTemporaryDir dir;
     MakeBlender blender(dir.path());
     if (!haveBlender(blender)) {
@@ -512,6 +515,7 @@ except Exception as e:
     QVERIFY2(status != "0" && status != QString::number(errSecItemNotFound), qPrintable(made.log));
     QVERIFY2(made.log.contains("SECURITY_CLI REFUSED"), qPrintable(made.log));
     QVERIFY(!made.log.contains("SECURITY_CLI OPEN"));
+#endif
 }
 
 void MakeBlenderTests::testRunawayIsStopped() {
@@ -542,8 +546,15 @@ void MakeBlenderTests::testCpuCapInTheBox() {
         "print('THREADS', bpy.context.scene.render.threads)\n";
     const MakeBlender::Made made = makeAndWait(blender, script);
     QVERIFY2(made.ok(), qPrintable(made.message + "\n" + made.log));
-    QVERIFY2(made.log.contains(QString("CPULIMIT %1 %2").arg(MakeBlender::CPU_LIMIT_S).arg(MakeBlender::CPU_LIMIT_S + 5)),
-             qPrintable(made.log));
+#ifdef Q_OS_LINUX
+    // Linux: the watcher sets Blender's own limit from its cap, (cap, cap + 2); Make's own limits make the cap the CPU
+    // limit (the time limit's seconds plus 20 are fewer)
+    QCOMPARE(qMax(MakeBlender::CPU_LIMIT_S, MakeBlender::TIME_LIMIT_MS / 1000 + 20), MakeBlender::CPU_LIMIT_S);
+    const int hard = MakeBlender::CPU_LIMIT_S + 2;
+#else
+    const int hard = MakeBlender::CPU_LIMIT_S + 5;   // the Mac: Blender keeps the watcher's own cap
+#endif
+    QVERIFY2(made.log.contains(QString("CPULIMIT %1 %2").arg(MakeBlender::CPU_LIMIT_S).arg(hard)), qPrintable(made.log));
     QVERIFY2(made.log.contains(QString("THREADS %1").arg(MakeBlender::THREADS)), qPrintable(made.log));
     QVERIFY(MakeBlender::CPU_LIMIT_S >= (MakeBlender::TIME_LIMIT_MS / 1000) * MakeBlender::THREADS);
 }
@@ -781,11 +792,20 @@ void MakeBlenderTests::testWatcherIsBlendersParent() {
     }
     QVERIFY(pid > 1);
     QVERIFY(pid != blender.watcherId());
-    // once it is Blender (sandbox-exec becomes it in the same process), still the watcher's child
-    while (!programOf(pid).endsWith("/Contents/MacOS/Blender") && timer.elapsed() < 15000) {
+    // once it is Blender (on the Mac sandbox-exec becomes it in the same process; on Linux the watcher's child runs
+    // Blender's own program), still the watcher's child
+#ifdef Q_OS_MAC
+    const auto isBlender = [](const QString& program) { return program.endsWith("/Contents/MacOS/Blender"); };
+#else
+    const QString blenderProgram = QFileInfo(blender.blender()).canonicalFilePath();
+    const auto isBlender = [blenderProgram](const QString& program) {
+        return !blenderProgram.isEmpty() && program == blenderProgram;
+    };
+#endif
+    while (!isBlender(programOf(pid)) && timer.elapsed() < 15000) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    QVERIFY2(programOf(pid).endsWith("/Contents/MacOS/Blender"), qPrintable(programOf(pid)));
+    QVERIFY2(isBlender(programOf(pid)), qPrintable(programOf(pid)));
     QCOMPARE(parentOf(pid), blender.watcherId());
     QCOMPARE(parentOf(blender.watcherId()), QCoreApplication::applicationPid());
     const QStringList jobs = QDir(dir.filePath("jobs")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);

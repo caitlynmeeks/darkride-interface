@@ -804,9 +804,18 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     environment.insert("PYTHONDONTWRITEBYTECODE", "1");
     environment.insert("PYTHONNOUSERSITE", "1");
 
+    // the watcher's cap: its wall-clock seconds, and on Linux also the CPU time it gives Blender (cap, cap + 2)
+    const int watchCap = qBound(1, qMax(_cpuLimitS, _timeLimitMs / 1000 + 20), 3600);
+
     // the watcher, Blender's parent: its standard input is a pipe from here (a line stops Blender, its end means the
-    // app is gone); Blender gets /dev/null, and the watcher's output, where its log is read
+    // app is gone); Blender gets /dev/null, and the watcher's output, where its log is read. On the Mac Blender keeps
+    // the watcher's CPU cap; on Linux the watcher sets Blender's own, which may only lower its hard limit (raising one
+    // needs privilege), so the watcher is capped at the cap it gives. Make's own limits give the same number either way
+#if defined(Q_OS_LINUX)
+    _process = new CappedProcess(watchCap, this);
+#else
     _process = new CappedProcess(_cpuLimitS, this);
+#endif
     _process->setProcessEnvironment(environment);
     _process->setWorkingDirectory(realWork);
     _process->setProcessChannelMode(QProcess::MergedChannels);
@@ -826,7 +835,6 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         }
     });
 
-    const int watchCap = qBound(1, qMax(_cpuLimitS, _timeLimitMs / 1000 + 20), 3600);
 #if defined(Q_OS_MAC)
     const QStringList arguments {
         QString::number(watchCap), _job + "/blender.pid", "--", "/usr/bin/sandbox-exec",
