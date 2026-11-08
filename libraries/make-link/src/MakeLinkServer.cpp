@@ -14,6 +14,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QLoggingCategory>
+#include <QtCore/QFileInfo>
 #include <QtCore/QSet>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
@@ -185,7 +186,11 @@ public:
         if (ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, SDDL_REVISION_1, DACL_SECURITY_INFORMATION,
                                                                  &text, nullptr)) {
             // the SID is this user's own: the log says so instead of printing it (security, 11-08)
-            result = QString::fromWCharArray(text).replace(thisUserSid(), QStringLiteral("this user"));
+            result = QString::fromWCharArray(text);
+            const QString sid = thisUserSid();
+            if (!sid.isEmpty()) {
+                result.replace(sid, QStringLiteral("this user"));
+            }
             LocalFree(text);
         }
         LocalFree(descriptor);
@@ -356,6 +361,19 @@ bool MakeLinkServer::isListening() const {
     return (_server && _server->isListening()) || _pipes;
 }
 
+QString MakeLinkServer::accessAsApplied() const {
+#ifdef Q_OS_WIN
+    return _pipes ? _pipes->appliedDacl() : QString();
+#else
+    if (!_server || !_server->isListening()) {
+        return QString();
+    }
+    struct stat info;
+    const QByteArray folder = QFile::encodeName(QFileInfo(_socketPath).path());
+    return lstat(folder.constData(), &info) == 0 ? QString::number(info.st_mode & 0777, 8) : QString();
+#endif
+}
+
 void MakeLinkServer::close() {
     dropClient();
 #ifdef Q_OS_WIN
@@ -450,6 +468,8 @@ void MakeLinkServer::adopt(QLocalSocket* socket, QString refused) {
         socket->deleteLater();
         return;
     }
+    // the same words on every platform: the socket's or pipe's peer was checked to be this user's (security, 11-08)
+    qCInfo(makelink) << "the link's peer is this user's own process";
     _client = socket;
     _buffer.clear();
     _clientName.clear();

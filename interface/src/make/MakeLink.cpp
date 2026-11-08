@@ -46,6 +46,7 @@
 #include <ScriptCaller.h>
 #include <ScriptEngine.h>
 #include <ScriptEngines.h>
+#include <MakeFolder.h>
 #include <MakeText.h>
 
 #include "Application.h"
@@ -298,14 +299,32 @@ QString MakeLink::socketFolder() const {
     return QDir(QDir::tempPath()).absoluteFilePath("darkride-make-" + name);
 }
 
-QString MakeLink::mcpConfigText() const {
+namespace {
 #ifdef Q_OS_WIN
-    // the helper's program beside ours, and this Connect's own random pipe name (this file is the one place it's written)
-    const QString helper =
-        QDir::toNativeSeparators(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp.exe"));
+const char* HELPER_NAME = "darkride-mcp.exe";
+#else
+const char* HELPER_NAME = "darkride-mcp";
+#endif
+}  // namespace
+
+QString MakeLink::appHelper() const {
+    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(HELPER_NAME);
+}
+
+QString MakeLink::helperCopy() const {
+    return QDir(_folder).absoluteFilePath(QString("bin/") + HELPER_NAME);
+}
+
+QString MakeLink::mcpConfigText() const {
+    // the helper named here is Make's private copy of the app's own (writeFolder makes it, byte for byte): a path only
+    // this user can write, so a config left behind never names a place another account could fill, as an AppImage's
+    // temporary mount is after the app quits (security, 11-08). On Windows this Connect's own random pipe name goes
+    // with it (this file is the one place it's written)
+#ifdef Q_OS_WIN
+    const QString helper = QDir::toNativeSeparators(helperCopy());
     const QString socket = _pipeName;
 #else
-    const QString helper = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("darkride-mcp");
+    const QString helper = helperCopy();
     const QString socket = QDir(socketFolder()).absoluteFilePath("link.sock");
 #endif
     const QJsonObject config { { "mcpServers", QJsonObject { { "darkride", QJsonObject {
@@ -441,9 +460,22 @@ bool MakeLink::writeFolder(QString& error) {
     // Make-folder must): its MCP line and its settings. No CLAUDE.md, no other settings file, no hooks, commands, agents
     // or skills: anything else found is removed. Scripts, models, pictures and Blender's jobs live beside it, outside.
     const QString project = projectFolder();
-    if (!realFolder(_folder) || !realFolder(project) || !realFolder(project + "/.claude") ||
-        !realFolder(_folder + "/scripts")) {
+    // the Make folder and Claude Code's project folder in it are this user's own and private (security's Make-folder
+    // rule, 11-08: 0700 on Unix; on Windows a protected access list of this user, SYSTEM and Administrators that the
+    // files made inside inherit): a link or junction in their place, another owner or a failed change refuses the Connect
+    QString why;
+    if (!MakeFolder::makePrivate(_folder, why) || !MakeFolder::makePrivate(project, why)) {
+        error = "can't make the Make folder private: " + why;
+        return false;
+    }
+    if (!realFolder(project + "/.claude") || !realFolder(_folder + "/scripts") || !realFolder(_folder + "/bin")) {
         error = "can't make the Make folder";
+        return false;
+    }
+    qCInfo(makelog) << "the Make folder's access:" << MakeFolder::access(_folder);
+    // Make's private copy of the helper, the one the config names (see mcpConfigText), made afresh at every Connect
+    if (!MakeFolder::copyProgram(appHelper(), helperCopy(), why)) {
+        error = "can't place Make's helper in the Make folder: " + why;
         return false;
     }
     auto clear = [](const QString& folder, const QStringList& keep) {

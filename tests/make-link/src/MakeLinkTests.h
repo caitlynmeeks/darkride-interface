@@ -42,6 +42,10 @@ private slots:
     void testPeerLineJudgement();
     void testPeerOfThisProcess();
     void testPlainTextForTheChannel();
+    void testMakeFolderIsPrivate();
+    void testLinkAccessIsThisUserOnly();
+    void testLinkNameAlreadyTakenIsRefused();
+    void testHelperCopyIsPrivateAndIdentical();
 };
 
 #endif // hifi_MakeLinkTests_h

@@ -100,6 +100,10 @@ public:
     void close();
     /// The socket, for the MCP line Make writes; empty while not listening. Never log it.
     QString socketPath() const { return _socketPath; }
+    /// The access the listening link really has, for the log and the tests: on Windows the pipe's access list read back
+    /// from the waiting instance (SDDL, this user shown as "this user"); on Unix the socket folder's mode in octal.
+    /// Empty while not listening.
+    QString accessAsApplied() const;
 
     bool isConnected() const { return _client != nullptr; }
     /// Closes Claude Code's connection and goes on listening (the person's Disconnect).
