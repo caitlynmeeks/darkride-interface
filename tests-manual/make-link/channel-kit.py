@@ -101,6 +101,7 @@ helper = subprocess.Popen([config["command"]] + config["args"], stdin=subprocess
 failures = 0
 next_id = [0]
 events = []
+pending = []   # channel events ask() met while waiting for its answer (a Send in the same second as the connect)
 
 
 def say(*parts):
@@ -131,7 +132,7 @@ def ask(method, params=None):
         if answer.get("id") == next_id[0]:
             return answer
         if answer.get("method") == "notifications/claude/channel":
-            events.append(answer)
+            pending.append(answer)   # a Send that came while waiting: the loop below takes it first, as if read there
     raise SystemExit("no answer to " + method)
 
 
@@ -218,6 +219,8 @@ if mode == "check":
     check("a reference nobody attached is not_found", nobody["error"] and nobody["code"] == "not_found", nobody["text"][:120])
     say("listening %.0f s for stray events" % seconds)
     deadline = time.time() + seconds
+    events.extend(pending)   # met by the asks above: they count too
+    del pending[:]
     while time.time() < deadline:
         message = read_line(0.5)
         if message is not None and message.get("method") == "notifications/claude/channel":
@@ -247,7 +250,8 @@ else:
         return tool("add", {"properties": {"type": "Box", "name": name, "dimensions": {"x": 0.3, "y": 0.3, "z": 0.3},
                                            "color": color}})
     while time.time() < deadline:
-        message = read_line(0.5)
+        # an event ask() met while it waited (at the start-up, or during a tool call) first, then the next one read
+        message = pending.pop(0) if pending else read_line(0.5)
         if message is None or message.get("method") != "notifications/claude/channel":
             continue
         params = message.get("params") or {}
@@ -277,13 +281,13 @@ else:
         say("reply to msg_id %s: %s" % (meta.get("msg_id"), "shown" if not shown["error"] else shown["text"][:120]))
         handled += 1
         if mode == "chat-late":
-            # the one late world edit of this turn: wait (events that arrive meanwhile are counted, not answered, as
-            # ask() does), then the smallest add that names its thing, so the dock kit can look for it after Undo
+            # the one late world edit of this turn: wait (an event that arrives meanwhile waits its turn, as one ask()
+            # meets), then the smallest add that names its thing, so the dock kit can look for it after Undo
             waited = time.time()
             while time.time() < waited + late:
                 stray = read_line(0.2)
                 if stray is not None and stray.get("method") == "notifications/claude/channel":
-                    events.append(stray)
+                    pending.append(stray)
             name = "Kit late box %s" % meta.get("msg_id")
             added = small_add(name, {"red": 40, "green": 40, "blue": 200})
             late_calls += 1
