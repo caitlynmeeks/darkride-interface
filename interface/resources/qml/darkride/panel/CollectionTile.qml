@@ -27,6 +27,7 @@ Rectangle {
     property bool checked: false
     property string badge: ""           // a word over the picture's corner ("private")
     property string status: ""
+    property bool small: false          // five in a row (the Avatar panel's Recent): its name at detail size, regular
     default property alias content: controls.data
 
     signal clicked()
@@ -91,7 +92,7 @@ Rectangle {
         }
 
         Column {
-            x: 10 * Theme.unit
+            x: (tile.small ? 6 : 10) * Theme.unit
             width: parent.width - 2 * x
             topPadding: 8 * Theme.unit
             bottomPadding: 10 * Theme.unit
@@ -102,8 +103,8 @@ Rectangle {
                 text: tile.title
                 textFormat: Text.PlainText
                 color: Theme.text
-                font.pixelSize: Theme.bodySize
-                font.weight: Font.DemiBold
+                font.pixelSize: tile.small ? Theme.detailSize : Theme.bodySize
+                font.weight: tile.small ? Font.Normal : Font.DemiBold
                 elide: Text.ElideRight
             }
             Text {

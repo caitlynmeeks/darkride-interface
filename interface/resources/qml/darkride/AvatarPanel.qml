@@ -254,6 +254,15 @@ Page {
             : folded ? [{ key: "all", label: "Show All " + ordered.length }]
             : older.length > 0 && !showOlder ? [{ key: "older", label: "Older files", value: String(older.length) }]
             : []
+        // the five worn last, each once (by its link)
+        readonly property var recent: {
+            var seen = {};
+            return library.recent.filter(function (entry) {
+                var first = !seen[entry.key];
+                seen[entry.key] = true;
+                return first;
+            }).slice(0, 5);
+        }
         readonly property bool keepsLinks: library.items.some(function (entry) { return entry.favorite && entry.source === "web"; })
 
         // a row's entry with the view's own state: worn, dimmed (a star just taken off), the grey line in words
@@ -461,6 +470,7 @@ Page {
         // changing avatar: its own card above the avatar worn (mary's Apple pass, 11-08; Caity's bug batch 10-29 first
         // brought these up from below My Files)
         Section {
+            visible: !list.searching
             footer: avatar.linking ? "A link to an avatar's .fst, .glb or .vrm file. A .glb or .vrm is set up for Darkride first, then you test it or keep it."
                 : ""
 
@@ -515,6 +525,7 @@ Page {
 
         // everything about the avatar worn, above the list (mary's redo: nothing buried under 250 avatars)
         Section {
+            visible: !list.searching
             title: "Wearing"
             footer: thumb.status
             // the upload's rights line, with the row that uploads
@@ -547,20 +558,6 @@ Page {
                 }
             }
             ListRow {
-                visible: thumb.possible && thumb.pending === ""
-                action: true
-                label: "Take Its Picture"
-                enabled: !thumb.busy
-                onClicked: thumb.take()
-            }
-            ListRow {
-                visible: thumb.possible && thumb.pending === ""
-                action: true
-                label: "Choose a Picture…"
-                enabled: !thumb.busy
-                onClicked: thumb.choose()
-            }
-            ListRow {
                 label: "Scale"
                 fill: true
                 labelWidth: 80 * Theme.unit
@@ -581,11 +578,25 @@ Page {
                     onClicked: { MyAvatar.scale = 1; avatar.refresh(); }
                 }
             }
+            ListRow {
+                visible: thumb.possible && thumb.pending === ""
+                action: true
+                label: "Take Its Picture"
+                enabled: !thumb.busy
+                onClicked: thumb.take()
+            }
+            ListRow {
+                visible: thumb.possible && thumb.pending === ""
+                action: true
+                label: "Choose a Picture…"
+                enabled: !thumb.busy
+                onClicked: thumb.choose()
+            }
         }
 
         // a picture taken or chosen, to look at before it is saved
         Section {
-            visible: thumb.pending !== ""
+            visible: thumb.pending !== "" && !list.searching
             title: "New picture"
             rightsLine: thumb.fromFile
             Item {
@@ -618,7 +629,7 @@ Page {
 
         // the five worn last, a click away (the search finds the ten kept)
         Section {
-            visible: !list.searching && library.recent.length > 0
+            visible: !list.searching && list.recent.length > 0
             title: "Recent"
 
             Item {
@@ -633,8 +644,9 @@ Page {
                     spacing: Theme.gap
 
                     Repeater {
-                        model: library.recent
+                        model: list.recent
                         delegate: CollectionTile {
+                            small: true
                             Layout.fillWidth: true
                             Layout.preferredWidth: 1
                             Layout.alignment: Qt.AlignTop
@@ -647,7 +659,7 @@ Page {
                     }
                     // fewer than five keep a fifth's width each
                     Repeater {
-                        model: Math.max(0, 5 - library.recent.length)
+                        model: Math.max(0, 5 - list.recent.length)
                         delegate: Item {
                             Layout.fillWidth: true
                             Layout.preferredWidth: 1
