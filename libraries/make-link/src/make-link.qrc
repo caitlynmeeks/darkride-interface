@@ -8,5 +8,6 @@
         <file alias="blender/prelude.py">../resources/blender/prelude.py</file>
         <file alias="blender/finish.py">../resources/blender/finish.py</file>
         <file alias="blender/views.py">../resources/blender/views.py</file>
+        <file alias="blender/selftest.py">../resources/blender/selftest.py</file>
     </qresource>
 </RCC>

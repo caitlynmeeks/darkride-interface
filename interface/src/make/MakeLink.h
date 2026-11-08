@@ -96,6 +96,13 @@ public:
     bool blenderOffered() const;
     /// Why not, in plain words (empty when offered).
     QString blenderWhy() const;
+    /// The person's own choice of Blender (the dock's "Choose Blender…"): `path` the app (on a Mac the .app or the
+    /// program inside it; on Windows blender.exe or its folder). False with a plain `why` when Make can't use it
+    /// ("That's Blender 4.1; Make needs 5.2 or newer."); true when it's remembered in Settings, the found check is
+    /// re-run and, while Make is on, the Blender tools are decided again (on Windows through the box's self-test).
+    bool useBlender(const QString& path, QString& why);
+    /// Whether the person may choose a Blender here: the Mac and Windows, whose boxes are in; not Linux yet.
+    bool canChooseBlender() const;
     /// The key route's cap for one Connect, in dollars (Claude Code's --max-budget-usd holds for its whole run).
     double limitUsd() const { return claudeSettings().maxBudgetUsd; }
 

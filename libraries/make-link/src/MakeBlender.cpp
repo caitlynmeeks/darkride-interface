@@ -19,6 +19,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QLoggingCategory>
+#include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QTimer>
@@ -38,6 +39,11 @@
 #include <sys/resource.h>
 #include <unistd.h>
 #endif
+#ifdef Q_OS_WIN
+#include <thread>
+
+#include "MakeBox.h"
+#endif
 
 Q_DECLARE_LOGGING_CATEGORY(makelink)
 
@@ -49,8 +55,20 @@ const int MakeBlender::THREADS = 4;
 const int MakeBlender::CPU_LIMIT_S = (MakeBlender::TIME_LIMIT_MS / 1000) * MakeBlender::THREADS + 20;
 const int MakeBlender::MINIMUM_MAJOR = 5;
 const int MakeBlender::MINIMUM_MINOR = 2;
+// the dock's words (pm and Caity's wording; docs quote the second): one ellipsis character, no word of the machinery
+const char* const MakeBlender::CHECKING_WORDS = "Checking Blender…";
+const char* const MakeBlender::UNAVAILABLE_WORDS = "Blender isn't available here";
 
 namespace {
+
+#ifdef Q_OS_WIN
+// the self-test's target: Windows' own RPC endpoint mapper on this computer's own address, listening on every Windows
+// (a bare connection, closed at once, nothing sent or read: no listener of ours, so no firewall alert), and how long
+// the control and the boxed probe may take
+const int SELF_TEST_PORT = 135;
+const int SELF_TEST_CONTROL_MS = 3000;
+const int SELF_TEST_PROBE_MS = 45000;
+#endif
 
 const int MEMORY_CHECK_MS = 250;
 // how long Stop waits for the watcher to end Blender and itself
@@ -202,38 +220,115 @@ MakeBlender::~MakeBlender() {
 }
 
 QString MakeBlender::blenderVersion(const QString& app) {
+#ifdef Q_OS_WIN
+    // from blender.exe's own version resource: no process started; a folder means the blender.exe in it
+    const QString program = QFileInfo(app).isDir() ? QDir(app).absoluteFilePath("blender.exe") : app;
+    return MakeBox::fileVersion(program);
+#else
     QFile plist(app + "/Contents/Info.plist");
     if (!plist.open(QIODevice::ReadOnly) || plist.size() > 1024 * 1024) {
         return QString();
     }
     static const QRegularExpression VERSION("<key>CFBundleShortVersionString</key>\\s*<string>([0-9][0-9.]*)");
     return VERSION.match(QString::fromUtf8(plist.readAll())).captured(1);
+#endif
 }
 
 QString MakeBlender::defaultWatcher() {
     return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(WATCHER);
 }
 
-#ifndef Q_OS_MAC
-// the builder's line wherever Make's Blender can't run sealed (pm and Caity's wording, 11-07; docs quote it)
-static const char* const UNAVAILABLE = "Blender isn't available here";
-#endif
+bool MakeBlender::versionIsEnough(const QString& version) {
+    const QStringList parts = version.split('.');
+    bool majorRead = false;
+    const int major = parts.value(0).toInt(&majorRead);
+    const int minor = parts.value(1).toInt();
+    return majorRead && (major > MINIMUM_MAJOR || (major == MINIMUM_MAJOR && minor >= MINIMUM_MINOR));
+}
+
+QString MakeBlender::tooOldLine(const QString& version) {
+    if (version.isEmpty()) {
+        return QString("That Blender's version can't be read; Make needs %1.%2 or newer.").arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+    }
+    return QString("That's Blender %1; Make needs %2.%3 or newer.").arg(version).arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+}
+
+bool MakeBlender::readSelfTestResult(const QByteArray& text, bool& held) {
+    const QString word = QString::fromLatin1(text.left(64)).trimmed();
+    if (word == "refused") {
+        held = true;
+        return true;
+    }
+    if (word == "reached") {
+        held = false;
+        return true;
+    }
+    return false;
+}
+
+bool MakeBlender::looksLikeBlender(const QString& fileName, const QString& productName, QString& why) {
+    if (QString::compare(fileName, "blender.exe", Qt::CaseInsensitive) != 0) {
+        why = "That program isn't blender.exe.";
+        return false;
+    }
+    if (productName.trimmed() != "Blender") {
+        why = "That program doesn't say it is Blender.";
+        return false;
+    }
+    return true;
+}
+
+bool MakeBlender::isBlendersOwnFolder(const QString& folder, const QString& version, const QStringList& forbidden,
+                                      QString& why) {
+    static const QString NOT_OWN = "That folder isn't Blender's own.";
+    const QString own = QDir::cleanPath(QDir::fromNativeSeparators(folder));
+    if (own.isEmpty() || QDir(own).isRoot()) {
+        why = NOT_OWN;
+        return false;
+    }
+    for (const QString& known : forbidden) {
+        const QString other = QDir::cleanPath(QDir::fromNativeSeparators(known));
+        if (other.isEmpty()) {
+            continue;
+        }
+        // the folder itself, or a parent of it: a grant there would open the known folder to the box
+        if (QString::compare(own, other, Qt::CaseInsensitive) == 0 || other.startsWith(own + "/", Qt::CaseInsensitive)) {
+            why = NOT_OWN;
+            return false;
+        }
+    }
+    const QStringList parts = version.split('.');
+    if (parts.size() < 2 || !QFileInfo(own + "/" + parts.at(0) + "." + parts.at(1)).isDir()) {
+        why = NOT_OWN;
+        return false;
+    }
+    return true;
+}
 
 bool MakeBlender::available(QString& why) const {
 #if defined(Q_OS_WIN)
-    // Windows: the box reaches this computer's own address unless the installer's firewall rules close it, so without
-    // them, exactly right, Blender isn't offered (the zip's case). With them it still isn't until Make's Windows box
-    // and its self-test are in (6b, next): the self-test stays after this read in every build (security, 11-07)
-    QString rules;
-    if (!MakeFirewall::boxRulesInPlace(rules)) {
-        qCInfo(makelink) << "Blender isn't offered: the box's firewall rules:" << rules;
-    } else {
-        qCInfo(makelink) << "Blender isn't offered yet: the box's firewall rules are in place, its box start comes next";
+    // Windows: a Blender found, and this Connect's self-test (selfTest) passed: the box's own connection out was
+    // refused, so the installer's firewall rules hold for it. The rules' read is a reported extra, never the decision.
+    if (findBlender(why, _blender).isEmpty()) {
+        return false;
     }
-    why = UNAVAILABLE;
+    switch (_selfTest) {
+        case SelfTest::Running:
+            why = CHECKING_WORDS;
+            return false;
+        case SelfTest::Failed:
+            why = UNAVAILABLE_WORDS;
+            return false;
+        case SelfTest::Passed:
+        case SelfTest::NotRun:
+            // before the first Connect, what it would decide isn't known: a found Blender counts, the Connect decides,
+            // and a make runs only after a passed self-test (make())
+            why.clear();
+            return true;
+    }
     return false;
 #elif !defined(Q_OS_MAC)
-    why = UNAVAILABLE;
+    why = UNAVAILABLE_WORDS;
     return false;
 #else
     if (!QFileInfo(QStringLiteral("/usr/bin/sandbox-exec")).isExecutable()) {
@@ -249,9 +344,77 @@ bool MakeBlender::available(QString& why) const {
 }
 
 QString MakeBlender::findBlender(QString& why, const QString& app) {
-#ifndef Q_OS_MAC
+#if defined(Q_OS_WIN)
+    // the person's choice (blender.exe, or its folder), else the usual places: Blender's installer under Program
+    // Files, an unpacked zip in Downloads or on the Desktop; the newest that is new enough wins. Cheap: file names and
+    // version resources only, no process started (the dock asks whenever its window shows)
+    QStringList candidates;
+    if (!app.isEmpty()) {
+        candidates.append(QFileInfo(app).isDir() ? QDir(app).absoluteFilePath("blender.exe") : app);
+    } else {
+        for (const QString& root : { qEnvironmentVariable("ProgramW6432"), qEnvironmentVariable("ProgramFiles") }) {
+            if (root.isEmpty()) {
+                continue;
+            }
+            const QDir foundation(QDir::fromNativeSeparators(root) + "/Blender Foundation");
+            for (const QString& name : foundation.entryList({ "Blender *" }, QDir::Dirs | QDir::NoDotAndDotDot)) {
+                candidates.append(foundation.absoluteFilePath(name + "/blender.exe"));
+            }
+        }
+        for (const QString& place : { QDir::homePath() + "/Downloads", QDir::homePath() + "/Desktop" }) {
+            const QDir folder(place);
+            for (const QString& name : folder.entryList({ "blender-*" }, QDir::Dirs | QDir::NoDotAndDotDot)) {
+                candidates.append(folder.absoluteFilePath(name + "/blender.exe"));
+            }
+        }
+    }
+    QString best;
+    QStringList bestVersion;
+    const QStringList known = MakeBox::knownFolders();
+    for (const QString& candidate : candidates) {
+        if (!QFileInfo(candidate).isFile()) {
+            continue;
+        }
+        // Blender by name, product name and signature, in its own folder: nothing else is ever opened to the box
+        QString reason;
+        if (!MakeBox::isBlender(candidate, reason)) {
+            why = reason;
+            continue;
+        }
+        const QString version = blenderVersion(candidate);
+        if (!versionIsEnough(version)) {
+            why = QString("Blender %1 is older than Make needs (%2.%3 or newer)")
+                      .arg(version.isEmpty() ? QString("there") : version).arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+            continue;
+        }
+        if (!isBlendersOwnFolder(QFileInfo(candidate).absolutePath(), version, known, reason)) {
+            why = reason;
+            continue;
+        }
+        const QStringList parts = version.split('.');
+        bool newer = best.isEmpty();
+        for (int i = 0; i < 3 && !newer && i < parts.size(); ++i) {
+            if (parts.value(i).toInt() != bestVersion.value(i).toInt()) {
+                newer = parts.value(i).toInt() > bestVersion.value(i).toInt();
+                break;
+            }
+        }
+        if (newer) {
+            best = QFileInfo(candidate).absoluteFilePath();
+            bestVersion = parts;
+        }
+    }
+    if (!best.isEmpty()) {
+        why.clear();
+        return best;
+    }
+    if (why.isEmpty()) {
+        why = QString("Blender isn't installed (blender.org, %1.%2 or newer)").arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
+    }
+    return QString();
+#elif !defined(Q_OS_MAC)
     Q_UNUSED(app);
-    why = UNAVAILABLE;
+    why = UNAVAILABLE_WORDS;
     return QString();
 #else
     QStringList candidates;
@@ -265,10 +428,7 @@ QString MakeBlender::findBlender(QString& why, const QString& app) {
         if (!QFileInfo(program).isExecutable()) {
             continue;
         }
-        const QStringList parts = blenderVersion(candidate).split('.');
-        const int major = parts.value(0).toInt();
-        const int minor = parts.value(1).toInt();
-        if (major < MINIMUM_MAJOR || (major == MINIMUM_MAJOR && minor < MINIMUM_MINOR)) {
+        if (!versionIsEnough(blenderVersion(candidate))) {
             why = QString("Blender %1 is older than Make needs (%2.%3 or newer)")
                       .arg(blenderVersion(candidate).isEmpty() ? QString("there") : blenderVersion(candidate))
                       .arg(MINIMUM_MAJOR).arg(MINIMUM_MINOR);
@@ -303,6 +463,15 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         done(made);
         return;
     }
+#ifdef Q_OS_WIN
+    // only after this Connect's self-test passed (selfTest): the tools are offered only then, and this holds it too
+    if (_selfTest != SelfTest::Passed) {
+        made.code = MakeError::NOT_AVAILABLE_HERE;
+        made.message = UNAVAILABLE_WORDS;
+        done(made);
+        return;
+    }
+#else
     const QString watch = _watch.isEmpty() ? defaultWatcher() : _watch;
     if (!QFileInfo(watch).isExecutable()) {
         made.code = MakeError::NOT_AVAILABLE_HERE;
@@ -310,6 +479,7 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         done(made);
         return;
     }
+#endif
     // a fresh scratch folder for this make; the fixed scripts beside it, which the sandbox lets Blender only read
     const QString id = QUuid::createUuid().toString(QUuid::Id128).left(12);
     const QString job = QDir(_folder).absoluteFilePath("jobs/" + id);
@@ -368,6 +538,70 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     _stopReason.clear();
     _stopCode.clear();
 
+    _limit = new QTimer(this);
+    _limit->setSingleShot(true);
+    _limit->setTimerType(Qt::PreciseTimer);   // the limit means what it says (a coarse timer may fire 5% early)
+    connect(_limit, &QTimer::timeout, this, [this] {
+        _stopCode = MakeError::TIMEOUT;
+        _stopReason = QString("Blender ran past its %1 s limit and was stopped: make it simpler or faster")
+                          .arg(_timeLimitMs / 1000);
+        kill();
+    });
+    _memory = new QTimer(this);
+    connect(_memory, &QTimer::timeout, this, &MakeBlender::checkMemory);
+
+#ifdef Q_OS_WIN
+    // Blender in the box (MakeBox): the job is its keeper, the work folder its only writable place, the fixed scripts
+    // read-only beside it, Make's two lines in an environment built from nothing
+    MakeBox::Start boxed;
+    boxed.blender = _blender;
+    boxed.arguments = QStringList {
+        "--background", "--factory-startup", "--disable-autoexec", "-noaudio", "--threads", QString::number(THREADS),
+        "--python-exit-code", "3",
+        "--python", QDir::toNativeSeparators(realFixed + "/prelude.py"),
+        "--python", QDir::toNativeSeparators(realWork + "/job.py"),
+        "--python", QDir::toNativeSeparators(realFixed + "/finish.py"),
+        "--python", QDir::toNativeSeparators(realFixed + "/views.py"),
+    };
+    boxed.jobFolder = _job;
+    boxed.workingFolder = realWork;
+    boxed.readable = QStringList { realFixed };
+    if (!MakeBox::underProgramFiles(_blender)) {
+        boxed.readable.append(QFileInfo(_blender).absolutePath());  // the unpacked zip: its own folder, read and run
+    }
+    boxed.environment = QStringList { "MAKE_OUT=" + QDir::toNativeSeparators(realWork + "/out"),
+                                      "MAKE_KIND=" + QString(kind == "room" ? "room" : "object"),
+                                      "PYTHONDONTWRITEBYTECODE=1", "PYTHONNOUSERSITE=1" };
+    boxed.cpuSeconds = _cpuLimitS;
+    boxed.memoryBytes = MEMORY_LIMIT_BYTES;
+    boxed.lpac = _lpac;
+    // Blender proven Blender, and its folder its own, before any folder is opened to the box
+    const bool fit = MakeBox::isBlender(_blender, why) &&
+                     (MakeBox::underProgramFiles(_blender) ||
+                      isBlendersOwnFolder(QFileInfo(_blender).absolutePath(), blenderVersion(_blender),
+                                          MakeBox::knownFolders(), why));
+    if (fit) {
+        _box = MakeBox::start(boxed, why);
+    }
+    if (!_box) {
+        for (QTimer* timer : { _limit, _memory }) {
+            timer->deleteLater();
+        }
+        _limit = nullptr;
+        _memory = nullptr;
+        QDir(_job).removeRecursively();
+        _job.clear();
+        made.code = MakeError::NOT_AVAILABLE_HERE;
+        made.message = fit ? "Make couldn't start Blender in its box: " + why : why;
+        finish(made);
+        return;
+    }
+    _started = QDateTime::currentMSecsSinceEpoch();
+    _limit->start(_timeLimitMs);
+    _memory->start(MEMORY_CHECK_MS);   // also watches for Blender's end
+    qCInfo(makelink) << "Blender started for a make";
+    return;
+#else
     // an environment built from nothing: no key, nothing of the app's
     QProcessEnvironment environment;
     environment.insert("PATH", "/usr/bin:/bin");
@@ -401,18 +635,6 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
         }
     });
 
-    _limit = new QTimer(this);
-    _limit->setSingleShot(true);
-    _limit->setTimerType(Qt::PreciseTimer);   // the limit means what it says (a coarse timer may fire 5% early)
-    connect(_limit, &QTimer::timeout, this, [this] {
-        _stopCode = MakeError::TIMEOUT;
-        _stopReason = QString("Blender ran past its %1 s limit and was stopped: make it simpler or faster")
-                          .arg(_timeLimitMs / 1000);
-        kill();
-    });
-    _memory = new QTimer(this);
-    connect(_memory, &QTimer::timeout, this, &MakeBlender::checkMemory);
-
     const int watchCap = qBound(1, qMax(_cpuLimitS, _timeLimitMs / 1000 + 20), 3600);
     const QStringList arguments {
         QString::number(watchCap), _job + "/blender.pid", "--", "/usr/bin/sandbox-exec",
@@ -433,6 +655,7 @@ void MakeBlender::make(const QString& script, const QString& kind, const QVector
     _limit->start(_timeLimitMs);
     _memory->start(MEMORY_CHECK_MS);
     qCInfo(makelink) << "Blender started for a make";
+#endif
 }
 
 // Blender's id as the watcher wrote it, outside the folder the box may write, and only while Blender is the watcher's
@@ -460,6 +683,9 @@ qint64 MakeBlender::blenderPid() {
         return 0;
     }
     return _blenderPid;
+#elif defined(Q_OS_WIN)
+    // from the job's own list (MakeBox): never a name, never signalled from here
+    return _box ? MakeBox::pid(_box) : 0;
 #else
     return 0;
 #endif
@@ -479,19 +705,57 @@ void MakeBlender::checkMemory() {
                           .arg(MEMORY_LIMIT_BYTES / (1024 * 1024 * 1024));
         kill();
     }
+#elif defined(Q_OS_WIN)
+    // the same tick watches for Blender's end (the job holds no other process); the job's own memory cap ends a make
+    // past it too, this gives it the plain line
+    if (!_box) {
+        return;
+    }
+    int exitCode = 0;
+    if (MakeBox::exited(_box, exitCode)) {
+        finished(exitCode, static_cast<quint32>(exitCode) >= 0xC0000000u);
+        return;
+    }
+    if (MakeBox::peakMemory(_box) > MEMORY_LIMIT_BYTES) {
+        _stopCode = MakeError::BAD_INPUT;
+        _stopReason = QString("Blender used more than %1 GB of memory and was stopped: make it lighter")
+                          .arg(MEMORY_LIMIT_BYTES / (1024 * 1024 * 1024));
+        kill();
+    }
 #endif
 }
 
 // through the watcher: a line on its standard input, then its end; it kills Blender (the sandbox lets Blender start no
-// other program, so the one process is all there is), reaps it and exits
+// other program, so the one process is all there is), reaps it and exits. On Windows the job is ended: Blender is its
+// one process
 void MakeBlender::kill() {
+#ifdef Q_OS_WIN
+    if (_box) {
+        MakeBox::terminate(_box);
+    }
+#else
     if (_process && _process->state() != QProcess::NotRunning) {
         _process->write("stop\n");
         _process->closeWriteChannel();
     }
+#endif
 }
 
 void MakeBlender::cancel() {
+#ifdef Q_OS_WIN
+    if (_box) {
+        _stopCode = MakeError::REFUSED;
+        _stopReason = "the make was stopped";
+        kill();
+        int exitCode = 1;
+        if (!MakeBox::wait(_box, STOP_WAIT_MS)) {
+            qCWarning(makelink) << "Blender's job didn't end in time; closing it";
+        }
+        MakeBox::exited(_box, exitCode);
+        finished(exitCode, false);
+    }
+    return;
+#endif
     if (_process) {
         _stopCode = MakeError::REFUSED;
         _stopReason = "the make was stopped";
@@ -508,12 +772,28 @@ void MakeBlender::cancel() {
 }
 
 void MakeBlender::finished(int exitCode, bool crashed) {
+#ifdef Q_OS_WIN
+    if (!_box) {
+        return;
+    }
+    // Blender's output, from the file it wrote through its inherited handle (the box can't open it by name)
+    MakeBox::end(_box);
+    _box = nullptr;
+    QFile logFile(MakeBox::logPath(_job));
+    if (logFile.open(QIODevice::ReadOnly)) {
+        if (logFile.size() > MAX_LOG_BYTES) {
+            logFile.seek(logFile.size() - MAX_LOG_BYTES);
+        }
+        _log = logFile.readAll();
+    }
+#else
     if (!_process) {
         return;
     }
     _log.append(_process->readAll());
     _process->deleteLater();
     _process = nullptr;
+#endif
     _blenderPid = 0;
     for (QTimer* timer : { _limit, _memory }) {
         if (timer) {
@@ -531,9 +811,11 @@ void MakeBlender::finished(int exitCode, bool crashed) {
     if (!_stopCode.isEmpty()) {
         made.code = _stopCode;
         made.message = _stopReason;
+#ifndef Q_OS_WIN
     } else if (exitCode == WATCHER_CANT_START) {
         made.code = MakeError::NOT_AVAILABLE_HERE;
         made.message = "Make couldn't start Blender with its watcher";
+#endif
     } else if (crashed || exitCode > 128 || exitCode != 0 || !QFileInfo::exists(out + "/model.glb")) {
         // the watcher says 128 + the signal when Blender was ended by one
         made.code = MakeError::BAD_INPUT;
@@ -590,6 +872,170 @@ void MakeBlender::finish(Made made) {
                      << "s";
     if (done) {
         done(made);
+    }
+}
+
+#ifdef Q_OS_WIN
+namespace {
+
+struct ProbeOutcome {
+    bool known { false };   // the probe answered "refused" or "reached"
+    bool held { false };    // the box's connection was refused
+    bool lpac { true };     // the box form it ran under
+    QString detail;
+};
+
+// the self-test, off the UI thread: the unboxed control first, then Blender in the box running selftest.py against
+// the same target; the stricter box form first, the plain one when Blender wrote nothing under it (as the box test's
+// ladder did). Nothing here touches the MakeBlender object.
+ProbeOutcome runSelfTest(const QString& blender, const QString& job, bool lpacFirst, int cpuSeconds) {
+    ProbeOutcome outcome;
+    const QString address = MakeBox::ownAddress();
+    if (address.isEmpty()) {
+        outcome.detail = "the control found no network address of this computer";
+        return outcome;
+    }
+    if (MakeBox::connectOnce(address, SELF_TEST_PORT, SELF_TEST_CONTROL_MS) != MakeBox::Reach::Connected) {
+        outcome.detail = "the control couldn't reach this computer's own address";
+        return outcome;
+    }
+    // Blender proven Blender, and its folder its own, before the probe opens any folder to the box
+    QString reason;
+    if (!MakeBox::isBlender(blender, reason) ||
+        (!MakeBox::underProgramFiles(blender) &&
+         !MakeBlender::isBlendersOwnFolder(QFileInfo(blender).absolutePath(), MakeBlender::blenderVersion(blender),
+                                           MakeBox::knownFolders(), reason))) {
+        outcome.detail = "Blender's program or folder was refused: " + reason;
+        return outcome;
+    }
+    const QString fixed = job + "/fixed";
+    const QString work = job + "/work";
+    const QString result = work + "/selftest.txt";
+    const bool forms[2] = { lpacFirst, false };
+    for (int i = 0; i < (lpacFirst ? 2 : 1); ++i) {
+        const bool lpac = forms[i];
+        QFile::remove(result);
+        MakeBox::Start boxed;
+        boxed.blender = blender;
+        boxed.arguments = QStringList { "--background", "--factory-startup", "--disable-autoexec", "-noaudio",
+                                        "--python", QDir::toNativeSeparators(fixed + "/selftest.py"), "--",
+                                        address, QString::number(SELF_TEST_PORT), QDir::toNativeSeparators(result) };
+        boxed.jobFolder = job;
+        boxed.workingFolder = work;
+        boxed.readable = QStringList { fixed };
+        if (!MakeBox::underProgramFiles(blender)) {
+            boxed.readable.append(QFileInfo(blender).absolutePath());
+        }
+        boxed.environment = QStringList { "PYTHONDONTWRITEBYTECODE=1", "PYTHONNOUSERSITE=1" };
+        boxed.cpuSeconds = cpuSeconds;
+        boxed.memoryBytes = MakeBlender::MEMORY_LIMIT_BYTES;
+        boxed.lpac = lpac;
+        QString why;
+        MakeBox::Run* run = MakeBox::start(boxed, why);
+        if (!run) {
+            outcome.detail = "the box didn't start: " + why;
+            continue;
+        }
+        const bool ended = MakeBox::wait(run, SELF_TEST_PROBE_MS);
+        int exitCode = 0;
+        if (!ended) {
+            MakeBox::terminate(run);
+        }
+        MakeBox::exited(run, exitCode);
+        MakeBox::end(run);
+        if (!ended) {
+            outcome.detail = "the probe didn't end in time";
+            break;
+        }
+        QFile file(result);
+        if (!file.open(QIODevice::ReadOnly)) {
+            outcome.detail = QString("the probe wrote nothing (Blender exit %1)").arg(exitCode);
+            continue;   // Blender may not start under this form: the next one
+        }
+        bool held = false;
+        if (!MakeBlender::readSelfTestResult(file.read(64), held)) {
+            outcome.detail = "the probe's answer couldn't be read";
+            break;
+        }
+        outcome.known = true;
+        outcome.held = held;
+        outcome.lpac = lpac;
+        outcome.detail = held ? "the box couldn't reach this computer's own address"
+                              : "the box reached this computer's own address";
+        break;
+    }
+    return outcome;
+}
+
+}  // namespace
+#endif
+
+void MakeBlender::selfTest(std::function<void(bool, const QString&)> done) {
+#ifdef Q_OS_WIN
+    QString why;
+    const QString blender = findBlender(why, _blender);
+    if (blender.isEmpty()) {
+        _selfTest = SelfTest::Failed;
+        done(false, why);
+        return;
+    }
+    // the installer's firewall rules: read and logged, never the decision (Group Policy can make Windows ignore local
+    // rules while they still read as present and enabled), so the probe below decides
+    QString rules;
+    if (MakeFirewall::boxRulesInPlace(rules)) {
+        qCInfo(makelink) << "the box's firewall rules: in place";
+    } else {
+        qCInfo(makelink) << "the box's firewall rules: not confirmed:" << rules;
+    }
+    const QString id = QUuid::createUuid().toString(QUuid::Id128).left(12);
+    const QString job = QDir(_folder).absoluteFilePath("jobs/selftest-" + id);
+    if (!QDir().mkpath(job + "/fixed") || !QDir().mkpath(job + "/work") ||
+        !copyResource("selftest.py", job + "/fixed/selftest.py")) {
+        QDir(job).removeRecursively();
+        _selfTest = SelfTest::Failed;
+        qCWarning(makelink) << "the self-test couldn't make its folder";
+        done(false, UNAVAILABLE_WORDS);
+        return;
+    }
+    _selfTest = SelfTest::Running;
+    _selfTestDone = std::move(done);
+    const int round = ++_selfTestRound;
+    const bool lpacFirst = _lpac;
+    const int cpuSeconds = _cpuLimitS;
+    QPointer<MakeBlender> self(this);
+    // the answer comes back on this object's thread; a later Connect's round makes an earlier answer stale
+    std::thread([self, round, blender, job, lpacFirst, cpuSeconds] {
+        const ProbeOutcome outcome = runSelfTest(blender, job, lpacFirst, cpuSeconds);
+        QDir(job).removeRecursively();
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, round, outcome] {
+            if (self) {
+                self->selfTestEnded(round, outcome.known, outcome.held, outcome.detail, outcome.lpac);
+            }
+        }, Qt::QueuedConnection);
+    }).detach();
+#else
+    QString why;
+    const bool offered = available(why);
+    _selfTest = offered ? SelfTest::Passed : SelfTest::Failed;
+    done(offered, why);
+#endif
+}
+
+void MakeBlender::selfTestEnded(int round, bool known, bool held, const QString& detail, bool lpac) {
+    if (round != _selfTestRound) {
+        return;   // a later Connect asked again; its own answer comes
+    }
+    const bool passed = known && held;
+    _selfTest = passed ? SelfTest::Passed : SelfTest::Failed;
+    if (known) {
+        _lpac = lpac;
+    }
+    qCInfo(makelink) << "the box's self-test:" << (passed ? "passed" : "withdrew Blender") << "(" << detail << ")"
+                     << (known ? (lpac ? "under the stricter form" : "under the plain form") : "");
+    auto done = std::move(_selfTestDone);
+    _selfTestDone = nullptr;
+    if (done) {
+        done(passed, passed ? QString() : QString(UNAVAILABLE_WORDS));
     }
 }
 

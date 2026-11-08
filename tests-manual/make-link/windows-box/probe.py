@@ -15,8 +15,10 @@
 #  Network targets (targets.json): the test's loopback listener, a closed port on the LAN address, the laptop's own
 #  computer name, a name under .invalid, and when the test was given them: a listener on the Mac, Windows' own port
 #  135 on the LAN address (a bare connect, closed at once, nothing sent or read), a listener of the test's own on the
-#  LAN address, and (run 7) a public name given with --public-name (resolved or not, nothing kept). Details keep an
-#  exception's type and number only, never an address or a message.
+#  LAN address, and (run 7) a public name given with --public-name (resolved or not, nothing kept). The closed port
+#  and the test's own listener come again on the laptop's own IPv6 address when it has one (lan6_closed,
+#  lan6_listener; security's second-machine item). Details keep an exception's type and number only, never an address
+#  or a message.
 #  Scoring (security, 11-07 after run 6): the closed port, the own computer name and the public name are INFO in the
 #  box ("pass": null, "score": "info"): their reached/not is recorded, never a pass or a fail. A closed port's RST is
 #  the laptop's own network stack with nothing listening, and whether names may resolve in the box is Caity's call.
@@ -59,8 +61,8 @@ def open_folder(path):
 
 
 targets = json.load(open(os.path.join(job, "targets.json")))
-# {"token": str, "loopback", "lan_closed", "lan_listener", "system_port", "mac": [address, port] or null,
-#  "public_name": str or null}
+# {"token": str, "loopback", "lan_closed", "lan_listener", "lan6_closed", "lan6_listener", "system_port",
+#  "mac": [address, port] or null, "public_name": str or null, "make_pipe": str or null}
 
 
 def failure(e):
@@ -89,6 +91,28 @@ def connect(address, greeting=None, read=True):
         return False, failure(e)
 
 
+MAKE_PIPE_CHECK = "Make's own pipe, by its name"
+
+
+def open_pipe(name):
+    """(reached, detail): Make's own named pipe opened as a client with CreateFileW and closed at once, nothing sent or
+    read; the detail is Windows' own error number (Python's open() would give errno 13 with no winerror). From the box
+    its access list (this user only, no AppContainer entry) must answer error 5; the unboxed control may open it (Make
+    takes it or refuses it as a second client, and closes it)."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32,
+                                     ctypes.c_uint32, ctypes.c_void_p]
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    GENERIC_READ, GENERIC_WRITE, OPEN_EXISTING = 0x80000000, 0x40000000, 3
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+    handle = kernel32.CreateFileW(name, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING, 0, None)
+    if handle is None or handle == INVALID_HANDLE_VALUE:
+        return False, "winerror %d" % ctypes.get_last_error()
+    kernel32.CloseHandle(handle)
+    return True, "connected"
+
+
 def resolve(name):
     """name: a name, or None for this laptop's own computer name (looked up inside the try: the box may refuse that)."""
     try:
@@ -112,6 +136,12 @@ def network_checks(boxed):
     if targets.get("lan_listener"):
         checks.append(("the test's own listener on this laptop's LAN address",
                        lambda: connect(targets["lan_listener"], token), "connected"))
+    if targets.get("lan6_closed"):
+        checks.append(("a closed port on this laptop's IPv6 address",
+                       lambda: connect(targets["lan6_closed"], None, False), "reached"))
+    if targets.get("lan6_listener"):
+        checks.append(("the test's own listener on this laptop's IPv6 address",
+                       lambda: connect(targets["lan6_listener"], token), "connected"))
     if targets.get("system_port"):
         checks.append(("Windows' own port 135 on this laptop's LAN address",
                        lambda: connect(targets["system_port"], None, False), "connected"))
@@ -120,11 +150,25 @@ def network_checks(boxed):
         checks.append(("the Mac's listener (off the laptop)", lambda: connect(targets["mac"], None, False), "connected"))
     if targets.get("public_name"):
         checks.append(("a public name (DNS)", lambda: resolve(targets["public_name"]), "reached"))
+    if targets.get("make_pipe"):
+        checks.append((MAKE_PIPE_CHECK, lambda: open_pipe(targets["make_pipe"]), "connected"))
     # recorded, not scored, in the box (security, 11-07 after run 6; see the top)
-    info = ("a closed port on this laptop's LAN address", "this laptop's own computer name (DNS)", "a public name (DNS)")
+    info = ("a closed port on this laptop's LAN address", "a closed port on this laptop's IPv6 address",
+            "this laptop's own computer name (DNS)", "a public name (DNS)")
     for name, action, control_needs in checks:
         reached, detail = action()
-        if boxed:
+        score = None
+        if boxed and name == MAKE_PIPE_CHECK:
+            # the box's pass needs access denied, Windows' error 5, exactly: a busy pipe (231: Make has one instance, held
+            # by any client, the control's own open included), a missing one (2) or a timeout says nothing: unknown
+            if reached:
+                passed = False
+            elif detail == "winerror 5":
+                passed = True
+            else:
+                passed = None
+                score = "unknown"
+        elif boxed:
             passed = None if name in info else not reached
         elif control_needs == "connected":
             passed = reached and detail.startswith("connected")
@@ -135,6 +179,8 @@ def network_checks(boxed):
         entry = {"check": "network: " + name, "reached": reached, "pass": passed, "detail": detail}
         if boxed and name in info:
             entry["score"] = "info"
+        if score:
+            entry["score"] = score
         results.append(entry)
 
 

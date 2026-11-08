@@ -9,6 +9,10 @@
 
 #include "MakeBlenderTests.h"
 
+#ifdef Q_OS_WIN
+#include <MakeBox.h>
+#endif
+
 #include <cerrno>
 #include <cstdio>
 
@@ -767,6 +771,139 @@ void MakeBlenderTests::testWatcherIsBlendersParent() {
     QVERIFY(done);
     QCOMPARE(made.code, MakeError::REFUSED);
     QVERIFY(processGone(pid, 3000));
+#endif
+}
+
+void MakeBlenderTests::testVersionAndWords() {
+    // the version Make needs (MINIMUM_MAJOR.MINIMUM_MINOR or newer), read from a version string of any length
+    QVERIFY(MakeBlender::versionIsEnough("5.2.2"));
+    QVERIFY(MakeBlender::versionIsEnough("5.2"));
+    QVERIFY(MakeBlender::versionIsEnough("5.10.0"));
+    QVERIFY(MakeBlender::versionIsEnough("6.0.0"));
+    QVERIFY(!MakeBlender::versionIsEnough("5.1.9"));
+    QVERIFY(!MakeBlender::versionIsEnough("4.1"));
+    QVERIFY(!MakeBlender::versionIsEnough(""));
+    QVERIFY(!MakeBlender::versionIsEnough("blender"));
+    // the plain lines: the dock's two (one ellipsis character, no word of the machinery) and the too-old answer
+    QCOMPARE(QString::fromUtf8(MakeBlender::CHECKING_WORDS), QString("Checking Blender") + QChar(0x2026));
+    QCOMPARE(QString(MakeBlender::UNAVAILABLE_WORDS), QString("Blender isn't available here"));
+    QVERIFY(!QString::fromUtf8(MakeBlender::CHECKING_WORDS).contains("box", Qt::CaseInsensitive));
+    QCOMPARE(MakeBlender::tooOldLine("4.1"), QString("That's Blender 4.1; Make needs 5.2 or newer."));
+    QVERIFY(MakeBlender::tooOldLine(QString()).contains("5.2 or newer"));
+}
+
+void MakeBlenderTests::testSelfTestResult() {
+    // the probe's one word, and nothing else counts
+    bool held = true;
+    QVERIFY(MakeBlender::readSelfTestResult("refused\n", held));
+    QVERIFY(held);
+    QVERIFY(MakeBlender::readSelfTestResult("reached", held));
+    QVERIFY(!held);
+    QVERIFY(MakeBlender::readSelfTestResult("  refused  \r\n", held));
+    QVERIFY(held);
+    QVERIFY(!MakeBlender::readSelfTestResult("", held));
+    QVERIFY(!MakeBlender::readSelfTestResult("refused reached", held));
+    QVERIFY(!MakeBlender::readSelfTestResult("Traceback (most recent call last)", held));
+    QVERIFY(!MakeBlender::readSelfTestResult(QByteArray(1000, 'r'), held));
+}
+
+void MakeBlenderTests::testSelfTestAnswers() {
+    QTemporaryDir dir;
+    MakeBlender blender(dir.path());
+#ifndef Q_OS_WIN
+    blender.setWatcher(dir.filePath("no-watcher"));
+#endif
+    QCOMPARE(static_cast<int>(blender.selfTestState()), static_cast<int>(MakeBlender::SelfTest::NotRun));
+    int answers = 0;
+    bool offered = false;
+    QString why;
+    blender.selfTest([&](bool given, const QString& reason) {
+        ++answers;
+        offered = given;
+        why = reason;
+    });
+#ifdef Q_OS_WIN
+    // Windows: the box's live self-test answers in the background, within its limits, with the plain line when not
+    QString found;
+    if (MakeBlender::findBlender(found).isEmpty()) {
+        QCOMPARE(answers, 1);
+        QVERIFY(!offered);
+        QVERIFY(!why.isEmpty());
+        QSKIP("no Blender here");
+    }
+    QCOMPARE(static_cast<int>(blender.selfTestState()), static_cast<int>(MakeBlender::SelfTest::Running));
+    QVERIFY(!blender.available(why));
+    QCOMPARE(why, QString::fromUtf8(MakeBlender::CHECKING_WORDS));
+    QTRY_COMPARE_WITH_TIMEOUT(answers, 1, 120000);
+    QCOMPARE(static_cast<int>(blender.selfTestState()),
+             static_cast<int>(offered ? MakeBlender::SelfTest::Passed : MakeBlender::SelfTest::Failed));
+    QCOMPARE(why, offered ? QString() : QString(MakeBlender::UNAVAILABLE_WORDS));
+    QCOMPARE(blender.available(why), offered);
+#else
+    // elsewhere the answer is available()'s, at once: without a watcher not offered, and it says why
+    QCOMPARE(answers, 1);
+    QVERIFY(!offered);
+    QVERIFY(!why.isEmpty());
+    QCOMPARE(static_cast<int>(blender.selfTestState()), static_cast<int>(MakeBlender::SelfTest::Failed));
+#endif
+}
+
+void MakeBlenderTests::testBlenderIdentityRules() {
+    // the program: its name and its product name, both exact (the signature is the Windows check's, live below)
+    QString why;
+    QVERIFY(MakeBlender::looksLikeBlender("blender.exe", "Blender", why));
+    QVERIFY(MakeBlender::looksLikeBlender("Blender.EXE", " Blender ", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("onedrive.exe", "Blender", why));
+    QVERIFY(why.contains("blender.exe"));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender.exe", "OneDrive", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender.exe", "Blender Launcher", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender.exe", "", why));
+    QVERIFY(!MakeBlender::looksLikeBlender("blender", "Blender", why));
+
+    // the folder: Blender's own holds its "<major>.<minor>" folder, is no root, and is none of the person's known
+    // folders nor a parent of one; a blender.exe loose in a known folder is refused
+    QTemporaryDir dir;
+    const QString unpacked = dir.filePath("Downloads/blender-5.2.2-windows-x64");
+    const QString downloads = dir.filePath("Downloads");
+    QVERIFY(QDir().mkpath(unpacked + "/5.2"));
+    QVERIFY(QDir().mkpath(dir.filePath("other")));
+    const QStringList known { downloads, dir.filePath("Desktop"), dir.path() };
+    QVERIFY2(MakeBlender::isBlendersOwnFolder(unpacked, "5.2.2", known, why), qPrintable(why));
+    QVERIFY(MakeBlender::isBlendersOwnFolder(unpacked + "/", "5.2.9", known, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(unpacked, "5.3.0", known, why));   // no 5.3 folder in it
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(dir.filePath("other"), "5.2.2", known, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(downloads, "5.2.2", known, why));   // the known folder itself
+    QVERIFY(why.contains("Blender's own"));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(dir.path(), "5.2.2", known, why));  // a parent of known folders
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QDir::rootPath(), "5.2.2", QStringList(), why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QString(), "5.2.2", QStringList(), why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(unpacked, "5", known, why));
+    // case and separators don't matter for the known folders
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(downloads.toUpper(), "5.2.2", QStringList { downloads }, why));
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(downloads, "5.2.2", QStringList { QDir::toNativeSeparators(downloads) + "/" }, why));
+}
+
+void MakeBlenderTests::testBlenderIsBlenderLive() {
+#ifdef Q_OS_WIN
+    // the installed Blender passes the whole check (name, product name, signature by BLENDER_SIGNER); a program of
+    // another maker named blender.exe doesn't; the person's known folders are read
+    QString why;
+    const QString found = MakeBlender::findBlender(why);
+    if (found.isEmpty()) {
+        QSKIP(qPrintable("no Blender here: " + why));
+    }
+    QVERIFY2(MakeBox::isBlender(found, why), qPrintable(why));
+    QTemporaryDir dir;
+    const QString impostor = dir.filePath("blender.exe");
+    QVERIFY(QFile::copy(qEnvironmentVariable("SystemRoot") + "/System32/notepad.exe", impostor));
+    QVERIFY(!MakeBox::isBlender(impostor, why));
+    QVERIFY(!why.isEmpty());
+    QVERIFY(!MakeBox::isBlender(dir.filePath("missing.exe"), why));
+    const QStringList known = MakeBox::knownFolders();
+    QVERIFY(known.size() >= 5);
+    QVERIFY(!MakeBlender::isBlendersOwnFolder(QDir::homePath(), "5.2.2", known, why));
+#else
+    QSKIP("the signature and known-folder checks are Windows' own");
 #endif
 }
 

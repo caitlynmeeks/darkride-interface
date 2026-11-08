@@ -38,6 +38,11 @@ private slots:
     void testWatcherIsBlendersParent();
     void testOneMakeAtATime();
     void testTextureNamesChecked();
+    void testVersionAndWords();
+    void testSelfTestResult();
+    void testSelfTestAnswers();
+    void testBlenderIdentityRules();
+    void testBlenderIsBlenderLive();
 };
 
 #endif // hifi_MakeBlenderTests_h
