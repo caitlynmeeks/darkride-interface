@@ -88,7 +88,7 @@
                 if (bytes > MAX_VALUE_BYTES) {
                     return failed("bad_input", k + " is " + bytes + " bytes; a value can be at most " + MAX_VALUE_BYTES +
                         " bytes, or the world won't keep it. Put long data a script needs in the script itself" +
-                        " (set_script keeps scripts in the world's files).");
+                        " (set_script keeps scripts as files).");
                 }
             }
         }

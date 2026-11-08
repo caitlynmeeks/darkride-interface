@@ -30,6 +30,7 @@
 #include <QtCore/QHash>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
+#include <QtCore/QSet>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
@@ -64,7 +65,8 @@ public:
         TimeRole
     };
     struct Row {
-        QString kind;           // ask, activity, reply, question, thing, script, model, done
+        QString kind;           // ask, activity, failed (a step that didn't work), reply, question, thing, script,
+                                // model, done
         int request { 0 };
         QString text;
         QString detail;
@@ -93,6 +95,8 @@ public:
     const QVector<Row>& rows() const { return _rows; }
     /// Changes the rows `match` picks with `change`, and says which changed.
     void update(const std::function<bool(const Row&)>& match, const std::function<void(Row&)>& change);
+    /// Changes the one row at `row`.
+    void updateAt(int row, const std::function<void(Row&)>& change);
 
 signals:
     void countChanged();
@@ -133,6 +137,10 @@ class MakeDock : public QObject, public Dependency {
     Q_PROPERTY(QObject* made READ made CONSTANT)
     // the more menu (•••) is showing: its button is drawn lit, as the Build toolbar's tools while their menu is open
     Q_PROPERTY(bool moreMenuOpen READ moreMenuOpen NOTIFY moreMenuChanged)
+    // where Make keeps its work now (Caity 11-08): "my_files" (the default) or "world", the person's choice where this
+    // world allows its own files; and whether it does (the row's pop-up, mary 15:36, only then)
+    Q_PROPERTY(QString filesPlace READ filesPlace NOTIFY filesPlaceChanged)
+    Q_PROPERTY(bool filesChoice READ filesChoice NOTIFY filesPlaceChanged)
 
 public:
     MakeDock();
@@ -171,6 +179,8 @@ public:
     bool sentWaiting() const { return _sentWaiting; }
     bool notGotIt() const { return _notGotIt; }
     bool moreMenuOpen() const { return _moreMenuOpen; }
+    QString filesPlace() const;
+    bool filesChoice() const;
 
     // ---- the dock's calls (contract). "Real input" ones answer false when refused. ----
 
@@ -213,6 +223,9 @@ public:
     /// The more menu (•••): the app's own menu at (x, y) on the screen, as the Code panel's. Show Make Folder (the
     /// system's own file browser on MakeLink's folder), Disconnect.
     Q_INVOKABLE void showMoreMenu(qreal x, qreal y);
+    // the "Keep Make's work in:" pop-up (the app's own menu): My Files, This World's Files, a check on the current one;
+    // nothing while a request is working (a change mid-request would leave half the work in each place)
+    Q_INVOKABLE void showFilesPlaceMenu(qreal x, qreal y);
 
     /// Tests only (Test.makeDockConnect, with --testScript): Connect on the Terminal route without the person's click;
     /// from then on every question Claude asks is answered no at once. Never the key route. Not on the QML's context.
@@ -252,6 +265,7 @@ signals:
     void workingChanged();
     void channelChanged();
     void moreMenuChanged();
+    void filesPlaceChanged();
     /// a question was asked, answered or timed out
     void questionsChanged();
     /// a request came to its end by itself: finished (true) or couldn't finish (false); never after the person's Stop
@@ -288,6 +302,9 @@ private:
     void addRow(MakeDockRows::Row row);
     void addMade(const MakeDockRows::Row& row);
     void requestDone(int request, double cost);
+    // a step of `request` that ran and didn't work (MakeLink::callFailed): its own row, the newest with startedLine,
+    // becomes failedLine (mary 12:28 11-08: "Couldn't <step>: <reason>."), and the request ends Couldn't finish
+    void stepFailed(int request, const QString& startedLine, const QString& failedLine);
     void setWorking(bool working);
     void cleanPictures(const QStringList& files);
     QString picturesFolder() const;
@@ -316,6 +333,7 @@ private:
     bool _working { false };
     double _costSoFar { -1.0 };
     int _doneRequest { 0 };         // the newest request with a "done" row
+    QSet<int> _failedRequests;      // requests with a step that didn't work: they end Couldn't finish, never Done
 
     QPointer<QQuickWindow> _window;
     QElapsedTimer _sinceInput;      // since the last real input in the dock's window

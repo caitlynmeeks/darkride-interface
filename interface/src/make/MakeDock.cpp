@@ -41,6 +41,8 @@
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QMenu>
 
+#include <NodeList.h>
+
 #include <MainWindow.h>
 #include <MakeBlender.h>
 #include <MakeClaude.h>
@@ -252,6 +254,13 @@ void MakeDockRows::update(const std::function<bool(const Row&)>& match, const st
     }
 }
 
+void MakeDockRows::updateAt(int row, const std::function<void(Row&)>& change) {
+    if (row >= 0 && row < _rows.size()) {
+        change(_rows[row]);
+        emit dataChanged(index(row), index(row));
+    }
+}
+
 // ---- MakeDock ----
 
 bool MakeDock::isAvailable() {
@@ -274,6 +283,15 @@ MakeDock::MakeDock() {
     // Claude Code's version comes with its hello, after the connection: the panel re-reads claudeVersion (the
     // "Update Claude Code" line; the chat kit's old-version phase)
     QObject::connect(link.data(), &MakeLink::claudeVersionChanged, this, &MakeDock::stateChanged);
+    // a step that ran and didn't work: its row says so (stepFailed)
+    QObject::connect(link.data(), &MakeLink::callFailed, this, &MakeDock::stepFailed);
+    // where Make keeps its work: the person's choice, and whether this world offers its own files (the world, the
+    // person's rights in it)
+    QObject::connect(link.data(), &MakeLink::filesPlaceChanged, this, &MakeDock::filesPlaceChanged);
+    auto nodeList = DependencyManager::get<NodeList>();
+    QObject::connect(nodeList.data(), &LimitedNodeList::canWriteAssetsChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::domainURLChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::connectedToDomain, this, &MakeDock::filesPlaceChanged);
     // an Allow covers one signed-in account (allowHash)
     QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
                      [this] { emit setupTextChanged(); });
@@ -421,7 +439,8 @@ MakeDock::MakeDock() {
         }
         requestDone(request, _costSoFar);
         if (_working && !_stopRequested) {
-            emit requestEnded(!error);   // the Make badge: Done, or Couldn't finish
+            // the Make badge: Done, or Couldn't finish (also when a step didn't work: the badge never says done then)
+            emit requestEnded(!error && !_failedRequests.contains(request));
         }
         setWorking(false);
     });
@@ -452,7 +471,8 @@ MakeDock::MakeDock() {
         const int request = DependencyManager::get<MakeLink>()->currentRequest();
         requestDone(request, -1.0);
         if (_working && !_stopRequested) {
-            emit requestEnded(true);   // Terminal went quiet: the Make badge's Done
+            // Terminal went quiet: the Make badge's Done, or Couldn't finish when a step didn't work
+            emit requestEnded(!_failedRequests.contains(request));
         }
         setWorking(false);
     });
@@ -672,7 +692,8 @@ namespace {
     // the shown one of the items by that name (the start line is in two places, one shown at a time), else the first
     QQuickItem* testFind(QQuickWindow* window, const QString& objectName) {
         // only the dock's own named parts a kit needs: never "" (every unnamed item, the key's field among them)
-        static const QStringList NAMES { "makeStartLine", "makeCopy", "makeComposer" };
+        static const QStringList NAMES { "makeStartLine", "makeCopy", "makeComposer", "makeFilesPlaceWords",
+                                         "makeFilesPlaceButton" };
         if (!window || !NAMES.contains(objectName)) {
             return nullptr;
         }
@@ -1062,6 +1083,37 @@ void MakeDock::showMoreMenu(qreal x, qreal y) {
     menu->popup(QPoint(qRound(x), qRound(y)));
 }
 
+QString MakeDock::filesPlace() const {
+    return DependencyManager::get<MakeLink>()->filesGoTo();   // as New Script reads it (CodeEditor::newScriptPlace)
+}
+
+bool MakeDock::filesChoice() const {
+    return DependencyManager::get<MakeLink>()->worldFilesAllowed();
+}
+
+void MakeDock::showFilesPlaceMenu(qreal x, qreal y) {
+    if (_working || !filesChoice()) {
+        return;   // the row says where without a pop-up then
+    }
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const QString place = filesPlace();
+    auto add = [this, menu, &place](const QString& text, const QString& value) {
+        auto action = menu->addAction(text);
+        action->setCheckable(true);
+        action->setChecked(place == value);
+        // the person's own click in the app's menu (a script can't reach it): the choice is remembered (MakeLink)
+        QObject::connect(action, &QAction::triggered, this, [this, value] {
+            if (!_working) {
+                DependencyManager::get<MakeLink>()->setFilesPlace(value);
+            }
+        });
+    };
+    add("My Files", "my_files");
+    add("This World's Files", "world");
+    menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
 // ---- pictures ----
 
 QString MakeDock::keepSheet(const QString& model, const QVariant& views) const {
@@ -1224,6 +1276,32 @@ void MakeDock::cleanPictures(const QStringList& files) {
 }
 
 // ---- the timeline ----
+
+void MakeDock::stepFailed(int request, const QString& startedLine, const QString& failedLine) {
+    const QString started = clean(startedLine);
+    const QString failed = clean(failedLine).left(300);
+    if (request <= 0 || failed.isEmpty()) {
+        return;
+    }
+    _failedRequests.insert(request);
+    const auto& rows = _timeline.rows();
+    for (int i = rows.size() - 1; i >= 0; i--) {
+        const auto& row = rows.at(i);
+        if (row.request == request && row.kind == "activity" && row.text == started) {
+            _timeline.updateAt(i, [&](MakeDockRows::Row& changed) {
+                changed.kind = "failed";
+                changed.text = failed;
+            });
+            return;
+        }
+    }
+    // its step's row isn't there (a link that came back mid-request): the failure still shows, under its request
+    MakeDockRows::Row row;
+    row.kind = "failed";
+    row.request = request;
+    row.text = failed;
+    addRow(row);
+}
 
 void MakeDock::addRow(MakeDockRows::Row row) {
     row.time = QDateTime::currentMSecsSinceEpoch();

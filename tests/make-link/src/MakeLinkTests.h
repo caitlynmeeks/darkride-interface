@@ -50,6 +50,10 @@ private slots:
     void testClaudePathIsSystemFoldersOnly();
     void testRequestsFollowTheSend();
     void testUndoneRequestRefusesLateChanges();
+    void testEveryToolSaysWhetherItChanges();
+    void testMyFilesFolderName();
+    void testMyFilesLinkIsTheFilesHosts();
+    void testMyFilesUsedBy();
 };
 
 #endif // hifi_MakeLinkTests_h
