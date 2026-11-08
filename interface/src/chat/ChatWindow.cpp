@@ -425,7 +425,8 @@ public:
 
         // the count on the right: red for mentions and direct messages, as Discord's
         QString badge;
-        QColor badgeColour = COLOUR_SELECTION;
+        // (on a selected row, a dark inset: the selection's own colour would hide it; mary 11-08)
+        QColor badgeColour = selected ? COLOUR_RAIL : COLOUR_SELECTION;
         if (notifications > 0) {
             badge = QString::number(notifications);
             badgeColour = COLOUR_RED;
