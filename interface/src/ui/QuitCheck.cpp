@@ -66,7 +66,7 @@ QString saveTerrain() {
     }
     const int failuresBefore = terrain.saveFailures();
     terrain.flushSaves();
-    qCInfo(interfaceapp) << "QuitCheck: saving the terrain before quitting";
+    qCDebug(interfaceapp) << "QuitCheck: saving the terrain before quitting";
 
     QElapsedTimer waited;
     waited.start();
@@ -102,7 +102,7 @@ QString saveTerrain() {
     notice.reset();
 
     if (!terrain.hasPendingSaves()) {
-        qCInfo(interfaceapp) << "QuitCheck: the terrain is saved (" << waited.elapsed() << "ms)";
+        qCDebug(interfaceapp) << "QuitCheck: the terrain is saved (" << waited.elapsed() << "ms)";
         return QString();
     }
     QString reason = terrain.saveFailures() > failuresBefore ? terrain.lastSaveError() : QString();
@@ -139,20 +139,20 @@ bool ask(const QStringList& scripts, const QString& terrainReason) {
     if (isOutsideRequest()) {
         if (ClientOptions::get().testScript.isEmpty()) {
             mac::bringToFront();
-            qCInfo(interfaceapp) << "QuitCheck: brought to the front to ask";
+            qCDebug(interfaceapp) << "QuitCheck: brought to the front to ask";
         } else {
-            qCInfo(interfaceapp) << "QuitCheck: a test client stays behind to ask";
+            qCDebug(interfaceapp) << "QuitCheck: a test client stays behind to ask";
         }
     }
 #endif
-    qCInfo(interfaceapp) << "QuitCheck: asking:" << title << "| scripts" << scripts << "| terrain"
+    qCDebug(interfaceapp) << "QuitCheck: asking:" << title << "| scripts" << scripts << "| terrain"
                          << (terrainReason.isEmpty() ? QString("saved") : terrainReason);
     popup::Alert alert(popup::appIcon(), title, text, QString(),
                        { { "Cancel", popup::Role::Cancel }, { "Discard Changes", popup::Role::Destructive } },
                        qApp->getWindow());
     alert.exec();
     const bool discard = alert.answer() == 1;
-    qCInfo(interfaceapp) << "QuitCheck: answered" << (discard ? "Discard Changes" : "Cancel");
+    qCDebug(interfaceapp) << "QuitCheck: answered" << (discard ? "Discard Changes" : "Cancel");
     return discard;
 }
 
@@ -176,7 +176,7 @@ bool mayQuit() {
         return true;
     }
     if (systemEnding()) {
-        qCInfo(interfaceapp) << "QuitCheck: the system is ending the session: no question";
+        qCDebug(interfaceapp) << "QuitCheck: the system is ending the session: no question";
         goingAheadNow = true;
         return true;
     }
@@ -189,7 +189,7 @@ bool mayQuit() {
         DependencyManager::isSet<CodeEditor>() ? DependencyManager::get<CodeEditor>()->unsavedNames() : QStringList();
     const bool nothing = scripts.isEmpty() && terrainReason.isEmpty();
     if (nothing) {
-        qCInfo(interfaceapp) << "QuitCheck: nothing unsaved";
+        qCDebug(interfaceapp) << "QuitCheck: nothing unsaved";
     }
     const bool yes = nothing || ask(scripts, terrainReason);
     asking = false;
