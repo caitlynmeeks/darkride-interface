@@ -31,6 +31,8 @@ const QString NOT_FOUND = "not_found";
 const QString BAD_INPUT = "bad_input";
 const QString BUSY = "busy";
 const QString TIMEOUT = "timeout";
+// not an answer Claude gets: a call that ended because Claude Code cancelled it or the connection closed (callFinished)
+const QString CANCELLED = "cancelled";
 }
 
 // The library's resources (make-link.qrc: TOOLS.json, the guide, make-tools.js, the Blender files) are in this library.

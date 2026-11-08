@@ -70,6 +70,11 @@ A thing's script is one expression, a function the engine calls with `new`:
 `set_script` saves the script as a file in the world's own files (`atp:/claude-scripts/...`), marked as made with
 Claude, and keeps a readable copy on the person's computer; `get` shows a thing's scripts' text. Each thing has two script slots (`set_script` side):
 
+Where `scene` says `here.canKeepFiles` is false, the world can't keep a script or a model: it's a file on this
+computer, or the person may not add files there. Build with what things do on their own (their properties, physics)
+and tell the person plainly that a script or a model needs a world on a server. A step that didn't work answers with
+"Not saved" or "Not uploaded": say so, and never describe it as done.
+
 - **server**: runs once, in the world's server. Use it for anything everyone must agree on: a door's open/closed
   state, a lift's position, a score. Changes it makes with `Entities.editEntity` reach every visitor.
 - **client**: runs separately on every visitor's computer. Use it to catch what one visitor does (a click, walking

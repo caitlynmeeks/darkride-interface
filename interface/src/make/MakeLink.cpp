@@ -61,6 +61,10 @@ namespace {
 const int MAX_SOCKET_PATH = 100;  // a socket's path holds 104 bytes on macOS
 // the Terminal route: Claude's next call after this long is the person's next request
 // one request removes this many things before the person is asked
+// why the world can't keep a file of Make's (a script, a model, a long material): its own file store
+const char* NO_FILES_IN_A_FILE_WORLD = "this world is a file on this computer and keeps no files; scripts and models need a "
+                                       "world on a server";
+const char* NO_FILES_ALLOWED = "the person may not add files to this world (its owner can allow it)";
 // the answer a change gets when the person undid its request while Claude was still working (mary's words, 11-08)
 const char* UNDONE_LINE = "Not applied: the person undid this request while you were working on it. Stop working on it, "
                           "and don't redo it unless they ask again.";
@@ -237,17 +241,45 @@ MakeLink::MakeLink() {
     });
     connect(&_server, &MakeLinkServer::callStarted, this, [this](int call, const QString& tool, const QJsonObject& inputs) {
         // the call's request was decided in gate(), before it ran (MakeRequests)
-        _runningCalls.insert(call);
-        _requests.touched();
         const QString line = activityLine(tool, inputs);
+        _runningCalls.insert(call, RunningCall { _request, line, failedPhrase(tool, inputs) });
+        _requests.touched();
         if (!line.isEmpty()) {
             emit activity(_request, line);
         }
     });
-    connect(&_server, &MakeLinkServer::callFinished, this, [this](int call, const QString&, bool, const QString&) {
+    connect(&_server, &MakeLinkServer::callFinished, this,
+            [this](int call, const QString&, bool ok, const QString& code, const QString& message) {
         // only a call that ran counts as activity: a refused one (an undone request's change) mustn't keep it alive
-        if (_runningCalls.remove(call)) {
-            _requests.touched();
+        auto running = _runningCalls.find(call);
+        if (running == _runningCalls.end()) {
+            return;
+        }
+        const RunningCall entry = *running;
+        _runningCalls.erase(running);
+        _requests.touched();
+        // a step that ran and didn't work shows so on its own row, in the person's words (mary, 11-08): never only the
+        // "writing …" line, which reads as done; not for Stop (the person's own act)
+        // nor for a call Claude Code cancelled or the connection closed (the person's act too, like Stop)
+        if (!ok && !_stopping && code != MakeError::CANCELLED && !entry.line.isEmpty()) {
+            // the person's words for why (mary, 11-08): who said no and, where there is one, the way on; each ends with
+            // its own full stop; the server's own words stay in Claude's answer only
+            QString reason;
+            if (message.contains(NO_FILES_IN_A_FILE_WORLD)) {
+                reason = "this world is a file on your computer, so it can't keep files.";
+            } else if (message.contains(NO_FILES_ALLOWED)) {
+                reason = "you can't add files to this world. Its owner can allow it.";
+            } else if (message.contains("the world's files didn't take")) {
+                reason = "the world's server turned it down.";
+            } else if (code == MakeError::TIMEOUT) {
+                reason = "the world took too long to answer.";
+            } else if (code == MakeError::NOT_FOUND) {
+                reason = "it isn't in the world any more.";
+            } else if (code == MakeError::BUSY) {
+                reason = "Make was busy with another change.";
+            }
+            emit callFailed(entry.request, entry.line,
+                            "Couldn't " + entry.failed + (reason.isEmpty() ? QString(".") : ": " + reason));
         }
     });
 
@@ -777,8 +809,10 @@ int MakeLink::send(const QString& text, const QStringList& pictureIds) {
 }
 
 void MakeLink::stop() {
+    _stopping = true;   // the running calls Stop answers are the person's act, not failures to show
     _blender->cancel();
     _server.stop();
+    _stopping = false;
     for (auto it = _asks.begin(); it != _asks.end(); ++it) {
         it.value()(false);
     }
@@ -867,7 +901,7 @@ void MakeLink::longMaterialToFile(const QJsonObject& inputs, const std::function
     const QJsonValue material = properties.value("materialData");
     const QByteArray text = material.isObject() ? QJsonDocument(material.toObject()).toJson(QJsonDocument::Compact)
                                                 : material.toString().toUtf8();
-    if (text.size() <= MAX_INLINE_VALUE_BYTES || !DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
+    if (text.size() <= MAX_INLINE_VALUE_BYTES || !whyNoWorldFiles().isEmpty()) {
         then(inputs);
         return;
     }
@@ -910,6 +944,10 @@ void MakeLink::forward(const QString& tool, const QJsonObject& inputs, const Mak
             for (const QJsonValue& thing : result.value("things").toArray()) {
                 _names.insert(thing.toObject().value("id").toString(), thing.toObject().value("name").toString());
             }
+            // whether a script or a model can be stored here, so Claude knows before it tries (Caity's walkthrough)
+            QJsonObject here = answer.value.value("here").toObject();
+            here["canKeepFiles"] = whyNoWorldFiles().isEmpty();
+            answer.value["here"] = here;
         } else if (tool == "remove") {
             ++_removesThisRequest;
         }
@@ -1089,6 +1127,15 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
                      });
         return;
     }
+    // a world that can't keep the script says so at once, before any copy is written (Caity's walkthrough, 11-08: a
+    // file world answered with a network error, and two copies were left behind)
+    const QString noFiles = whyNoWorldFiles();
+    if (!noFiles.isEmpty()) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE,
+                                            "Not saved: " + noFiles + ". The script isn't on it and isn't running. Tell the "
+                                            "person it didn't work."));
+        return;
+    }
     // marked as made with Claude, and kept as a readable file in the Make folder (security B7)
     const QString header = QString("// made with Claude in Darkride's Make, %1, for %2\n")
                                .arg(QDateTime::currentDateTime().toString(Qt::ISODate), by.value("name").toString());
@@ -1106,7 +1153,9 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
     const int request = _request;
     upload(text, "/claude-scripts/" + name + ".js", [this, id, side, copy, by, request, reply](const QString& url, const QString& error) {
         if (!error.isEmpty()) {
-            reply(MakeLinkServer::Result::error(MakeError::REFUSED, error));
+            QFile::remove(copy);   // not saved, so no readable copy of it either
+            reply(MakeLinkServer::Result::error(MakeError::REFUSED, "Not saved: " + error +
+                                                ". The script isn't on it and isn't running. Tell the person it didn't work."));
             return;
         }
         _bridge.send("set_script", QJsonObject { { "id", id }, { "side", side }, { "url", url } }, request,
@@ -1129,8 +1178,9 @@ void MakeLink::saveScript(const QJsonObject& inputs, const MakeLinkServer::Reply
 
 void MakeLink::upload(const QByteArray& data, const QString& path,
                       const std::function<void(const QString& url, const QString& error)>& done) {
-    if (!DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
-        done(QString(), "you may not put files in this world's own files here (the world's owner can allow it)");
+    const QString noFiles = whyNoWorldFiles();
+    if (!noFiles.isEmpty()) {
+        done(QString(), noFiles);
         return;
     }
     auto client = DependencyManager::get<AssetClient>();
@@ -1138,14 +1188,14 @@ void MakeLink::upload(const QByteArray& data, const QString& path,
     connect(upload, &AssetUpload::finished, this, [this, path, done](AssetUpload* upload, const QString& hash) {
         upload->deleteLater();
         if (upload->getError() != AssetUpload::NoError) {
-            done(QString(), "the world's files refused it: " + upload->getErrorString());
+            done(QString(), "the world's files didn't take it: " + upload->getErrorString());
             return;
         }
         auto mapping = DependencyManager::get<AssetClient>()->createSetMappingRequest(path, hash);
         connect(mapping, &SetMappingRequest::finished, this, [path, done](SetMappingRequest* request) {
             request->deleteLater();
             if (request->getError() != MappingRequest::NoError) {
-                done(QString(), "the world's files refused its name: " + request->getErrorString());
+                done(QString(), "the world's files didn't take its name: " + request->getErrorString());
                 return;
             }
             done("atp:" + path, QString());
@@ -1208,11 +1258,18 @@ void MakeLink::uploadModel(const QJsonObject& inputs, const MakeLinkServer::Repl
         reply(MakeLinkServer::Result::error(MakeError::BAD_INPUT, "the model was refused: " + why));
         return;
     }
+    const QString noFiles = whyNoWorldFiles();
+    if (!noFiles.isEmpty()) {
+        reply(MakeLinkServer::Result::error(MakeError::NOT_AVAILABLE_HERE, "Not uploaded: " + noFiles +
+                                            ". The model isn't in the world. Tell the person it didn't work."));
+        return;
+    }
     const QString name = plainName(inputs.value("name").toString(), 40) + "-" + inputs.value("model_id").toString();
     const QJsonObject by = madeBy();
     upload(bytes, "/claude-models/" + name + ".glb", [reply, by, size = bytes.size()](const QString& url, const QString& error) {
         if (!error.isEmpty()) {
-            reply(MakeLinkServer::Result::error(MakeError::REFUSED, error));
+            reply(MakeLinkServer::Result::error(MakeError::REFUSED, "Not uploaded: " + error +
+                                                ". The model isn't in the world. Tell the person it didn't work."));
             return;
         }
         MakeLinkServer::Result result;
@@ -1326,6 +1383,44 @@ void MakeLink::picture(const QJsonObject& inputs, const MakeLinkServer::Reply& r
             });
         }, 0.0f, false));
     });
+}
+
+QString MakeLink::whyNoWorldFiles() const {
+    auto nodeList = DependencyManager::get<NodeList>();
+    if (nodeList->getDomainHandler().isServerless()) {
+        return NO_FILES_IN_A_FILE_WORLD;   // a world opened from a file has no file store at all
+    }
+    if (!nodeList->getThisNodeCanWriteAssets()) {
+        return NO_FILES_ALLOWED;
+    }
+    return QString();
+}
+
+// the step's words for its "Couldn't …" row, as activityLine words it while it runs
+QString MakeLink::failedPhrase(const QString& tool, const QJsonObject& a) const {
+    auto thing = [this](const QJsonValue& id) {
+        const QString name = _names.value(id.toString());
+        return name.isEmpty() ? QString("a thing") : "“" + name + "”";
+    };
+    if (tool == "get") return "read " + thing(a.value("id"));
+    if (tool == "add") {
+        const QString name = a.value("properties").toObject().value("name").toString();
+        return name.isEmpty() ? QString("add a thing") : "add “" + name + "”";
+    }
+    if (tool == "edit") return "change " + thing(a.value("id"));
+    if (tool == "remove") return "remove " + thing(a.value("id"));
+    if (tool == "set_script") return "write " + thing(a.value("id")) + "’s " + a.value("side").toString("client") + " script";
+    if (tool == "click") return "click " + thing(a.value("id"));
+    if (tool == "call") return "call " + a.value("method").toString() + " on " + thing(a.value("id"));
+    if (tool == "walk") return a.contains("id") ? "walk to " + thing(a.value("id")) : QString("walk there");
+    if (tool == "watch") return "watch what happens";
+    if (tool == "picture") return "take a picture";
+    if (tool == "log") return "read the scripts' log";
+    if (tool == "undo") return "undo";
+    if (tool == "upload_model") return "put the model into the world's files";
+    if (tool == "scene") return "look around";
+    if (tool == "guide") return "read the building guide";
+    return "finish that step";
 }
 
 QString MakeLink::activityLine(const QString& tool, const QJsonObject& a) const {

@@ -178,6 +178,10 @@ signals:
     void claudeVersionChanged();
     /// What Claude is doing now, in plain words ("adding “Awning”").
     void activity(int request, const QString& line);
+    /// A step that ran didn't work: `startedLine` is the activity line it started with (the dock's row to replace),
+    /// `failedLine` the whole sentence for that row ("Couldn't write “Cube”’s server script: this world doesn't keep
+    /// files."). Not for a change refused because its request was undone, nor for Stop.
+    void callFailed(int request, const QString& startedLine, const QString& failedLine);
     /// The person must allow this first (security C10): `what` in plain words, `exactly` what it would do.
     void askPerson(int id, const QString& what, const QString& exactly);
     /// Something made, for the dock's cards: kind "model", "script" or "thing", with its name and details.
@@ -237,7 +241,15 @@ private:
 
     int _request { 0 };
     MakeRequests _requests;   // when a call belongs to a new request (the pause; a Send open until answered)
-    QSet<int> _runningCalls;  // the server's calls that started (ran past the gate)
+    struct RunningCall {
+        int request { 0 };
+        QString line;     // its activity line ("writing …")
+        QString failed;   // its "couldn't" phrase ("write …")
+    };
+    QHash<int, RunningCall> _runningCalls;   // the server's calls that started (ran past the gate)
+    bool _stopping { false };                // Stop is answering the running calls: not failures to show
+    QString whyNoWorldFiles() const;
+    QString failedPhrase(const QString& tool, const QJsonObject& inputs) const;
     QHash<int, std::function<void(bool)>> _asks;
     int _nextAsk { 1 };
     int _removesThisRequest { 0 };

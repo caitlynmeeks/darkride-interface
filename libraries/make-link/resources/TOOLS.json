@@ -222,6 +222,10 @@
               },
               "yawDegrees": {
                 "type": "number"
+              },
+              "canKeepFiles": {
+                "type": "boolean",
+                "description": "False where a script or a model can't be stored: a world opened from a file on this computer, or one the person may not add files to. Build with what things can do on their own then, and say so."
               }
             },
             "required": [
