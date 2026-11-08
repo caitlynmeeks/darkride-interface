@@ -84,6 +84,10 @@ const char* MY_FILES_REFUSED = "My Files didn't take it";
 // a world opened from a file has no server, so nothing runs a server script there
 const char* NO_SERVER_IN_A_FILE_WORLD = "server scripts need a world on a server, and this world is a file on this "
                                         "computer";
+// the dock's reasons for a value longer than Make sets (make-tools.js MAX_VALUE_BYTES), and for a long material Make
+// couldn't keep as a file (mary's words)
+const char* TOO_LONG_REASON = "a value is too long for the world to keep.";
+const char* LONG_MATERIAL_NO_FILE_REASON = "you're signed out.";
 // where Make keeps its files: "my_files" (the default) or "world"
 const char* FILES_PLACE_SETTING = "Make/filesPlace";
 const char* MY_FILES_API = "/api/user/files";
@@ -301,6 +305,10 @@ MakeLink::MakeLink() {
                 reason = "My Files turned it down.";
             } else if (code == MakeError::TIMEOUT && entry.myFiles) {
                 reason = "My Files took too long to answer.";
+            } else if (code == MakeError::BAD_INPUT && message.contains("a value can be at most")) {
+                // a long material is kept as a file when Make can (longMaterialToFile): refused, it couldn't
+                reason = message.startsWith("materialData") && !whyNoFiles().isEmpty() ? QString(LONG_MATERIAL_NO_FILE_REASON)
+                                                                                        : QString(TOO_LONG_REASON);
             } else if (message.contains(NO_FILES_ALLOWED)) {
                 reason = "you can't add files to this world. Its owner can allow it.";
             } else if (message.contains("the world's files didn't take")) {

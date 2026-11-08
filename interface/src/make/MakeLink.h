@@ -118,6 +118,9 @@ public:
     void setFilesPlace(const QString& place);
     /// Whether this world lets the person add files, so the dock offers "This world's files" only where it can work.
     bool worldFilesAllowed() const { return whyNoWorldFiles().isEmpty(); }
+    /// Where Make keeps its files now: the person's choice where it can work here, else "my_files" (New Script follows
+    /// the same place)
+    QString filesGoTo() const;
 
     /// The Make folder: the saved scripts, models, pictures and Blender's jobs, and Claude Code's project folder.
     QString folder() const { return _folder; }
@@ -241,8 +244,6 @@ private:
     /// Every file link this world's things hold (script, server scripts, model, collision model, material).
     /// False when this world's things can't be read now (then no file is deleted).
     bool fileLinksInTheWorld(QStringList& links) const;
-    /// Where Make keeps its files now: the person's choice where it can work here, else "my_files"
-    QString filesGoTo() const;
     bool keepsInMyFiles() const { return filesGoTo() == "my_files"; }
     /// Why a file of Make's can't be kept now in the place the person chose (empty when it can).
     QString whyNoFiles() const;
