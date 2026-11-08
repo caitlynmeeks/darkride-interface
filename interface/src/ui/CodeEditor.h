@@ -149,6 +149,11 @@ public:
     QStringList draftKeys() const;
     QString openStamp() const;
     int allDraftCount() const { return _drafts.size(); }   // every world's (for Test)
+    // what a quit would lose (ui/QuitCheck.cpp): the names of the files with typing that isn't saved, in every world,
+    // the open one first (a new script by the name its first Save gives it)
+    QStringList unsavedNames() const;
+    // the open file's name there: the header's, but "Cube's script" for one written into Cube's field (mary 11-08)
+    QString unsavedName() const;
     QString problem() const { return _problem; }
     bool hasLink() const {
         return !_isNew && (_place == Place::WorldFiles || _place == Place::MyFiles || _place == Place::Web);
@@ -324,6 +329,7 @@ private:
     QString _entityName;
     QString _text;
     QHash<QString, QString> _drafts;   // by world, then file (docDraftKey() for the open document)
+    QHash<QString, QString> _draftNames;   // the header's name of each file when its draft was kept (for the quit)
     QString _worldAddress;     // the world's address (the domain's URL), from DomainHandler
     QUuid _worldID;            // the domain's id once connected; another domain at the same address is another world
     QString _testWorld;

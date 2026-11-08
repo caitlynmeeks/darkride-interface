@@ -52,6 +52,7 @@
 #include "AvatarBookmarks.h"
 #include "editor/Editor.h"
 #include "editor/EditorCreate.h"
+#include "ui/QuitCheck.h"
 #include <QtCore/QHash>
 #include "MainWindow.h"
 #include "render/DrawStatus.h"
@@ -162,8 +163,11 @@ Menu::Menu() {
     // File > Put Avatar in My Files: the worn avatar, when it is on this computer, goes up, private, so others see it
     addActionToQMenuAndActionHash(fileMenu, MenuOption::PutAvatarInMyFiles, 0, qApp, SLOT(putAvatarInMyFiles()));
 
-    // File > Quit
-    addActionToQMenuAndActionHash(fileMenu, MenuOption::Quit, Qt::CTRL | Qt::Key_Q, qApp, SLOT(quit()), QAction::QuitRole);
+    // File > Quit (Cmd+Q, and macOS's own Quit Darkride, which Qt merges with it): what isn't saved is asked about
+    // first (ui/QuitCheck.h)
+    QAction* quitAction = addActionToQMenuAndActionHash(fileMenu, MenuOption::Quit, Qt::CTRL | Qt::Key_Q, nullptr, nullptr,
+                                                        QAction::QuitRole);
+    connect(quitAction, &QAction::triggered, qApp, [] { quitcheck::askThenQuit(); });
 
 
     // Edit menu ----------------------------------

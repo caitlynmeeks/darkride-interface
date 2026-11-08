@@ -227,6 +227,8 @@ public slots:
     float terrainStrokeForTest(const QUuid& id);
     // the angle the next stroke will use, which the outline shows (Test.terrainNextAngle)
     float terrainNextAngleForTest() const { return _terrain.angle(); }
+    // the Terrain tool's saving, for the quit (ui/QuitCheck.cpp): sculpting still waiting goes up before Darkride quits
+    EditorTerrain& terrain() { return _terrain; }
     void createModel();             // asks for a URL
     void createFromMenu();          // the sender's data() is the catalogue key
     void deleteSelection();
