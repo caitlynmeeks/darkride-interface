@@ -75,6 +75,7 @@ private:
     void initializeRenderControl(QOpenGLContext* context);
     void releaseTextureAndFence();
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QSize getPixelSize() const;   // the render target's size, in pixels: the surface's size at Qt's pixel ratio
     void setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& size);   // Qt's target round the texture
 #else
     void setRenderTarget(uint32_t fbo, const QSize& size);
