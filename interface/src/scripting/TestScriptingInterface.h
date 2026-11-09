@@ -654,8 +654,10 @@ public slots:
      * @function Test.typeKeys
      * @param {string} text - The keys.
      * @param {boolean} [toView=false] - To the 3D view.
+     * @param {string} [modifiers=""] - Held with each key: "shift", "keypad" (then "\n" is the keypad's Enter), or both
+     *     joined by "+".
      */
-    Q_INVOKABLE void typeKeys(const QString& text, bool toView = false);
+    Q_INVOKABLE void typeKeys(const QString& text, bool toView = false, const QString& modifiers = QString());
 
     /**jsdoc
      * Answers the next of Darkride's alerts (ui/Popup.h) to open within 15 s, as a click would: after it has drawn,
