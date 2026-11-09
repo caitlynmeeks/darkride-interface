@@ -484,9 +484,11 @@ void GLTextureTransferEngineDefault::processPromotes() {
         // the loading boost (entry 33, Amendment 2): a texture goes to its full size before its uploads start. The
         // Mac's promote makes a new texture and copies the populated mips into it; the old order never copied, since
         // nothing was uploaded before everything was allocated, and alternating uploads with one-step promotes would
-        // copy what the last upload turn had just put there, at the present thread's and the driver's expense.
-        while (boost > 1 && vartexture->canPromote() &&
-               gltexture->size() - originalSize < MAX_ALLOCATED_BYTES_PER_FRAME * boost) {
+        // copy what the last upload turn had just put there, at the present thread's and the driver's expense. The
+        // texture in hand is finished even past the turn's byte budget (checked below, after it): a texture left
+        // half-allocated at the budget's edge was uploaded at that size and copied at its next promote (performance's
+        // GPU region counts, 2026-11-09). The overshoot is at most one texture's size, under the loading screen only.
+        while (boost > 1 && vartexture->canPromote()) {
             vartexture->promote();
         }
         auto allocationDelta = gltexture->size() - originalSize;
