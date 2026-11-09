@@ -71,7 +71,7 @@ public:
         // picture alternating on-time and one-step-old frames)
         int missed { 0 };
         int slackPresents { 0 };        // presents in phase whose slack was read (the missed count's whole)
-        int minSlackUs { 1000000 };     // the least slack of the second's presents (microseconds; negative past the refresh)
+        int minSlackUs { 1000000 };     // the least slack of the second's presents (us; negative past the refresh)
         int maxLateUs { 0 };            // the worst of them
         int repeated { 0 };             // showed the frame before again (no new frame was ready)
         // the frames' fit, what the cadence governor's return reads (RefreshRateManager): each stage's own work
@@ -150,7 +150,7 @@ private:
     mutable std::mutex _cadenceMutex;
     int _presentRefreshes { 0 };
     int _presentLateUs { 0 };
-    bool _presentRepeated { false };   // the present under way shows the frame before again (counted as repeated, so never as missed)
+    bool _presentRepeated { false };   // the present under way shows the frame before again (repeated, never missed)
     std::atomic<bool> _inPhase { false };
     // what the last log line said (present thread only)
     int _loggedInPhase { -1 };

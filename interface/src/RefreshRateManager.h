@@ -123,7 +123,8 @@ public:
         int repeated { 0 };
         int onTwoOrMoreRefreshes { 0 };
         int onOneRefresh { 0 };
-        int missed { 0 };               // handed to the display with under RefreshRateController::PRESENT_SLACK_FLOOR_US before the refresh
+        int missed { 0 };               // handed to the display with under a millisecond before the refresh (the
+                                        // controller's PRESENT_SLACK_FLOOR_US): shown a refresh late, counted on one
         int slackPresents { 0 };        // the presents whose slack was read
         int minSlackUs { 0 };
         int newFrames { 0 };

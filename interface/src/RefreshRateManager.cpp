@@ -365,7 +365,8 @@ void RefreshRateManager::governorTick() {
             qCDebug(interfaceapp).nospace() << "Refresh governor: half rate, " << halfRateOf(displayRate) << " of " << displayRate
                 << " Hz: in the last second " << sample.repeated << " presents showed the frame before again, "
                 << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart and " << sample.missed
-                << " reached the display with under " << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000 << " ms to spare"
+                << " reached the display with under " << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000
+                << " ms to spare"
                 << (returnFailed ? " (the return failed; hold now " : " (hold ") << _governorHoldSeconds << " s)";
             updateRefreshRateController();
         }
@@ -421,9 +422,11 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
         << " (on 1 refresh " << sample.onOneRefresh << ", on 2+ " << sample.onTwoOrMoreRefreshes << ", held " << sample.repeated
         << "), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
         << " ms; build slow " << sample.slowBuildFrames << ", max " << sample.maxBuildUs / 1000.0 << " ms), execute slow "
-        << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms, slack min "
-        << (sample.slackPresents > 0 ? QString::number(sample.minSlackUs / 1000.0, 'f', 2) : QString("-")) << " ms, under "
-        << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000 << " ms " << sample.missed << " of " << sample.slackPresents << "; fit "
+        << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs
+        << " ms, slack min "
+        << (sample.slackPresents > 0 ? QString::number(sample.minSlackUs / 1000.0, 'f', 2) : QString("-"))
+        << " ms, under " << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000 << " ms " << sample.missed
+        << " of " << sample.slackPresents << "; fit "
         << _governorFitSeconds << " of " << _governorHoldSeconds << " s"
         << (sample.startedAtNs < _governorChangeNs + GOVERNOR_SETTLE_NS ? ", mixed (no verdict)" : "")
         << (_governorProbeSecondsLeft > 0 ? ", probe" : "")
