@@ -203,6 +203,12 @@ private:
     QElapsedTimer _textureEngineIdleWait;
     int _textureEngineIdleWaitStarts{ 0 };    // how often the wait was started this arrival (restarts = starts - 1)
     QString _textureGateOpenedBy;             // for the "Physics enabled" line: idle, or still busy at the ceiling
+    // entry 33, Amendment 3: the texture test's own ceiling, from the gate's first check once there is something to
+    // wait for (a full scene received, or a serverless world): sizes that never settle (a texture budget smaller than
+    // the world's textures, the engine cycling at its cap) must not hold the loading screen to the script's own limit
+    QElapsedTimer _textureGateCeiling;
+    QString _textureGateCeilingAnchor;         // "the first full scene" or "the arrival (serverless)"
+    int _textureSizeChanges{ 0 };              // resource-size changes seen since the ceiling started (the trace line)
     // the arrival trace (TIVOLI_ARRIVAL_TRACE): one gate line a second while physics is off
     QElapsedTimer _arrivalTraceTimer;
     // the arrival trace's loading tail: started when physics turns on, the gate line goes on for 30 s more
