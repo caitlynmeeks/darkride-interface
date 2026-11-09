@@ -64,10 +64,8 @@ const int POLL_MS = 2000;                  // the script's status, as often as t
 const qint64 MAX_SAVE_BYTES = 1024 * 1024; // as ScriptOpener's cap on what it opens
 const int INLINE_SCRIPT_LIMIT_BYTES = 1024;   // a written-in Script past this doesn't reach visitors (ScriptEditor.cpp)
 const int MAX_ERROR_SHOWN = 400;
-// a script opened from My Files: its unsaved typing is kept under this instead of a world (it's no world's), and
-// fetched under the rule an entity's script from a world on the network gets (ScriptOpener's origin and limits)
+// a script opened from My Files: its unsaved typing is kept under this instead of a world (it's no world's)
 const QString MY_FILES_DRAFTS = QStringLiteral("my-files");
-const QUrl MY_FILES_ORIGIN("about:Entities");
 const QStringList CODE_SUFFIXES { "js", "mjs", "qml" };
 
 // queryPropertyMetadata answers through a ScriptCallback, as it answers a script's function: this stands in for the
@@ -653,16 +651,17 @@ bool CodeEditor::openMyFile(const QString& path, const QUrl& link, const QString
 }
 
 void CodeEditor::fetchMyFile() {
-    // as ScriptOpener fetches an entity's script from a world on the network: its own request (no disk cache, so a
-    // file saved a moment ago comes as saved), each hop judged by the network rule, 1 MB and 20 s at most. A private
-    // file our files host refuses without the login is asked once more with it there (HTTPResourceRequest)
+    // the person's own file, from their own listing, at our files host only (openMyFile checked the link): fetched as
+    // the client's other My Files downloads are, its own request (no disk cache, so a file saved a moment ago comes as
+    // saved), 1 MB and 20 s at most. A private file our files host refuses without the login is asked once more with
+    // it, to that host only (HTTPResourceRequest). Not under a script's network rule: that pins the request to the
+    // host's address, and the login is never sent to an address, so a private file would always be refused
     auto resources = DependencyManager::get<ResourceManager>();
     ResourceRequest* request = resources ? resources->createResourceRequest(this, _url, true, -1, "CodeEditor") : nullptr;
     if (!request) {
         _problem = "This script couldn't be loaded.";
         return;
     }
-    request->setNetworkRule(MY_FILES_ORIGIN, false);
     request->setCacheEnabled(false);
     _loading = true;
     const int generation = _generation;
