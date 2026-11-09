@@ -163,14 +163,17 @@ void AssetClient::initCaching() {
 #endif
             _cacheDir = !cachePath.isEmpty() ? cachePath : "interfaceCache";
         }
-        QNetworkDiskCache* cache = new QNetworkDiskCache();
+        // a process with no ResourceManager: this thread's own disk cache, behind the same lock as every other use
+        // (the LockedNetworkCache owns it)
+        auto diskCache = new QNetworkDiskCache();
+        auto cache = new LockedNetworkCache(diskCache);
+        diskCache->setParent(cache);
         cache->setMaximumCacheSize(MAXIMUM_CACHE_SIZE);
         cache->setCacheDirectory(_cacheDir);
         networkAccessManager.setCache(cache);
         qInfo() << "ResourceManager disk cache setup at" << _cacheDir
                  << "(size:" << MAXIMUM_CACHE_SIZE / BYTES_PER_GIGABYTES << "GB)";
-    } else {
-        auto cache = qobject_cast<QNetworkDiskCache*>(networkAccessManager.cache());
+    } else if (auto cache = qobject_cast<LockedNetworkCache*>(networkAccessManager.cache())) {
         qInfo() << "ResourceManager disk cache already setup at" << cache->cacheDirectory()
                 << "(size:" << cache->maximumCacheSize() / BYTES_PER_GIGABYTES << "GB)";
     }
@@ -195,7 +198,7 @@ MiniPromise::Promise AssetClient::cacheInfoRequestAsync(MiniPromise::Promise def
     if (QThread::currentThread() != thread()) {
         QMetaObject::invokeMethod(this, "cacheInfoRequestAsync", Q_ARG(MiniPromise::Promise, deferred));
     } else {
-        auto cache = qobject_cast<QNetworkDiskCache*>(NetworkAccessManager::getInstance().cache());
+        auto cache = qobject_cast<LockedNetworkCache*>(NetworkAccessManager::getInstance().cache());
         if (cache) {
             deferred->resolve({
                 { "cacheDirectory", cache->cacheDirectory() },
@@ -388,7 +391,7 @@ void AssetClient::cacheInfoRequest(QObject* reciever, QString slot) {
     }
 
 
-    if (auto* cache = qobject_cast<QNetworkDiskCache*>(NetworkAccessManager::getInstance().cache())) {
+    if (auto* cache = qobject_cast<LockedNetworkCache*>(NetworkAccessManager::getInstance().cache())) {
         QMetaObject::invokeMethod(reciever, slot.toStdString().data(), Qt::QueuedConnection,
                                   Q_ARG(QString, cache->cacheDirectory()),
                                   Q_ARG(qint64, cache->cacheSize()),
