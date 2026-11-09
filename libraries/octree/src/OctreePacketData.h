@@ -66,6 +66,9 @@ const unsigned int MINIMUM_ATTEMPT_MORE_PACKING = sizeof(OCTREE_PACKET_INTERNAL_
 const unsigned int COMPRESS_PADDING = 15;
 const int REASONABLE_NUMBER_OF_PACKING_ATTEMPTS = 5;
 
+// The longest string or byte array appendValue() takes: its length is written in 16 bits.
+const int MAX_APPENDED_VALUE_LENGTH = 65535;
+
 const int PACKET_IS_COLOR_BIT = 0;
 const int PACKET_IS_COMPRESSED_BIT = 1;
 

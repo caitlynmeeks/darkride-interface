@@ -56,6 +56,10 @@ QString worldNameForPopup();                     // ApplicationDialogs.cpp's: th
 static const int ENTITY_SERVER_ADDED_TIMEOUT = 5000;
 static const int ENTITY_SERVER_CONNECTION_TIMEOUT = 5000;
 static const float INITIAL_QUERY_RADIUS = 10.0f;  // priority radius for entities before physics enabled
+// the start-up's own arrival wait ends this long after the connect if no script takes it over: inside the governor's
+// 10 s arrival grace (counted from the connect signal), with 2 s left for physics coming on (physics' ruling, 11-07:
+// this clock starts a frame or more after that signal and is read once a frame)
+static const int LAUNCH_HOLD_LIMIT_SECONDS = 8;
 
 // Application's getMyAvatar is private; this is the same call
 static std::shared_ptr<MyAvatar> getMyAvatar() {
@@ -251,7 +255,20 @@ void DomainSession::resetPhysicsReadyInformation() {
     _fullSceneCounterAtLastPhysicsCheck = 0;
     _gpuTextureMemSizeStabilityCount = 0;
     _gpuTextureMemSizeAtLastCheck = 0;
+    _gpuTextureMemSizeStableFor.invalidate();
+    _textureEngineIdleWait.invalidate();
+    _textureEngineIdleWaitStarts = 0;
+    _textureGateOpenedBy.clear();
+    _textureGateCeiling.invalidate();
+    _textureGateCeilingAnchor.clear();
+    _textureSizeChanges = 0;
+    _arrivalTraceTimer.invalidate();
+    _arrivalTraceTail.invalidate();
+    const bool wasEnabled = _physicsEnabled;
     _physicsEnabled = false;
+    if (wasEnabled) {
+        emit physicsEnabledChanged(false);   // the gate closes for a new arrival: the loading-time work may resume
+    }
     _octreeProcessor.stopSafeLanding();
     endWorldLoading();
     _worldLoading = WorldLoading();
@@ -644,6 +661,64 @@ void DomainSession::trackIncomingOctreePacket(ReceivedMessage& message, SharedNo
     }
 }
 
+// The arrival trace (SafeLanding.cpp's TIVOLI_ARRIVAL_TRACE flag): while physics is off, one line a second with what
+// the gate reads, so a slow arrival names its holder (item 53, 2026-11-07: the texture gate behind the shader warm-up).
+// Read-only: nothing here changes state but this trace's own timer. With the flag off the cost is one static bool read.
+static bool arrivalTrace() {
+    static const bool trace = !qgetenv("TIVOLI_ARRIVAL_TRACE").isEmpty();
+    return trace;
+}
+
+// test-only (TIVOLI_ARRIVAL_GATE_BUSY): the gate reads the texture engine as always busy, so a walled arrival proves
+// the ceiling of the idle wait (entry 33, Amendment 2). With the flag off the cost is one static bool read.
+static bool arrivalGateTestBusy() {
+    static const bool busy = !qgetenv("TIVOLI_ARRIVAL_GATE_BUSY").isEmpty();
+    return busy;
+}
+
+void DomainSession::traceArrivalGate() {
+    if (!arrivalTrace()) {
+        return;
+    }
+    if (_arrivalTraceTimer.isValid() && !_arrivalTraceTimer.hasExpired(1000)) {
+        return;
+    }
+    _arrivalTraceTimer.start();
+    auto renderStats = qApp->getRenderEngine()->getConfiguration()->getConfig<render::EngineStats>("Stats");
+    const double MB = 1024.0 * 1024.0;
+    const auto progress = _octreeProcessor.safeLandingProgress();
+    // the shader warm-up's progress (entry 29): the main view's two jobs by their full paths (a bare name finds another
+    // view's, which never runs), one of them active; property reads
+    int warmed = 0, warmLeft = 0;
+    static const char* const WARM_UP_JOBS[] = {
+        "RenderMainView.DeferredForwardSwitch.RenderForwardTask.WarmForwardPipelines",
+        "RenderMainView.DeferredForwardSwitch.RenderDeferredTask.WarmDeferredPipelines" };
+    for (const char* name : WARM_UP_JOBS) {
+        if (auto config = qApp->getRenderEngine()->getConfiguration()->getConfig(name)) {
+            warmed += config->property("warmed").toInt();
+            warmLeft += config->property("left").toInt();
+        }
+    }
+    qCDebug(interfaceapp).nospace().noquote() << "arrival trace: gate: physics=" << _physicsEnabled
+        << " presents=" << qApp->getRenderFrameCount()
+        << " warmed=" << warmed << " warmLeft=" << warmLeft
+        << " resourceMB=" << QString::number(renderStats->textureResourceGPUMemSize / MB, 'f', 1)
+        << " populatedMB=" << QString::number(renderStats->textureResourcePopulatedGPUMemSize / MB, 'f', 1)
+        << " pendingMB=" << QString::number(renderStats->texturePendingGPUTransferSize / MB, 'f', 1)
+        << " idealMB=" << QString::number(renderStats->textureResourceIdealGPUMemSize / MB, 'f', 1)
+        << " busy=" << renderStats->textureTransferEngineBusy
+        << " stable=" << _gpuTextureMemSizeStabilityCount
+        << " settleMs=" << (_gpuTextureMemSizeStableFor.isValid() ? _gpuTextureMemSizeStableFor.elapsed() : (qint64)-1)
+        << " idleWaitMs=" << (_textureEngineIdleWait.isValid() ? _textureEngineIdleWait.elapsed() : (qint64)-1)
+        << " restarts=" << std::max(0, _textureEngineIdleWaitStarts - 1)
+        << " ceilingMs=" << (_textureGateCeiling.isValid() ? _textureGateCeiling.elapsed() : (qint64)-1)
+        << " sizeChanges=" << _textureSizeChanges
+        << " landing=" << (_octreeProcessor.safeLandingIsActive() ? "tracking" : "idle")
+        << " received=" << progress.received << " waiting=" << progress.waiting << " serverDone=" << progress.serverDone
+        << " arrivalWait=" << _arrivalWaitsForNearby.load() << " worldLoading=" << _worldLoading.active
+        << " settingsKnown=" << _worldLoading.settingsKnown << " serverless=" << isServerlessMode();
+}
+
 bool DomainSession::gpuTextureMemSizeStable() {
     auto renderConfig = qApp->getRenderEngine()->getConfiguration();
     auto renderStats = renderConfig->getConfig<render::EngineStats>("Stats");
@@ -652,17 +727,78 @@ bool DomainSession::gpuTextureMemSizeStable() {
     qint64 texturePopulatedGPUMemSize = renderStats->textureResourcePopulatedGPUMemSize;
     qint64 textureTransferSize = renderStats->texturePendingGPUTransferSize;
 
-    if (_gpuTextureMemSizeAtLastCheck == textureResourceGPUMemSize) {
+    // A check runs once per present (the Idle event is posted from the present callback). Until 2026-11-07 the gate
+    // was 30 consecutive unchanged checks alone, 0.5 s at the loading screen's 60 presents a second: under the shader
+    // warm-up's compiles (4 programs a present, 3-115 ms each) the loading screen presents 6-19 times a second and the
+    // 30 checks took 1.5-5 s (item 53). The settle is a time now, with a small floor of checks so a few slow presents
+    // cannot pass it on two readings; the populated-size and pending-transfer tests below still hold uploads in flight.
+    // Entry 33, Amendment 3: the test's own ceiling. A texture budget smaller than the world's textures (the Potato
+    // preset's 64 MB against Port Amarelle's 225) left the engine cycling at its cap, the sizes never settled, and the
+    // loading screen ran to the script's 90 s (2026-11-09). The ceiling counts from the first check once there is
+    // something to wait for: a full scene received, or a serverless world, which never counts one (editor-ui). Past it
+    // the test passes with its reason on the "Physics enabled" line. The engine's own cap rule (GLTextureTransfer.cpp)
+    // is the cure that lets the sizes settle; this is the safety net under it.
+    static const qint64 TEXTURE_GATE_CEILING_MS = 15 * MSECS_PER_SECOND;
+    if (!_textureGateCeiling.isValid() && (_fullSceneReceivedCounter > 0 || isServerlessMode())) {
+        _textureGateCeiling.start();
+        _textureGateCeilingAnchor = _fullSceneReceivedCounter > 0 ? "the first full scene" : "the arrival (serverless)";
+    }
+    if (_gpuTextureMemSizeStableFor.isValid() && _gpuTextureMemSizeAtLastCheck == textureResourceGPUMemSize) {
         _gpuTextureMemSizeStabilityCount++;
     } else {
         _gpuTextureMemSizeStabilityCount = 0;
+        _gpuTextureMemSizeStableFor.start();   // a monotonic clock: a wall-clock step can neither pass nor hold the gate (physics)
+        if (_textureGateCeiling.isValid()) {
+            ++_textureSizeChanges;
+        }
     }
     _gpuTextureMemSizeAtLastCheck = textureResourceGPUMemSize;
+    if (_textureGateCeiling.isValid() && _textureGateCeiling.hasExpired(TEXTURE_GATE_CEILING_MS)) {
+        // the reason names what was still waiting: the sizes, or the engine once they had settled (editor-ui's read)
+        _textureGateOpenedBy = QString(_textureEngineIdleWait.isValid() ? "texture engine still busy %1 s after %2"
+                                                                        : "texture sizes never settled %1 s after %2")
+            .arg(TEXTURE_GATE_CEILING_MS / MSECS_PER_SECOND).arg(_textureGateCeilingAnchor);
+        return true;
+    }
 
-    if (_gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount) {
-        return (textureResourceGPUMemSize == texturePopulatedGPUMemSize) && (textureTransferSize == 0);
+    const bool sizesSettled = _gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount &&
+        _gpuTextureMemSizeStableFor.hasExpired(_gpuTextureMemSettleMs) &&
+        (textureResourceGPUMemSize == texturePopulatedGPUMemSize) && (textureTransferSize == 0);
+    if (!sizesSettled) {
+        _textureEngineIdleWait.invalidate();   // the wait below starts over when the sizes settle again
+        return false;
+    }
+
+    // Entry 33, Amendment 2. The sizes above are of the textures the engine has allocated: with the loading boost's
+    // order they settled on a small set that was fully uploaded while most textures were not yet allocated, and the
+    // world was presented with 8 of 180 MB in (the old order hid it: nothing uploads until everything is allocated).
+    // So the gate also waits for the engine to report nothing left to allocate, upload or demote (a per-frame copy
+    // from the render stats, like the sizes), for at most a ceiling from the moment the sizes settled, then opens
+    // anyway and says so: an engine that never reads idle must not hold the loading screen (editor-ui, physics).
+    static const qint64 TEXTURE_ENGINE_IDLE_CEILING_MS = 5000;
+    if (!_textureEngineIdleWait.isValid()) {
+        _textureEngineIdleWait.start();
+        ++_textureEngineIdleWaitStarts;
+    }
+    const bool engineBusy = renderStats->textureTransferEngineBusy != 0 || arrivalGateTestBusy();
+    if (!engineBusy) {
+        _textureGateOpenedBy = "texture engine idle";
+        return true;
+    }
+    if (_textureEngineIdleWait.hasExpired(TEXTURE_ENGINE_IDLE_CEILING_MS)) {
+        _textureGateOpenedBy = QString("texture engine still busy after %1 s")
+            .arg(TEXTURE_ENGINE_IDLE_CEILING_MS / MSECS_PER_SECOND);
+        return true;
     }
     return false;
+}
+
+void DomainSession::setMinimumGPUTextureMemStabilityCount(int stabilityCount) {
+    // the Test API's count, read as the 60-presents-a-second loading screen the count was written for: 30 = 500 ms
+    static const int DEFAULT_CHECK_FLOOR = 5;
+    stabilityCount = std::max(0, stabilityCount);
+    _gpuTextureMemSettleMs = (qint64)stabilityCount * MSECS_PER_SECOND / 60;
+    _minimumGPUTextureMemSizeStabilityCount = std::min(stabilityCount, DEFAULT_CHECK_FLOOR);
 }
 
 int DomainSession::processOctreeStats(ReceivedMessage& message, SharedNodePointer sendingNode) {
@@ -711,10 +847,48 @@ int DomainSession::getMaxOctreePacketsPerSecond() const {
 }
 
 void DomainSession::setArrivalWaitsForNearby(bool wait) {
+    // a script's word (worldLoading.js): it takes over the start-up's own wait, if that is still held
+    if (_firstArrivalHold.held.exchange(false)) {
+        qCDebug(interfaceapp) << "First arrival: the wait taken over by a script, which says" << wait;
+    }
+    setArrivalWait(wait);
+}
+
+void DomainSession::setArrivalWait(bool wait) {
     _arrivalWaitsForNearby = wait;
     // whole-world loading sets SafeLanding's wait itself, with its radius
     if (!_worldLoading.active) {
         _octreeProcessor.setSafeLandingWaitsForVisuals(wait);
+    }
+}
+
+void DomainSession::holdFirstArrival() {
+    _firstArrivalHold.connectedAt = 0;
+    _firstArrivalHold.held = true;
+    setArrivalWait(true);
+    qCDebug(interfaceapp) << "First arrival: waits for what is near the avatar until a script takes it over, or" <<
+        LAUNCH_HOLD_LIMIT_SECONDS << "s after the connect";
+}
+
+void DomainSession::updateFirstArrivalHold() {
+    if (!_firstArrivalHold.held) {
+        return;
+    }
+    const quint64 now = usecTimestampNow();
+    if (_firstArrivalHold.connectedAt == 0) {
+        if (isServerlessMode() || DependencyManager::get<NodeList>()->getDomainHandler().isConnected()) {
+            _firstArrivalHold.connectedAt = now;
+        }
+        return;
+    }
+    if (now - _firstArrivalHold.connectedAt > (quint64)LAUNCH_HOLD_LIMIT_SECONDS * USECS_PER_SECOND) {
+        // no script took it over (no worldLoading.js running): the start-up's wait ends by itself, unless a script
+        // takes it over in this very moment (then the script's word stands)
+        if (_firstArrivalHold.held.exchange(false)) {
+            setArrivalWait(false);
+            qCDebug(interfaceapp) << "First arrival: no script took the wait over;" << LAUNCH_HOLD_LIMIT_SECONDS <<
+                "s after the connect it ends (physics" << (_physicsEnabled ? "on" : "not yet on") << ")";
+        }
     }
 }
 
@@ -735,11 +909,14 @@ void DomainSession::tryToEnablePhysics(bool skipTextureCheck) {
             _physicsEnabled = true;
             StartupProfiler::instant("physics enabled: in the world");
             setIsInterstitialMode(false);
+            emit physicsEnabledChanged(true);   // the world is presented: the loading-time work stops
             myAvatar->updateMotionBehaviorFromMenu();
             qDebug() << "Physics enabled" << "(ghosting" << DependencyManager::get<EntityTreeRenderer>()->getGhostingAllowed()
                 << "arrival waits for nearby" << _arrivalWaitsForNearby << "interstitial"
                 << DependencyManager::get<NodeList>()->getDomainHandler().getInterstitialModeEnabled()
-                << "safe landing complete" << safeLandingComplete << "full scenes" << _fullSceneReceivedCounter << ")";
+                << "safe landing complete" << safeLandingComplete << "full scenes" << _fullSceneReceivedCounter
+                << "texture gate"
+                << ((skipTextureCheck || !enableInterstitial) ? QString("skipped") : _textureGateOpenedBy) << ")";
             DependencyManager::get<EntityTreeRenderer>()->setSceneIsReady(true);
             // the renderer rechecks zone culling now that the scene is ready. Until 2026-10-19 this was
             // requeryOctree, whose new connection id made the entity server resend the whole view it had just sent
@@ -848,12 +1025,14 @@ void DomainSession::showWorldNow() {
 }
 
 void DomainSession::enablePhysicsWhenReady() {
+    updateFirstArrivalHold();   // outside the gate: it only sets or clears the wait the gate reads
     if (!_physicsEnabled) {
         if (!_domainLoadingInProgress) {
             PROFILE_ASYNC_BEGIN(app, "Scene Loading", "");
             _domainLoadingInProgress = true;
             qDebug() << "SCENE LOADING";
         }
+        traceArrivalGate();
 
         // we haven't yet enabled physics.  we wait until we think we have all the collision information
         // for nearby entities before starting bullet up.
@@ -892,6 +1071,19 @@ void DomainSession::enablePhysicsWhenReady() {
     } else if (_domainLoadingInProgress) {
         _domainLoadingInProgress = false;
         PROFILE_ASYNC_END(app, "Scene Loading", "");
+        if (arrivalTrace()) {
+            _arrivalTraceTail.start();   // the loading tail: 30 s more of gate lines beside the governor's
+        }
+    } else if (_arrivalTraceTail.isValid()) {
+        // the arrival trace's loading tail (the governor's drops land 10-16 s after the connect with physics on):
+        // one line a second for 30 s after physics turned on, then the timer is invalidated and this branch is one
+        // bool read; with the flag off the timer never starts
+        static const qint64 ARRIVAL_TRACE_TAIL_MS = 30 * MSECS_PER_SECOND;
+        if (_arrivalTraceTail.hasExpired(ARRIVAL_TRACE_TAIL_MS)) {
+            _arrivalTraceTail.invalidate();
+        } else {
+            traceArrivalGate();
+        }
     }
 }
 

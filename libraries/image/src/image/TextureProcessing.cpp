@@ -296,6 +296,26 @@ std::function<glm::vec3(gpu::uint32)> getHDRUnpackingFunction() {
     return getHDRUnpackingFunction(GPU_CUBEMAP_HDR_FORMAT);
 }
 
+// A picture's size comes from its header before any pixel is decoded: a header with no readable size, a side past
+// what a texture can be, or more pixels than are worth decoding to downscale, is refused instead of being decoded
+// at full size first (the pixel limit used to be applied after the decode)
+static const int64_t MAX_SOURCE_IMAGE_DIMENSION { 16384 };
+static const int64_t MAX_SOURCE_IMAGE_PIXELS { int64_t(64) * 1024 * 1024 };
+
+static bool checkSourceImageSize(QImageReader& reader, const std::string& filename) {
+    QSize size = reader.size();
+    if (!size.isValid() || size.width() <= 0 || size.height() <= 0) {
+        qCWarning(imagelogging) << "Refusing" << filename.c_str() << ": no readable size in its header";
+        return false;
+    }
+    if (size.width() > MAX_SOURCE_IMAGE_DIMENSION || size.height() > MAX_SOURCE_IMAGE_DIMENSION ||
+        int64_t(size.width()) * size.height() > MAX_SOURCE_IMAGE_PIXELS) {
+        qCWarning(imagelogging) << "Refusing" << filename.c_str() << ":" << size << "is past the limit";
+        return false;
+    }
+    return true;
+}
+
 Image processRawImageData(QIODevice& content, const std::string& filename) {
     // Help the Image loader by extracting the image file format from the url filename ext.
     // Some tga are not created properly without it.
@@ -327,6 +347,9 @@ Image processRawImageData(QIODevice& content, const std::string& filename) {
     QImageReader imageReader(&content, filenameExtension.c_str());
 
     if (imageReader.canRead()) {
+        if (!checkSourceImageSize(imageReader, filename)) {
+            return Image();
+        }
         return Image(imageReader.read());
     } else {
         // Extension could be incorrect, try to detect the format from the content
@@ -336,6 +359,9 @@ Image processRawImageData(QIODevice& content, const std::string& filename) {
         newImageReader.setDevice(&content);
 
         if (newImageReader.canRead()) {
+            if (!checkSourceImageSize(newImageReader, filename)) {
+                return Image();
+            }
             return Image(newImageReader.read());
         }
     }
@@ -401,8 +427,8 @@ gpu::TexturePointer processImage(std::shared_ptr<QIODevice> content, const std::
     }
 
     // Validate the image is less than _maxNumPixels, and downscale if necessary
-    if (imageWidth * imageHeight > maxNumPixels) {
-        float scaleFactor = sqrtf(maxNumPixels / (float)(imageWidth * imageHeight));
+    if (int64_t(imageWidth) * imageHeight > maxNumPixels) {
+        float scaleFactor = sqrtf(maxNumPixels / (float)(int64_t(imageWidth) * imageHeight));
         int originalWidth = imageWidth;
         int originalHeight = imageHeight;
         imageWidth = (int)(scaleFactor * (float)imageWidth + 0.5f);

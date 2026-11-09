@@ -12,6 +12,7 @@
 #define hifi_FST_h
 
 #include <QVariantHash>
+#include <shared/HifiTypes.h>
 #include <QUuid>
 #include "FSTReader.h"
 
@@ -26,7 +27,7 @@ class FST : public QObject {
     Q_PROPERTY(QUuid marketplaceID READ getMarketplaceID)
     Q_PROPERTY(bool hasMarketplaceID READ getHasMarketplaceID NOTIFY marketplaceIDChanged)
 public:
-    FST(QString fstPath, QVariantHash data);
+    FST(QString fstPath, hifi::VariantMultiHash data);
 
     static FST* createFSTFromModel(const QString& fstPath, const QString& modelFilePath, const hfm::Model& hfmModel);
 
@@ -47,7 +48,7 @@ public:
 
     QString getPath() const { return _fstPath; }
 
-    QVariantHash getMapping() const;
+    hifi::VariantMultiHash getMapping() const;
 
     bool write();
 
@@ -65,7 +66,7 @@ private:
 
     QStringList _scriptPaths{};
 
-    QVariantHash _other{};
+    hifi::VariantMultiHash _other{};
 };
 
 #endif  // hifi_FST_h

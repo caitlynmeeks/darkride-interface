@@ -114,7 +114,6 @@ void Application::initializeUi() {
     OffscreenQmlSurface::addWhitelistContextHandler({
         QUrl{ "hifi/tablet/TabletAddressDialog.qml" },
         QUrl{ "hifi/Card.qml" },
-        QUrl{ "hifi/NameCard.qml" },
         }, platformInfoCallback);
 
     QmlContextCallback ttsCallback = [](QQmlContext* context) {
@@ -142,6 +141,11 @@ void Application::initializeUi() {
         this, &Application::onDesktopRootContextCreated);
     connect(offscreenUi.data(), &hifi::qml::OffscreenSurface::rootItemCreated,
         this, &Application::onDesktopRootItemCreated);
+    // BUGZ-1365 - the root context should explicitly default to being unable to load local HTML content. Here, as the
+    // context is made: before Desktop.qml loads, so nothing in it has bound a web profile yet (see restrictContext)
+    connect(offscreenUi.data(), &hifi::qml::OffscreenSurface::rootContextCreated, this, [](QQmlContext* surfaceContext) {
+        ContextAwareProfile::restrictContext(surfaceContext, true);
+    });
 
     offscreenUi->setProxyWindow(_window->windowHandle());
     // OffscreenUi is a subclass of OffscreenQmlSurface specifically designed to
@@ -171,7 +175,8 @@ void Application::initializeUi() {
         return result.toPoint();
     });
 
-    // BUGZ-1365 - the root context should explicitly default to being unable to load local HTML content
+    // Again, on purpose: the same flag and the same objects, so nothing changes, unless the call above ever stops running
+    // before Desktop.qml loads. Then this closes the door late rather than leaving it open.
     ContextAwareProfile::restrictContext(offscreenUi->getSurfaceContext(), true);
     offscreenUi->resume();
     connect(_window, &MainWindow::windowGeometryChanged, [this](const QRect& r){
@@ -224,6 +229,10 @@ void Application::initializeUi() {
             // though I failed to find it (from QtMultimedia??). So..  let it be "AudioScriptingInterface"
             surfaceContext->setContextProperty("AudioScriptingInterface", DependencyManager::get<AudioScriptingInterface>().data());
             surfaceContext->setContextProperty("Account", AccountServicesScriptingInterface::getInstance()); // DEPRECATED - TO BE REMOVED
+        }
+        // the pool's surfaces show HTML Web entities: here, before the surface's QML loads
+        if (rootObject == render::entities::WebEntityRenderer::QML) {
+            ContextAwareProfile::separateWebEntitySurface(surfaceContext);
         }
     });
 

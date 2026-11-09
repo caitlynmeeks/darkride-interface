@@ -11,7 +11,7 @@
 # and the engine's refusal lines from the log.
 #   tests-manual/wasm-scripting/network-rules.sh <name> [strict]
 # <name> names the results folder (results/<name>); "strict" sets DARKRIDE_SCRIPT_NETWORK_STRICT=1, which holds the
-# local test script to the rule as a script from the network. DARKRIDE_RUN_JS_ON_WASM=0 picks the QtScript engine.
+# local test script to the rule as a script from the network.
 set -e
 D=$(cd "$(dirname "$0")" && pwd)
 NAME=$1

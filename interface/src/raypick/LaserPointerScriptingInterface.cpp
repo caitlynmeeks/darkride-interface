@@ -14,14 +14,6 @@
 #include "RegisteredMetaTypes.h"
 #include "PointerScriptingInterface.h"
 
-void LaserPointerScriptingInterface::setIgnoreItems(unsigned int uid, const QScriptValue& ignoreItems) const {
-    DependencyManager::get<PointerManager>()->setIgnoreItems(uid, qVectorQUuidFromScriptValue(ignoreItems));
-}
-
-void LaserPointerScriptingInterface::setIncludeItems(unsigned int uid, const QScriptValue& includeItems) const {
-    DependencyManager::get<PointerManager>()->setIncludeItems(uid, qVectorQUuidFromScriptValue(includeItems));
-}
-
 void LaserPointerScriptingInterface::setIgnoreItemsVector(unsigned int uid, const QVector<QUuid>& ignoreItems) const {
     DependencyManager::get<PointerManager>()->setIgnoreItems(uid, ignoreItems);
 }

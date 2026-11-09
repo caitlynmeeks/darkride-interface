@@ -8,6 +8,7 @@
 
 #include "WasmRuntime.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <deque>
@@ -20,6 +21,8 @@
 
 #include <QtCore/QHash>
 #include <QtCore/QLoggingCategory>
+
+#include <ScriptCaller.h>
 
 Q_LOGGING_CATEGORY(wasmScripting, "hifi.wasm-scripting")
 
@@ -260,6 +263,12 @@ struct WasmInstance::Impl {
     wasmtime_memory_t memory {};
     std::vector<std::unique_ptr<HostFunctionEntry>> hostFunctions;
     std::atomic<bool> stopRequested { false };
+    // requestStopAfter: the running call may finish until the deadline (steady clock, ns; 0: none) or until the world
+    // is left; no new outermost call begins meanwhile (closed)
+    std::atomic<int64_t> stopDeadline { 0 };
+    std::atomic<int> stopWorld { 0 };
+    std::atomic<bool> closed { false };
+    std::atomic<bool> inCall { false };  // callDepth > 0, for other threads
     std::chrono::steady_clock::time_point callStarted;
     std::chrono::milliseconds callTimeout { 0 };
     int callDepth { 0 };
@@ -353,9 +362,27 @@ struct WasmInstance::Impl {
         }
     }
 
+    static int64_t steadyNow() {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Whether the module must stop now: requestStop, or requestStopAfter's deadline or world. Only a stop that waits
+    // costs more than a load.
+    bool stopDue() const {
+        if (stopRequested.load()) {
+            return true;
+        }
+        const int64_t deadline = stopDeadline.load();
+        if (deadline != 0 && steadyNow() >= deadline) {
+            return true;
+        }
+        const int world = stopWorld.load();
+        return world != 0 && ScriptCaller::isRetired(world);
+    }
+
     // Why the running call must stop now, or nothing.
     QString interruption() const {
-        if (stopRequested.load()) {
+        if (stopDue()) {
             return "the script was stopped";
         }
         if (callTimeout.count() > 0 && guestElapsed() > callTimeout) {
@@ -565,7 +592,7 @@ bool WasmInstance::hasExport(const QString& name) const {
 bool WasmInstance::call(const QString& name, const std::vector<WasmValue>& args, std::vector<WasmValue>& results,
                         QString& error) {
     results.clear();
-    if (_impl->stopRequested.load()) {
+    if (_impl->stopDue() || (_impl->closed.load() && _impl->callDepth == 0)) {
         error = "the script was stopped";
         return false;
     }
@@ -599,12 +626,16 @@ bool WasmInstance::call(const QString& name, const std::vector<WasmValue>& args,
         in[i] = toVal(args[i]);
     }
     _impl->beginCall();
-    ++_impl->callDepth;
+    if (_impl->callDepth++ == 0) {
+        _impl->inCall.store(true, std::memory_order_release);
+    }
     _impl->enterGuest();
     wasm_trap_t* trap = nullptr;
     auto result = wasmtime_func_call(_impl->context, &function, in, args.size(), out, resultCount, &trap);
     _impl->leaveGuest();
-    --_impl->callDepth;
+    if (--_impl->callDepth == 0) {
+        _impl->inCall.store(false, std::memory_order_release);
+    }
     if (result) {
         error = takeErrorText(result);
         return false;
@@ -647,8 +678,34 @@ void WasmInstance::requestStop() {
     _impl->stopRequested = true;
 }
 
+void WasmInstance::requestStopAfter(std::chrono::steady_clock::time_point deadline, int world) {
+    _impl->closed = true;
+    _impl->stopWorld = world;
+    const int64_t at = std::max<int64_t>(1, std::chrono::duration_cast<std::chrono::nanoseconds>(deadline.time_since_epoch()).count());
+    int64_t none = 0;
+    _impl->stopDeadline.compare_exchange_strong(none, at);
+}
+
+bool WasmInstance::isInCall() const {
+    return _impl->inCall.load(std::memory_order_acquire);
+}
+
 bool WasmInstance::isStopRequested() const {
-    return _impl->stopRequested.load();
+    return _impl->stopDue();
+}
+
+void WasmInstance::resumeAfterStop() {
+    _impl->closed = false;
+    // the deadline was for the call the stop found running: a module out of that call whole is not held to it (one
+    // stopped by a trap at the deadline stays stopped)
+    const bool cooperative = _module->interruption() == WasmRuntime::Interruption::Cooperative;
+    const int64_t deadline = _impl->stopDeadline.load();
+    if (cooperative || (deadline != 0 && Impl::steadyNow() < deadline)) {
+        _impl->stopDeadline = 0;
+    }
+    if (cooperative) {
+        _impl->stopRequested = false;
+    }
 }
 
 bool WasmInstance::interruptRequested() {
@@ -662,7 +719,7 @@ bool WasmInstance::interruptRequested() {
     }
     // the time limit is recorded once per outermost call: a nested call (one made from a host function) unwinds
     // first and is the one reported; the outer frames, told to stop too, end without a second report
-    const bool limit = !_impl->stopRequested.load();
+    const bool limit = !_impl->stopDue();
     if (_impl->interruptionReason.isEmpty() && !(limit && _impl->limitReported)) {
         _impl->interruptionReason = reason;
     }

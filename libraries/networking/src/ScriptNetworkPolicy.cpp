@@ -262,6 +262,9 @@ void ScriptNetworkPolicy::pin(QNetworkRequest& request, const Decision& decision
     qCDebug(networking) << "a script's request to" << name << "pinned to" << decision.address.toString();
     const int port = url.port(-1);
     request.setRawHeader("Host", (port == -1 ? name : name + ":" + QString::number(port)).toUtf8());
+    // the name travels in the Host header, which is HTTP/1.1's: HTTP/2 names the server from the URL (now the
+    // address) and a host serving many sites refuses it. Qt 5 asks for HTTP/1.1 by default; Qt 6 asks for HTTP/2
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     const QString scheme = url.scheme().toLower();
     if (scheme == "https" || scheme == "wss") {
         request.setPeerVerifyName(name);

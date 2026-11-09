@@ -39,7 +39,7 @@ public:
     HMACHash result();
 
 private:
-    QMutex _lock { QMutex::Recursive };
+    QRecursiveMutex _lock;  // Qt 5.14+ and Qt 6 (QMutex::Recursive is gone in Qt 6)
     struct hmac_ctx_st* _hmacContext;
     AuthMethod _authMethod;
 };

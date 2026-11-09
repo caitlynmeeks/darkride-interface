@@ -11,6 +11,8 @@
 
 #include "Grab.h"
 
+#include <QtCore/QIODevice>
+
 QByteArray Grab::toByteArray() {
     QByteArray ba;
     QDataStream dataStream(&ba, QIODevice::WriteOnly);

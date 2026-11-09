@@ -11,6 +11,8 @@
 
 #include "SendQueue.h"
 
+#include <atomic>
+
 #include <algorithm>
 #include <thread>
 
@@ -252,6 +254,19 @@ bool SendQueue::sendNewPacketAndAddToSentList(std::unique_ptr<Packet> newPacket,
     }
 }
 
+namespace {
+std::atomic<quint64> handshakesGivenUpTotal { 0 };
+std::atomic<quint64> handshakesGivenUpWithPacketsTotal { 0 };
+}
+
+quint64 SendQueue::handshakesGivenUp() {
+    return handshakesGivenUpTotal.load();
+}
+
+quint64 SendQueue::handshakesGivenUpWithPacketsWaiting() {
+    return handshakesGivenUpWithPacketsTotal.load();
+}
+
 void SendQueue::run() {
     if (_state == State::Stopped) {
         // we've already been asked to stop before we even got a chance to start
@@ -269,8 +284,37 @@ void SendQueue::run() {
     
     _state = State::Running;
     
-    // Wait for handshake to be complete
+    // Wait for handshake to be complete. A peer that never answers is given up after HANDSHAKE_GIVE_UP, as an idle queue
+    // is; a later send starts a new queue and a new handshake (security #60).
+    static const auto HANDSHAKE_GIVE_UP = std::chrono::seconds(10);
+    const auto handshakeStarted = p_high_resolution_clock::now();
     while (_state == State::Running && !_hasReceivedHandshakeACK) {
+        if (p_high_resolution_clock::now() - handshakeStarted > HANDSHAKE_GIVE_UP) {
+            // reliable packets waiting behind the handshake go with the queue: one warning a minute (physics, 11-03),
+            // naming the latest peer and counting the others, so a real peer that never answered is seen in the log
+            static std::atomic<quint64> lastLogUsecs { 0 };
+            static std::atomic<int> givenUpSinceLog { 0 };
+            static std::atomic<int> withPacketsSinceLog { 0 };
+            const bool hadPackets = !_packets.isEmpty();
+            const int givenUp = ++givenUpSinceLog;
+            const int withPackets = hadPackets ? ++withPacketsSinceLog : withPacketsSinceLog.load();
+            const quint64 now = usecTimestampNow();
+            quint64 last = lastLogUsecs.load();
+            if ((last == 0 || now - last >= 60 * USECS_PER_SECOND) && lastLogUsecs.compare_exchange_strong(last, now)) {
+                givenUpSinceLog -= givenUp;
+                withPacketsSinceLog -= withPackets;
+                qCWarning(networking) << "No handshake answer from" << _destination << "in" << HANDSHAKE_GIVE_UP.count()
+                                      << "s, so its reliable sends were given up" << (hadPackets ? "with packets waiting" : "")
+                                      << QString("(%1 peers given up since the last line, %2 with packets waiting)")
+                                             .arg(givenUp).arg(withPackets);
+            }
+            handshakesGivenUpTotal++;
+            if (hadPackets) {
+                handshakesGivenUpWithPacketsTotal++;
+            }
+            deactivate();
+            return;
+        }
         sendHandshake();
 
         // Keep processing events

@@ -18,6 +18,7 @@
 #include "QVariantGLM.h"
 
 #include "EntityTree.h"
+#include <shared/WireStream.h>
 #include "PhysicsLogging.h"
 
 
@@ -233,6 +234,7 @@ QVariantMap ObjectConstraintBallSocket::getArguments() {
 QByteArray ObjectConstraintBallSocket::serialize() const {
     QByteArray serializedConstraintArguments;
     QDataStream dataStream(&serializedConstraintArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     dataStream << DYNAMIC_TYPE_BALL_SOCKET;
     dataStream << getID();
@@ -252,6 +254,7 @@ QByteArray ObjectConstraintBallSocket::serialize() const {
 
 void ObjectConstraintBallSocket::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;

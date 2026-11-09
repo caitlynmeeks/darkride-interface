@@ -11,7 +11,6 @@
 //
 //  Run:  tests-manual/wasm-scripting/run-client.sh unload-blocking 60 \
 //            --url file://$PWD/tests-manual/wasm-scripting/world.json --testScript $PWD/tests-manual/wasm-scripting/unload-blocking.js
-//        and the same with DARKRIDE_RUN_JS_ON_WASM=0 for the QtScript engine, which had the same wait.
 //
 //  Distributed under the MIT License.
 //

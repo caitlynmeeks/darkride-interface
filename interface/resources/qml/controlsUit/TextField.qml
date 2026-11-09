@@ -8,14 +8,14 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 
-import QtQuick 2.5
-import QtQuick.Controls 1.4
-import QtQuick.Controls.Styles 1.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12 as QQC2
 
 import "../stylesUit"
 import "." as HifiControls
 
-TextField {
+// On Qt Quick Controls 2 (Qt 6 has no Controls 1); the look, the size and the properties are Controls 1's.
+QQC2.TextField {
     id: textField
 
     property int colorScheme: hifi.colorSchemes.light
@@ -33,17 +33,50 @@ TextField {
     property string centerPlaceholderGlyph: "";
     property int styleRenderType: Text.NativeRendering
 
-    placeholderText: textField.placeholderText
-
     font.family: "Roboto"
     font.pixelSize: hifi.fontSizes.textFieldInput
+    // Controls 1's sizes: a box 1.2 lines high (25 at least), 8 lines wide, the text 4 px from the top and bottom
+    implicitWidth: Math.round(contentHeight * 8)
+    implicitHeight: Math.max(25, Math.round(contentHeight * 1.2))
     height: implicitHeight + 3  // Make surrounding box higher so that highlight is vertically centered.
+    topPadding: 4
+    bottomPadding: 4
+    leftPadding: hasRoundedBorder ? textField.height / 2 : ((isSearchField || textField.leftPermanentGlyph !== "") ? textField.height - 2 : 0) + hifi.dimensions.textPadding
+    rightPadding: (hasClearButton ? textField.height - 2 : 0) + hifi.dimensions.textPadding
+    verticalAlignment: TextInput.AlignVCenter
+    selectByMouse: true  // Controls 1's default
+    renderType: textField.styleRenderType
     property alias textFieldLabel: textFieldLabel
+
+    color: {
+        if (isLightColorScheme) {
+            if (textField.activeFocus) {
+                hifi.colors.black
+            } else {
+                hifi.colors.lightGray
+            }
+        } else if (isFaintGrayColorScheme) {
+            if (textField.activeFocus) {
+                hifi.colors.black
+            } else {
+                hifi.colors.lightGray
+            }
+        } else {
+            if (textField.activeFocus) {
+                hifi.colors.white
+            } else {
+                hifi.colors.lightGrayText
+            }
+        }
+    }
+    placeholderTextColor: isFaintGrayColorScheme ? hifi.colors.lightGrayText : hifi.colors.lightGray
+    selectedTextColor: hifi.colors.black
+    selectionColor: hifi.colors.primaryHighlight
 
     y: textFieldLabel.visible ? textFieldLabel.height + textFieldLabel.anchors.bottomMargin : 0
 
-    // workaround for https://bugreports.qt.io/browse/QTBUG-49297
-    Keys.onPressed: {
+    // Return and Enter end here: the field takes the key and says accepted() itself (QTBUG-49297 on Controls 1)
+    Keys.onPressed: function (event) {
         switch (event.key) {
             case Qt.Key_Return:
             case Qt.Key_Enter:
@@ -56,31 +89,8 @@ TextField {
         }
     }
 
-    style: TextFieldStyle {
-        id: style;
-        textColor: {
-            if (isLightColorScheme) {
-                if (textField.activeFocus) {
-                    hifi.colors.black
-                } else {
-                    hifi.colors.lightGray
-                }
-            } else if (isFaintGrayColorScheme) {
-                if (textField.activeFocus) {
-                    hifi.colors.black
-                } else {
-                    hifi.colors.lightGray
-                }
-            } else {
-                if (textField.activeFocus) {
-                    hifi.colors.white
-                } else {
-                    hifi.colors.lightGrayText
-                }
-            }
-        }
-        background: Rectangle {
-            color: {
+    background: Rectangle {
+        color: {
             if (isLightColorScheme) {
                 if (textField.activeFocus) {
                     hifi.colors.white
@@ -101,63 +111,59 @@ TextField {
                 }
             }
         }
-            border.color: textField.error ? hifi.colors.redHighlight :
-            (textField.activeFocus ? hifi.colors.primaryHighlight : (hasDefocusedBorder ? (isFaintGrayColorScheme ? hifi.colors.lightGrayText : hifi.colors.lightGray) : color))
-            border.width: textField.activeFocus || hasRoundedBorder || textField.error ? 1 : 0
-            radius: isSearchField ? textField.height / 2 : (hasRoundedBorder ? roundedBorderRadius : 0)
+        border.color: textField.error ? hifi.colors.redHighlight :
+        (textField.activeFocus ? hifi.colors.primaryHighlight : (hasDefocusedBorder ? (isFaintGrayColorScheme ? hifi.colors.lightGrayText : hifi.colors.lightGray) : color))
+        border.width: textField.activeFocus || hasRoundedBorder || textField.error ? 1 : 0
+        radius: isSearchField ? textField.height / 2 : (hasRoundedBorder ? roundedBorderRadius : 0)
 
-            HiFiGlyphs {
-                text: textField.leftPermanentGlyph;
-                color: textColor;
-                size: hifi.fontSizes.textFieldSearchIcon;
-                anchors.left: parent.left;
-                anchors.verticalCenter: parent.verticalCenter;
-                anchors.leftMargin: hifi.dimensions.textPadding - 2;
-                visible: text;
-            }
+        HiFiGlyphs {
+            text: textField.leftPermanentGlyph;
+            color: textField.color;
+            size: hifi.fontSizes.textFieldSearchIcon;
+            anchors.left: parent.left;
+            anchors.verticalCenter: parent.verticalCenter;
+            anchors.leftMargin: hifi.dimensions.textPadding - 2;
+            visible: text;
+        }
 
-            HiFiGlyphs {
-                text: textField.centerPlaceholderGlyph;
-                color: textColor;
-                size: parent.height;
-                anchors.horizontalCenter: parent.horizontalCenter;
-                anchors.verticalCenter: parent.verticalCenter;
-                visible: text && !textField.focus && textField.text === "";
-            }
+        HiFiGlyphs {
+            text: textField.centerPlaceholderGlyph;
+            color: textField.color;
+            size: parent.height;
+            anchors.horizontalCenter: parent.horizontalCenter;
+            anchors.verticalCenter: parent.verticalCenter;
+            visible: text && !textField.focus && textField.text === "";
+        }
 
-            HiFiGlyphs {
-                text: hifi.glyphs.search
-                color: textColor
-                size: hifi.fontSizes.textFieldSearchIcon
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: hifi.dimensions.textPadding - 2
-                visible: isSearchField
-            }
+        HiFiGlyphs {
+            text: hifi.glyphs.search
+            color: textField.color
+            size: hifi.fontSizes.textFieldSearchIcon
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: hifi.dimensions.textPadding - 2
+            visible: isSearchField
+        }
+    }
 
-            HiFiGlyphs {
-                text: hifi.glyphs.error
-                color: textColor
-                size: 40
-                anchors.right: parent.right
-                anchors.rightMargin: hifi.dimensions.textPadding - 2
-                anchors.verticalCenter: parent.verticalCenter
-                visible: hasClearButton && textField.text !== "";
+    // The clear button sits above the text (the field covers its padding on Controls 2, so a button in the
+    // background would never get the click)
+    HiFiGlyphs {
+        z: 1
+        text: hifi.glyphs.error
+        color: textField.color
+        size: 40
+        anchors.right: parent.right
+        anchors.rightMargin: hifi.dimensions.textPadding - 2
+        anchors.verticalCenter: parent.verticalCenter
+        visible: hasClearButton && textField.text !== "";
 
-                MouseArea {
-                    anchors.fill: parent;
-                    onClicked: {
-                        textField.text = "";
-                    }
-                }
+        MouseArea {
+            anchors.fill: parent;
+            onClicked: {
+                textField.text = "";
             }
         }
-        placeholderTextColor: isFaintGrayColorScheme ? hifi.colors.lightGrayText : hifi.colors.lightGray
-        selectedTextColor: hifi.colors.black
-        selectionColor: hifi.colors.primaryHighlight
-        padding.left: hasRoundedBorder ? textField.height / 2 : ((isSearchField || textField.leftPermanentGlyph !== "") ? textField.height - 2 : 0) + hifi.dimensions.textPadding
-        padding.right: (hasClearButton ? textField.height - 2 : 0) + hifi.dimensions.textPadding
-        renderType: textField.styleRenderType
     }
 
     HifiControls.Label {

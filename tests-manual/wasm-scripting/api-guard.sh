@@ -45,11 +45,10 @@ ECHO_PID=$!
 trap 'kill $ECHO_PID 2>/dev/null || true' EXIT
 sleep 1
 rm -f /private/var/folders/*/*/T/escape.txt 2>/dev/null
-RUNS="wasm qtscript"
+RUNS="wasm"
 [ -n "$BEFORE_APP" ] && RUNS="before $RUNS"    # BEFORE_APP=<another Darkride.app without the guards>: the same probe on it first
 for ENGINE in $RUNS; do
     unset CLIENT_APP
-    if [ "$ENGINE" = qtscript ]; then export DARKRIDE_RUN_JS_ON_WASM=0; else export DARKRIDE_RUN_JS_ON_WASM=1; fi
     [ "$ENGINE" = before ] && export CLIENT_APP="$BEFORE_APP"
     "$D/run-client.sh" "$NAME-$ENGINE" 60 --url "file://$D/world.json" --testScript "$D/api-guard.js" || true
     LOG="$D/results/$NAME-$ENGINE/client.log"

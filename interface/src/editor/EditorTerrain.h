@@ -116,6 +116,11 @@ public:
     void markChanged(const QUuid& id);
     void flushSaves();
     bool hasPendingSaves() const { return !_dirty.isEmpty() || !_saving.isEmpty(); }
+    // for the quit (ui/QuitCheck.cpp), which waits for the saves: an upload on its way, how many saves have failed since
+    // the start, and why the last one did
+    bool isUploading() const { return !_saving.isEmpty(); }
+    int saveFailures() const { return _saveFailures; }
+    QString lastSaveError() const { return _lastSaveError; }
 
 signals:
     // a note for the toolbar: saving, saved, or why not; clearAfterMs 0 keeps it until the next note
@@ -192,6 +197,8 @@ private:
     QSet<QUuid> _dirty;
     QSet<QUuid> _saving;
     QTimer _saveTimer;
+    int _saveFailures { 0 };
+    QString _lastSaveError;
 };
 
 #endif // hifi_EditorTerrain_h

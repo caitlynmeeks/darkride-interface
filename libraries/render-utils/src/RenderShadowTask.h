@@ -94,6 +94,7 @@ public:
 
 class RenderShadowSetupConfig : public render::Job::Config {
     Q_OBJECT
+    // the bias overrides are metres along the light (2026-11-07), 0 = the computed ones; biasInput overrides the keylight's shadowBias
     Q_PROPERTY(float constantBias0 MEMBER constantBias0 NOTIFY dirty)
     Q_PROPERTY(float constantBias1 MEMBER constantBias1 NOTIFY dirty)
     Q_PROPERTY(float constantBias2 MEMBER constantBias2 NOTIFY dirty)

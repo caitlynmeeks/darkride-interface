@@ -16,8 +16,7 @@ D=$(cd "$(dirname "$0")" && pwd)
 NAME=$1
 [ -n "$NAME" ] || { echo "usage: $0 <name>" >&2; exit 1; }
 ls "$D/results/api-guard-sweep-scripts/"*.js > /dev/null
-for ENGINE in wasm qtscript; do
-    if [ "$ENGINE" = qtscript ]; then export DARKRIDE_RUN_JS_ON_WASM=0; else export DARKRIDE_RUN_JS_ON_WASM=1; fi
+for ENGINE in wasm; do
     "$D/run-client.sh" "$NAME-$ENGINE" 60 --url "file://$D/world.json" --testScript "$D/api-guard-sweep.js" || true
     LOG="$D/results/$NAME-$ENGINE/client.log"
     echo "== $NAME-$ENGINE: the test script's lines"

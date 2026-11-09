@@ -9,7 +9,7 @@
 //
 
 import QtQuick 2.5
-import QtQuick.Controls 1.4
+import QtQuick.Controls 2.12
 import Hifi 1.0 as Hifi
 
 
@@ -23,11 +23,17 @@ Rectangle {
 
     property var channel;
 
-    TextArea {
-        id: textArea
-        width: parent.width
-        height: parent.height
-        text:""
+    // Controls 2's TextArea doesn't scroll by itself: it fills a Flickable (Controls 1's wrapped and selected by mouse)
+    Flickable {
+        id: flick
+        anchors.fill: parent
+        TextArea.flickable: TextArea {
+            id: textArea
+            text: ""
+            wrapMode: TextEdit.WordWrap
+            selectByMouse: true
+        }
+        ScrollBar.vertical: ScrollBar { }
     }
 
     function fromScript(message) {
@@ -38,7 +44,11 @@ Rectangle {
             lines.splice(0, TRIM_LINES);
             textArea.text = lines.join('\n');
         }
+        var following = flick.atYEnd;  // the log follows new lines only while it's at its end
         textArea.append(message);
+        if (following) {
+            textArea.cursorPosition = textArea.length;
+        }
     }
 
     function clearWindow() {

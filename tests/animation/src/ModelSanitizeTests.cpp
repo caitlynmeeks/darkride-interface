@@ -185,7 +185,7 @@ void ModelSanitizeTests::testFbxPolygonCutShort() {
         "    }\n"
         "}\n";
 
-    const HFMModel::Pointer model = FBXSerializer().read(FBX_TEXT, hifi::VariantHash(), QUrl("file:///cut-short.fbx"));
+    const HFMModel::Pointer model = FBXSerializer().read(FBX_TEXT, hifi::VariantMultiHash(), QUrl("file:///cut-short.fbx"));
 
     QVERIFY(model);
     QCOMPARE((int)model->meshes.size(), 1);
@@ -210,7 +210,7 @@ void ModelSanitizeTests::testObjFacePastVertices() {
         "f 1 -9 3\n"
         "f 1 3 4\n";
 
-    const HFMModel::Pointer model = OBJSerializer().read(OBJ_TEXT, hifi::VariantHash(), QUrl());
+    const HFMModel::Pointer model = OBJSerializer().read(OBJ_TEXT, hifi::VariantMultiHash(), QUrl());
 
     QVERIFY(model);
     QCOMPARE((int)model->meshes.size(), 1);
@@ -255,7 +255,7 @@ void ModelSanitizeTests::testFbxSinglePointMeshKeptDrawable() {
         "    }\n"
         "}\n";
 
-    const HFMModel::Pointer model = FBXSerializer().read(FBX_TEXT, hifi::VariantHash(), QUrl("file:///single-point.fbx"));
+    const HFMModel::Pointer model = FBXSerializer().read(FBX_TEXT, hifi::VariantMultiHash(), QUrl("file:///single-point.fbx"));
     QVERIFY(model);
     QCOMPARE((int)model->meshes.size(), 2);
     const int point = model->meshes[0].vertices.size() == 1 ? 0 : 1;
@@ -287,7 +287,7 @@ void ModelSanitizeTests::testObjAllFacesPastKeptDrawable() {
         "f 1 2 9\n"
         "f 7 8 9\n";
 
-    const HFMModel::Pointer model = OBJSerializer().read(OBJ_TEXT, hifi::VariantHash(), QUrl());
+    const HFMModel::Pointer model = OBJSerializer().read(OBJ_TEXT, hifi::VariantMultiHash(), QUrl());
     QVERIFY(model);
     hfm::keepMeshesDrawable(*model);
     for (const auto& mesh : model->meshes) {

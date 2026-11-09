@@ -18,6 +18,7 @@
 #include "QVariantGLM.h"
 
 #include "EntityTree.h"
+#include <shared/WireStream.h>
 #include "PhysicsLogging.h"
 
 
@@ -332,6 +333,7 @@ QVariantMap ObjectConstraintHinge::getArguments() {
 QByteArray ObjectConstraintHinge::serialize() const {
     QByteArray serializedConstraintArguments;
     QDataStream dataStream(&serializedConstraintArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     dataStream << DYNAMIC_TYPE_HINGE;
     dataStream << getID();
@@ -355,6 +357,7 @@ QByteArray ObjectConstraintHinge::serialize() const {
 
 void ObjectConstraintHinge::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;

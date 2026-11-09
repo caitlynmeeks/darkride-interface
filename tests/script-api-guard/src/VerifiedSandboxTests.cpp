@@ -27,6 +27,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 
+#include <AccountManager.h>
 #include <AddressManager.h>
 #include <AudioScriptingInterface.h>
 #include <DependencyManager.h>
@@ -34,6 +35,7 @@
 #include <PathUtils.h>
 #include <ResourceManager.h>
 #include <ResourceScriptingInterface.h>
+#include <platform/Platform.h>
 
 #include <HttpRequestObject.h>
 #include <ScriptApiPolicy.h>
@@ -41,6 +43,11 @@
 #include <controllers/impl/endpoints/ActionEndpoint.h>
 #include <controllers/impl/RouteBuilderProxy.h>
 #include <controllers/UserInputMapper.h>
+#include <ScriptCache.h>
+#include <ResourceRequestObserver.h>
+#include <StatTracker.h>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
 #include <ScriptCaller.h>
 #include <controllers/ScriptingInterface.h>
 #include <ScriptNetworkPolicy.h>
@@ -102,6 +109,9 @@ QString refusedFrom(const QUrl& origin, const QString& target) {
 
 void VerifiedSandboxTests::initTestCase() {
     DependencyManager::set<ResourceManager>(false);
+    // a real download (testRuledWaitersKeepTheirOwnRule fetches from a server of its own) reports to these two
+    DependencyManager::set<ResourceRequestObserver>();
+    DependencyManager::set<StatTracker>();
     QVERIFY(_dir.isValid());
     _root = QFileInfo(_dir.path()).canonicalFilePath();
     // a world served from this machine (its entity script a file here), and a folder beside it
@@ -115,7 +125,11 @@ void VerifiedSandboxTests::initTestCase() {
     QVERIFY(writeFile(_root + "/app/scripts/entities/example.js", "(function () {});"));
     QVERIFY(writeFile(_root + "/app/scripts/entities/helper.js", "var helper = 1;"));
     PathUtils::defaultScriptsLocation(_root + "/app/scripts");
-    // a world on the internet, unless a test says otherwise
+    // a world on the internet, unless a test says otherwise. The node list reaches for the account manager and the
+    // platform description when it tries the world's domain server (its connect timer fires inside a test's wait on
+    // a slow, unoptimized build), so both exist before it, as in the client
+    platform::create();
+    DependencyManager::set<AccountManager>();
     DependencyManager::set<AddressManager>();
     DependencyManager::set<NodeList>(NodeType::Agent, INVALID_PORT);
     setWorld(PUBLIC_WORLD);
@@ -287,7 +301,8 @@ void VerifiedSandboxTests::testHttpRequest() {
         warnings.lines.clear();
         HttpRequestObject* request = factory.createRequest(c.claim);
         bool completed = false;
-        QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(request, &HttpRequestObject::requestComplete, &guard, [&completed] { completed = true; });
         request->open("GET", c.target);
         request->send();
         QTRY_VERIFY(completed);
@@ -319,7 +334,8 @@ void VerifiedSandboxTests::testWebSocket() {
         warnings.lines.clear();
         WebSocketObject* socket = factory.createWebSocket(c.target, c.claim);
         bool errored = false;
-        QObject::connect(socket, &WebSocketObject::errored, [&errored] { errored = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(socket, &WebSocketObject::errored, &guard, [&errored] { errored = true; });
         QTRY_VERIFY(errored);
         QCOMPARE(warnings.lines.size(), 1);
         QVERIFY2(warnings.lines[0].startsWith(refusedFrom(c.origin, QUrl(c.target).toDisplayString())), qPrintable(warnings.lines[0]));
@@ -412,7 +428,8 @@ void VerifiedSandboxTests::testWorldRuleOnRequests() {
             warnings.lines.clear();
             HttpRequestObject* request = requests.createRequest(script.toString());
             bool completed = false;
-            QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+            QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+            QObject::connect(request, &HttpRequestObject::requestComplete, &guard, [&completed] { completed = true; });
             request->open("GET", target);
             request->send();
             QTRY_VERIFY(completed);
@@ -424,7 +441,8 @@ void VerifiedSandboxTests::testWorldRuleOnRequests() {
         warnings.lines.clear();
         WebSocketObject* socket = sockets.createWebSocket("ws://127.0.0.1:9/", script.toString());
         bool errored = false;
-        QObject::connect(socket, &WebSocketObject::errored, [&errored] { errored = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(socket, &WebSocketObject::errored, &guard, [&errored] { errored = true; });
         QTRY_VERIFY(errored);
         QVERIFY2(warnings.lines.value(0).startsWith(refusedFrom(ENTITIES, "ws://127.0.0.1:9/")), qPrintable(warnings.lines.value(0)));
         sockets.dispose(socket);
@@ -438,7 +456,8 @@ void VerifiedSandboxTests::testWorldRuleOnRequests() {
         warnings.lines.clear();
         HttpRequestObject* request = requests.createRequest(script.toString());
         bool completed = false;
-        QObject::connect(request, &HttpRequestObject::requestComplete, [&completed] { completed = true; });
+        QObject guard;   // the connection ends with this case: a late signal of the deferred-deleted sender cannot write to the dead flag
+        QObject::connect(request, &HttpRequestObject::requestComplete, &guard, [&completed] { completed = true; });
         request->open("GET", "http://127.0.0.1:9/");
         request->send();
         QTRY_VERIFY(completed);
@@ -500,6 +519,103 @@ void VerifiedSandboxTests::testRefusalAtLoad() {
         QVERIFY(engine.entityScriptRefusal("file:///a/b.js").isEmpty());
         QCOMPARE(engine.effectiveSandbox(QUrl("file:///a/b.js")), QUrl("file:///a/b.js"));
     }
+}
+
+void VerifiedSandboxTests::testEntityScriptDownloadIsRuled() {
+    // an entity script's own download is judged as the world's, as an include is: a scheme or an address refused
+    // before any name lookup is never asked for; any other goes to the address judged (ScriptCache::ruleFetch)
+    DependencyManager::set<ScriptCache>();
+    const QString app = QUrl::fromLocalFile(_root + "/app/scripts/entities/example.js").toString();
+    const QStringList privateAddresses { "http://127.0.0.1:8000/entity.js", "http://192.168.1.20/entity.js",
+                                         "http://localhost/entity.js", "http://[::1]/entity.js" };
+    const QStringList fetched { "https://example.invalid/world/entity.js", "atp:/entity.js",
+                                "(function () { return {}; })", "javascript:(function () { return {}; })" };
+    // the entity script server: as from the network, whatever the world
+    {
+        WasmScriptEngine server(ScriptEngine::ENTITY_SERVER_SCRIPT, NO_SCRIPT, "about:Entities 1");
+        for (const QString& script : privateAddresses + QStringList { "file:///a/b.js", "ftp://example.com/entity.js" }) {
+            QVERIFY2(!server.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+        for (const QString& script : fetched) {
+            QVERIFY2(server.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+    }
+    // a client in a world on the internet: the same, and the app's own scripts load
+    {
+        EntitiesEngine engine;
+        for (const QString& script : privateAddresses) {
+            QVERIFY2(!engine.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+        for (const QString& script : fetched + QStringList { app, "qrc:///scripts/x.js" }) {
+            QVERIFY2(engine.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+    }
+    // a world on this machine or its network: its scripts keep every address, as before
+    for (const char* world : { THIS_MACHINE_WORLD, HOME_NETWORK_WORLD }) {
+        setWorld(world);
+        EntitiesEngine engine;
+        for (const QString& script : privateAddresses) {
+            QVERIFY2(engine.ruleEntityScriptFetch(script).isEmpty(), qPrintable(script));
+        }
+    }
+    setWorld(PUBLIC_WORLD);
+    // a visitor's own scripts' engine never loads entity scripts; an operator's own agent keeps every address
+    WasmScriptEngine ownAgent(ScriptEngine::AGENT_SCRIPT, NO_SCRIPT, "http://127.0.0.1:8797/body.js");
+    QVERIFY(ownAgent.ruleEntityScriptFetch("http://127.0.0.1:8000/entity.js").isEmpty());
+    DependencyManager::destroy<ScriptCache>();
+}
+
+void VerifiedSandboxTests::testRuledWaitersKeepTheirOwnRule() {
+    // two ruled fetches that meet a download of the same address under no rule each re-fetch under their own rule
+    // when it ends: one from a world on the internet (this machine's address is refused), one from a world on this
+    // machine (allowed), the allowed one asked last, so a single shared rule would have covered the refused one
+    DependencyManager::set<ScriptCache>();
+    // a slow web server on this machine: it answers each request after a moment, so the fetches queue up behind the
+    // first; it counts the requests that reach it
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    int requests = 0;
+    const QByteArray body = "var fetched = 1;";
+    connect(&server, &QTcpServer::newConnection, &server, [&] {
+        while (QTcpSocket* socket = server.nextPendingConnection()) {
+            ++requests;
+            connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            QTimer::singleShot(700, socket, [socket, body] {
+                socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: " +
+                              QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                socket->disconnectFromHost();
+            });
+        }
+    });
+    const QUrl url(QString("http://127.0.0.1:%1/entity.js").arg(server.serverPort()));
+    auto cache = DependencyManager::get<ScriptCache>();
+    int plainAnswers = 0, internetAnswers = 0, localAnswers = 0;
+    bool plainOk = false, internetOk = true, localOk = false;
+    cache->getScriptContents(url.toString(), [&](const QString&, const QString& contents, bool, bool success, const QString&) {
+        ++plainAnswers;
+        plainOk = success && contents == body;
+    });
+    cache->ruleFetch(url, QUrl("about:Entities"), false);
+    cache->getScriptContents(url.toString(), [&](const QString&, const QString&, bool, bool success, const QString&) {
+        ++internetAnswers;
+        internetOk = success;
+    });
+    cache->ruleFetch(url, QUrl("about:Entities"), true);
+    cache->getScriptContents(url.toString(), [&](const QString&, const QString& contents, bool, bool success, const QString&) {
+        ++localAnswers;
+        localOk = success && contents == body;
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(plainAnswers, 1, 10000);
+    QVERIFY(plainOk);
+    // the decisive check: the internet world's fetch is refused under its own rule (with one shared rule both waiters
+    // would have re-fetched under the local world's and it would have succeeded); the request count only shows that
+    // the refused fetch made no request: the plain download and the local world's own
+    QTRY_COMPARE_WITH_TIMEOUT(internetAnswers, 1, 10000);
+    QVERIFY2(!internetOk, "a fetch from a world on the internet took this machine's address under another's rule");
+    QTRY_COMPARE_WITH_TIMEOUT(localAnswers, 1, 10000);
+    QVERIFY(localOk);
+    QCOMPARE(requests, 2);
+    DependencyManager::destroy<ScriptCache>();
 }
 
 void VerifiedSandboxTests::testAppScriptsFolder() {
@@ -568,8 +684,32 @@ void VerifiedSandboxTests::testSignalsNotForWorlds() {
     }
     QVERIFY(!ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, "domainChanged"));
     QVERIFY(!ScriptApiPolicy::deniesSignal(&WindowScriptingInterface::staticMetaObject, "geometryChanged"));
+    // what the tablet's pages send and which page the visitor opens; whether the tablet is shown stays (whiteboards)
+    QVERIFY(ScriptApiPolicy::allowsClass(&TabletProxy::staticMetaObject));
+    for (const char* member : { "webEventReceived", "fromQml", "screenChanged" }) {
+        QVERIFY2(ScriptApiPolicy::deniesSignal(&TabletProxy::staticMetaObject, member), member);
+    }
+    QVERIFY(!ScriptApiPolicy::deniesSignal(&TabletProxy::staticMetaObject, "tabletShownChanged"));
+    QVERIFY(!ScriptApiPolicy::deniesMethod(&TabletProxy::staticMetaObject, "gotoWebScreen"));
+    // the tablet's QML pages and buttons are the app's: off the tablet's allow-list
+    for (const char* member : { "loadQMLSource", "loadQMLOnTop", "pushOntoStack", "addButton", "emitScriptEvent",
+                                "sendToQml" }) {
+        QVERIFY2(ScriptApiPolicy::deniesMethod(&TabletProxy::staticMetaObject, member), member);
+    }
     // a class a world doesn't get: none of its signals
     QVERIFY(ScriptApiPolicy::deniesSignal(&QObject::staticMetaObject, "destroyed"));
+}
+
+void VerifiedSandboxTests::testWorldScriptStartsNoScript() {
+    // Script.load starts another script; Script.include and the rest of Script stay (an imported avatar's gesture
+    // script uses resolvePath and scriptEnding). The policy is asked with the engine's own class, WasmScriptEngine
+    for (const QMetaObject* script : { &ScriptEngine::staticMetaObject, &WasmScriptEngine::staticMetaObject }) {
+        QVERIFY2(ScriptApiPolicy::deniesMethod(script, "load"), script->className());
+        for (const char* member : { "include", "resolvePath", "setTimeout", "setInterval", "clearTimeout", "stop" }) {
+            QVERIFY2(!ScriptApiPolicy::deniesMethod(script, member), member);
+        }
+        QVERIFY(!ScriptApiPolicy::deniesSignal(script, "scriptEnding"));
+    }
 }
 
 void VerifiedSandboxTests::testServerEnginesAreRuled() {

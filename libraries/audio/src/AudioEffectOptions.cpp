@@ -54,10 +54,6 @@ static const float LATE_MIX_LEFT_DEFAULT = 90.0f;
 static const float LATE_MIX_RIGHT_DEFAULT = 90.0f;
 static const float WET_DRY_MIX_DEFAULT = 50.0f;
 
-static void setOption(QScriptValue arguments, const QString name, float defaultValue, float& variable) {
-    variable = arguments.property(name).isNumber() ? (float)arguments.property(name).toNumber() : defaultValue;
-}
-
 /**jsdoc
  * Reverberation options that can be used to initialize an {@link AudioEffectOptions} object when created.
  * @typedef {object} AudioEffectOptions.ReverbOptions
@@ -83,28 +79,28 @@ static void setOption(QScriptValue arguments, const QString name, float defaultV
  * @property {number} lateMixRight=90 - The apparent distance of the source (percent) in the reverb tail.
  * @property {number} wetDryMix=50 - Adjusts the wet/dry ratio, from completely dry (0%) to completely wet (100%).
  */
-AudioEffectOptions::AudioEffectOptions(QScriptValue arguments) {
-    setOption(arguments, BANDWIDTH_HANDLE, BANDWIDTH_DEFAULT, _bandwidth);
-    setOption(arguments, PRE_DELAY_HANDLE, PRE_DELAY_DEFAULT, _preDelay);
-    setOption(arguments, LATE_DELAY_HANDLE, LATE_DELAY_DEFAULT, _lateDelay);
-    setOption(arguments, REVERB_TIME_HANDLE, REVERB_TIME_DEFAULT, _reverbTime);
-    setOption(arguments, EARLY_DIFFUSION_HANDLE, EARLY_DIFFUSION_DEFAULT, _earlyDiffusion);
-    setOption(arguments, LATE_DIFFUSION_HANDLE, LATE_DIFFUSION_DEFAULT, _lateDiffusion);
-    setOption(arguments, ROOM_SIZE_HANDLE, ROOM_SIZE_DEFAULT, _roomSize);
-    setOption(arguments, DENSITY_HANDLE, DENSITY_DEFAULT, _density);
-    setOption(arguments, BASS_MULT_HANDLE, BASS_MULT_DEFAULT, _bassMult);
-    setOption(arguments, BASS_FREQ_HANDLE, BASS_FREQ_DEFAULT, _bassFreq);
-    setOption(arguments, HIGH_GAIN_HANDLE, HIGH_GAIN_DEFAULT, _highGain);
-    setOption(arguments, HIGH_FREQ_HANDLE, HIGH_FREQ_DEFAULT, _highFreq);
-    setOption(arguments, MOD_RATE_HANDLE, MOD_RATE_DEFAULT, _modRate);
-    setOption(arguments, MOD_DEPTH_HANDLE, MOD_DEPTH_DEFAULT, _modDepth);
-    setOption(arguments, EARLY_GAIN_HANDLE, EARLY_GAIN_DEFAULT, _earlyGain);
-    setOption(arguments, LATE_GAIN_HANDLE, LATE_GAIN_DEFAULT, _lateGain);
-    setOption(arguments, EARLY_MIX_LEFT_HANDLE, EARLY_MIX_LEFT_DEFAULT, _earlyMixLeft);
-    setOption(arguments, EARLY_MIX_RIGHT_HANDLE, EARLY_MIX_RIGHT_DEFAULT, _earlyMixRight);
-    setOption(arguments, LATE_MIX_LEFT_HANDLE, LATE_MIX_LEFT_DEFAULT, _lateMixLeft);
-    setOption(arguments, LATE_MIX_RIGHT_HANDLE, LATE_MIX_RIGHT_DEFAULT, _lateMixRight);
-    setOption(arguments, WET_DRY_MIX_HANDLE, WET_DRY_MIX_DEFAULT, _wetDryMix);
+AudioEffectOptions::AudioEffectOptions() {
+    _bandwidth = BANDWIDTH_DEFAULT;
+    _preDelay = PRE_DELAY_DEFAULT;
+    _lateDelay = LATE_DELAY_DEFAULT;
+    _reverbTime = REVERB_TIME_DEFAULT;
+    _earlyDiffusion = EARLY_DIFFUSION_DEFAULT;
+    _lateDiffusion = LATE_DIFFUSION_DEFAULT;
+    _roomSize = ROOM_SIZE_DEFAULT;
+    _density = DENSITY_DEFAULT;
+    _bassMult = BASS_MULT_DEFAULT;
+    _bassFreq = BASS_FREQ_DEFAULT;
+    _highGain = HIGH_GAIN_DEFAULT;
+    _highFreq = HIGH_FREQ_DEFAULT;
+    _modRate = MOD_RATE_DEFAULT;
+    _modDepth = MOD_DEPTH_DEFAULT;
+    _earlyGain = EARLY_GAIN_DEFAULT;
+    _lateGain = LATE_GAIN_DEFAULT;
+    _earlyMixLeft = EARLY_MIX_LEFT_DEFAULT;
+    _earlyMixRight = EARLY_MIX_RIGHT_DEFAULT;
+    _lateMixLeft = LATE_MIX_LEFT_DEFAULT;
+    _lateMixRight = LATE_MIX_RIGHT_DEFAULT;
+    _wetDryMix = WET_DRY_MIX_DEFAULT;
 }
 
 AudioEffectOptions::AudioEffectOptions(const AudioEffectOptions &other) : QObject() {
@@ -135,8 +131,4 @@ AudioEffectOptions& AudioEffectOptions::operator=(const AudioEffectOptions &othe
     _wetDryMix = other._wetDryMix;
      
     return *this;
-}
-
-QScriptValue AudioEffectOptions::constructor(QScriptContext* context, QScriptEngine* engine) {
-    return engine->newQObject(new AudioEffectOptions(context->argument(0)));
 }

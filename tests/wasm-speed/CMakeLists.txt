@@ -1,6 +1,6 @@
-# The speed of JavaScript on the two script engines, side by side in one program: QtScript, the JavaScript guest on
-# WebAssembly (with and without the runtime's epoch checks) and, when its source is at hand, QuickJS-NG built
-# natively, which separates the interpreter's cost from the sandbox's. No client and no domain are needed.
+# The speed of JavaScript on the script engine, in one program: the JavaScript guest on WebAssembly (with and
+# without the runtime's epoch checks) and, when its source is at hand, QuickJS-NG built natively, which separates
+# the interpreter's cost from the sandbox's. No client and no domain are needed.
 
 set(QUICKJS_NATIVE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/tools/wasm-js/build/quickjs-0.17.0" CACHE PATH
     "QuickJS-NG's source, for the native column of tests/wasm-speed (tools/wasm-js/build.sh unpacks and patches it)")
@@ -18,4 +18,4 @@ macro (setup_testcase_dependencies)
   package_libraries_for_deployment()
 endmacro ()
 
-setup_hifi_testcase(Script)
+setup_hifi_testcase()

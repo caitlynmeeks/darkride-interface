@@ -11,8 +11,6 @@
 
 #include "TouchEvent.h"
 
-#include <qscriptengine.h>
-#include <qscriptvalue.h>
 
 #include <NumericalConstants.h>
 
@@ -119,10 +117,18 @@ void TouchEvent::initWithQTouchEvent(const QTouchEvent& event) {
     }
     angle = totalAngle/(float)touchPoints;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    const auto states = event.touchPointStates();
+    isPressed = states.testFlag(QEventPoint::Pressed);
+    isMoved = states.testFlag(QEventPoint::Updated);
+    isStationary = states.testFlag(QEventPoint::Stationary);
+    isReleased = states.testFlag(QEventPoint::Released);
+#else
     isPressed = event.touchPointStates().testFlag(Qt::TouchPointPressed);
     isMoved = event.touchPointStates().testFlag(Qt::TouchPointMoved);
     isStationary = event.touchPointStates().testFlag(Qt::TouchPointStationary);
     isReleased = event.touchPointStates().testFlag(Qt::TouchPointReleased);
+#endif
 
     // keyboard modifiers
     isShifted = event.modifiers().testFlag(Qt::ShiftModifier);
@@ -204,47 +210,3 @@ void TouchEvent::calculateMetaAttributes(const TouchEvent& other) {
  *     print(JSON.stringify(event));
  * });
  */
-QScriptValue TouchEvent::toScriptValue(QScriptEngine* engine, const TouchEvent& event) {
-    QScriptValue obj = engine->newObject();
-    obj.setProperty("x", event.x);
-    obj.setProperty("y", event.y);
-    obj.setProperty("isPressed", event.isPressed);
-    obj.setProperty("isMoved", event.isMoved);
-    obj.setProperty("isStationary", event.isStationary);
-    obj.setProperty("isReleased", event.isReleased);
-    obj.setProperty("isShifted", event.isShifted);
-    obj.setProperty("isMeta", event.isMeta);
-    obj.setProperty("isControl", event.isControl);
-    obj.setProperty("isAlt", event.isAlt);
-    obj.setProperty("touchPoints", event.touchPoints);
-
-    QScriptValue pointsObj = engine->newArray();
-    int index = 0;
-    foreach (glm::vec2 point, event.points) {
-        QScriptValue thisPoint = vec2ToScriptValue(engine, point);
-        pointsObj.setProperty(index, thisPoint);
-        index++;
-    }
-    obj.setProperty("points", pointsObj);
-    obj.setProperty("radius", event.radius);
-    obj.setProperty("isPinching", event.isPinching);
-    obj.setProperty("isPinchOpening", event.isPinchOpening);
-
-    obj.setProperty("angle", event.angle);
-    obj.setProperty("deltaAngle", event.deltaAngle);
-    QScriptValue anglesObj = engine->newArray();
-    index = 0;
-    foreach (float angle, event.angles) {
-        anglesObj.setProperty(index, angle);
-        index++;
-    }
-    obj.setProperty("angles", anglesObj);
-
-    obj.setProperty("isRotating", event.isRotating);
-    obj.setProperty("rotating", event.rotating);
-    return obj;
-}
-
-void TouchEvent::fromScriptValue(const QScriptValue& object, TouchEvent& event) {
-    // nothing for now...
-}

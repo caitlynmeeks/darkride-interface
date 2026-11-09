@@ -26,7 +26,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonDocument>
-#include <QRegExp>
+#include <QRegularExpression>
+#include <RegexCompat.h>
 
 #include <NumericalConstants.h>
 #include <PerfStat.h>
@@ -36,6 +37,7 @@
 #include "OctreeLogging.h"
 #include "OctreeUtils.h"
 #include "OctreeDataUtils.h"
+#include <shared/WireStream.h>
 
 constexpr std::chrono::seconds OctreePersistThread::DEFAULT_PERSIST_INTERVAL { 30 };
 constexpr std::chrono::milliseconds TIME_BETWEEN_PROCESSING { 10 };
@@ -157,6 +159,7 @@ void OctreePersistThread::handleOctreeDataFileReply(QSharedPointer<ReceivedMessa
             persistentFileRead = _tree->readFromFile(_filename.toLocal8Bit().constData());
         } else {
             QDataStream jsonStream(_cachedJSONData);
+            hifi::stream::pin(jsonStream);
             persistentFileRead = _tree->readFromStream(-1, jsonStream);
         }
         _tree->pruneTree();
@@ -272,7 +275,7 @@ QByteArray OctreePersistThread::getPersistFileContents() const {
 }
 
 void OctreePersistThread::cleanupOldReplacementBackups() {
-    QRegExp filenameRegex { ".*\\.backup\\.\\d{8}-\\d{6}$" };
+    static const QRegularExpression filenameRegex = regex_compat::exact(".*\\.backup\\.\\d{8}-\\d{6}$");
     QFileInfo persistFile { _filename };
     QDir backupDir { persistFile.absolutePath() };
     backupDir.setSorting(QDir::SortFlag::Time);
@@ -284,7 +287,7 @@ void OctreePersistThread::cleanupOldReplacementBackups() {
     for (auto fileInfo : backupDir.entryInfoList()) {
         auto absPath = fileInfo.absoluteFilePath();
         qDebug() << "  Found:" << absPath;
-        if (filenameRegex.exactMatch(absPath)) {
+        if (filenameRegex.match(absPath).hasMatch()) {
             if (count >= MAX_OCTREE_REPLACEMENT_BACKUP_FILES_COUNT || totalSize > MAX_OCTREE_REPLACEMENT_BACKUP_FILES_SIZE_BYTES) {
                 qDebug() << "  Removing:" << absPath;
                 QFile backup(absPath);

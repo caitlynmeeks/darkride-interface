@@ -16,6 +16,7 @@
 
 #include <DependencyManager.h>
 #include <ResourceCache.h>
+#include <shared/HifiTypes.h>
 
 #include <graphics/Asset.h>
 
@@ -24,7 +25,7 @@
 #include <material-networking/TextureCache.h>
 #include "ModelLoader.h"
 
-using GeometryMappingPair = std::pair<QUrl, QVariantHash>;
+using GeometryMappingPair = std::pair<QUrl, hifi::VariantMultiHash>;
 Q_DECLARE_METATYPE(GeometryMappingPair)
 
 class NetworkModel {
@@ -61,7 +62,7 @@ public:
     // are drawn on) until they first arrive, then go back to their own (the mips' order).
     void setTextureLoadPriority(QObject* owner, float priority) const;
     const QUrl& getAnimGraphOverrideUrl() const { return _animGraphOverrideUrl; }
-    const QVariantHash& getMapping() const { return _mapping; }
+    const hifi::VariantMultiHash& getMapping() const { return _mapping; }
 
 protected:
     // Shared across all geometries, constant throughout lifetime
@@ -73,7 +74,7 @@ protected:
     NetworkMaterials _materials;
 
     QUrl _animGraphOverrideUrl;
-    QVariantHash _mapping;  // parsed contents of FST file.
+    hifi::VariantMultiHash _mapping;  // parsed contents of FST file.
 
 private:
     mutable bool _areTexturesLoaded { false };
@@ -171,12 +172,12 @@ public:
 
     ModelResource::Pointer getModelResource(const QUrl& url,
                                                   const GeometryMappingPair& mapping =
-                                                        GeometryMappingPair(QUrl(), QVariantHash()),
+                                                        GeometryMappingPair(QUrl(), hifi::VariantMultiHash()),
                                                   const QUrl& textureBaseUrl = QUrl());
 
     ModelResource::Pointer getCollisionModelResource(const QUrl& url,
                                                            const GeometryMappingPair& mapping =
-                                                                 GeometryMappingPair(QUrl(), QVariantHash()),
+                                                                 GeometryMappingPair(QUrl(), hifi::VariantMultiHash()),
                                                            const QUrl& textureBaseUrl = QUrl());
 
 protected:

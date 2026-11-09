@@ -425,7 +425,12 @@ void PhysicsEngine::processTransaction(PhysicsEngine::Transaction& transaction) 
     }
 
     // adds
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 has no QList::fromStdVector; the same list from the same vector
+    addObjects(VectorOfMotionStates(transaction.objectsToAdd.begin(), transaction.objectsToAdd.end()));
+#else
     addObjects(VectorOfMotionStates::fromStdVector(transaction.objectsToAdd));
+#endif
 
     // reinserts
     for (auto object : transaction.objectsToReinsert) {

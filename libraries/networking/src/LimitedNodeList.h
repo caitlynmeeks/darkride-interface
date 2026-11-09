@@ -316,6 +316,10 @@ public:
 
     bool isPacketVerifiedWithSource(const udt::Packet& packet, Node* sourceNode = nullptr);
     bool isPacketVerified(const udt::Packet& packet) { return isPacketVerifiedWithSource(packet); }
+
+    // for a node with no active socket yet: activates its local or public socket when senderSockAddr (where a packet
+    // that passed the hash check came from) is one of them; returns whether it did. Public for tests.
+    static bool activateSocketFromVerifiedPacket(Node& node, const HifiSockAddr& senderSockAddr, PacketType packetType);
     void setAuthenticatePackets(bool useAuthentication) { _useAuthentication = useAuthentication; }
     bool getAuthenticatePackets() const { return _useAuthentication; }
 

@@ -50,7 +50,11 @@ public:
     // The frustums and the conical views are kept under one recursive lock, mutex(). The copies, the pick ray and the
     // writes below take it themselves; a caller that reads viewFrustum(), displayViewFrustum() or conicalViews()
     // over several statements holds it for that scope, as the frame loop's query decision and render arguments do.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QRecursiveMutex& mutex() const { return _mutex; }   // the lock's Qt 6 type, as below
+#else
     QMutex& mutex() const { return _mutex; }
+#endif
     const ViewFrustum& viewFrustum() const { return _viewFrustum; }                 // the avatar's current view
     const ViewFrustum& displayViewFrustum() const { return _displayViewFrustum; }   // the current rendering pass's view
     const ConicalViewFrustums& conicalViews() const { return _conicalViews; }       // the views the servers are asked for
@@ -102,7 +106,11 @@ private:
     bool updateChaseCamera(float deltaTime);
 
     FancyCamera _camera;   // my view onto the world
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    mutable QRecursiveMutex _mutex;   // Qt 6 has no QMutex::Recursive; the same lock as below
+#else
     mutable QMutex _mutex{ QMutex::Recursive };
+#endif
     ViewFrustum _viewFrustum;   // current state of view frustum, perspective, orientation, etc.
     ViewFrustum _displayViewFrustum;
     ConicalViewFrustums _conicalViews;

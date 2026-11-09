@@ -119,7 +119,7 @@ int checkMuscles(const unity::Package& package, const avatarimport::AvatarSource
     }
     const QJsonObject unityExport = QJsonDocument::fromJson(exportFile.readAll()).object();
     const auto* model = package.byGuid(avatar.modelGuid);
-    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, QVariantHash(), QUrl());
+    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, hifi::VariantMultiHash(), QUrl());
     const QVariantMap importer = package.meta(avatar.modelGuid).value("ModelImporter").toMap();
     const QVariantMap human = importer.value("humanDescription").toMap();
     // the joints renamed as the .fst's jointMap renames them
@@ -201,7 +201,7 @@ int checkFrames(const unity::Package& package, const avatarimport::AvatarSource&
     }
     const QJsonObject unityExport = QJsonDocument::fromJson(exportFile.readAll()).object();
     const auto* model = package.byGuid(avatar.modelGuid);
-    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, QVariantHash(), QUrl());
+    const HFMModel::Pointer hfmModel = FBXSerializer().read(model->data, hifi::VariantMultiHash(), QUrl());
     const float metersPerUnit = unity::metersPerUnit(package.meta(avatar.modelGuid).value("ModelImporter").toMap(), *hfmModel);
     const QStringList paths = unity::jointPaths(*hfmModel);
     int compared = 0, missing = 0;
@@ -265,7 +265,7 @@ int checkIds(const QString& listPath) {
     }
     int matched = 0, total = 0;
     QMap<QString, int> matchedByClass;
-    for (const QString& line : QString::fromUtf8(file.readAll()).split('\n', QString::SkipEmptyParts)) {
+    for (const QString& line : QString::fromUtf8(file.readAll()).split('\n', Qt::SkipEmptyParts)) {
         const QStringList fields = line.split('\t');
         if (fields.size() < 4) {
             continue;
@@ -273,7 +273,7 @@ int checkIds(const QString& listPath) {
         total++;
         const qint64 id = fields[0].toLongLong();
         const QString& className = fields[1];
-        QStringList below = fields[3].split('/', QString::SkipEmptyParts);
+        QStringList below = fields[3].split('/', Qt::SkipEmptyParts);
         const bool inHierarchy = !below.isEmpty();
         if (inHierarchy) {
             below.removeFirst();  // the model's root object, "root" in the path

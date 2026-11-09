@@ -15,8 +15,6 @@
 <@include ShadowCore.slh@>
 
 #define SHADOW_DITHER                   1
-#define SHADOW_NOISE_ENABLED            0
-#define SHADOW_SCREEN_SPACE_DITHER      1
 
 // the shadow texture
 LAYOUT(binding=RENDER_UTILS_TEXTURE_SHADOW) uniform sampler2DArrayShadow shadowMaps;
@@ -26,52 +24,21 @@ float fetchShadow(int cascadeIndex, vec3 shadowTexcoord) {
     return texture(shadowMaps, vec4(shadowTexcoord.xy, cascadeIndex, shadowTexcoord.z));
 }
 
-vec2 PCFkernel[4] = vec2[4](
-    vec2(-1.5, 0.5),
-    vec2(0.5, 0.5),
-    vec2(-1.5, -1.5),
-    vec2(0.5, -1.5)
-);
-
-#if SHADOW_NOISE_ENABLED
-float evalShadowNoise(vec4 seed) {
-    float dot_product = dot(seed, vec4(12.9898,78.233,45.164,94.673));
-    return fract(sin(dot_product) * 43758.5453);
-}
-#endif
-
 struct ShadowSampleOffsets {
     vec3 points[4];
 };
 
+// Four taps at half-texel offsets on the comparison sampler, whose linear filter makes each fetch a 2 x 2 compare,
+// so the four cover a 3 x 3-texel tent, the same at every screen pixel. (Until 2026-11-07 the four offsets were picked
+// per pixel by a 2 x 2 screen-space dither, GPU Gems ch. 11's "efficient PCF", which expects a screen-space blur after
+// it that this engine never had: every shadow edge showed the dither's two-pixel stair.)
 ShadowSampleOffsets evalShadowFilterOffsets(vec4 position) {
     float shadowScale = getShadowScale();
     ShadowSampleOffsets offsets;
-
-#if SHADOW_SCREEN_SPACE_DITHER
-    // Pattern dithering in screen space
-    ivec2 coords = ivec2(gl_FragCoord.xy);
-#else
-    // Pattern dithering in world space (mm resolution)
-    ivec2 coords = ivec2(position.x, position.y+position.z);
-#endif
-
-#if SHADOW_NOISE_ENABLED
-    // Add some noise to break dithering
-    int index = int(4.0*evalShadowNoise(gl_FragCoord.xyyx))%4;
-    coords.x += index & 1;
-    coords.y += (index & 2) >> 1;
-#endif
-
-    // Offset for efficient PCF, see https://developer.nvidia.com/gpugems/GPUGems/gpugems_ch11.html
-    ivec2 offset = coords & ivec2(1,1);
-    offset.y = (offset.x+offset.y) & 1;
-
-    offsets.points[0] = shadowScale * vec3(vec2(offset) + PCFkernel[0], 0.0);
-    offsets.points[1] = shadowScale * vec3(vec2(offset) + PCFkernel[1], 0.0);
-    offsets.points[2] = shadowScale * vec3(vec2(offset) + PCFkernel[2], 0.0);
-    offsets.points[3] = shadowScale * vec3(vec2(offset) + PCFkernel[3], 0.0);
-
+    offsets.points[0] = shadowScale * vec3(-0.5, -0.5, 0.0);
+    offsets.points[1] = shadowScale * vec3( 0.5, -0.5, 0.0);
+    offsets.points[2] = shadowScale * vec3(-0.5,  0.5, 0.0);
+    offsets.points[3] = shadowScale * vec3( 0.5,  0.5, 0.0);
     return offsets;
 }
 
@@ -105,7 +72,8 @@ float evalShadowAttenuation(vec3 worldLightDir, vec4 worldPosition, float viewDe
     bvec4 isPixelOnCascade;
     int cascadeIndex;
     float NdotL = clamp(dot(worldLightDir, worldNormal), 0.0, 1.0);
-    float slopeNdotL = min(2.0, sqrt(1.0-NdotL*NdotL) / NdotL);
+    // tan(angle) up to 4 (a floor under a 15 degree sun is 3.7; was 2 until 2026-11-07, when a fat fixed bias covered it)
+    float slopeNdotL = min(4.0, sqrt(1.0-NdotL*NdotL) / NdotL);
 
     for (cascadeIndex=0 ; cascadeIndex<getShadowCascadeCount() ; cascadeIndex++) {
         cascadeShadowCoords[cascadeIndex] = evalShadowTexcoord(cascadeIndex, worldPosition);

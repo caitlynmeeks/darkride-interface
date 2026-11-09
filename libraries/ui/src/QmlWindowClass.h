@@ -11,13 +11,9 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
-#include <QtScript/QScriptValue>
 #include <QtQuick/QQuickItem>
 
 #include <GLMHelpers.h>
-
-class QScriptEngine;
-class QScriptContext;
 
 /**jsdoc
  * A <code>OverlayWindow</code> displays a QML window inside Interface.
@@ -50,22 +46,12 @@ class QmlWindowClass : public QObject {
     Q_PROPERTY(glm::vec2 size READ getSize WRITE setSize NOTIFY sizeChanged)
     Q_PROPERTY(bool visible READ isVisible WRITE setVisible NOTIFY visibleChanged)
 
-private:
-    static QScriptValue internal_constructor(QScriptContext* context, QScriptEngine* engine, bool restricted);
 public:
     /// A window from the properties the constructor takes (title, source, width, height, visible, frameless,
     /// enabled), initialised on the main thread; the caller owns it.
     static QmlWindowClass* createWindow(QVariantMap properties, bool restricted);
     /// A source that is not a known URL scheme is a local file path.
     static QVariantMap normalizeProperties(QVariantMap properties);
-    static QScriptValue constructor(QScriptContext* context, QScriptEngine* engine) {
-        return internal_constructor(context, engine, false);
-    }
-
-    static QScriptValue restricted_constructor(QScriptContext* context, QScriptEngine* engine ){
-        return internal_constructor(context, engine, true);
-    }
-
     QmlWindowClass(bool restricted);
     ~QmlWindowClass();
 
@@ -384,10 +370,6 @@ protected slots:
     void qmlToScript(const QVariant& message);
 
 protected:
-    static QVariantMap parseArguments(QScriptContext* context);
-    static QScriptValue internalConstructor(QScriptContext* context, QScriptEngine* engine, 
-        std::function<QmlWindowClass*(QVariantMap)> function);
-
     virtual QString qmlSource() const { return "QmlWindow.qml"; }
 
     QPointer<QObject> _qmlWindow;

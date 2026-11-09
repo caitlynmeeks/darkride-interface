@@ -13,9 +13,7 @@
 #define hifi_AccountServicesScriptingInterface_h
 
 #include <QObject>
-#include <QScriptContext>
-#include <QScriptEngine>
-#include <QScriptValue>
+#include <QtCore/QMetaType>
 #include <QString>
 #include <QStringList>
 
@@ -30,9 +28,6 @@ public:
 };
 
 Q_DECLARE_METATYPE(DownloadInfoResult)
-
-QScriptValue DownloadInfoResultToScriptValue(QScriptEngine* engine, const DownloadInfoResult& result);
-void DownloadInfoResultFromScriptValue(const QScriptValue& object, DownloadInfoResult& result);
 
 class AccountServicesScriptingInterface : public QObject {
     Q_OBJECT

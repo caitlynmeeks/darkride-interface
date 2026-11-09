@@ -119,7 +119,7 @@ namespace {
     }
     uint16_t groupsToMask(const QString& text) {
         uint16_t mask = 0;
-        QStringList groups = text.split(',', QString::SkipEmptyParts);
+        QStringList groups = text.split(',', Qt::SkipEmptyParts);
         for (const auto& group : COLLISION_GROUPS) {
             if (groups.contains(group.first)) {
                 mask |= group.second;

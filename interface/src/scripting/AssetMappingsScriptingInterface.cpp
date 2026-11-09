@@ -11,9 +11,9 @@
 
 #include "AssetMappingsScriptingInterface.h"
 
-#include <QtScript/QScriptEngine>
 #include <QtCore/QFile>
 #include <QtCore/QThread>
+#include <QtQml/QJSEngine>
 
 #include <AssetRequest.h>
 #include <AssetUpload.h>
@@ -145,23 +145,18 @@ void AssetMappingsScriptingInterface::sortProxyModel(int column, Qt::SortOrder o
     _proxyModel.sort(column, order);
 }
 
-void AssetMappingsScriptingInterface::getAllMappings(QJSValue callback) {
+void AssetMappingsScriptingInterface::getAllMappings(std::function<void(const QString&, const QJsonObject&)> done) {
     auto assetClient = DependencyManager::get<AssetClient>();
     auto request = assetClient->createGetAllMappingsRequest();
 
-    connect(request, &GetAllMappingsRequest::finished, this, [callback](GetAllMappingsRequest* request) mutable {
-        auto mappings = request->getMappings();
-        auto map = callback.engine()->newObject();
-
-        for (auto& kv : mappings ) {
-            map.setProperty(kv.first, kv.second.hash);
+    connect(request, &GetAllMappingsRequest::finished, this, [done](GetAllMappingsRequest* request) {
+        QJsonObject mappings;
+        for (const auto& kv : request->getMappings()) {
+            mappings.insert(kv.first, kv.second.hash);
         }
-
-        if (callback.isCallable()) {
-            QJSValueList args { request->getErrorString(), map };
-            callback.call(args);
+        if (done) {
+            done(request->getErrorString(), mappings);
         }
-
         request->deleteLater();
     });
 
@@ -350,4 +345,18 @@ void AssetMappingModel::setupRoles() {
     QHash<int, QByteArray> roleNames;
     roleNames[Qt::DisplayRole] = "name";
     setItemRoleNames(roleNames);
+}
+
+AssetMappingsQmlInterface::AssetMappingsQmlInterface(QJSEngine* engine, QObject* parent) : QObject(parent), _engine(engine) {
+}
+
+void AssetMappingsQmlInterface::getAllMappings(QJSValue callback) {
+    QPointer<QJSEngine> engine = _engine;
+    shared()->getAllMappings([engine, callback](const QString& error, const QJsonObject& mappings) mutable {
+        // the object is made in this context's engine, the callback's own; a context that is gone hears nothing
+        if (!engine || !callback.isCallable()) {
+            return;
+        }
+        callback.call(QJSValueList { error, engine->toScriptValue(mappings) });
+    });
 }

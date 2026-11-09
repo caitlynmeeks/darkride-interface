@@ -1,5 +1,5 @@
 set(TARGET_NAME animation)
-setup_hifi_library(Network Script)
+setup_hifi_library(Network)
 link_hifi_libraries(shared graphics fbx)
 include_hifi_library_headers(networking)
 include_hifi_library_headers(gpu)

@@ -26,12 +26,6 @@ QObject* MappingBuilderProxy::fromQml(const QJSValue& source) {
     return from(sourceEndpoint);
 }
 
-QObject* MappingBuilderProxy::from(const QScriptValue& source) {
-    qCDebug(controllers) << "Creating new Route builder proxy from " << source.toString();
-    auto sourceEndpoint = _parent.endpointFor(source);
-    return from(sourceEndpoint);
-}
-
 QObject* MappingBuilderProxy::fromValue(const QVariant& source) {
     return from(_parent.endpointFor(source));
 }
@@ -54,12 +48,6 @@ QObject* MappingBuilderProxy::from(const Endpoint::Pointer& source) {
 }
 
 QObject* MappingBuilderProxy::makeAxisQml(const QJSValue& source1, const QJSValue& source2) {
-    auto source1Endpoint = _parent.endpointFor(source1);
-    auto source2Endpoint = _parent.endpointFor(source2);
-    return from(_parent.compositeEndpointFor(source1Endpoint, source2Endpoint));
-}
-
-QObject* MappingBuilderProxy::makeAxis(const QScriptValue& source1, const QScriptValue& source2) {
     auto source1Endpoint = _parent.endpointFor(source1);
     auto source2Endpoint = _parent.endpointFor(source2);
     return from(_parent.compositeEndpointFor(source1Endpoint, source2Endpoint));

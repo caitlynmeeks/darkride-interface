@@ -24,6 +24,7 @@ Item {
     property bool passwordField: false
     property bool isDesktop: false
     property alias url: web.url
+    property alias worldPage: web.worldPage   // a world's page (security finding #54)
     property alias webView: web.webViewCore
     property alias profile: web.webViewCoreProfile
     property bool remove: false

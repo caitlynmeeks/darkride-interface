@@ -14,6 +14,8 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QQueue>
 
+#include <mutex>
+#include <set>
 #include <unordered_set>
 #include <QJsonObject>
 #include <QJsonDocument>
@@ -28,6 +30,7 @@
 
 #include "AddEntityOperator.h"
 #include "UpdateEntityOperator.h"
+#include "DirtyOctreeElementOperator.h"
 #include "QVariantGLM.h"
 #include "EntitiesLogging.h"
 #include "RecurseOctreeToMapOperator.h"
@@ -38,6 +41,7 @@
 #include "WebEntityItem.h"
 #include "ScriptAddressCheck.h"
 #include "ScriptCaller.h"
+#include <shared/WireStream.h>
 
 static const quint64 DELETED_ENTITIES_EXTRA_USECS_TO_CONSIDER = USECS_PER_MSEC * 50;
 const float EntityTree::DEFAULT_MAX_TMP_ENTITY_LIFETIME = 60 * 60; // 1 hour
@@ -412,13 +416,164 @@ bool EntityTree::senderMayDelete(const SharedNodePointer& senderNode, const Enti
     return true;
 }
 
+std::atomic<uint64_t> EntityTree::_streamChecksRun { 0 };
+
+namespace {
+
+// The smallest edit that can carry a property too big for the stream: the stream's room, less its section header
+// (6 bytes) and the most an entity's stream header can take besides the property (id 16, type 2, created 8, last
+// edited 8, two time deltas 9 each, property flags up to 50 in all, rounded up to 128). An edit's own header only
+// makes a shorter edit carry less. Should this be too high, the stream itself still drops what it can't send
+// (EntityTreeSendThread), with its warning.
+const int STREAM_SECTION_HEADER_SIZE = 6;
+const int MAX_STREAM_ENTITY_HEADER_SIZE = 128;
+int streamCheckSize() {
+    // worked out on first use, not at load time: the room comes from the networking library's packet tables
+    static const int size = EntityItem::streamSectionRoom() - STREAM_SECTION_HEADER_SIZE - MAX_STREAM_ENTITY_HEADER_SIZE;
+    return size;
+}
+
+// The stand-in's margin (EntityItem::STREAM_HEADER_GROWTH): the client's check before an add or edit
+// (EntitySizeCheck) measures with the same one.
+const int STREAM_HEADER_GROWTH = EntityItem::STREAM_HEADER_GROWTH;
+
+// How far after a refused too-big edit its sender's copy is put back (sendBackRefusedTooBigEdit): a margin over the
+// sender's clock-offset estimate. For that long the entity's later edits keep this time.
+const quint64 REFUSED_TOO_BIG_LEAD = 100 * USECS_PER_MSEC;
+
+// One warning per entity and property for the server's life, whoever sends it, and at most this many in all
+std::mutex tooBigWarningsMutex;
+std::set<std::pair<QUuid, int>> tooBigWarnings;
+const size_t MAX_TOO_BIG_WARNINGS = 1000;
+
+}
+
+void EntityTree::warnTooBigToStream(const EntityItem& probe, const EntityPropertyFlags& tooBig, const EntityItemID& entityID,
+                                    bool isAdd, const SharedNodePointer& senderNode) {
+    for (int flag = (int)tooBig.firstFlag(); flag <= (int)tooBig.lastFlag(); flag++) {
+        const EntityPropertyList property = (EntityPropertyList)flag;
+        if (!tooBig.getHasProperty(property)) {
+            continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(tooBigWarningsMutex);
+            if (tooBigWarnings.size() > MAX_TOO_BIG_WARNINGS) {
+                return;
+            }
+            if (!tooBigWarnings.insert({ entityID, flag }).second) {
+                continue;
+            }
+            if (tooBigWarnings.size() > MAX_TOO_BIG_WARNINGS) {
+                qCWarning(entities) << "more adds and edits refused for a property too big to stream; no more of these"
+                    << "warnings until the entity server restarts";
+                return;
+            }
+        }
+        const int needed = probe.streamRoomNeededAlone(property, true);
+        qCWarning(entities).noquote() << "User [" + (senderNode ? senderNode->getUUID() : QUuid()).toString() + "]"
+            << (isAdd ? "add of" : "edit of") << "entity" << entityID.toString()
+            << "(" + EntityTypes::getEntityTypeName(probe.getType()) + ")" << "refused: property"
+            << EntityItem::propertyName(property) << "needs"
+            << (needed < 0 ? QString("more than %1").arg(2 * MAX_APPENDED_VALUE_LENGTH) : QString::number(needed))
+            << "bytes alone, more than the" << EntityItem::streamSectionRoom() - STREAM_HEADER_GROWTH
+            << "the server allows for it (a stream packet's" << EntityItem::streamSectionRoom()
+            << "less" << STREAM_HEADER_GROWTH << "for its header to grow)";
+    }
+}
+
+std::atomic<uint64_t> EntityTree::_editsStampedAhead { 0 };
+std::atomic<uint64_t> EntityTree::_largestStampLeadUsec { 0 };
+std::atomic<uint64_t> EntityTree::_sendBacksSkipped { 0 };
+
+namespace {
+// A per-sender budget of send-backs: at most this many a second to one sender, and this many at once. Beyond it a
+// refused edit is still refused, without a send-back.
+const float SEND_BACKS_PER_SECOND = 5.0f;
+const float SEND_BACK_BURST = 10.0f;
+struct SendBackBudget {
+    quint64 refilledAt;
+    float left;
+};
+std::mutex sendBackBudgetsMutex;
+QHash<QUuid, SendBackBudget> sendBackBudgets;
+
+bool takeSendBack(const QUuid& sender, quint64 now) {
+    std::lock_guard<std::mutex> lock(sendBackBudgetsMutex);
+    const quint64 FULL_AFTER = (quint64)(SEND_BACK_BURST / SEND_BACKS_PER_SECOND * USECS_PER_SECOND);
+    if (sendBackBudgets.size() > 1024) {
+        // a sender idle long enough is back to a full budget, the same as one never seen
+        for (auto it = sendBackBudgets.begin(); it != sendBackBudgets.end();) {
+            if (now > it->refilledAt + FULL_AFTER) {
+                it = sendBackBudgets.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    auto it = sendBackBudgets.find(sender);
+    if (it == sendBackBudgets.end()) {
+        sendBackBudgets.insert(sender, { now, SEND_BACK_BURST - 1.0f });
+        return true;
+    }
+    const quint64 elapsed = now > it->refilledAt ? now - it->refilledAt : 0;
+    const float left = std::min(SEND_BACK_BURST,
+        it->left + (float)elapsed / (float)USECS_PER_SECOND * SEND_BACKS_PER_SECOND);
+    it->refilledAt = std::max(now, it->refilledAt);
+    if (left < 1.0f) {
+        it->left = left;
+        return false;
+    }
+    it->left = left - 1.0f;
+    return true;
+}
+}
+
 // A refused edit is taken back on its sender's screen too: the client shows its own edit at once, and takes the server's
 // copy only if it was edited later. So the entity goes out again (all of it, as ever), last edited after the refused
 // edit. Physics updates aren't sent back: they come many times a second, and are refused as before.
-void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused) {
+//   - The new time is counted from the refused edit's time but never from later than now: it is never ahead of
+//     this server's clock.
+//   - The entity's element and the elements above it are marked changed, as the simulation does when it changes an
+//     entity itself (SimpleEntitySimulation): a viewer whose view hasn't moved rescans only changed elements, so with
+//     the time alone a sender standing still got its copy back only if something else near it was edited later.
+//   - Each visitor has a budget of send-backs (takeSendBack); beyond it the edit is refused without one. The
+//     domain's own script server and physics server have none.
+void EntityTree::sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused,
+                                     const SharedNodePointer& senderNode) {
     if (getIsServer()) {
-        entity->setLastEdited(std::max(usecTimestampNow(), refused.getLastEdited() + 1));
+        const quint64 now = usecTimestampNow();
+        // the domain's own servers (the script server, the physics server) aren't visitors: no budget for them
+        const bool domainServer = senderNode && (senderNode->getType() == NodeType::EntityScriptServer ||
+                                                 senderNode->getType() == NodeType::PhysicsServer);
+        if (senderNode && !domainServer && !takeSendBack(senderNode->getUUID(), now)) {
+            _sendBacksSkipped++;
+            return;
+        }
+        entity->setLastEdited(std::max(now, std::min(refused.getLastEdited(), now) + 1));
         entity->markAsChangedOnServer();
+        if (auto element = entity->getElement()) {
+            DirtyOctreeElementOperator op(element);
+            recurseTreeWithOperator(&op);
+        }
+    }
+}
+
+// The same for an edit refused because a value is too big to stream, made to reach a sender who stands still:
+//   - its element and the elements above it are marked changed, as the simulation does when it changes an entity
+//     itself (SimpleEntitySimulation): a viewer whose view hasn't moved rescans only changed elements, so with the
+//     entity's time alone its copy came back only if something else in the same element was edited later;
+//   - the new time is REFUSED_TOO_BIG_LEAD after the edit, counted from no later than now (so never more than that
+//     ahead of this server's clock, whatever time the sender wrote): a margin over the sender's clock-offset estimate.
+//     A client takes a time ahead of its own clock as now (EntityItem::readEntityDataFromBuffer).
+void EntityTree::sendBackRefusedTooBigEdit(const EntityItemPointer& entity, const EntityItemProperties& refused) {
+    if (getIsServer()) {
+        const quint64 now = usecTimestampNow();
+        entity->setLastEdited(std::max(now, std::min(refused.getLastEdited(), now) + REFUSED_TOO_BIG_LEAD));
+        entity->markAsChangedOnServer();
+        if (auto element = entity->getElement()) {
+            DirtyOctreeElementOperator op(element);
+            recurseTreeWithOperator(&op);
+        }
     }
 }
 
@@ -475,7 +630,7 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
     if (!allowLockChange && (entity->getLocked() != properties.getLocked())) {
         qCDebug(entities) << "Refusing disallowed lock adjustment.";
         if (!isPhysics) {
-            sendBackRefusedEdit(entity, properties);
+            sendBackRefusedEdit(entity, properties, senderNode);
         }
         return false;
     }
@@ -607,7 +762,7 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
                 properties.setParentJointIndexChanged(false);
 
                 if (wantTerseEditLogging()) {
-                    qCDebug(entities) << (senderNode ? senderNode->getUUID() : "null") << "physical edits suppressed";
+                    qCDebug(entities) << (senderNode ? senderNode->getUUID().toString() : QString("null")) << "physical edits suppressed";
                 }
             } else if (isPhysics) {
                 EntityItem::PendingTeleport pending = entity->getPendingTeleport();
@@ -691,7 +846,7 @@ bool EntityTree::updateEntity(EntityItemPointer entity, const EntityItemProperti
                 }
             } else {
                 if (!isPhysics) {
-                    sendBackRefusedEdit(entity, properties);
+                    sendBackRefusedEdit(entity, properties, senderNode);
                 }
                 return false;
             }
@@ -872,7 +1027,7 @@ void EntityTree::unhookChildAvatar(const EntityItemID entityID) {
         EntityItemPointer entity = findEntityByEntityItemID(entityID);
         entity->forEachDescendant([&](SpatiallyNestablePointer child) {
             if (child->getNestableType() == NestableType::Avatar) {
-                child->setParentID(nullptr);
+                child->setParentID(QUuid());
             }
         });
     }
@@ -1037,6 +1192,9 @@ void EntityTree::processRemovedEntities(const DeleteEntityOperator& theOperator)
     const RemovedEntities& entities = theOperator.getEntities();
     foreach(const EntityToDeleteDetails& details, entities) {
         EntityItemPointer theEntity = details.entity;
+        // mark it dead first: the simulation's delete hook asserts it, and the renderers' update passes and shape
+        // checks skip a dead entity
+        theEntity->die();
         if (getIsServer()) {
             // set up the deleted entities ID
             QWriteLocker recentlyDeletedEntitiesLocker(&_recentlyDeletedEntitiesLock);
@@ -1044,7 +1202,7 @@ void EntityTree::processRemovedEntities(const DeleteEntityOperator& theOperator)
         } else {
             theEntity->forEachDescendant([&](SpatiallyNestablePointer child) {
                 if (child->getNestableType() == NestableType::Avatar) {
-                    child->setParentID(nullptr);
+                    child->setParentID(QUuid());
                 }
             });
 
@@ -1769,6 +1927,16 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
             }
 
             endDecode = usecTimestampNow();
+            // a time is never ahead of this server's clock: one ahead (a sender's clock-offset error) is taken as
+            // now, from every sender
+            if (properties.getLastEdited() > endDecode) {
+                const uint64_t lead = properties.getLastEdited() - endDecode;
+                _editsStampedAhead++;
+                uint64_t largest = _largestStampLeadUsec;
+                while (lead > largest && !_largestStampLeadUsec.compare_exchange_weak(largest, lead)) {
+                }
+                properties.setLastEdited(endDecode);
+            }
 
             EntityItemPointer existingEntity;
             if (!isAdd) {
@@ -1778,6 +1946,51 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                 endLookup = usecTimestampNow();
                 if (!existingEntity) {
                     // this is not an add-entity operation, and we don't know about the identified entity.
+                    validEditPacket = false;
+                }
+            }
+
+            // A property too big for one stream packet could never be streamed to anyone else. An add or an edit
+            // carrying one is refused; a refused edit is sent back, so the sender's client drops what it tried, as
+            // for the refusals below. Only an edit at least streamCheckSize() long can carry one, so nothing shorter
+            // (a vehicle's motion, say) is measured.
+            // Only for a sender whose add or edit would go through: anyone else's is refused (an add) or kept to
+            // simulation properties (an edit) further on, so it needn't cost a stand-in, a warning slot or a send-back.
+            // As the add's rights check below, and updateEntity's for an edit.
+            auto senderMayWrite = [&] {
+                if (!senderNode) {
+                    return true;
+                }
+                if (senderNode->isAllowedEditor()) {
+                    return true;
+                }
+                if (isAdd) {
+                    // a certificate counts only for an editor (it is dropped below for anyone else), so this is the
+                    // uncertified rule
+                    return senderNode->getCanRez() || senderNode->getCanRezTmp();
+                }
+                // a locked entity takes the right to change locks
+                return senderMayChange(senderNode, existingEntity) && !existingEntity->getLocked();
+            };
+            if (validEditPacket && !isClone && processedBytes >= streamCheckSize() && senderMayWrite()) {
+                EntityTypes::EntityType type = isAdd ? properties.getType() : existingEntity->getType();
+                // a stand-in of the same type, with a new id: the stream's own encoder measures it, and nothing else sees it
+                EntityItemPointer probe = EntityTypes::constructEntityItem(type, QUuid::createUuid(), properties);
+                _streamChecksRun++;
+                EntityPropertyFlags tooBig;
+                if (probe) {
+                    tooBig = probe->propertiesTooBigToStream(properties.getChangedProperties(), STREAM_HEADER_GROWTH, true);
+                }
+                if (!tooBig.isEmpty()) {
+                    warnTooBigToStream(*probe, tooBig, entityItemID, isAdd, senderNode);
+                    if (isAdd) {
+                        // tell the client that sent it that the entity was not added
+                        QWriteLocker locker(&_recentlyDeletedEntitiesLock);
+                        _recentlyDeletedEntityItemIDs.insert(usecTimestampNow(), entityItemID);
+                    } else if (!isPhysics) {
+                        // the sender's copy goes back to the server's even when nothing else near it changes
+                        sendBackRefusedTooBigEdit(existingEntity, properties);
+                    }
                     validEditPacket = false;
                 }
             }
@@ -1942,7 +2155,7 @@ int EntityTree::processEditPacketData(ReceivedMessage& message, const unsigned c
                         QWriteLocker locker(&_recentlyDeletedEntitiesLock);
                         _recentlyDeletedEntityItemIDs.insert(usecTimestampNow(), entityItemID);
                     } else if (!isPhysics) {
-                        sendBackRefusedEdit(existingEntity, properties);
+                        sendBackRefusedEdit(existingEntity, properties, senderNode);
                     }
                     validEditPacket = false;
                 }
@@ -2790,6 +3003,7 @@ QByteArray EntityTree::remapActionDataIDs(QByteArray actionData, QHash<EntityIte
     }
 
     QDataStream serializedActionsStream(actionData);
+    hifi::stream::pin(serializedActionsStream);
     QVector<QByteArray> serializedActions;
     serializedActionsStream >> serializedActions;
 
@@ -2798,6 +3012,7 @@ QByteArray EntityTree::remapActionDataIDs(QByteArray actionData, QHash<EntityIte
     QHash<QUuid, EntityDynamicPointer> remappedActions;
     foreach(QByteArray serializedAction, serializedActions) {
         QDataStream serializedActionStream(serializedAction);
+        hifi::stream::pin(serializedActionStream);
         EntityDynamicType actionType;
         QUuid oldActionID;
         serializedActionStream >> actionType;
@@ -2821,6 +3036,7 @@ QByteArray EntityTree::remapActionDataIDs(QByteArray actionData, QHash<EntityIte
 
     QByteArray result;
     QDataStream remappedSerializedActionsStream(&result, QIODevice::WriteOnly);
+    hifi::stream::pin(remappedSerializedActionsStream);
     remappedSerializedActionsStream << remappedSerializedActions;
     return result;
 }

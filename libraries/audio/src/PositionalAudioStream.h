@@ -54,6 +54,9 @@ public:
 
     virtual AudioStreamStats getAudioStreamStats() const override;
 
+    /// a position the mix can use: finite and within MAX_POSITION_COORDINATE of the origin on each axis
+    static bool isUsablePosition(const glm::vec3& position);
+
     void updateLastPopOutputLoudnessAndTrailingLoudness();
     float getLastPopOutputTrailingLoudness() const { return _lastPopOutputTrailingLoudness; }
     float getLastPopOutputLoudness() const { return _lastPopOutputLoudness; }
@@ -80,9 +83,9 @@ public:
     const IgnoreBox& getIgnoreBox() const { return _ignoreBox; }
 
 protected:
-    // disallow copying of PositionalAudioStream objects
-    PositionalAudioStream(const PositionalAudioStream&);
-    PositionalAudioStream& operator= (const PositionalAudioStream&);
+    // disallow copying of PositionalAudioStream objects (deleted: see InboundAudioStream.h)
+    PositionalAudioStream(const PositionalAudioStream&) = delete;
+    PositionalAudioStream& operator= (const PositionalAudioStream&) = delete;
 
     int parsePositionalData(const QByteArray& positionalByteArray);
 

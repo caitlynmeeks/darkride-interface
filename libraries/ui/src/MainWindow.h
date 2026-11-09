@@ -12,6 +12,8 @@
 #ifndef __hifi__MainWindow__
 #define __hifi__MainWindow__
 
+#include <functional>
+
 #include <QMainWindow>
 
 #include <SettingHandle.h>
@@ -28,6 +30,9 @@ public:
     // This offset is used for positioning children window relative to the main window.
     void setDockedWidgetRelativePositionOffset(const QSize& newOffset) { _dockedWidgetRelativePositionOffset.setWidth(newOffset.width()); _dockedWidgetRelativePositionOffset.setHeight(newOffset.height()); }
     QSize getDockedWidgetRelativePositionOffset() { return _dockedWidgetRelativePositionOffset; }
+    // asked before closing the window quits the app (Darkride's unsaved-work check, interface/src/ui/QuitCheck.h):
+    // false keeps the window and the app open
+    void setCloseCheck(std::function<bool()> check) { _closeCheck = std::move(check); }
 public slots:
     // where it was left at the last quit, if that still fits a connected screen and isn't tiny; else the whole of the
     // main screen, as at a first start
@@ -53,10 +58,15 @@ protected:
     virtual void dropEvent(QDropEvent *e) override;
 
 private:
+    // a normal window (not maximised or full screen) whose inner area or title bar is outside the usable part of its
+    // screen is moved in, and made smaller only where it can't fit
+    void fitOnScreen(const char* when);
+
     Setting::Handle<QRect> _windowGeometry;
     Setting::Handle<int> _windowState;
     QRect _startGeometry;
     QSize _dockedWidgetRelativePositionOffset{ 0, 0 };
+    std::function<bool()> _closeCheck;
 };
 
 #endif /* defined(__hifi__MainWindow__) */

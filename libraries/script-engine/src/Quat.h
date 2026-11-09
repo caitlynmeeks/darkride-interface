@@ -18,7 +18,6 @@
 
 #include <QObject>
 #include <QString>
-#include <QtScript/QScriptable>
 
 #include <GLMHelpers.h>
 
@@ -53,9 +52,13 @@
  */
 
 /// Scriptable interface a Quaternion helper class object. Used exclusively in the JavaScript API
-class Quat : public QObject, protected QScriptable {
+class Quat : public QObject {
     Q_OBJECT
     Q_PROPERTY(glm::quat IDENTITY READ IDENTITY CONSTANT)
+
+public:
+    /// Made by its script engine as a child (what print writes through), or for a QML context with no parent.
+    explicit Quat(QObject* parent = nullptr) : QObject(parent) {}
 
 public slots:
 

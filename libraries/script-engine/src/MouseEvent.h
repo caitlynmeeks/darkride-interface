@@ -13,19 +13,11 @@
 #define hifi_MouseEvent_h
 
 #include <QMouseEvent>
-#include <QScriptValue>
-
-class QScriptEngine;
 
 class MouseEvent {
 public:
     MouseEvent();
     MouseEvent(const QMouseEvent& event);
-    
-    static QScriptValue toScriptValue(QScriptEngine* engine, const MouseEvent& event);
-    static void fromScriptValue(const QScriptValue& object, MouseEvent& event);
-
-    QScriptValue toScriptValue(QScriptEngine* engine) const { return MouseEvent::toScriptValue(engine, *this); }
     
     int x;
     int y;

@@ -164,8 +164,6 @@ namespace MenuOption {
     const QString Pair = "Pair";
     const QString PhysicsShowOwned = "Highlight Simulation Ownership";
     const QString VerboseLogging = "Verbose Logging";
-    const QString RunJavaScriptOnQtScript = "Run JavaScript on QtScript (the old engine)";
-    const QString RunJavaScriptOnQtScriptNoRuntime = "Run JavaScript on QtScript (no WebAssembly runtime file)";
     const QString PhysicsShowBulletWireframe = "Show Bullet Collision";
     const QString PhysicsShowBulletAABBs = "Show Bullet Bounding Boxes";
     const QString PhysicsShowBulletContactPoints = "Show Bullet Contact Points";

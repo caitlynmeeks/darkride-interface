@@ -21,7 +21,7 @@
 #include <QtCore/QObject>
 #include <QtCore/QUuid>
 #include <QtCore/QVector>
-#include <QtWidgets/QUndoStack>
+#include <QUndoStack>   // QtWidgets in Qt 5, QtGui in Qt 6
 
 #include <EntityItemProperties.h>
 #include <terrain/Layers.h>

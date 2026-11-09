@@ -32,6 +32,7 @@
 #include <glm/gtx/transform.hpp>
 
 #include <QtGui/QImage>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QBuffer>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -328,9 +329,12 @@ HFMTexture AssimpSerializer::getHfmTexture(aiString aiPath) {
     } else {
         HFMTexture texture = HFMTexture();
 
-        QRegExp indexFinder = QRegExp("^\\*([0-9]+)$");
-        if (indexFinder.exactMatch(path)) {
-            auto index = indexFinder.cap(1).toUInt();
+        // a whole-string match, as QRegExp::exactMatch was; a local pattern, compiled per embedded texture (nothing), so the
+        // model-loading threads share no object
+        const QRegularExpression indexFinder(QRegularExpression::anchoredPattern("\\*([0-9]+)"));
+        QRegularExpressionMatch indexMatch = indexFinder.match(path);
+        if (indexMatch.hasMatch()) {
+            auto index = indexMatch.captured(1).toUInt();
 
             if (index < scene->mNumTextures) {
                 auto aiTexture = scene->mTextures[index];
@@ -563,14 +567,14 @@ aiAnimMesh* AssimpSerializer::getBlendshapeByName(QString name, aiMesh* mMesh) {
     return nullptr;
 }
 
-void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
+void AssimpSerializer::processMeshes(const hifi::VariantMultiHash& mapping) {
     // A model worn as an avatar without an .fst, or whose .fst says "autoHumanoid = true", takes other names for the
     // blendshapes it has no shape of the engine's name for, such as ARKit's (findBlendshapeSource); any other model only
     // its own names and the .fst's bs lines
     const bool autoHumanoid = mapping.value("autoHumanoid").toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
     // The model's own blend shapes (hfm::Model::ownBlendshapeNames), when the .fst asks for them, as FBXSerializer keeps
     // them: each of a mesh's shapes that no standard name takes, by its name, in a slot after the standard ones
-    const hifi::VariantHash ownBlendshapeDefaults = mapping.value("blendshapeDefault").toHash();
+    const hifi::VariantMultiHash ownBlendshapeDefaults = hifi::multiHashFromVariant(mapping.value("blendshapeDefault"));
     const bool keepOwnBlendshapes = !ownBlendshapeDefaults.isEmpty() ||
         mapping.value("ownBlendshapes").toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
     QHash<QString, int> ownBlendshapeSlots;
@@ -699,7 +703,7 @@ void AssimpSerializer::processMeshes(const hifi::VariantHash& mapping) {
                                    << "triangles with a vertex past the mesh's" << mMesh->mNumVertices << "left out";
         }
 
-        hifi::VariantHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
+        hifi::VariantMultiHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
 
         if (mMesh->mNumAnimMeshes > 0) {
             bool isBlendshapeChannelNamesEmpty = hfmModel->blendshapeChannelNames.size() == 0;
@@ -1108,7 +1112,7 @@ void AssimpSerializer::processNode(const aiNode* aiNode, int parentIndex) {
     }
 }
 
-void AssimpSerializer::processScene(const hifi::VariantHash& mapping) {
+void AssimpSerializer::processScene(const hifi::VariantMultiHash& mapping) {
     hfmModel = std::make_shared<HFMModel>();
     hfmModel->originalURL = url.toString();
 
@@ -1397,7 +1401,7 @@ static hifi::ByteArray padGlbJsonChunk(const hifi::ByteArray& data) {
     return padded;
 }
 
-HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi::VariantHash& mapping, const hifi::URL& inputUrl) {
+HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi::VariantMultiHash& mapping, const hifi::URL& inputUrl) {
 	url = inputUrl;
 
     // normalize url for local files

@@ -120,6 +120,10 @@ public:
      */
     Q_INVOKABLE ScriptEnginePointer loadScript(const QUrl& scriptFilename = QString(),
         bool isUserLoaded = true, bool loadScriptFromEditor = false, bool activateMainWindow = false, bool reload = false, bool quitWhenFinished = false);
+    /// Starts one of the avatar's scripts (a .fst's script line) as loadScript does, but under a world's rules: its
+    /// engine is of type AVATAR and runs as the world `world` (ScriptEngine::holdsWorldRules, ScriptCaller::newWorld),
+    /// set before anything is fetched or run. Not for scripts to call.
+    ScriptEnginePointer loadAvatarScript(const QUrl& scriptFilename, int world);
 
     /**jsdoc
      * Stops or restarts an Interface script.
@@ -132,11 +136,6 @@ public:
      *     wasn't (e.g., the script couldn't be found).
      */
     Q_INVOKABLE bool stopScript(const QString& scriptHash, bool restart = false);
-
-    // Reloads a running JavaScript client script on the WebAssembly script engine or the QtScript one, and keeps
-    // that engine for the script until the client quits (the Running Scripts window's choice; getRunning reports
-    // each script's engine).
-    Q_INVOKABLE void setRunOnWebAssembly(const QString& scriptURL, bool onWebAssembly);
 
 
     /**jsdoc
@@ -350,6 +349,10 @@ protected slots:
     void onScriptFinished(const QString& fileNameString, ScriptEnginePointer engine);
 
 protected:
+    /// loadScript's and loadAvatarScript's work, on this object's thread: the engine made, prepared (a step on it
+    /// before anything is fetched or run; null for none), then its script fetched and launched.
+    ScriptEnginePointer loadScriptEngine(const QUrl& scriptFilename, bool isUserLoaded, bool reload, bool quitWhenFinished,
+                                         const std::function<void(const ScriptEnginePointer&)>& prepare);
     friend class ScriptEngine;
 
     ScriptEnginePointer reloadScript(const QString& scriptName, bool isUserLoaded = true) { return loadScript(scriptName, isUserLoaded, false, false, true); }
@@ -361,7 +364,9 @@ protected:
 
     ScriptEngine::Context _context;
     QReadWriteLock _scriptEnginesHashLock;
-    QHash<QUrl, ScriptEnginePointer> _scriptEnginesHash;
+    QMultiHash<QUrl, ScriptEnginePointer> _scriptEnginesHash;   // several engines may share a normalized URL
+    // every engine, Make's building tools' own (about:Make) among them; only shutdownScripting walks it, at quit. New
+    // code that walks it (or a new list of engines) skips about:Make, or goes to security first (Make v1 review)
     QSet<ScriptEnginePointer> _allKnownScriptEngines;
     QMutex _allScriptsMutex;
     ScriptsModel _scriptsModel;

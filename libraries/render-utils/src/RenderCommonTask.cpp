@@ -47,6 +47,62 @@ void EndGPURangeTimer::run(const render::RenderContextPointer& renderContext, co
     config->setGPUBatchRunTime(timer->getGPUAverage(), timer->getBatchAverage());
 }
 
+void WarmPipelines::configure(const Config& config) {
+    _perFrame = std::max(1, config.perFrame);
+    if (_wasEnabled && !config.isEnabled() && !_done && _shapePlumber && _next > 0) {
+        // the loading screen ended first: what was not reached compiles at its first use, as before. Only for a job
+        // that ran: the main view's other branch (forward or deferred) never runs and is paused by the same signal.
+        qCDebug(renderutils) << "WarmPipelines: paused at" << _warmed << "programs warmed,"
+                             << (_shapePlumber->getFilteredPipelines().size() + _extras.size() - _next) << "pipelines not looked at";
+    }
+    _wasEnabled = config.isEnabled();
+}
+
+void WarmPipelines::run(const RenderContextPointer& renderContext) {
+    if (_done || !_shapePlumber) {
+        return;
+    }
+    const auto& pipelines = _shapePlumber->getFilteredPipelines();
+    const size_t count = pipelines.size() + _extras.size();
+    if (_next >= count) {
+        _done = true;
+        qCDebug(renderutils) << "WarmPipelines: done," << _warmed << "programs warmed of" << count << "pipelines";
+        return;
+    }
+    gpu::doInBatch("WarmPipelines", renderContext->args->_context, [&](gpu::Batch& batch) {
+        // binding a pipeline compiles its program the first time (the backend's sync); nothing is drawn; a program many
+        // keys share is bound once, and a frame binds perFrame distinct programs (the keys sharing them cost nothing)
+        int bound = 0;
+        while (bound < _perFrame && _next < count) {
+            const size_t index = _next++;
+            gpu::PipelinePointer pipeline;
+            if (index < pipelines.size()) {
+                const auto& shapePipeline = pipelines[index].pipeline;
+                if (shapePipeline) {
+                    pipeline = shapePipeline->pipeline;
+                }
+            } else {
+                pipeline = _extras[index - pipelines.size()];
+            }
+            if (!pipeline || !pipeline->getProgram()) {
+                continue;
+            }
+            const gpu::Shader* program = pipeline->getProgram().get();
+            if (!_programsBound.insert(program).second) {
+                continue;   // already bound by an earlier key
+            }
+            batch.setPipeline(pipeline);
+            ++bound;
+            ++_warmed;
+        }
+    });
+    auto config = std::static_pointer_cast<Config>(renderContext->jobConfig);
+    if (config) {
+        config->warmed = _warmed;
+        config->left = (int)(count - _next);
+    }
+}
+
 DrawLayered3D::DrawLayered3D(bool opaque) :
     _shapePlumber(std::make_shared<ShapePlumber>()),
     _opaquePass(opaque) {
@@ -62,7 +118,7 @@ void DrawLayered3D::run(const RenderContextPointer& renderContext, const Inputs&
 
     const auto& inItems = inputs.get0();
     const auto& lightingModel = inputs.get1();
-    const auto& hazeFrame = inputs.get2();
+    // inputs.get2() is the frame's haze list; the layered pass reads the default haze from the stage instead
     const auto jitter = inputs.get3();
     
     config->setNumDrawn((int)inItems.size());
@@ -72,9 +128,12 @@ void DrawLayered3D::run(const RenderContextPointer& renderContext, const Inputs&
 
     graphics::HazePointer haze;
     const auto& hazeStage = renderContext->args->_scene->getStage<HazeStage>();
-    if (hazeStage && hazeFrame->_hazes.size() > 0) {
-        // We use _hazes.back() here because the last haze object will always have haze disabled.
-        haze = hazeStage->getHaze(hazeFrame->_hazes.back());
+    if (hazeStage) {
+        // The layered pass wants the engine's default haze, which has haze disabled: read it by the index the stage
+        // recorded for it (null until it exists, then no haze). Until 2026-11-07 this took the frame's last pushed haze
+        // as "always the disabled default", which held only while SetupZones pushed index 0 last and index 0 was the
+        // default's; a zone drawn before the default existed held index 0 and its haze was taken for the whole session.
+        haze = hazeStage->getHaze(hazeStage->getDefaultHaze());
     }
 
     // Clear the framebuffer without stereo

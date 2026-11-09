@@ -39,13 +39,16 @@ QDataStream& operator>>(QDataStream& in, glm::quat& quaternion);
 
 #ifndef QT_NO_DEBUG_STREAM
 class QDebug;
-// Add support for writing these to qDebug().
-QDebug& operator<<(QDebug& s, const glm::vec2& v);
-QDebug& operator<<(QDebug& s, const glm::vec3& v);
-QDebug& operator<<(QDebug& s, const glm::u8vec3& v);
-QDebug& operator<<(QDebug& s, const glm::vec4& v);
-QDebug& operator<<(QDebug& s, const glm::quat& q);
-QDebug& operator<<(QDebug& s, const glm::mat4& m);
+// Add support for writing these to qDebug(). In glm's namespace, so a container of them finds them by argument lookup: Qt 6
+// streams a QList from inside its own namespace, where a global operator isn't seen
+namespace glm {
+    QDebug& operator<<(QDebug& s, const vec2& v);
+    QDebug& operator<<(QDebug& s, const vec3& v);
+    QDebug& operator<<(QDebug& s, const u8vec3& v);
+    QDebug& operator<<(QDebug& s, const vec4& v);
+    QDebug& operator<<(QDebug& s, const quat& q);
+    QDebug& operator<<(QDebug& s, const mat4& m);
+}
 QDebug& operator<<(QDebug& dbg, const QVariantHash& v);
 #endif // QT_NO_DEBUG_STREAM
 

@@ -3,7 +3,6 @@
 #include "MessagesClient.h"
 #include "TTSScriptingInterface.h"
 
-#include <QtScript/QScriptEngine>
 #include <QtCore/QVariant>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>

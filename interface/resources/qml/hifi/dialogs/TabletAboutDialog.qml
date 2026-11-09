@@ -57,7 +57,7 @@ Rectangle {
             text: "<a href=\"https://darkride.ai\">darkride.ai</a>"
             size: 18
             anchors.horizontalCenter: parent.horizontalCenter
-            onLinkActivated: Window.openUrl("https://darkride.ai")
+            onLinkActivated: WindowScriptingInterface.openUrl("https://darkride.ai")
         }
         RobotoRegular {
             text: "© 2026 Darkride Technologies / Caitlyn Meeks"

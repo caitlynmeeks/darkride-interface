@@ -7,7 +7,7 @@
 #   tests-manual/wasm-scripting/stop-clients.sh
 D=$(cd "$(dirname "$0")" && pwd)
 RESULTS="$D/results/"
-SESSION=scripting
+SESSION=${SESSION:-scripting}
 . "$D/../physics-baseline/harness.sh"
 my_clients() {
     ps -ax -o pid=,command= | grep -F -- "-DarkrideTestRun $RESULTS" | grep -v grep | awk '{print $1}'

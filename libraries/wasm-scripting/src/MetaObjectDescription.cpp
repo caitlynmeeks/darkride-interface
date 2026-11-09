@@ -8,6 +8,7 @@
 
 #include "MetaObjectDescription.h"
 
+#include <QtCore/QHash>
 #include <QtCore/QMetaEnum>
 #include <QtCore/QMetaMethod>
 #include <QtCore/QMetaObject>
@@ -15,11 +16,34 @@
 #include <QtCore/QObject>
 #include <QtCore/QVariantList>
 
+#include <RegisteredMetaTypes.h>
+
 namespace MetaObjectDescription {
 
 namespace {
 
 const QMetaObject* QOBJECT_META = &QObject::staticMetaObject;
+
+// A property's type as the script API names it, the same on both Qts: the declared name. Qt 6 reports the metatype's
+// own name instead, which spells a class's enum with its class ("Probe::Mode" for Mode) and a glm alias as the
+// template it stands for ("glm::vec<3,float>" for glm::vec3).
+QString propertyTypeName(const QMetaProperty& property, const QMetaObject* declaring) {
+    static const QHash<int, QByteArray> GLM_ALIASES {
+        { qMetaTypeId<glm::vec2>(), "glm::vec2" }, { qMetaTypeId<glm::vec3>(), "glm::vec3" },
+        { qMetaTypeId<glm::vec4>(), "glm::vec4" }, { qMetaTypeId<glm::quat>(), "glm::quat" },
+        { qMetaTypeId<glm::mat4>(), "glm::mat4" }, { qMetaTypeId<glm::u8vec3>(), "glm::u8vec3" }
+    };
+    const auto alias = GLM_ALIASES.constFind(property.userType());
+    if (alias != GLM_ALIASES.constEnd()) {
+        return QString::fromUtf8(alias.value());
+    }
+    QByteArray name = property.typeName();
+    const QByteArray scope = QByteArray(declaring->className()) + "::";
+    if (name.startsWith(scope)) {
+        name = name.mid(scope.size());
+    }
+    return QString::fromUtf8(name);
+}
 
 QVariantList parameters(const QMetaMethod& method) {
     QVariantList list;
@@ -83,7 +107,7 @@ QVariantMap describe(const QMetaObject* meta, const Options& options) {
         }
         QVariantMap entry;
         entry["name"] = QString::fromUtf8(property.name());
-        entry["type"] = QString::fromUtf8(property.typeName());
+        entry["type"] = propertyTypeName(property, declaring);
         entry["index"] = i;
         entry["readable"] = property.isReadable();
         entry["writable"] = property.isWritable();

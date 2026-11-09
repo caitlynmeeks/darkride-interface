@@ -1,5 +1,5 @@
 set(TARGET_NAME entities-renderer)
-setup_hifi_library(Network Script)
+setup_hifi_library(Network)
 link_hifi_libraries(shared workload gpu shaders procedural graphics material-networking model-networking script-engine render render-utils image qml ui pointers terrain vehicles)
 include_hifi_library_headers(networking)
 include_hifi_library_headers(gl)

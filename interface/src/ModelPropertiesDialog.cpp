@@ -26,7 +26,7 @@
 #include <OffscreenUi.h>
 
 
-ModelPropertiesDialog::ModelPropertiesDialog(const QVariantHash& originalMapping,
+ModelPropertiesDialog::ModelPropertiesDialog(const hifi::VariantMultiHash& originalMapping,
                                              const QString& basePath, const HFMModel& hfmModel) :
 _originalMapping(originalMapping),
 _basePath(basePath),
@@ -70,22 +70,22 @@ _hfmModel(hfmModel)
     reset();
 }
 
-QVariantHash ModelPropertiesDialog::getMapping() const {
-    QVariantHash mapping = _originalMapping;
-    mapping.insert(TYPE_FIELD, FSTReader::getNameFromType(FSTReader::HEAD_AND_BODY_MODEL));
-    mapping.insert(NAME_FIELD, _name->text());
-    mapping.insert(TEXDIR_FIELD, _textureDirectory->text());
-    mapping.insert(SCRIPT_FIELD, _scriptDirectory->text());
-    mapping.insert(SCALE_FIELD, QString::number(_scale->value()));
+hifi::VariantMultiHash ModelPropertiesDialog::getMapping() const {
+    hifi::VariantMultiHash mapping = _originalMapping;
+    mapping.replace(TYPE_FIELD, FSTReader::getNameFromType(FSTReader::HEAD_AND_BODY_MODEL));
+    mapping.replace(NAME_FIELD, _name->text());
+    mapping.replace(TEXDIR_FIELD, _textureDirectory->text());
+    mapping.replace(SCRIPT_FIELD, _scriptDirectory->text());
+    mapping.replace(SCALE_FIELD, QString::number(_scale->value()));
 
     // update the joint indices
     QVariantHash jointIndices;
     for (size_t i = 0; i < _hfmModel.joints.size(); i++) {
         jointIndices.insert(_hfmModel.joints.at(i).name, QString::number(i));
     }
-    mapping.insert(JOINT_INDEX_FIELD, jointIndices);
+    mapping.replace(JOINT_INDEX_FIELD, jointIndices);
 
-    QVariantHash joints = mapping.value(JOINT_FIELD).toHash();
+    hifi::VariantMultiHash joints = hifi::multiHashFromVariant(mapping.value(JOINT_FIELD));
     insertJointMapping(joints, "jointEyeLeft", _leftEyeJoint->currentText());
     insertJointMapping(joints, "jointEyeRight", _rightEyeJoint->currentText());
     insertJointMapping(joints, "jointNeck", _neckJoint->currentText());
@@ -97,7 +97,7 @@ QVariantHash ModelPropertiesDialog::getMapping() const {
     insertJointMapping(joints, "jointLeftHand", _leftHandJoint->currentText());
     insertJointMapping(joints, "jointRightHand", _rightHandJoint->currentText());
 
-    mapping.insert(JOINT_FIELD, joints);
+    mapping.replace(JOINT_FIELD, hifi::variantFromMultiHash(joints));
 
     return mapping;
 }
@@ -112,7 +112,7 @@ void ModelPropertiesDialog::reset() {
     _scale->setValue(_originalMapping.value(SCALE_FIELD).toDouble());
     _scriptDirectory->setText(_originalMapping.value(SCRIPT_FIELD).toString());
 
-    QVariantHash jointHash = _originalMapping.value(JOINT_FIELD).toHash();
+    const hifi::VariantMultiHash jointHash = hifi::multiHashFromVariant(_originalMapping.value(JOINT_FIELD));
 
     setJointText(_leftEyeJoint, jointHash.value("jointEyeLeft").toString());
     setJointText(_rightEyeJoint, jointHash.value("jointEyeRight").toString());
@@ -179,9 +179,9 @@ QDoubleSpinBox* ModelPropertiesDialog::createTranslationBox() const {
     return box;
 }
 
-void ModelPropertiesDialog::insertJointMapping(QVariantHash& joints, const QString& joint, const QString& name) const {
+void ModelPropertiesDialog::insertJointMapping(hifi::VariantMultiHash& joints, const QString& joint, const QString& name) const {
     if (_hfmModel.jointIndices.contains(name)) {
-        joints.insert(joint, name);
+        joints.replace(joint, name);
     } else {
         joints.remove(joint);
     }

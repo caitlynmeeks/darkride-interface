@@ -26,6 +26,7 @@
 #include "InterfaceLogging.h"
 
 #include <SharedUtil.h>
+#include <display-plugins/RefreshRateController.h>   // PRESENT_SLACK_FLOOR_US, for the drop's line
 
 #include <QtCore/QProcessEnvironment>
 #include <QtGui/QScreen>
@@ -156,9 +157,11 @@ static const std::array<
 
 static const int INACTIVE_TIMER_LIMIT = 3000;
 
-// the cadence governor's numbers (RefreshRateManager.h): presents in a second that showed the frame before again or
-// landed two or more refreshes apart before the target drops (3 of 144 is a hitch the eye sees; 1 or 2 are a world
-// loading something); the hold of fitting seconds before a return, its first value and its ceiling after failed
+// the cadence governor's numbers (RefreshRateManager.h): presents in a second that showed the frame before again,
+// landed two or more refreshes apart, or were handed to the display with under a millisecond before their refresh
+// (the compositor shows those a refresh late while the count stays whole: entry 34) before the target drops (3 of
+// 144 is a hitch the eye sees; 1 or 2 are a world loading something); the hold of fitting seconds before a return,
+// its first value and its ceiling after failed
 // returns; the seconds after a return in which a drop marks it failed (a world that hitches every ten seconds would
 // otherwise return and drop without the hold ever growing); the clean seconds at full rate that forgive
 // the back-off. A second at half rate counts as fitting when each stage's slow count (frames over 70 % of a
@@ -168,6 +171,15 @@ static const int INACTIVE_TIMER_LIMIT = 3000;
 // at 72 passed a tenth, returned, and were 4-6 misses a second at 144, a drop again). A maximum would let one
 // texture upload a second hold the half rate for ever; this is a tail the full rate could carry.
 static const int GOVERNOR_DROP_MISSES = 3;
+// the seconds after a world's arrival (the domain connect) in which slipped presents are counted and shown but not
+// dropped on: a world's loading second slips 3-5 presents on every build, and a heavy world then never earns the
+// climb-back, so without this no ride there ever runs at the display's rate (entry 28)
+static const int GOVERNOR_ARRIVAL_GRACE_SECONDS = 10;
+// A measurement-only switch (entry 24, Amendment 3e): with TIVOLI_GOVERNOR_HOLD set the governor never drops to the
+// half rate, so a run in front measures at the display's own rate through a world's arrival. Read once at start-up;
+// unset, which is every client a visitor runs, nothing differs. A held run is a measurement, never a ride: its log
+// says so, and the diag line's rate word reads "held".
+static bool s_governorHeld = false;
 static const int GOVERNOR_HOLD_MIN_SECONDS = 5;
 static const int GOVERNOR_HOLD_MAX_SECONDS = 60;
 static const int GOVERNOR_PROBE_SECONDS = 30;
@@ -220,6 +232,10 @@ std::string RefreshRateManager::uxModeToString(RefreshRateManager::RefreshRateMa
 
 RefreshRateManager::RefreshRateManager() {
     _refreshRateProfile = (RefreshRateManager::RefreshRateProfile) _refreshRateProfileSetting.get();
+    s_governorHeld = qEnvironmentVariableIntValue("TIVOLI_GOVERNOR_HOLD") > 0;
+    if (s_governorHeld) {
+        qCDebug(interfaceapp) << "Refresh governor: HELD at full rate by TIVOLI_GOVERNOR_HOLD (a measurement; not for riding)";
+    }
     _inactiveTimer->setInterval(INACTIVE_TIMER_LIMIT);
     _inactiveTimer->setSingleShot(true);
     QObject::connect(_inactiveTimer.get(), &QTimer::timeout, [&] {
@@ -268,6 +284,14 @@ void RefreshRateManager::updateRideExemption() {
                                        : "Refresh regime: unfocused and no ride in view: the unfocused rate");
         _governorChangeNs = steadyNowNs();
     }
+}
+
+void RefreshRateManager::noteArrival() {
+    _arrivalNs = steadyNowNs();
+}
+
+bool RefreshRateManager::inArrivalGrace() const {
+    return _arrivalNs > 0 && steadyNowNs() - _arrivalNs < (int64_t)GOVERNOR_ARRIVAL_GRACE_SECONDS * 1000000000LL;
 }
 
 void RefreshRateManager::governorTick() {
@@ -320,7 +344,7 @@ void RefreshRateManager::governorTick() {
         if (sample.presents < displayRate / 2) {
             return;   // not presenting for the whole second: no verdict
         }
-        const int misses = sample.repeated + sample.onTwoOrMoreRefreshes;
+        const int misses = sample.repeated + sample.onTwoOrMoreRefreshes + sample.missed;
         if (_governorProbeSecondsLeft > 0) {
             _governorProbeSecondsLeft--;
         }
@@ -328,7 +352,7 @@ void RefreshRateManager::governorTick() {
         if (_governorCleanSeconds >= GOVERNOR_FORGIVE_SECONDS) {
             _governorHoldSeconds = GOVERNOR_HOLD_MIN_SECONDS;
         }
-        if (misses >= GOVERNOR_DROP_MISSES) {
+        if (misses >= GOVERNOR_DROP_MISSES && !inArrivalGrace() && !s_governorHeld) {   // arriving or held: counted and shown, never acted on
             const bool returnFailed = _governorProbeSecondsLeft > 0;
             if (returnFailed) {
                 _governorHoldSeconds = std::min(_governorHoldSeconds * 2, GOVERNOR_HOLD_MAX_SECONDS);
@@ -339,8 +363,10 @@ void RefreshRateManager::governorTick() {
             _governorProbeSecondsLeft = 0;
             _governorChangeNs = steadyNowNs();
             qCDebug(interfaceapp).nospace() << "Refresh governor: half rate, " << halfRateOf(displayRate) << " of " << displayRate
-                << " Hz: in the last second " << sample.repeated << " presents showed the frame before again and "
-                << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart"
+                << " Hz: in the last second " << sample.repeated << " presents showed the frame before again, "
+                << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart and " << sample.missed
+                << " reached the display with under " << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000
+                << " ms to spare"
                 << (returnFailed ? " (the return failed; hold now " : " (hold ") << _governorHoldSeconds << " s)";
             updateRefreshRateController();
         }
@@ -391,15 +417,20 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
     if (!GOVERNOR_DIAG) {
         return;
     }
-    qCDebug(interfaceapp).nospace() << "Refresh governor diag: " << (_halfRate ? "half" : "full") << " rate, target "
+    qCDebug(interfaceapp).nospace() << "Refresh governor diag: " << (s_governorHeld ? "held" : (_halfRate ? "half" : "full")) << " rate, target "
         << _activeRefreshRate << " of " << sample.displayRate << " Hz; last second: presents " << sample.presents
         << " (on 1 refresh " << sample.onOneRefresh << ", on 2+ " << sample.onTwoOrMoreRefreshes << ", held " << sample.repeated
         << "), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
         << " ms; build slow " << sample.slowBuildFrames << ", max " << sample.maxBuildUs / 1000.0 << " ms), execute slow "
-        << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms; fit "
+        << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs
+        << " ms, slack min "
+        << (sample.slackPresents > 0 ? QString::number(sample.minSlackUs / 1000.0, 'f', 2) : QString("-"))
+        << " ms, under " << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000 << " ms " << sample.missed
+        << " of " << sample.slackPresents << "; fit "
         << _governorFitSeconds << " of " << _governorHoldSeconds << " s"
         << (sample.startedAtNs < _governorChangeNs + GOVERNOR_SETTLE_NS ? ", mixed (no verdict)" : "")
-        << (_governorProbeSecondsLeft > 0 ? ", probe" : "");
+        << (_governorProbeSecondsLeft > 0 ? ", probe" : "")
+        << (inArrivalGrace() ? "; arriving" : "");
 }
 
 void RefreshRateManager::resetInactiveTimer(bool deliberate) {

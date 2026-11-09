@@ -91,7 +91,11 @@ private:
     QHash<size_t, QSharedPointer<Dependency>> _instanceHash;
     QHash<size_t, size_t> _inheritanceHash;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    mutable QRecursiveMutex _instanceHashMutex;   // Qt 6 has no QMutex::Recursive; the same lock as below
+#else
     mutable QMutex _instanceHashMutex { QMutex::Recursive };
+#endif
     mutable QMutex _inheritanceHashMutex;
 
     bool _exiting { false };

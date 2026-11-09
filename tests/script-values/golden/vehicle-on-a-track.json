@@ -1,0 +1,106 @@
+{
+    "type": "Box",
+    "lastEdited": 1700000000000000,
+    "name": "a car on a track",
+    "position": {
+        "x": 1,
+        "y": 2,
+        "z": 3
+    },
+    "dimensions": {
+        "x": 2,
+        "y": 1,
+        "z": 4
+    },
+    "created": 1700000000000000,
+    "trackID": "{1a2b3c4d-0000-0000-0000-0000000000aa}",
+    "trackOffset": 12.5,
+    "vehicle": {
+        "type": "car",
+        "mass": 1200,
+        "centerOfMass": {
+            "x": 0,
+            "y": -0.25,
+            "z": 0.125
+        },
+        "wheels": "[{\"name\":\"frontLeft\",\"center\":[-0.8,-0.3,-1.3],\"radius\":0.35,\"width\":0.2,\"mass\":20,\"suspensionDistance\":0.3,\"targetPosition\":0.5,\"spring\":35000,\"damper\":4500,\"steer\":1,\"drive\":true,\"brake\":1,\"handBrake\":0,\"suspensionForcePoint\":false},{\"name\":\"rearRight\",\"center\":{\"x\":0.8,\"y\":-0.3,\"z\":1.3},\"radius\":0.35,\"steer\":0,\"drive\":true,\"handBrake\":1}]",
+        "seats": "[{\"name\":\"driver\",\"position\":[-0.4,0.2,0],\"yaw\":0,\"driver\":true},{\"name\":\"passenger\",\"position\":{\"x\":0.4,\"y\":0.2,\"z\":0},\"yaw\":180}]",
+        "maxSteerAngle": 35,
+        "maxTorque": 650,
+        "minRPM": 900,
+        "maxRPM": 7000,
+        "gearRatios": "[3.5,2.1,1.4,1.0,0.8]",
+        "reverseGearRatio": 3.125,
+        "finalDriveRatio": 3.875,
+        "maxBrakeTorque": 1800,
+        "maxHandBrakeTorque": 4200,
+        "driveType": "all",
+        "suspensionFrequency": 1.75,
+        "suspensionDamping": 0.625,
+        "wheel": "frontLeft",
+        "axle": "z",
+        "driver": "{1a2b3c4d-0000-0000-0000-0000000000bb}",
+        "inputSequence": 42,
+        "throttle": 0.5,
+        "steering": -0.25,
+        "brake": 0.125,
+        "handBrake": 1,
+        "engineRPM": 3200,
+        "gear": 3,
+        "stateTime": 123456789,
+        "envelopeVolume": 5000,
+        "centerOfBuoyancy": {
+            "x": 0,
+            "y": 1.5,
+            "z": 0
+        },
+        "gasDensity": 0.0625,
+        "maxThrust": 20000,
+        "maxVerticalThrust": 800,
+        "thrustPoint": {
+            "x": 0,
+            "y": 0.25,
+            "z": 0.5
+        },
+        "dragArea": {
+            "x": 3,
+            "y": 8,
+            "z": 0.75
+        },
+        "angularDragArea": {
+            "x": 800,
+            "y": 800,
+            "z": 600
+        },
+        "rudderArea": 2,
+        "elevatorArea": 4,
+        "finPoint": {
+            "x": 0,
+            "y": 0.5,
+            "z": 4.5
+        },
+        "maxFinAngle": 32,
+        "ballastRate": 0.25,
+        "ventRate": 0.375,
+        "pitch": 0.125,
+        "lift": 0.5,
+        "trim": -0.0625,
+        "ballast": 0.75,
+        "fill": 0.875,
+        "wingArea": 24,
+        "wingSpan": 11,
+        "wingPoint": {
+            "x": 0,
+            "y": 0.25,
+            "z": 0.25
+        },
+        "tilt": 1
+    },
+    "dynamic": true,
+    "collisionsWillMove": true,
+    "clientOnly": false,
+    "avatarEntity": false,
+    "localEntity": false,
+    "faceCamera": false,
+    "isFacingAvatar": false
+}

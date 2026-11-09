@@ -12,6 +12,7 @@
 #include "AudioHRTF.h"
 
 #include <math.h>
+#include <cmath>
 #include <string.h>
 #include <assert.h>
 
@@ -924,6 +925,22 @@ static void azimuthToIndex(float azimuth, int& index0, int& index1, float& frac)
 // compute new filters for a given azimuth, distance and gain
 static void setFilters(float firCoef[4][HRTF_TAPS], float bqCoef[5][8], int delay[4], 
                        int index, float azimuth, float distance, float gain, float lpf, int channel) {
+
+    // the tables below are indexed from these values, which come from positions sent over the network: anything that
+    // isn't a finite number is taken as straight ahead, near, silent and unfiltered, and an azimuth is brought into
+    // one turn, so every index stays inside its table (checked here once, for every way into the filters)
+    if (!(azimuth >= -PI && azimuth <= TWO_PI)) {
+        azimuth = std::isfinite(azimuth) ? remainderf(azimuth, TWO_PI) : 0.0f;
+    }
+    if (!(distance == distance)) {
+        distance = HRTF_NEARFIELD_MIN;
+    }
+    if (!std::isfinite(gain)) {
+        gain = 0.0f;
+    }
+    if (!(lpf >= 0.0f && lpf <= 1.0f)) {
+        lpf = 0.0f;
+    }
 
     if (azimuth > PI) {
         azimuth -= TWO_PI;

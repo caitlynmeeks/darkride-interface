@@ -17,6 +17,7 @@
 #include <gpu/Context.h>
 
 #include <Mirrors.h>
+#include <QActionGroup>   // Qt 6 moved it to QtGui; found through either module's include path
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QMenuBar>
@@ -35,7 +36,6 @@
 #include <SettingHandle.h>
 #include <VrMenu.h>
 #include <ScriptEngines.h>
-#include <WasmScriptEngine.h>
 #include <MenuItemProperties.h>
 #include <OffscreenUi.h>
 #include <ui/types/FileTypeProfile.h>
@@ -52,6 +52,7 @@
 #include "AvatarBookmarks.h"
 #include "editor/Editor.h"
 #include "editor/EditorCreate.h"
+#include "ui/QuitCheck.h"
 #include <QtCore/QHash>
 #include "MainWindow.h"
 #include "render/DrawStatus.h"
@@ -134,6 +135,13 @@ static void openSettingsTab(int tab) {
 }
 
 Menu::Menu() {
+#if !defined(Q_OS_MACOS)
+    // Windows' and Linux's menu bar is a strip in the window. Qt 6's Windows 11 style draws it with no background of
+    // its own (it expects the window to paint one) and the main window paints none, so the strip was black with its
+    // names drawn black: unreadable, though it worked (windowz 11-08). It fills its own background, as Qt 5's style
+    // did: the system's colour, or what a skin's style sheet gives it
+    setAutoFillBackground(true);
+#endif
     auto dialogsManager = DependencyManager::get<DialogsManager>();
     auto accountManager = DependencyManager::get<AccountManager>();
 
@@ -159,11 +167,26 @@ Menu::Menu() {
     // File > Import Avatar: wear an .fst, or auto rig a character file (AUTO-RIGGING.md)
     addActionToQMenuAndActionHash(fileMenu, MenuOption::ImportAvatar, 0, qApp, SLOT(importAvatarDialog()));
 
-    // File > Put Avatar in My Files: the worn avatar, when it is on this computer, goes up, private, so others see it
-    addActionToQMenuAndActionHash(fileMenu, MenuOption::PutAvatarInMyFiles, 0, qApp, SLOT(putAvatarInMyFiles()));
+    // File > Put Avatar in My Files: the worn avatar, when it is on this computer, goes up, private, so others see it.
+    // Greyed out for any other avatar (a web link, the default), where it can't do anything (mary's Avatar redo, 11-08)
+    {
+        QAction* putInMyFiles = addActionToQMenuAndActionHash(fileMenu, MenuOption::PutAvatarInMyFiles, 0, qApp,
+                                                              SLOT(putAvatarInMyFiles()));
+        auto myAvatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+        if (myAvatar) {
+            auto update = [putInMyFiles, avatar = myAvatar.get()] {
+                putInMyFiles->setEnabled(avatar->getFullAvatarURLFromPreferences().isLocalFile());
+            };
+            update();
+            connect(myAvatar.get(), &AvatarData::skeletonModelURLChanged, putInMyFiles, update);
+        }
+    }
 
-    // File > Quit
-    addActionToQMenuAndActionHash(fileMenu, MenuOption::Quit, Qt::CTRL | Qt::Key_Q, qApp, SLOT(quit()), QAction::QuitRole);
+    // File > Quit (Cmd+Q, and macOS's own Quit Darkride, which Qt merges with it): what isn't saved is asked about
+    // first (ui/QuitCheck.h)
+    QAction* quitAction = addActionToQMenuAndActionHash(fileMenu, MenuOption::Quit, Qt::CTRL | Qt::Key_Q, nullptr, nullptr,
+                                                        QAction::QuitRole);
+    connect(quitAction, &QAction::triggered, qApp, [] { quitcheck::askThenQuit(); });
 
 
     // Edit menu ----------------------------------
@@ -693,20 +716,6 @@ Menu::Menu() {
     // Developer > Scripting > Verbose Logging
     addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::VerboseLogging, 0, false,
                                            qApp, SLOT(updateVerboseLogging()));
-
-    // Developer > Scripting > Run JavaScript on QtScript (the old engine): the way back from the WebAssembly engine, which
-    // .js client scripts load on otherwise; it takes effect for scripts loaded after the change. Without the runtime
-    // file every JavaScript script runs on QtScript, so the item shows ticked and can't be changed; it has its own name,
-    // since a menu item's name is its saved key and a saved tick would turn a later client with the file to QtScript
-    if (WasmScriptEngine::hasJavaScriptGuest()) {
-        addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::RunJavaScriptOnQtScript,
-                                               [](bool checked) { WasmScriptEngine::setRunJavaScriptOnWebAssembly(!checked); },
-                                               0, !WasmScriptEngine::runJavaScriptOnWebAssembly());
-    } else {
-        action = addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::RunJavaScriptOnQtScriptNoRuntime,
-                                                        0, true);
-        action->setEnabled(false);
-    }
 
     // Developer > UI >>> (High Fidelity's Desktop/HMD Tablet Becomes Toolbar are gone, Caity 10-29: unticked, the bar
     // broke; Application keeps both at their defaults)

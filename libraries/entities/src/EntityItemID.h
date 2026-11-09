@@ -17,7 +17,7 @@
 #include <QDebug>
 #include <QObject>
 #include <QHash>
-#include <QScriptEngine>
+#include <QtCore/QMetaType>
 #include <QUuid>
 
 const QUuid UNKNOWN_ENTITY_ID; // null uuid
@@ -29,7 +29,6 @@ public:
     EntityItemID(const QUuid& id);
     // EntityItemID(const EntityItemID& other);
     static EntityItemID readEntityItemIDFromBuffer(const unsigned char* data, int bytesLeftToRead);
-    QScriptValue toScriptValue(QScriptEngine* engine) const;
 
     bool isInvalidID() const { return *this == UNKNOWN_ENTITY_ID; }
 };
@@ -41,9 +40,6 @@ inline QDebug operator<<(QDebug debug, const EntityItemID& id) {
 
 Q_DECLARE_METATYPE(EntityItemID);
 Q_DECLARE_METATYPE(QVector<EntityItemID>);
-QScriptValue EntityItemIDtoScriptValue(QScriptEngine* engine, const EntityItemID& properties);
-void EntityItemIDfromScriptValue(const QScriptValue &object, EntityItemID& properties);
-QVector<EntityItemID> qVectorEntityItemIDFromScriptValue(const QScriptValue& array);
 
 // Allow the use of std::unordered_map with QUuid keys
 namespace std { template<> struct hash<EntityItemID> { size_t operator()(const EntityItemID& id) const; }; }

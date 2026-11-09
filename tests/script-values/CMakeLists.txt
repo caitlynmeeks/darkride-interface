@@ -10,6 +10,5 @@ macro (setup_testcase_dependencies)
   package_libraries_for_deployment()
 endmacro ()
 
-# Script: PlainScriptValueTests compares the plain value type with QtScript's QScriptValue, and the conversion
-# tests the entity-property conversions compiled for plain values with the same source compiled for QtScript
-setup_hifi_testcase(Script Network)
+# The plain script values and the entity-property conversions, against the recordings under golden/ (Golden.h)
+setup_hifi_testcase(Network)

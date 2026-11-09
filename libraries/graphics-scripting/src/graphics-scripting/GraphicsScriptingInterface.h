@@ -14,9 +14,6 @@
 #include <QtCore/QObject>
 #include <QUrl>
 
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptable>
-
 #include "ScriptableMesh.h"
 #include <DependencyManager.h>
 #include "RegisteredMetaTypes.h"
@@ -34,11 +31,10 @@
  * @hifi-avatar
  */
 
-class GraphicsScriptingInterface : public QObject, public QScriptable, public Dependency {
+class GraphicsScriptingInterface : public QObject, public Dependency {
     Q_OBJECT
 
 public:
-    static void registerMetaTypes(QScriptEngine* engine);
     GraphicsScriptingInterface(QObject* parent = nullptr);
 
 public slots:
@@ -148,10 +144,5 @@ private:
 
 };
 
-namespace scriptable {
-    QScriptValue scriptableMaterialToScriptValue(QScriptEngine* engine, const scriptable::ScriptableMaterial &material);
-};
-
-Q_DECLARE_METATYPE(NestableType)
 
 #endif // hifi_GraphicsScriptingInterface_h

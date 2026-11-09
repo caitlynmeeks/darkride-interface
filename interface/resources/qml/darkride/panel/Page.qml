@@ -55,6 +55,15 @@ Rectangle {
         scroll.contentItem.contentY = 0;
     }
 
+    // brings an item of the page into view, its top a margin under the pinned top; nothing moves when it shows already
+    function reveal(item) {
+        var flick = scroll.contentItem;
+        var at = item.mapToItem(holder, 0, 0).y;
+        if (at < flick.contentY || at + Math.min(item.height, flick.height) > flick.contentY + flick.height) {
+            flick.contentY = Math.max(0, Math.min(at - Theme.pageMargin, flick.contentHeight - flick.height));
+        }
+    }
+
     ColumnLayout {
         id: top
         anchors.left: parent.left

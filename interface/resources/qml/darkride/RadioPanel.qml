@@ -39,6 +39,25 @@ Rectangle {
     // button: QmlDock calls panelClosed()); a hide that isn't a close (Build mode's own layout, a re-dock, a tab behind
     // another) keeps the page and its music (Caity's hand test 10-31: Build mode stopped the radio)
     property bool on: false
+
+    // ONE column, exactly as wide as the player, centred, with the panel's one margin (Theme.gap) outside it (mary
+    // 11:46 11-08, team/editor-ui/RADIO-SPEC-1108.md): Webamp is pixel art at a fixed 275 px, so everything below takes
+    // its width from it. At its own width (295) every edge is 10 px; a wider panel shares the extra on both sides. At
+    // 570 px or wider (and tall enough), the player goes to Webamp's own double size and the column with it: whole steps
+    // only. On Windows always 1x, where the switch to 2x froze the page's picture (its web engine is Chrome 83) while the
+    // music played on (windowz, 10-31)
+    readonly property int playerWidth: 275
+    readonly property int playerScale: Qt.platform.os !== "windows" && width >= 2 * playerWidth + 2 * Theme.gap &&
+        loader.height >= 500 ? 2 : 1
+    readonly property real column: Math.max(0, Math.min(playerWidth * playerScale, width - 2 * Theme.gap))
+    // the column in the log once a resize settles (qa's pass line)
+    onColumnChanged: columnLog.restart()
+    Timer {
+        id: columnLog
+        interval: 600
+        onTriggered: console.log("Radio: the column is", root.column, "wide, the player", root.playerScale + "x, in a",
+            Math.round(root.width), "x", Math.round(root.height), "panel")
+    }
     onPanelOpenChanged: {
         if (panelOpen) {
             on = true;
@@ -63,7 +82,7 @@ Rectangle {
     // the Avatar panel's pictures), its answer handed back to the page's request
     property var fileRequest: null
     Connections {
-        target: typeof Window !== "undefined" ? Window : null
+        target: typeof WindowScriptingInterface !== "undefined" ? WindowScriptingInterface : null
         function onBrowseChanged(filename) {
             var request = root.fileRequest;
             if (!request) {
@@ -226,10 +245,10 @@ Rectangle {
 
     Column {
         id: controls
-        anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: root.column
         anchors.bottom: parent.bottom
-        anchors.margins: Theme.gap
+        anchors.bottomMargin: Theme.gap
         spacing: 6 * Theme.unit
         visible: root.live
 
@@ -429,35 +448,33 @@ Rectangle {
 
     Loader {
         id: loader
-        anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: root.column
         anchors.top: parent.top
+        anchors.topMargin: Theme.gap
         anchors.bottom: controls.top
         anchors.bottomMargin: Theme.gap
         active: root.live
         sourceComponent: WebEngineView {
             id: view
-            // a walled-off client's radio keeps its storage in that client's own folder (RadioSkins.walledStoragePath),
-            // set before the page first loads
-            Component.onCompleted: {
-                var walled = typeof RadioSkins !== "undefined" ? RadioSkins.walledStoragePath : "";
-                if (walled !== "") {
-                    view.profile.persistentStoragePath = walled;
+            Component.onCompleted: view.url = root.pageUrl
+            // the panel's own colour behind the page, which draws none (radio.css): whatever the player doesn't
+            // cover reads as the panel, so the column's margin is the only one
+            backgroundColor: Theme.background
+            // the skin's pixels at a whole size (root.playerScale)
+            zoomFactor: root.playerScale
+            // the stations the page lists, in the log once it has loaded (qa's pass line): read as text only
+            onLoadProgressChanged: {
+                if (loadProgress === 100) {
+                    view.runJavaScript("JSON.stringify([(window.RADIO_STATIONS || []).length, " +
+                        "((window.RADIO_STATIONS || [])[0] || {}).name || ''])", function (text) {
+                        console.log("Radio: stations listed (how many, the first):", String(text).slice(0, 80));
+                    });
                 }
-                view.url = root.pageUrl;
             }
-            backgroundColor: "#0c1022"   // the page's own background (radio.css --navy), behind it while it loads
-            // the skin's pixels at a whole size: twice once both of the player's windows fit twice; on Windows always 1x,
-            // where the switch to 2x froze the page's picture (its web engine is Chrome 83) while the music played on
-            // (windowz, 10-31)
-            zoomFactor: Qt.platform.os !== "windows" && width >= 600 && height >= 500 ? 2 : 1
 
-            profile: WebEngineProfile {
-                storageName: "DarkrideRadio"
-                offTheRecord: false
-                httpCacheType: WebEngineProfile.MemoryHttpCache
-                persistentCookiesPolicy: WebEngineProfile.NoPersistentCookies
-            }
+            // one profile for the whole run, a walled-off client's folders set before it opens them (ContextAwareProfile)
+            profile: TivoliWebEngineProfile.radioProfile
             // the page is the app's own (qrc): it may reach the stations, never the computer's files
             settings.localContentCanAccessRemoteUrls: true
             settings.localContentCanAccessFileUrls: false
@@ -483,7 +500,7 @@ Rectangle {
             }
             onFileDialogRequested: function (request) {
                 request.accepted = true;
-                if (typeof Window === "undefined") {
+                if (typeof WindowScriptingInterface === "undefined") {
                     request.dialogReject();
                     return;
                 }
@@ -498,7 +515,7 @@ Rectangle {
                 root.fileRequest = request;
                 var skin = request.acceptedMimeTypes.join(" ").indexOf("wsz") >= 0;
                 console.log("Radio: a file dialog for", skin ? "a skin" : "a sound file");
-                Window.browseAsync(skin ? "Load a skin" : "Play a file", "",
+                WindowScriptingInterface.browseAsync(skin ? "Load a skin" : "Play a file", "",
                     skin ? "Classic skins (*.wsz *.zip)" : "Sound files (*.mp3 *.ogg *.wav *.flac *.m4a *.aac)");
             }
             onJavaScriptDialogRequested: function (request) {

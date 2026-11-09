@@ -13,6 +13,8 @@
 #include <chrono>
 #include <set>
 
+#include <QThreadPool>
+
 using namespace terrain;
 
 namespace {
@@ -49,7 +51,7 @@ float trilinear(const float d[8], const glm::vec3& f) {
 // the grid's chunks. A node's own voxels are the grid's at its points, whatever chunk holds them.
 class NodeSampler {
 public:
-    NodeSampler(const VoxelGrid& grid, const ChunkKey& key, const NodeContext& context) :
+    NodeSampler(const GridView& grid, const ChunkKey& key, const NodeContext& context) :
         _grid(grid),
         _key(key),
         _context(context),
@@ -117,7 +119,7 @@ private:
         return Voxel(rescaleDistance(distance, std::ldexp(1.0f, level - coarse)), voxelAt(nearest).material);
     }
 
-    const VoxelGrid& _grid;
+    const GridView& _grid;
     const ChunkKey _key;
     const NodeContext& _context;
     const glm::ivec3 _voxelCount;
@@ -128,7 +130,7 @@ private:
 
 // A node's own voxels when it is not one of the grid's chunks: the grid's voxels at its points, read from each chunk
 // under it in strides (a coarse node takes every 2nd, 4th... voxel of the chunks it covers).
-void sampleOwnVoxels(const VoxelGrid& grid, const ChunkKey& key, const NodeSampler& sampler, ChunkSamples& samples) {
+void sampleOwnVoxels(const GridView& grid, const ChunkKey& key, const NodeSampler& sampler, ChunkSamples& samples) {
     const int unit = unitOf(key.level);
     const glm::ivec3 originFine = key.getOrigin() * FINEST;
     const glm::ivec3 extentFine = grid.getChunkCount() * CHUNK_SIZE * FINEST;
@@ -219,7 +221,7 @@ uint64_t NodeContext::getSignature() const {
     return signature;
 }
 
-glm::ivec3 terrain::contextProbe(const VoxelGrid& grid, const ChunkKey& key, int index) {
+glm::ivec3 terrain::contextProbe(const GridView& grid, const ChunkKey& key, int index) {
     const glm::ivec3 sides = NodeContext::sidesOf(index);
     const glm::ivec3 originFine = key.getOrigin() * FINEST;
     const int spanFine = spanFineOf(key.level);
@@ -230,7 +232,7 @@ glm::ivec3 terrain::contextProbe(const VoxelGrid& grid, const ChunkKey& key, int
     return clampFine(grid.getVoxelCount(), probe);
 }
 
-NodeContext terrain::gridContext(const VoxelGrid& grid, const ChunkKey& key) {
+NodeContext terrain::gridContext(const GridView& grid, const ChunkKey& key) {
     NodeContext context;
     for (int i = 0; i < 27; ++i) {
         if (i != NodeContext::CENTRE) {
@@ -240,7 +242,7 @@ NodeContext terrain::gridContext(const VoxelGrid& grid, const ChunkKey& key) {
     return context;
 }
 
-void terrain::sampleNode(const VoxelGrid& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples) {
+void terrain::sampleNode(const GridView& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples) {
     samples.setKey(key);
     samples.clearBlocks();
     samples.setLimits(grid.limitOf(key.level, key.getOrigin(), CHUNK_SIZE), grid.limitOf(key.level + 1, key.getOrigin(), 2 * CHUNK_SIZE));
@@ -429,7 +431,7 @@ void LodCut::balance(KeySet& nodes, KeySet& split) const {
     }
 }
 
-void LodCut::update(const VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings) {
+void LodCut::update(const GridView& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings) {
     if (grid.isEmpty()) {
         clear();
         return;
@@ -493,7 +495,7 @@ ChunkKey LodCut::nodeCovering(const glm::ivec3& fine) const {
 
 // --- LevelOfDetail ----------------------------------------------------------------------------------------------
 
-LevelOfDetail::LevelOfDetail(QThreadPool* pool) : _mesher(pool) {
+LevelOfDetail::LevelOfDetail(QThreadPool* pool) : _pool(pool ? pool : AsyncMesher::defaultPool()), _mesher(pool) {
 }
 
 void LevelOfDetail::setSettings(const LodSettings& settings) {
@@ -520,36 +522,33 @@ LevelOfDetail::Entry& LevelOfDetail::entryFor(const LodCut::Node& node) {
     return entry;
 }
 
-void LevelOfDetail::send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid) {
+void LevelOfDetail::send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid, std::shared_ptr<const GridView>& view) {
     entry.stale = false;
-    auto settle = [&] {
-        entry.mesh = ChunkMesh();
-        entry.hasMesh = true;
-        entry.version = ++_nextVersion;
-    };
+    if (!view) {
+        view = std::make_shared<const GridView>(grid.snapshot());
+    }
     // the grid voxels its samples read, the nearest within the grid where they reach past it: when those are all
-    // one value on one side, no surface crosses the node
+    // one value on one side, no surface crosses the node (one against a closed face of the box may need a cap
+    // there even with its voxels all ground), and the job says so without sampling
     const glm::ivec3 low = glm::clamp(glm::max(entry.readLow, glm::ivec3(0)) / FINEST, glm::ivec3(0), grid.getVoxelCount() - 1);
     const glm::ivec3 high = glm::max(glm::min(glm::max(entry.readHigh, glm::ivec3(0)) / FINEST, grid.getChunkCount() * CHUNK_SIZE - 1), low);
-    // (a node against a closed face of the box may need a cap there even with its voxels all ground)
-    if (!grid.capsReach(low, high) && grid.isOneSided(low, high)) {
-        settle();
-        return;
-    }
-    auto samples = std::make_shared<ChunkSamples>();
-    sampleNode(grid, entryKey.key, entry.context, *samples);
-    if (samples->isOneSided()) {
-        settle();
-        return;
-    }
     const uint64_t tag = ++_nextTag;
     _jobs[tag] = entryKey;
     entry.inFlight = true;
-    _mesher.submitSamples(samples, tag, 1);   // ahead of the grid's chunks: these are what is drawn
+    const ChunkKey key = entryKey.key;
+    const NodeContext context = entry.context;
+    _mesher.submitSampler(key, [view, key, context, low, high](ChunkSamples& samples) {
+        if (!view->capsReach(low, high) && view->isOneSided(low, high)) {
+            return false;
+        }
+        sampleNode(*view, key, context, samples);
+        return true;
+    }, tag, 1);   // ahead of the grid's chunks: these are what is drawn
 }
 
 bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres,
-                           const std::function<bool(const ChunkKey&)>& gridChunkReady) {
+                           const std::function<bool(const ChunkKey&)>& gridChunkReady,
+                           const std::function<bool(const std::shared_ptr<void>&)>& nodeReady) {
     ++_frame;
     if (grid.isEmpty()) {
         if (_shown.empty() && _entries.empty() && _cut.isEmpty()) {
@@ -560,8 +559,19 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
     }
     bool drawnChanged = false;
 
-    // the meshes back from the pool
+    // the frame's cost by part, for the caller that logs re-choices: the clock is read only while counting
+    const bool costing = _cutShownCounting;
+    FrameCost frameCost;
+    frameCost.frame = _frame;
+    auto clock = [costing]() { return costing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point(); };
+    auto msSince = [costing](const std::chrono::steady_clock::time_point& since) {
+        return costing ? std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - since).count() : 0.0f;
+    };
+    auto mark = clock();
+
+    // the meshes back from the pool (an empty one for a node no surface crosses: it is settled)
     for (AsyncMesher::Result& result : _mesher.collect()) {
+        ++frameCost.results;
         auto job = _jobs.find(result.tag);
         if (job == _jobs.end()) {
             continue;
@@ -575,11 +585,14 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         Entry& entry = found->second;
         entry.inFlight = false;
         entry.mesh = std::move(result.mesh);
+        entry.attachment = std::move(result.attachment);
         entry.hasMesh = true;
         entry.version = ++_nextVersion;
         _requestsDirty = true;
         drawnChanged = true;
     }
+
+    frameCost.collectMs = msSince(mark);
 
     // what the grid's edits reached
     if (!grid.takeChanges(_changes)) {
@@ -603,24 +616,68 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         }
     }
 
-    // the cut wanted: chosen again when the camera has moved a couple of voxels or the grid's chunks changed
+    // this frame's snapshot of the grid, taken once, for the choice and for the sends
+    std::shared_ptr<const GridView> view;
+    auto snapshot = [&]() {
+        if (!view) {
+            view = std::make_shared<const GridView>(grid.snapshot());
+        }
+        return view;
+    };
+
+    // The cut's choice is back from the pool: adopted here (the swap alone; the choice itself, 3-5 ms over ~2,000
+    // nodes, ran on the pool so that a re-choice no longer costs this thread a frame at the display's rate).
+    if (_choiceJob && _choiceJob->done.load(std::memory_order_acquire)) {
+        mark = clock();
+        _cut = std::move(*_choiceJob->cut);
+        _choiceJob.reset();
+        frameCost.choiceMs = msSince(mark);
+        frameCost.chose = true;
+        _requestsDirty = true;
+        if (_choiceQueued) {
+            _choiceQueued = false;
+            _cutWanted = true;
+        }
+    }
+
+    // the cut wanted: chosen again when the camera has moved a couple of voxels or the grid's chunks changed, as a
+    // job on the pool from this frame's snapshot; one job at a time, a re-choice asked while one is out runs at
+    // its return, with the camera then. The cut's own bookkeeping (where it was chosen, when) is set when the job
+    // starts: the latency a cut is shown with counts from the moment its choice was asked.
     const float voxel = (voxelMetres.x + voxelMetres.y + voxelMetres.z) / 3.0f;
     const bool moved = glm::length((camera - _cutCamera) * voxelMetres) > 2.0f * voxel;
     if (_cutWanted || moved || grid.getStructureVersion() != _cutStructure || voxelMetres != _cutVoxelMetres ||
             grid.getVoxelCount() != _cutVoxelCount) {
-        _cut.update(grid, camera, voxelMetres, _settings);
-        _cutWanted = false;
-        _cutCamera = camera;
-        _cutVoxelMetres = voxelMetres;
-        _cutStructure = grid.getStructureVersion();
-        _cutVoxelCount = grid.getVoxelCount();
-        _requestsDirty = true;
+        if (_choiceJob) {
+            _choiceQueued = true;
+        } else {
+            auto job = std::make_shared<ChoiceJob>();
+            job->view = snapshot();
+            job->camera = camera;
+            job->voxelMetres = voxelMetres;
+            job->settings = _settings;
+            _choiceJob = job;
+            _cutChosenAt = std::chrono::steady_clock::now();
+            _cutChosenFrame = _frame;
+            _cutWanted = false;
+            _cutCamera = camera;
+            _cutVoxelMetres = voxelMetres;
+            _cutStructure = grid.getStructureVersion();
+            _cutVoxelCount = grid.getVoxelCount();
+            // ahead of the sampling jobs (1) and the grid's chunks (0): the nodes are chosen before they are sampled
+            _pool->start([job] {
+                job->cut = std::make_unique<LodCut>();
+                job->cut->update(*job->view, job->camera, job->voxelMetres, job->settings);
+                job->done.store(true, std::memory_order_release);
+            }, 2);
+        }
     }
     const std::vector<LodCut::Node>& wanted = _cut.getNodes();
 
     // the meshes to make: the wanted cut's, and the shown cut's that edits put out of date; nearest first
     if (_requestsDirty) {
         _requestsDirty = false;
+        mark = clock();
         std::map<EntryKey, float> requests;
         auto consider = [&](const LodCut::Node& node) {
             if (node.isGridChunk) {
@@ -646,23 +703,42 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         std::sort(order.begin(), order.end(), [](const std::pair<float, EntryKey>& a, const std::pair<float, EntryKey>& b) {
             return a.first < b.first;
         });
+        frameCost.requestsMs = msSince(mark);
+        frameCost.requests = (int)order.size();
+        // The first node always goes, so the queue drains; each later one only if the budget still holds it, judged
+        // by what its level's last sends took: the frame's spend ends near the budget, not a whole node past it.
+        // (A send is the hand-over alone, microseconds: the sampling runs on the pool, from one snapshot of the
+        // grid for every node sent this frame.)
+        const float budget = getFrameBudgetMs();
         const auto start = std::chrono::steady_clock::now();
         for (size_t i = 0; i < order.size(); ++i) {
-            const float spent = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
-            if (i > 0 && spent > _settings.sampleBudgetMs) {
+            const auto before = std::chrono::steady_clock::now();
+            const float spent = std::chrono::duration<float, std::milli>(before - start).count();
+            const int level = order[i].second.key.level;
+            const auto estimate = _nodeCostMs.find(level);
+            const float expected = estimate != _nodeCostMs.end() ? estimate->second : 0.0f;
+            if (i > 0 && spent + expected > budget) {
                 _requestsDirty = true;   // the rest next frame
                 break;
             }
             Entry& entry = _entries[order[i].second];
             const bool hadMesh = entry.hasMesh;
             const uint64_t version = entry.version;
-            send(order[i].second, entry, grid);
+            send(order[i].second, entry, grid, view);
+            ++frameCost.sent;
             drawnChanged = drawnChanged || (entry.version != version) || (hadMesh != entry.hasMesh);
+            const float cost = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - before).count();
+            float& smoothed = _nodeCostMs[level];
+            smoothed = smoothed > 0.0f ? smoothed * 0.75f + cost * 0.25f : cost;
         }
+        frameCost.sendsMs = msSince(start);
     }
+    mark = clock();
 
     // the wanted cut is shown once every node of it has its mesh (at once when nothing is shown yet), or once a
-    // node without one has held it back for the settings' force time
+    // node without one has held it back for the settings' force time. Every node is checked, not only up to the
+    // first one not ready: the caller's nodeReady marks what it must send to its backend ahead of the rest (entry 24
+    // step 3d); the first stalled node in key order is the one the stall tracks, as before.
     if (_shown != wanted) {
         const LodCut::Node* stalled = nullptr;
         if (!_shown.empty()) {
@@ -672,15 +748,16 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
                     ready = gridChunkReady(node.key);
                 } else {
                     auto found = _entries.find(EntryKey { node.key, node.context.getSignature() });
-                    ready = found != _entries.end() && found->second.hasMesh;
+                    ready = found != _entries.end() && found->second.hasMesh &&
+                            (found->second.mesh.isEmpty() || !nodeReady || nodeReady(found->second.attachment));
                 }
-                if (!ready) {
+                if (!ready && !stalled) {
                     stalled = &node;
-                    break;
                 }
             }
         }
         if (trackStall(grid, stalled)) {
+            noteCutShown(wanted);
             _shown = wanted;
             drawnChanged = true;
         }
@@ -693,7 +770,70 @@ bool LevelOfDetail::update(VoxelGrid& grid, const glm::vec3& camera, const glm::
         rebuildDrawn();
         ++_drawnVersion;
     }
+    frameCost.drawnMs = msSince(mark);
+    noteFrameCost(frameCost);
     return drawnChanged;
+}
+
+void LevelOfDetail::noteFrameCost(const FrameCost& cost) {
+    if (!_cutShownCounting) {
+        return;
+    }
+    if (cost.chose) {
+        _reChoiceDone = _reChoice;
+        _reChoice = ReChoice();
+        _reChoice.serial = _reChoiceDone.serial + 1;
+        _reChoice.nodes = _cut.getNodes().size();
+        _reChoice.own = cost;
+        _reChoice.worst = cost;
+    } else if (cost.totalMs() > _reChoice.worst.totalMs()) {
+        _reChoice.worst = cost;
+    }
+}
+
+float LevelOfDetail::getFrameBudgetMs() const {
+    if (_frameBudgetMs > 0.0f && _frameBudgetMs < _settings.sampleBudgetMs) {
+        return _frameBudgetMs;
+    }
+    return _settings.sampleBudgetMs;
+}
+
+void LevelOfDetail::noteCutShown(const std::vector<LodCut::Node>& wanted) {
+    CutShown shown;
+    shown.serial = _cutShown.serial + 1;
+    if (_cutChosenAt != std::chrono::steady_clock::time_point()) {
+        shown.msSinceChosen = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - _cutChosenAt).count();
+        shown.framesSinceChosen = _frame - _cutChosenFrame;
+    }
+    if (!_cutShownCounting) {
+        _cutShown = shown;
+        return;
+    }
+    shown.nodes = wanted.size();
+    // a node's mesh is new to the drawing when the last drawn set had no mesh at its key, or an older one
+    std::map<ChunkKey, uint64_t> drawnVersions;
+    for (const Drawn& drawn : _drawn) {
+        if (!drawn.isGridChunk && drawn.mesh) {
+            drawnVersions[drawn.key] = drawn.version;
+        }
+    }
+    for (const LodCut::Node& node : wanted) {
+        if (node.isGridChunk) {
+            continue;
+        }
+        auto found = _entries.find(EntryKey { node.key, node.context.getSignature() });
+        if (found == _entries.end() || !found->second.hasMesh || found->second.mesh.isEmpty()) {
+            continue;
+        }
+        auto drawn = drawnVersions.find(node.key);
+        if (drawn != drawnVersions.end() && drawn->second == found->second.version) {
+            continue;
+        }
+        ++shown.newMeshes;
+        shown.newVertices += found->second.mesh.getVertexCount();
+        shown.newIndices += found->second.mesh.indices.size();
+    }
+    _cutShown = shown;
 }
 
 bool LevelOfDetail::trackStall(VoxelGrid& grid, const LodCut::Node* stalled) {
@@ -749,6 +889,7 @@ void LevelOfDetail::rebuildDrawn() {
             if (found != _entries.end() && found->second.hasMesh) {
                 drawn.mesh = found->second.mesh.isEmpty() ? nullptr : &found->second.mesh;
                 drawn.version = found->second.version;
+                drawn.attachment = found->second.attachment;
             }
         }
         _drawn.push_back(drawn);
@@ -787,7 +928,7 @@ void LevelOfDetail::evict() {
 }
 
 bool LevelOfDetail::isSettled() const {
-    if (!_jobs.empty() || _cutWanted || _requestsDirty || _shown != _cut.getNodes()) {
+    if (!_jobs.empty() || _choiceJob || _cutWanted || _requestsDirty || _shown != _cut.getNodes()) {
         return false;
     }
     for (const LodCut::Node& node : _shown) {
@@ -806,6 +947,8 @@ void LevelOfDetail::gridReplaced() {
     for (auto& pair : _entries) {
         pair.second.stale = true;
     }
+    _choiceJob.reset();   // a choice out on the old grid finishes on its own and is dropped
+    _choiceQueued = false;
     _cutWanted = true;
     _requestsDirty = true;
 }
@@ -819,6 +962,8 @@ void LevelOfDetail::clear() {
     _drawn.clear();
     ++_drawnVersion;
     _cut.clear();
+    _choiceJob.reset();
+    _choiceQueued = false;
     _cutWanted = true;
     _requestsDirty = true;
 }

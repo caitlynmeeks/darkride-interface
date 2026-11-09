@@ -227,6 +227,8 @@ public slots:
     float terrainStrokeForTest(const QUuid& id);
     // the angle the next stroke will use, which the outline shows (Test.terrainNextAngle)
     float terrainNextAngleForTest() const { return _terrain.angle(); }
+    // the Terrain tool's saving, for the quit (ui/QuitCheck.cpp): sculpting still waiting goes up before Darkride quits
+    EditorTerrain& terrain() { return _terrain; }
     void createModel();             // asks for a URL
     void createFromMenu();          // the sender's data() is the catalogue key
     void deleteSelection();
@@ -376,6 +378,7 @@ private:
     // Use Stable Links, once the listing is in
     void rewriteStableLinks(const UserFiles& files);
     void showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos);
+    void addScriptActions(QMenu& menu);
     void addSelectionActions(QMenu& menu, const glm::vec3* pasteTarget);
     // a note in the middle of the toolbar; one with a timeout clears itself
     void setStatus(const QString& text, int clearAfterMs = 0);

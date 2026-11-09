@@ -10,7 +10,6 @@
 
 import QtQuick 2.7
 import QtQuick.Controls 2.3
-import QtQuick.Controls 1.5 as QQC1
 
 import controlsUit 1.0
 import stylesUit 1.0
@@ -390,7 +389,7 @@ Item {
                 }
             }
 
-            QQC1.TableViewColumn {
+            TableViewColumn {
                 id: fileNameColumn
                 role: "fileName"
                 title: "Name"

@@ -12,6 +12,7 @@
 #include "PositionalAudioStream.h"
 #include "SharedUtil.h"
 
+#include <cmath>
 #include <cstring>
 
 #include <QtCore/QDataStream>
@@ -21,6 +22,15 @@
 #include <Node.h>
 #include <udt/PacketHeaders.h>
 #include <UUID.h>
+
+// how far from the origin a sound may be on each axis, well beyond any world's extent: the mix subtracts and squares
+// positions, which stays finite within this
+static const float MAX_POSITION_COORDINATE = 1.0e6f;
+
+bool PositionalAudioStream::isUsablePosition(const glm::vec3& position) {
+    // false for NaN too
+    return glm::all(glm::lessThanEqual(glm::abs(position), glm::vec3(MAX_POSITION_COORDINATE)));
+}
 
 PositionalAudioStream::PositionalAudioStream(PositionalAudioStream::Type type, bool isStereo, int numStaticJitterFrames) :
     InboundAudioStream(isStereo ? AudioConstants::STEREO : AudioConstants::MONO,
@@ -76,21 +86,40 @@ void PositionalAudioStream::updateLastPopOutputLoudnessAndTrailingLoudness() {
 int PositionalAudioStream::parsePositionalData(const QByteArray& positionalByteArray) {
     QDataStream packetStream(positionalByteArray);
 
-    packetStream.readRawData(reinterpret_cast<char*>(&_position), sizeof(_position));
-    packetStream.readRawData(reinterpret_cast<char*>(&_orientation), sizeof(_orientation));
-    packetStream.readRawData(reinterpret_cast<char*>(&_avatarBoundingBoxCorner), sizeof(_avatarBoundingBoxCorner));
-    packetStream.readRawData(reinterpret_cast<char*>(&_avatarBoundingBoxScale), sizeof(_avatarBoundingBoxScale));
+    // read into copies (a short packet leaves the rest as they were); the mix uses only values it can work with: a
+    // usable position, a rotation (normalised) and a finite bounding box, and keeps the last good ones otherwise
+    glm::vec3 position = _position;
+    glm::quat orientation = _orientation;
+    glm::vec3 boundingBoxCorner = _avatarBoundingBoxCorner;
+    glm::vec3 boundingBoxScale = _avatarBoundingBoxScale;
+    packetStream.readRawData(reinterpret_cast<char*>(&position), sizeof(position));
+    packetStream.readRawData(reinterpret_cast<char*>(&orientation), sizeof(orientation));
+    packetStream.readRawData(reinterpret_cast<char*>(&boundingBoxCorner), sizeof(boundingBoxCorner));
+    packetStream.readRawData(reinterpret_cast<char*>(&boundingBoxScale), sizeof(boundingBoxScale));
+
+    // if this node sent us a NaN for first float in orientation then don't consider this good audio and bail
+    if (glm::isnan(orientation.x)) {
+        // NOTE: why would we reset the ring buffer here?
+        _ringBuffer.reset();
+        return 0;
+    }
+
+    if (isUsablePosition(position)) {
+        _position = position;
+    }
+    float orientationLength2 = glm::dot(orientation, orientation);
+    const float MIN_ORIENTATION_LENGTH2 = 1.0e-6f;
+    if (orientationLength2 > MIN_ORIENTATION_LENGTH2 && std::isfinite(orientationLength2)) {
+        _orientation = orientation * (1.0f / sqrtf(orientationLength2));
+    }
+    if (isUsablePosition(boundingBoxCorner) && isUsablePosition(boundingBoxScale)) {
+        _avatarBoundingBoxCorner = boundingBoxCorner;
+        _avatarBoundingBoxScale = boundingBoxScale;
+    }
 
     if (_avatarBoundingBoxCorner != _ignoreBox.getCorner()) {
         // if the ignore box corner changes, we need to re-calculate the ignore box
         calculateIgnoreBox();
-    }
-
-    // if this node sent us a NaN for first float in orientation then don't consider this good audio and bail
-    if (glm::isnan(_orientation.x)) {
-        // NOTE: why would we reset the ring buffer here?
-        _ringBuffer.reset();
-        return 0;
     }
 
     return packetStream.device()->pos();

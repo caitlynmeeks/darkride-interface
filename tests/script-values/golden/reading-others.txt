@@ -1,0 +1,7 @@
+{"x": 1, "y": 2, "width": 30, "height": 40, "scale": 2.5, "z": -3} -> rect (1, 2, 30, 40), cube (1, 2, -3) scale 2.5
+{"x": "4", "scale": "big"} -> rect (4, 0, 0, 0), cube (4, 0, 0) scale 0
+{} -> rect (0, 0, 0, 0), cube (0, 0, 0) scale 0
+null -> rect (0, 0, 0, 0), cube (0, 0, 0) scale 0
+5 -> rect (0, 0, 0, 0), cube (0, 0, 0) scale 0
+[1, 2, 3, 4] -> rect (0, 0, 0, 0), cube (0, 0, 0) scale 0
+undefined -> rect (0, 0, 0, 0), cube (0, 0, 0) scale 0

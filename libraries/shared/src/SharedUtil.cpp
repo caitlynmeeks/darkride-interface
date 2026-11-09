@@ -747,9 +747,9 @@ QString formatSecondsElapsed(float seconds) {
         } else {
             result += " day ";
         }
-        result += QDateTime::fromTime_t(rest).toUTC().toString("h 'hours' m 'minutes' s 'seconds'");
+        result += QDateTime::fromSecsSinceEpoch((uint)rest).toUTC().toString("h 'hours' m 'minutes' s 'seconds'");
     } else {
-        result = QDateTime::fromTime_t(seconds).toUTC().toString("h 'hours' m 'minutes' s 'seconds'");
+        result = QDateTime::fromSecsSinceEpoch((uint)seconds).toUTC().toString("h 'hours' m 'minutes' s 'seconds'");
     }
     return result;
 }
