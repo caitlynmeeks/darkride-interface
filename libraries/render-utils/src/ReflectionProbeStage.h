@@ -36,8 +36,8 @@ public:
 
     // the layers the array can hold (the frame's list holds as many, LIGHT_CLUSTER_MAX_PROBES), and the largest face
     // a layer has: a bigger cube map contributes its smaller mips
-    static const int MAX_LAYERS = 32;
-    static const int MAX_FACE_SIZE = 512;
+    static constexpr int MAX_LAYERS = 32;   // constexpr: used by reference (std::min), so an unoptimized build links
+    static constexpr int MAX_FACE_SIZE = 512;
 
     Index addProbe(const ProbePointer& probe);
     ProbePointer removeProbe(Index index);

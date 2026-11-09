@@ -91,6 +91,8 @@ variables.  These argument variables are used by the code which is run when bull
 
 #include "EntityDynamicInterface.h"
 
+#include <shared/WireStream.h>
+
 #include "EntityItem.h"
 
 /**jsdoc
@@ -393,11 +395,13 @@ QString serializedDynamicsToDebugString(QByteArray data) {
     }
     QVector<QByteArray> serializedDynamics;
     QDataStream serializedDynamicsStream(data);
+    hifi::stream::pin(serializedDynamicsStream);
     serializedDynamicsStream >> serializedDynamics;
 
     QString result;
     foreach(QByteArray serializedDynamic, serializedDynamics) {
         QDataStream serializedDynamicStream(serializedDynamic);
+        hifi::stream::pin(serializedDynamicStream);
         EntityDynamicType dynamicType;
         QUuid dynamicID;
         serializedDynamicStream >> dynamicType;

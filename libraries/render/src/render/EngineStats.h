@@ -46,6 +46,8 @@ namespace render {
         Q_PROPERTY(quint32 texturePendingGPUTransferCount MEMBER texturePendingGPUTransferCount NOTIFY newStats)
         Q_PROPERTY(qint64 texturePendingGPUTransferSize MEMBER texturePendingGPUTransferSize NOTIFY newStats)
         Q_PROPERTY(qint64 textureResourcePopulatedGPUMemSize MEMBER textureResourcePopulatedGPUMemSize NOTIFY newStats)
+        Q_PROPERTY(qint64 textureResourceIdealGPUMemSize MEMBER textureResourceIdealGPUMemSize NOTIFY newStats)
+        Q_PROPERTY(qint64 textureTransferEngineBusy MEMBER textureTransferEngineBusy NOTIFY newStats)
 
         Q_PROPERTY(quint32 frameAPIDrawcallCount MEMBER frameAPIDrawcallCount NOTIFY newStats)
         Q_PROPERTY(quint32 frameDrawcallCount MEMBER frameDrawcallCount NOTIFY newStats)
@@ -86,6 +88,8 @@ namespace render {
         qint64 textureExternalGPUMemSize { 0 };
         qint64 texturePendingGPUTransferSize { 0 };
         qint64 textureResourcePopulatedGPUMemSize { 0 };
+        qint64 textureResourceIdealGPUMemSize { 0 };   // what the resource textures want to allocate
+        qint64 textureTransferEngineBusy { 0 };        // 1 while the transfer engine has work left (entry 33)
 
         quint32 frameAPIDrawcallCount{ 0 };
         quint32 frameDrawcallCount{ 0 };

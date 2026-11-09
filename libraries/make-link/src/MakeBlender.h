@@ -1,0 +1,218 @@
+//
+//  MakeBlender.h
+//  libraries/make-link/src
+//
+//  Make's Blender tool: Claude's Blender Python script, then our fixed export and views, run by the builder's own
+//  Blender in an OS sandbox (security D): `--background --factory-startup --disable-autoexec`, under sandbox-exec
+//  with a profile that denies everything but Blender itself, our fixed scripts (read only), one fresh scratch folder and
+//  the GPU. No network, no home folder, no other program's services. Its environment is built from nothing (no key,
+//  nothing of the app's), and it is killed at its time and memory limits. Its parent is darkride-make-watch, beside
+//  the app's program, which kills it when the app stops it or is gone. On Windows the box is an AppContainer with no
+//  capabilities inside a job object (MakeBox), the job its keeper, and the tools are offered only when the box's live
+//  self-test at Connect shows the installer's firewall rules hold (selfTest). On Linux the watcher is the box as well:
+//  its child takes its own session, the limits, Landlock (the no-/proc form) and seccomp with the exec gate before
+//  Blender starts, and the watcher also caps the work folder's size; Blender is the blender.org tarball's program.
+//
+//  What comes back is treated as untrusted, because the script runs in the same Python as our export and could change
+//  it: the .glb is size-capped and its structure checked (glTF 2.0 binary, everything inside it, no outside address),
+//  the report keeps only known fields, cut short, and the four views are decoded with size caps and drawn again into
+//  one picture. Reference pictures go in only as the clean copies the app made, as texture files (security E18).
+//
+//  Copyright 2026 Darkride.
+//
+//  Distributed under the MIT License.
+//
+
+#pragma once
+#ifndef hifi_MakeBlender_h
+#define hifi_MakeBlender_h
+
+#include <functional>
+
+#include <QtCore/QByteArray>
+#include <QtCore/QJsonObject>
+#include <QtCore/QObject>
+#include <QtCore/QPointer>
+#include <QtCore/QProcess>
+#include <QtCore/QString>
+#include <QtCore/QVector>
+
+class QTimer;
+#ifdef Q_OS_WIN
+namespace MakeBox {
+struct Run;
+}
+#endif
+
+class MakeBlender : public QObject {
+    Q_OBJECT
+public:
+    /// A reference picture for the script: the app's clean copy (re-encoded, no metadata), and the file name the
+    /// script loads it by (letters, digits, '-', '_' and '.', ending .png or .jpg).
+    struct Picture {
+        QString path;
+        QString as;
+    };
+    /// What a make gave: a model (its id, its checked .glb in the models folder, its size), the report, the four
+    /// views as one JPEG, the seconds it took; or an error code (MakeError) with a plain line and Blender's last lines.
+    struct Made {
+        QString code;
+        QString message;
+        QString modelId;
+        QString glbPath;
+        qint64 bytes { 0 };
+        QJsonObject report;
+        QByteArray views;
+        QString viewsType;
+        double seconds { 0.0 };
+        QString log;
+        bool ok() const { return code.isEmpty(); }
+    };
+
+    static const qint64 MAX_GLB_BYTES;
+    static const int TIME_LIMIT_MS;
+    static const qint64 MEMORY_LIMIT_BYTES;
+    /// Linux: the work folder's size cap (the watcher's --folder-cap, and each file's RLIMIT_FSIZE in the box): Blender
+    /// may fill its work folder, never the disk.
+    static const qint64 FOLDER_CAP_BYTES;
+    /// Blender's threads (its --threads): a make's CPU time can then be capped close to its time limit.
+    static const int THREADS;
+    /// The kernel's cap on Blender's CPU time, in seconds (RLIMIT_CPU, set in the child before exec, so Blender's
+    /// parent and Blender have it). THREADS x the time limit, and a little more, so a make the app would let finish
+    /// never meets it. It is also the watcher's wall-clock cap. On macOS the kernel only warns at it (SIGXCPU), so the
+    /// watcher is what ends Blender when the app can't.
+    static const int CPU_LIMIT_S;
+    /// The oldest Blender the fixed scripts are written for.
+    static const int MINIMUM_MAJOR;
+    static const int MINIMUM_MINOR;
+
+    /// `folder` holds the makes: a fresh scratch folder for each under jobs/, the checked models under models/.
+    explicit MakeBlender(const QString& folder, QObject* parent = nullptr);
+    ~MakeBlender() override;
+
+    /// The Blender app to use: `app` if given (the person's choice), else the usual places. Empty with `why` when there
+    /// is none, it's too old, or this system can't box it.
+    static QString findBlender(QString& why, const QString& app = QString());
+    /// The app's version as its Info.plist says ("5.2.2"); empty when it has none.
+    static QString blenderVersion(const QString& app);
+    /// Blender's parent, darkride-make-watch, beside the app's program.
+    static QString defaultWatcher();
+
+    /// Whether a make can run here, sealed: macOS with its sandbox and the watcher beside the app, and a Blender found
+    /// (the person's choice, else the usual places). False with a plain `why` otherwise: Blender never runs unsealed.
+    /// On Windows: a Blender found and this Connect's self-test passed (`why` CHECKING_WORDS while it runs,
+    /// UNAVAILABLE_WORDS when it withdrew); before the first Connect a found Blender counts as available, the Connect
+    /// decides, and a make runs only after a passed self-test.
+    bool available(QString& why) const;
+
+    /// Decides at a Connect whether the Blender tools may be offered here and answers once through `done`, on this
+    /// object's thread, with available()'s `why` when not. On Windows this is the box's live self-test, a few seconds
+    /// in the background: first the unboxed control, a bare connection from the app to this computer's own address
+    /// (no address or no connection = unknown = not offered), then the same connection tried by Blender inside the box
+    /// (selftest.py): offered only when the box's connection was refused. The installer's firewall rules are read and
+    /// logged, never required: Group Policy can make Windows ignore local rules while they still read as present and
+    /// enabled, so only the probe decides. The stricter box form is tried first, the plain one when Blender won't start
+    /// under it. Elsewhere the answer is available()'s, at once.
+    void selfTest(std::function<void(bool offered, const QString& why)> done);
+    enum class SelfTest { NotRun, Running, Passed, Failed };
+    SelfTest selfTestState() const { return _selfTest; }
+
+    /// The words the dock shows: while the self-test runs, and when Blender can't be offered here.
+    static const char* const CHECKING_WORDS;     // "Checking Blender…"
+    static const char* const UNAVAILABLE_WORDS;  // "Blender isn't available here"
+    /// Whether a version ("5.2.2") is one the fixed scripts are written for (MINIMUM_MAJOR.MINIMUM_MINOR or newer).
+    static bool versionIsEnough(const QString& version);
+    /// The plain line for a Blender that is too old: "That's Blender 4.1; Make needs 5.2 or newer."
+    static QString tooOldLine(const QString& version);
+    /// The self-test probe's result file read: true when it says "refused" (`held` true, the box kept the connection
+    /// in) or "reached" (`held` false); false for anything else, which is unknown.
+    static bool readSelfTestResult(const QByteArray& text, bool& held);
+    /// The two rules on a program's name and its version resource's product name that say it is Blender (on Windows
+    /// MakeBox::isBlender adds the signature); false with a plain `why`.
+    static bool looksLikeBlender(const QString& fileName, const QString& productName, QString& why);
+    /// Whether `folder` is Blender's own, the only folder outside Program Files Make ever opens to the box: it holds
+    /// Blender's "<major>.<minor>" folder for `version`, it is no drive root, and it is none of `forbidden` (the
+    /// person's known folders, canonical) nor a parent of one. False with a plain `why`. A blender.exe sitting loose
+    /// in Downloads is refused by this.
+    static bool isBlendersOwnFolder(const QString& folder, const QString& version, const QStringList& forbidden,
+                                    QString& why);
+    /// Linux: the folders Make never opens to the box, nor any parent of them, for isBlendersOwnFolder: the system's
+    /// own (/, /usr, /usr/bin, /usr/local/bin, /bin, /opt) and the person's (the home folder, Downloads, Desktop,
+    /// Documents), canonical. The usual places themselves are in it, so only a Blender folder inside one passes.
+    static QStringList linuxForbiddenFolders();
+    /// Linux: what the watcher's seccomp filter does, one line per rule, the same lines the watcher prints with
+    /// --filter-rules (the tests compare them where the watcher is built, and read them everywhere).
+    static QStringList linuxBoxFilterRules();
+    /// Linux: Blender's version from the unpacked tarball's folder ("blender-5.2.3-linux-x64" gives "5.2.3"), else from
+    /// the "5.2" folder Blender keeps its own files in beside the program; empty when neither says.
+    static QString versionFromTarball(const QString& folder);
+    /// Linux: the resident memory a /proc/<pid>/status text reports (its VmRSS line), in bytes; -1 when it has none.
+    static qint64 vmRssBytes(const QByteArray& status);
+
+    void setBlender(const QString& app) { _blender = app; }
+    /// The watcher program (defaultWatcher() unless set, for tests).
+    void setWatcher(const QString& program) { _watch = program; }
+    /// A make's time limit (TIME_LIMIT_MS unless set, for tests).
+    void setTimeLimit(int milliseconds) { _timeLimitMs = milliseconds; }
+    /// The kernel's CPU cap (CPU_LIMIT_S unless set, for tests).
+    void setCpuLimit(int seconds) { _cpuLimitS = seconds; }
+    /// The running make's Blender process id (as its watcher wrote it), and its watcher's (0 when none), for tests.
+    qint64 processId() { return blenderPid(); }
+    qint64 watcherId() const { return _process ? _process->processId() : 0; }
+    QString blender() const { return _blender; }
+    bool isBusy() const { return _process != nullptr; }
+
+    /// One make: answers once through `done`, on this object's thread. `kind` is "object" or "room".
+    void make(const QString& script, const QString& kind, const QVector<Picture>& pictures,
+              std::function<void(const Made&)> done);
+    /// Ends the running make at once (Stop, Disconnect, quit); its `done` answers that it was stopped.
+    void cancel();
+    /// The checked model of an earlier make, by its id; empty when there is none.
+    QString modelPath(const QString& modelId) const;
+    /// Removes the models made so far (when the request they belong to ends).
+    void forgetModels();
+
+    /// The structure check of a model: glTF 2.0 binary, its length and chunks right, its JSON whole, every buffer and
+    /// image inside the file (no address to fetch), and no required extension outside the known few.
+    static bool checkGlb(const QByteArray& bytes, QString& why);
+    /// The report as it may go to Claude: known fields only, strings and lists cut short.
+    static QJsonObject cleanReport(const QJsonObject& report);
+    /// The four views (front, right, back, top: PNGs from the sandbox) decoded with size caps and drawn into one 2x2
+    /// JPEG; empty when one is missing or too big.
+    static QByteArray drawViews(const QStringList& pngs, QString& mimeType);
+
+private:
+    void finished(int exitCode, bool crashed);
+    void checkMemory();
+    void finish(Made made);
+    void kill();
+    qint64 blenderPid();
+    void selfTestEnded(int round, bool known, bool held, const QString& detail, bool lpac);
+
+    SelfTest _selfTest { SelfTest::NotRun };
+    int _selfTestRound { 0 };
+    bool _lpac { true };   // Windows: the box form the self-test settled on (the stricter one first)
+    std::function<void(bool, const QString&)> _selfTestDone;
+#ifdef Q_OS_WIN
+    MakeBox::Run* _box { nullptr };   // the running make's boxed Blender: the job is its keeper
+#endif
+    QString _folder;
+    QString _blender;
+    QString _watch;
+    QString _job;
+    // the watcher, Blender's parent: the app's only child for a make, and the only process it signals
+    QPointer<QProcess> _process;
+    qint64 _blenderPid { 0 };
+    QTimer* _limit { nullptr };
+    QTimer* _memory { nullptr };
+    qint64 _started { 0 };
+    QString _stopReason;
+    QString _stopCode;
+    int _timeLimitMs { TIME_LIMIT_MS };
+    int _cpuLimitS { CPU_LIMIT_S };
+    QByteArray _log;
+    std::function<void(const Made&)> _done;
+    QStringList _models;
+};
+
+#endif // hifi_MakeBlender_h

@@ -20,7 +20,7 @@
 #include <QtGui/QPainter>
 #include <QtGui/QPainterPath>
 #include <QtSvg/QSvgRenderer>
-#include <QtWidgets/QAction>
+#include <QAction>   // QtWidgets in Qt 5, QtGui in Qt 6
 #include <QtWidgets/QMainWindow>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QToolButton>

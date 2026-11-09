@@ -1,5 +1,4 @@
 module controlsUit
-AttachmentsTable 1.0 AttachmentsTable.qml
 BaseWebView 1.0 BaseWebView.qml
 Button 1.0 Button.qml
 CheckBox 1.0 CheckBox.qml
@@ -24,6 +23,7 @@ Slider 1.0 Slider.qml
 SpinBox 1.0 SpinBox.qml
 Switch 1.0 Switch.qml
 Table 1.0 Table.qml
+TableViewColumn 1.0 TableViewColumn.qml
 TabletContentSection 1.0 TabletContentSection.qml
 TabletHeader 1.0 TabletHeader.qml
 TextAction 1.0 TextAction.qml

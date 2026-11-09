@@ -242,7 +242,7 @@ Page {
                 label: "Choose Folder…"
                 onClicked: {
                     general.choosingFolder = true;
-                    Window.browseDirAsync("Choose a folder for snapshots", general.snapshotsFolder);
+                    WindowScriptingInterface.browseDirAsync("Choose a folder for snapshots", general.snapshotsFolder);
                 }
             }
             ListRow {
@@ -262,7 +262,7 @@ Page {
             }
             // the folder chooser's answer, when this page asked (Snap asks it too)
             Connections {
-                target: Window
+                target: WindowScriptingInterface
                 function onBrowseDirChanged(directory) {
                     if (general.choosingFolder) {
                         general.choosingFolder = false;
@@ -277,7 +277,7 @@ Page {
 
         Section {
             title: "Cache"
-            footer: "The cache keeps the models, sounds and pictures of the worlds you visit, so a second visit loads "
+            footer: "The cache keeps the models, sounds and images of the worlds you visit, so a second visit loads "
                 + "from this computer. Clearing it makes every world download again."
 
             ListRow {
@@ -803,6 +803,8 @@ Page {
         property bool isInput: true
         property bool open: false
         property string currentName: ""
+        // as PickerRow's: the choices indented, a full-width separator under the last
+        readonly property bool fullWidthSeparatorBelow: open && choices.count > 0
 
         width: parent ? parent.width : 0
 
@@ -838,10 +840,12 @@ Page {
         }
 
         Repeater {
+            id: choices
             model: devicePicker.open ? devicePicker.devices : null
             delegate: ListRow {
                 readonly property bool selected: root.inHeadset ? model.selectedHMD : model.selectedDesktop
                 label: model.devicename
+                indent: Theme.choiceIndent
                 clickable: true
                 onClicked: {
                     if (!selected) {
@@ -854,12 +858,8 @@ Page {
                     }
                     devicePicker.open = false;
                 }
-                Text {
-                    text: "✓"
-                    color: Theme.tint
-                    font.pixelSize: Theme.bodySize
-                    font.bold: true
-                    opacity: selected ? 1 : 0
+                Checkmark {
+                    checked: selected
                 }
             }
         }
@@ -1129,7 +1129,7 @@ Page {
     }
 
     Connections {
-        target: Window
+        target: WindowScriptingInterface
         function onBrowseChanged(filename) {
             if (appearance.awaitingSkin) {
                 appearance.awaitingSkin = false;
@@ -1177,7 +1177,7 @@ Page {
         Section {
             title: "Skin"
             footer: appearance.skinStatus !== "" ? appearance.skinStatus
-                : "A skin is pictures, colours and fonts only: nothing in it runs, so a skin from anyone is safe to load."
+                : "A skin is images, colours and fonts only: nothing in it runs, so a skin from anyone is safe to load."
 
             PickerRow {
                 label: "Skin"
@@ -1195,7 +1195,7 @@ Page {
                 label: "Load Skin…"
                 onClicked: {
                     appearance.awaitingSkin = true;
-                    Window.browseAsync("Load a Skin", "", "Skins (*.zip *.json)");
+                    WindowScriptingInterface.browseAsync("Load a Skin", "", "Skins (*.zip *.json)");
                 }
             }
             ListRow {
@@ -1240,7 +1240,7 @@ Page {
                 label: "Load Theme…"
                 onClicked: {
                     appearance.awaitingFile = true;
-                    Window.browseAsync("Load a Theme", "", "Themes (*.json)");
+                    WindowScriptingInterface.browseAsync("Load a Theme", "", "Themes (*.json)");
                 }
             }
         }

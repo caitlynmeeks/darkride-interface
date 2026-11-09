@@ -23,7 +23,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -80,7 +80,7 @@ HFMModel::Pointer readModel(const QString& path) {
     const QFileInfo info(path);
     const QString suffix = info.suffix().toLower();
     const QUrl url = QUrl::fromLocalFile(info.absoluteFilePath());
-    const QVariantHash mapping;
+    const hifi::VariantMultiHash mapping;
     if (suffix == "fbx") {
         return FBXSerializer().read(data, mapping, url);
     }
@@ -128,7 +128,7 @@ RigKind classify(const HFMModel& model, QString& why) {
 
 QString avatarName(const QString& path) {
     QString name = QFileInfo(path).completeBaseName();
-    name.replace(QRegExp("[^A-Za-z0-9_-]+"), "_");
+    name.replace(QRegularExpression("[^A-Za-z0-9_-]+"), "_");
     return name.isEmpty() ? QString("avatar") : name;
 }
 

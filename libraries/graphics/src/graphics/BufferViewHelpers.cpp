@@ -140,7 +140,7 @@ QVariant glmVecToVariant(const T& v, bool asArray /*= false*/) {
 
 template <typename T>
 const T glmVecFromVariant(const QVariant& v) {
-    auto isMap = v.type() == (QVariant::Type)QMetaType::QVariantMap;
+    auto isMap = v.userType() == QMetaType::QVariantMap;
     static const auto len = T().length();
     const auto& components = isMap ? XYZW : ZERO123;
     T result;

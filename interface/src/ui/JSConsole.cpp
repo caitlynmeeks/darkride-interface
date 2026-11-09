@@ -10,6 +10,7 @@
 //
 
 #include "JSConsole.h"
+#include <QtCore/QRegularExpression>
 
 #include <QFuture>
 #include <QLabel>
@@ -147,7 +148,7 @@ JSConsole::JSConsole(QWidget* parent, const ScriptEnginePointer& scriptEngine) :
     QWidget(parent),
     _ui(new Ui::Console),
     _currentCommandInHistory(NO_CURRENT_HISTORY_COMMAND),
-    _savedHistoryFilename(QStandardPaths::writableLocation(QStandardPaths::DataLocation) + "/" + HISTORY_FILENAME),
+    _savedHistoryFilename(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/" + HISTORY_FILENAME),
     _commandHistory(_readLines(_savedHistoryFilename)),
     _completer(new QCompleter(this)) {
 
@@ -195,7 +196,7 @@ JSConsole::JSConsole(QWidget* parent, const ScriptEnginePointer& scriptEngine) :
 
     resizeTextInput();
 
-    connect(&_executeWatcher, &QFutureWatcher<QScriptValue>::finished, this, &JSConsole::commandFinished);
+    connect(&_executeWatcher, &QFutureWatcher<QVariantMap>::finished, this, &JSConsole::commandFinished);
 }
 
 // Darkride's own look, the dark of Build mode's panels (styles/editor.qss), or the skin's colours where it gives them
@@ -403,24 +404,23 @@ void JSConsole::executeCommand(const QString& command) {
 
     appendMessage(">", "<span style='" + COMMAND_STYLE + "'>" + command.toHtmlEscaped() + "</span>");
 
+    // evaluated on the engine's own thread, either engine (ScriptEngine::consoleEvaluate), while this window waits
     QWeakPointer<ScriptEngine> weakScriptEngine = _scriptEngine;
-    auto consoleFileName = _consoleFileName;
-    QFuture<QScriptValue> future = QtConcurrent::run([weakScriptEngine, consoleFileName, command]()->QScriptValue{
-        QScriptValue result;
+    QFuture<QVariantMap> future = QtConcurrent::run([weakScriptEngine, command]() -> QVariantMap {
+        QVariantMap shown;
         auto scriptEngine = weakScriptEngine.lock();
         if (scriptEngine) {
-            BLOCKING_INVOKE_METHOD(scriptEngine.data(), "evaluate",
-                Q_RETURN_ARG(QScriptValue, result),
-                Q_ARG(const QString&, command),
-                Q_ARG(const QString&, consoleFileName));
+            ScriptEngine* engine = scriptEngine.data();
+            QMetaObject::invokeMethod(engine, [engine, command, &shown] { shown = engine->consoleEvaluate(command); },
+                                      Qt::BlockingQueuedConnection);
         }
-        return result;
+        return shown;
     });
     _executeWatcher.setFuture(future);
 }
 
 void JSConsole::commandFinished() {
-    QScriptValue result = _executeWatcher.result();
+    const QVariantMap shown = _executeWatcher.result();
 
     _ui->promptTextEdit->setDisabled(false);
 
@@ -429,11 +429,11 @@ void JSConsole::commandFinished() {
         _ui->promptTextEdit->setFocus();
     }
 
-    // no engine when the console was closed while the command ran
-    bool error = ((_scriptEngine && _scriptEngine->hasUncaughtException()) || result.isError());
+    // nothing shown when the console was closed while the command ran
+    bool error = shown.value("error").toBool();
     QString gutter = error ? GUTTER_ERROR : GUTTER_PREVIOUS_COMMAND;
     QString resultColor = error ? RESULT_ERROR_STYLE : RESULT_SUCCESS_STYLE;
-    QString resultStr = "<span style='" + resultColor + "'>" + result.toString().toHtmlEscaped() + "</span>";
+    QString resultStr = "<span style='" + resultColor + "'>" + shown.value("text").toString().toHtmlEscaped() + "</span>";
     appendMessage(gutter, resultStr);
 
     resetCurrentCommandHistory();
@@ -570,11 +570,10 @@ bool JSConsole::eventFilter(QObject* sender, QEvent* event) {
             const int MODULE_INDEX = 3;
             const int PROPERTY_INDEX = 4;
             // TODO: disallow invalid characters on left of property
-            QRegExp regExp("((([A-Za-z0-9_\\.]+)\\.)|(?!\\.))([a-zA-Z0-9_]*)$");
-            regExp.indexIn(leftOfCursor);
-            auto rexExpCapturedTexts = regExp.capturedTexts();
-            auto memberOf = rexExpCapturedTexts[MODULE_INDEX];
-            completionPrefix = rexExpCapturedTexts[PROPERTY_INDEX];
+            const QRegularExpression regExp("((([A-Za-z0-9_\\.]+)\\.)|(?!\\.))([a-zA-Z0-9_]*)$");
+            const QRegularExpressionMatch match = regExp.match(leftOfCursor);
+            auto memberOf = match.captured(MODULE_INDEX);   // "" when that group took no part
+            completionPrefix = match.captured(PROPERTY_INDEX);
             bool switchedModule = false;
             if (memberOf != _completerModule) {
                 _completerModule = memberOf;
@@ -658,7 +657,7 @@ void JSConsole::appendMessage(const QString& gutter, const QString& message) {
 
     QWidget* logLine = new QWidget(_ui->logArea);
     QHBoxLayout* layout = new QHBoxLayout(logLine);
-    layout->setMargin(0);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
 
     QLabel* gutterLabel = new QLabel(logLine);

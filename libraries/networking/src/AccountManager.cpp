@@ -38,6 +38,7 @@
 #include "udt/PacketHeaders.h"
 #include "RSAKeypairGenerator.h"
 #include "SharedUtil.h"
+#include <shared/WireStream.h>
 
 
 const bool VERBOSE_HTTP_REQUEST_DEBUGGING = false;
@@ -84,10 +85,14 @@ AccountManager::AccountManager(bool accountSettingsEnabled, UserAgentGetter user
     _accountSettingsEnabled(accountSettingsEnabled)
 {
     qRegisterMetaType<OAuthAccessToken>("OAuthAccessToken");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)  // Qt 6 registers the stream operators with the type
     qRegisterMetaTypeStreamOperators<OAuthAccessToken>("OAuthAccessToken");
+#endif
 
     qRegisterMetaType<DataServerAccountInfo>("DataServerAccountInfo");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)  // Qt 6 registers the stream operators with the type
     qRegisterMetaTypeStreamOperators<DataServerAccountInfo>("DataServerAccountInfo");
+#endif
 
     qRegisterMetaType<QNetworkAccessManager::Operation>("QNetworkAccessManager::Operation");
     qRegisterMetaType<JSONCallbackParameters>("JSONCallbackParameters");
@@ -153,6 +158,7 @@ QVariantMap accountMapFromFile(bool& success) {
     if (accountFile.open(QIODevice::ReadOnly)) {
         // grab the current QVariantMap from the settings file
         QDataStream readStream(&accountFile);
+        hifi::stream::pin(readStream);
         QVariantMap accountMap;
 
         readStream >> accountMap;
@@ -342,7 +348,7 @@ void AccountManager::sendRequest(const QString& path,
             // double check if the finished network reply had a session ID in the header and make
             // sure that our session ID matches that value if so
             if (networkReply->hasRawHeader(METAVERSE_SESSION_ID_HEADER)) {
-                _sessionID = networkReply->rawHeader(METAVERSE_SESSION_ID_HEADER);
+                _sessionID = QUuid(networkReply->rawHeader(METAVERSE_SESSION_ID_HEADER));
             }
         });
 
@@ -432,6 +438,7 @@ bool writeAccountMapToFile(const QVariantMap& accountMap) {
         accountFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 
         QDataStream writeStream(&accountFile);
+        hifi::stream::pin(writeStream);
 
         // persist the updated account QVariantMap to file
         writeStream << accountMap;
@@ -575,7 +582,7 @@ void AccountManager::requestAccessToken(const QString& login, const QString& pas
     postData.append("grant_type=password&");
     postData.append("username=" + QUrl::toPercentEncoding(login) + "&");
     postData.append("password=" + QUrl::toPercentEncoding(password) + "&");
-    postData.append("scope=" + ACCOUNT_MANAGER_REQUESTED_SCOPE);
+    postData.append(QString("scope=" + ACCOUNT_MANAGER_REQUESTED_SCOPE).toUtf8());
 
     request.setUrl(grantURL);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
@@ -605,7 +612,7 @@ void AccountManager::requestAccessTokenWithKey(const QString& username, const QS
     postData.append("grant_type=client_credentials&");
     postData.append("client_id=" + QUrl::toPercentEncoding(username) + "&");
     postData.append("client_secret=" + QUrl::toPercentEncoding(key) + "&");
-    postData.append("scope=" + ACCOUNT_MANAGER_REQUESTED_SCOPE);
+    postData.append(QString("scope=" + ACCOUNT_MANAGER_REQUESTED_SCOPE).toUtf8());
 
     request.setUrl(grantURL);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
@@ -626,9 +633,9 @@ void AccountManager::requestAccessTokenWithAuthCode(const QString& authCode, con
 
     QByteArray postData;
     postData.append("grant_type=authorization_code&");
-    postData.append("client_id=" + clientId + "&");
-    postData.append("client_secret=" + clientSecret + "&");
-    postData.append("code=" + authCode + "&");
+    postData.append(QString("client_id=" + clientId + "&").toUtf8());
+    postData.append(QString("client_secret=" + clientSecret + "&").toUtf8());
+    postData.append(QString("code=" + authCode + "&").toUtf8());
     postData.append("redirect_uri=" + QUrl::toPercentEncoding(redirectUri));
 
     request.setUrl(grantURL);
@@ -658,14 +665,18 @@ void AccountManager::refreshAccessToken() {
         QByteArray postData;
         postData.append("grant_type=refresh_token&");
         postData.append("refresh_token=" + QUrl::toPercentEncoding(_accountInfo.getAccessToken().refreshToken) + "&");
-        postData.append("scope=" + ACCOUNT_MANAGER_REQUESTED_SCOPE);
+        postData.append(QString("scope=" + ACCOUNT_MANAGER_REQUESTED_SCOPE).toUtf8());
 
         request.setUrl(grantURL);
         request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
 
         QNetworkReply* requestReply = networkAccessManager.post(request, postData);
         connect(requestReply, &QNetworkReply::finished, this, &AccountManager::refreshAccessTokenFinished);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+        connect(requestReply, SIGNAL(errorOccurred(QNetworkReply::NetworkError)), this, SLOT(refreshAccessTokenError(QNetworkReply::NetworkError)));
+#else
         connect(requestReply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(refreshAccessTokenError(QNetworkReply::NetworkError)));
+#endif
     } else {
         qCWarning(networking) << "Cannot refresh access token without refresh token."
             << "Access token will need to be manually refreshed.";
@@ -790,7 +801,11 @@ void AccountManager::requestProfile() {
 
     QNetworkReply* profileReply = networkAccessManager.get(profileRequest);
     connect(profileReply, &QNetworkReply::finished, this, &AccountManager::requestProfileFinished);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+    connect(profileReply, SIGNAL(errorOccurred(QNetworkReply::NetworkError)), this, SLOT(requestProfileError(QNetworkReply::NetworkError)));
+#else
     connect(profileReply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(requestProfileError(QNetworkReply::NetworkError)));
+#endif
 }
 
 void AccountManager::requestProfileFinished() {
@@ -840,7 +855,11 @@ void AccountManager::requestAccountSettings() {
 
     QNetworkReply* lockerReply = networkAccessManager.get(lockerRequest);
     connect(lockerReply, &QNetworkReply::finished, this, &AccountManager::requestAccountSettingsFinished);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+    connect(lockerReply, SIGNAL(errorOccurred(QNetworkReply::NetworkError)), this, SLOT(requestAccountSettingsError(QNetworkReply::NetworkError)));
+#else
     connect(lockerReply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(requestAccountSettingsError(QNetworkReply::NetworkError)));
+#endif
 
     _settings.startedLoading();
 }
@@ -918,7 +937,11 @@ void AccountManager::postAccountSettings() {
 
     QNetworkReply* lockerReply = networkAccessManager.put(lockerRequest, postData);
     connect(lockerReply, &QNetworkReply::finished, this, &AccountManager::postAccountSettingsFinished);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+    connect(lockerReply, SIGNAL(errorOccurred(QNetworkReply::NetworkError)), this, SLOT(postAccountSettingsError(QNetworkReply::NetworkError)));
+#else
     connect(lockerReply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(postAccountSettingsError(QNetworkReply::NetworkError)));
+#endif
 }
 
 void AccountManager::postAccountSettingsFinished() {

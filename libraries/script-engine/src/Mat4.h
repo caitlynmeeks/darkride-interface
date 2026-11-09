@@ -16,7 +16,6 @@
 
 #include <QObject>
 #include <QString>
-#include <QtScript/QScriptable>
 #include <QVector>
 #include <glm/glm.hpp>
 #include "RegisteredMetaTypes.h"
@@ -37,8 +36,12 @@
  */
 
 /// Scriptable Mat4 object.  Used exclusively in the JavaScript API
-class Mat4 : public QObject, protected QScriptable {
+class Mat4 : public QObject {
     Q_OBJECT
+
+public:
+    /// Made by its script engine as a child (what print writes through), or for a QML context with no parent.
+    explicit Mat4(QObject* parent = nullptr) : QObject(parent) {}
 
 public slots:
 

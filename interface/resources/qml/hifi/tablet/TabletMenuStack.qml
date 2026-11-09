@@ -9,9 +9,10 @@
 //
 
 import QtQuick 2.5
-import QtQuick.Controls 1.4
+import QtQuick.Controls 2.3
 
 import "."
+import "../../desktop" as VrDesktop
 
 Item {
     id: root
@@ -32,6 +33,9 @@ Item {
             TabletMenuView {
                 id: subMenu
                 onSelected: d.handleSelection(subMenu, currentItem, item)
+                // a menu page goes when it leaves the stack (a popped page, or all of them on clear), as Controls 1's
+                // destroyOnPop did: the stack only destroys the pages it made itself
+                StackView.onRemoved: destroy()
             }
         }
         property var delay: Timer { // No setTimeout in QML.
@@ -72,21 +76,27 @@ Item {
             closeLastMenu();
         }
 
+        // a menu's text as its menu bar shows it: "&" marks a keyboard letter there and "&&" is an "&" (Controls 1's
+        // menu items took the marks out themselves)
+        function shownText(text) {
+            return String(text).replace(/&(&?)/g, "$1");
+        }
+
         function toModel(items, newMenu) {
             var result = modelMaker.createObject(tabletMenu);
 
             for (var i = 0; i < items.length; ++i) {
                 var item = items[i];
                 switch (item.type) {
-                case MenuItemType.Menu:
-                    result.append({"name": item.title, "item": item})
+                case VrDesktop.VrMenuEntry.Menu:
+                    result.append({"name": shownText(item.title), "item": item})
                     break;
-                case MenuItemType.Item:
+                case VrDesktop.VrMenuEntry.Item:
                     if (item.text !== "Users Online") {
-                        result.append({"name": item.text, "item": item})
+                        result.append({"name": shownText(item.text), "item": item})
                     }
                     break;
-                case MenuItemType.Separator:
+                case VrDesktop.VrMenuEntry.Separator:
                     result.append({"name": "", "item": item})
                     break;
                 }
@@ -115,7 +125,7 @@ Item {
         }
 
         function pushMenu(newMenu) {
-            d.push({ item:newMenu, destroyOnPop: true});
+            d.push(newMenu);
             topMenu = newMenu;
             topMenu.focus = true;
             topMenu.forceActiveFocus();
@@ -141,11 +151,6 @@ Item {
             }
         }
 
-        property Component exclusiveGroupMaker: Component {
-            ExclusiveGroup {
-            }
-        }
-
         function buildMenu(items) {
             // Menus must be childed to desktop for Z-ordering
             var newMenu = menuViewMaker.createObject(tabletMenu);
@@ -166,14 +171,14 @@ Item {
             }
 
             switch (item.type) {
-                case MenuItemType.Menu:
+                case VrDesktop.VrMenuEntry.Menu:
                     var target = Qt.vector2d(topMenu.x, topMenu.y).plus(Qt.vector2d(selectedItem.x + 96, selectedItem.y));
-                    buildMenu(item.items, target).objectName = item.title;
+                    buildMenu(item.items, target).objectName = shownText(item.title);
                     // show current menu level on nav bar
-                    breadcrumbText.text = item.title;
+                    breadcrumbText.text = shownText(item.title);
                     break;
 
-                case MenuItemType.Item:
+                case VrDesktop.VrMenuEntry.Item:
                     console.log("Triggering " + item.text)
                     // Don't block waiting for modal dialogs and such that the menu might open.
                     delay.trigger(item);

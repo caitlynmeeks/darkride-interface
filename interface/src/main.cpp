@@ -25,6 +25,9 @@
 
 #include "AddressManager.h"
 #include "Application.h"
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtWebEngineQuick/QtWebEngineQuick>
+#endif
 #include "ClientOptions.h"
 #include "InterfaceLogging.h"
 #include "MainWindow.h"
@@ -47,6 +50,20 @@ int main(int argc, const char* argv[]) {
     // own and is unchanged
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the panels' QML is drawn for Qt 5's default Controls style, which Qt 6 calls "Basic"; left alone, Qt 6 picks
+    // the platform's native style (macOS), which ignores our custom backgrounds, ticks and slider handles. A style the
+    // user's environment already names is kept. Before the QML engine starts
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE")) {
+        qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+    }
+    // The docked panels' windows (ui/QmlDock.h) draw on the main thread, as a QQuickWidget does: Qt's threaded loop would
+    // make their GL contexts current on a render thread, where macOS traps the context's update on a resize
+    // (team/rendering/QT6-R1-ENTRY.md). Here, not at the first dock: setenv racing another thread's getenv isn't safe
+    if (!qEnvironmentVariableIsSet("QSG_RENDER_LOOP")) {
+        qputenv("QSG_RENDER_LOOP", "basic");
+    }
+#endif
     StartupProfiler::phase("main: surface format, application name, command line");
 #ifdef Q_OS_MACOS
     // before anything of AppKit's runs: AutoFill is set up when the app first becomes active
@@ -142,6 +159,21 @@ int main(int argc, const char* argv[]) {
         PROFILE_SYNC_END(startup, "main startup", "");
         PROFILE_SYNC_BEGIN(startup, "app full ctor", "");
         StartupProfiler::phase("Application: QApplication, main window, file logger");
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Qt 6 wants the web engine initialized before the application object (it sets AA_ShareOpenGLContexts and
+        // Chromium's early state; our Qt 5 code skipped it and set Chromium's share context by hand after the GL
+        // view existed, ApplicationStartup.cpp:1746). Without it, on macOS 26 every web helper failed its Mach port
+        // rendezvous with the browser process ("Permission denied", the helper taking launchd for its parent), while a
+        // 20-line QtWebEngineQuick app with this call worked (11-05 runs 15-23). The share context Qt makes at start
+        // is the 3.2 core one main sets as the default format, and initializeGL takes an existing global share
+        // context as it did when QtWebEngineWidgets made one.
+#ifndef Q_OS_MACOS
+        // Qt's share context takes the default format of this moment. macOS set it above; elsewhere it was only set in
+        // openWindow(), after the application object, which would leave Qt's context on Qt's own default, not core
+        QSurfaceFormat::setDefaultFormat(getDefaultOpenGLSurfaceFormat());
+#endif
+        QtWebEngineQuick::initialize();
+#endif
         Application app(argcExtended, const_cast<char**>(argvExtended.data()), startupTime, runningMarkerExisted);
         PROFILE_SYNC_END(startup, "app full ctor", "");
 

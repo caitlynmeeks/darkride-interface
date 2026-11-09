@@ -147,7 +147,7 @@ namespace Setting {
         void deprecate() {
             if (_isSet) {
                 if (get() != getDefault()) {
-                    qInfo().nospace() << "[DEPRECATION NOTICE] " << _key << "(" << get() << ") has been deprecated, and has no effect";
+                    qInfo().nospace() << "[DEPRECATION NOTICE] " << _key << "(" << getVariant() << ") has been deprecated, and has no effect";
                 } else {
                     remove();
                 }

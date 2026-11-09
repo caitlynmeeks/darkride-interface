@@ -35,26 +35,11 @@
 #include "EntitiesScriptEngineProvider.h"
 #include "EntityItemProperties.h"
 
-#include "BaseScriptEngine.h"
-
 class EntityTree;
 class MeshProxy;
 
 extern const QString GRABBABLE_USER_DATA;
 extern const QString NOT_GRABBABLE_USER_DATA;
-
-// helper factory to compose standardized, async metadata queries for "magic" Entity properties
-// like .script and .serverScripts.  This is used for automated testing of core scripting features
-// as well as to provide early adopters a self-discoverable, consistent way to diagnose common
-// problems with their own Entity scripts.
-class EntityPropertyMetadataRequest {
-public:
-    EntityPropertyMetadataRequest(BaseScriptEngine* engine) : _engine(engine) {};
-    bool script(EntityItemID entityID, QScriptValue handler);
-    bool serverScripts(EntityItemID entityID, QScriptValue handler);
-private:
-    QPointer<BaseScriptEngine> _engine;
-};
 
 /**jsdoc
  * The result of a {@link Entities.findRayIntersection|findRayIntersection} search using a {@link PickRay}.
@@ -84,8 +69,6 @@ public:
     QVariantMap extraInfo;
 };
 Q_DECLARE_METATYPE(RayToEntityIntersectionResult)
-QScriptValue RayToEntityIntersectionResultToScriptValue(QScriptEngine* engine, const RayToEntityIntersectionResult& results);
-void RayToEntityIntersectionResultFromScriptValue(const QScriptValue& object, RayToEntityIntersectionResult& results);
 
 class ParabolaToEntityIntersectionResult {
 public:
@@ -163,7 +146,6 @@ class EntityScriptingInterface : public OctreeScriptingInterface, public Depende
     Q_OBJECT
     Q_PROPERTY(QUuid keyboardFocusEntity READ getKeyboardFocusEntity WRITE setKeyboardFocusEntity)
 
-    friend EntityPropertyMetadataRequest;
 public:
     EntityScriptingInterface(bool bidOnSimulationOwnership);
 
@@ -206,8 +188,7 @@ public:
      * var propertySets = Entities.getMultipleEntityProperties(entityIDs, "name");
      * print("Nearby entity names: " + JSON.stringify(propertySets));
     */
-    static QScriptValue getMultipleEntityProperties(QScriptContext* context, QScriptEngine* engine);
-    QScriptValue getMultipleEntityPropertiesInternal(QScriptEngine* engine, QVector<QUuid> entityIDs, const QScriptValue& extendedDesiredProperties);
+    // (the JavaScript guest composes it from getEntityProperties, one call per id)
 
     QUuid addEntityInternal(const EntityItemProperties& properties, entity::HostType entityHostType);
 
@@ -822,14 +803,8 @@ public slots:
      */
     /// If the scripting context has visible entities, this will determine a ray intersection, the results
     /// may be inaccurate if the engine is unable to access the visible entities, in which case result.accurate
-    /// will be false.
-    Q_INVOKABLE RayToEntityIntersectionResult findRayIntersection(const PickRay& ray, bool precisionPicking = false,
-            const QScriptValue& entityIdsToInclude = QScriptValue(), const QScriptValue& entityIdsToDiscard = QScriptValue(),
-            bool visibleOnly = false, bool collidableOnly = false) const;
-
-    // findRayIntersection with the lists as lists of IDs, for the WebAssembly script engine (a name of its own, as
-    // setIgnoreItemsVector has: QtScript would find a same-named overload ambiguous with the QScriptValue one). Without
-    // it a module's call with lists reaches the shorter form and the lists are dropped.
+    /// will be false. What a script's findRayIntersection(...) reaches (the JavaScript guest maps the name), the
+    /// lists as lists of IDs.
     Q_INVOKABLE RayToEntityIntersectionResult findRayIntersectionVector(const PickRay& ray, bool precisionPicking,
             const QVector<QUuid>& entityIdsToInclude, const QVector<QUuid>& entityIdsToDiscard, bool visibleOnly,
             bool collidableOnly) const;
@@ -860,9 +835,6 @@ public slots:
      * @param {string} errorInfo - <code>""</code> if there is a server entity script running, otherwise it may contain extra 
      *     information on the error.
      */
-    Q_INVOKABLE bool getServerScriptStatus(const QUuid& entityID, QScriptValue callback);
-    // The same request for the WebAssembly script engine, the callback as a ScriptCallback (QtScript never picks this
-    // overload: it cannot make a ScriptCallback)
     Q_INVOKABLE bool getServerScriptStatus(const QUuid& entityID, const ScriptCallback& callback);
 
     /**jsdoc
@@ -893,10 +865,8 @@ public slots:
      * @param {object} result - The metadata for the requested entity property if there was no error, otherwise
      *     <code>undefined</code>.
      */
-    Q_INVOKABLE bool queryPropertyMetadata(const QUuid& entityID, QScriptValue property, QScriptValue scopeOrCallback,
-        QScriptValue methodOrName = QScriptValue());
-    // The same query for the WebAssembly script engine: the callback is called with (error, result), each a map or
-    // null; the module's runtime gives the scope forms and makes the error an Error, as makeError did
+    // The callback is called with (error, result), each a map or null; the JavaScript guest gives the scope forms
+    // and makes the error an Error.
     Q_INVOKABLE bool queryPropertyMetadata(const QUuid& entityID, const QString& property, const ScriptCallback& callback);
 
 
@@ -1846,8 +1816,7 @@ public slots:
       *     {@link Graphics} API instead. 
       */
     // FIXME move to a renderable entity interface
-    Q_INVOKABLE void getMeshes(const QUuid& entityID, QScriptValue callback);
-    // The same for the WebAssembly script engine, the callback as a ScriptCallback, called before this returns
+    // the callback is called before this returns
     Q_INVOKABLE void getMeshes(const QUuid& entityID, const ScriptCallback& callback);
 
     /**jsdoc

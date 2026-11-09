@@ -15,7 +15,6 @@
 
 #include <ResourceManager.h>
 
-#include "QtScriptEditFilterEngine.h"
 
 namespace {
 
@@ -24,11 +23,9 @@ EntityEditFilterEngineFactory& engineFactory() {
     return factory;
 }
 
+// the entity server sets the engine (the WebAssembly one); without it a filter can't run
 EntityEditFilterEnginePointer makeEngine(const EntityItemID& entityID) {
-    if (engineFactory()) {
-        return engineFactory()(entityID);
-    }
-    return std::make_unique<QtScriptEditFilterEngine>(entityID);
+    return engineFactory() ? engineFactory()(entityID) : EntityEditFilterEnginePointer();
 }
 
 // A property's name ("position", "grab.grabbable") names one flag; a group's name alone names every property of
@@ -234,7 +231,10 @@ void EntityEditFilters::addFilterSource(EntityItemID entityID, const QString& ur
     filterData.engine = makeEngine(entityID);
     filterData.callLock = std::make_shared<std::mutex>();
     QString error;
-    if (!filterData.engine->load(source, url, error)) {
+    if (!filterData.engine) {
+        error = "no script engine for edit filters in this process";
+    }
+    if (!filterData.engine || !filterData.engine->load(source, url, error)) {
         qDebug() << "Filter" << url << "not loaded:" << error << "- will reject all edits for those without lock rights.";
         filterData.engine.reset();
         filterData.rejectAll = true;

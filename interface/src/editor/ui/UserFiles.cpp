@@ -73,7 +73,7 @@ UserFile::Kind UserFile::kindOf(const QString& name, bool folder) {
 QString UserFile::kindName(Kind kind) {
     switch (kind) {
         case Kind::Folder: return "Folder";
-        case Kind::Picture: return "Picture";
+        case Kind::Picture: return "Image";
         case Kind::Model: return "Model";
         case Kind::Avatar: return "Avatar";
         case Kind::Sound: return "Sound";
@@ -415,7 +415,7 @@ void UserFiles::run(const QString& route, QNetworkAccessManager::Operation opera
                     const QList<QPair<QString, QString>>& query, const QString& what) {
     QNetworkReply* reply = send(route, operation, query);
     if (!reply) {
-        emit failed("Could not " + what + ": you are not logged in");
+        emit failed("Could not " + what + ": you're signed out");
         return;
     }
     connect(reply, &QNetworkReply::finished, this, [this, reply, what] {

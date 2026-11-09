@@ -140,6 +140,10 @@ gpu::TexturePointer processImage(std::shared_ptr<QIODevice> content, const std::
 void convertToTextureWithMips(gpu::Texture* texture, Image&& image, gpu::BackendTarget target, const std::atomic<bool>& abortProcessing = false, int face = -1);
 void convertToTexture(gpu::Texture* texture, Image&& image, gpu::BackendTarget target, const std::atomic<bool>& abortProcessing = false, int face = -1, int mipLevel = 0);
 
+// The picture read from a file's bytes, as a texture starts: null when the file is not a picture this engine reads
+// (a picture whose header gives no size or one past the limits is refused before any pixel is decoded)
+Image processRawImageData(QIODevice& content, const std::string& filename);
+
 } // namespace image
 
 #endif // hifi_image_TextureProcessing_h

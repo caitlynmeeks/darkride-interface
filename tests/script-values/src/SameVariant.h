@@ -2,8 +2,8 @@
 //  SameVariant.h
 //  tests/script-values/src
 //
-//  Whether two variants agree in type and value, nested values included, for the tests that compare what
-//  QtScript and the plain values give.
+//  Whether two variants agree in type and value, nested values included, for the tests that compare two writings
+//  of the same values.
 //
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html

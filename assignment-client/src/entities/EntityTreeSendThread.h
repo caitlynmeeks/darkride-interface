@@ -57,8 +57,15 @@ private:
     quint64 _lastCompletionLog { 0 };
     EntityPriorityQueue _sendQueue;
     std::unordered_map<EntityItem*, uint64_t> _knownState;
+    // ancestors and descendants flagged since the last traversal start; the next traversal start puts them on the queue
+    std::vector<EntityItemPointer> _newExtraEntities;
+    bool _tracksFamilies { false };   // the receiver is one of the domain's own servers (the constructor)
     quint64 _diagLastLog { 0 };       // TIVOLI_STREAM_DIAG: the last periodic line's time
     int _diagSentSinceLog { 0 };      // TIVOLI_STREAM_DIAG: entities written out since that line
+    int _diagDroppedProperties { 0 }; // TIVOLI_STREAM_DIAG: entities whose last properties were too big to send, so far
+
+    // an entity whose remaining properties don't fit even an empty packet: they are dropped for this viewer, once
+    void dropUnsendableProperties(const EntityItem& entity, bool destinationCanGetAndSetPrivateUserData);
 
     // packet construction stuff
     EntityTreeElementExtraEncodeDataPointer _extraEncodeData { new EntityTreeElementExtraEncodeData() };

@@ -17,7 +17,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-#include <QtCore/QRegExp>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QUrl>
 #include <QtGui/QFontDatabase>
 #include <QtGui/QImageReader>
@@ -222,13 +222,13 @@ bool fourNumbers(const QJsonValue& value, int out[4]) {
 // a picture of the skin's: its absolute path, if it is one the skin holds and isn't too big; else the problem
 QString picture(const Skin& skin, const QString& name, QString& error) {
     if (!allowedName(name) || QFileInfo(name).suffix().toLower() == "json") {
-        error = "\"" + name + "\" isn't a picture in the skin";
+        error = "\"" + name + "\" isn't an image in the skin";
         return QString();
     }
     const QString path = QDir(skin.folder).filePath(name);
     const QSize size = QImageReader(path).size();
     if (!size.isValid()) {
-        error = "the skin has no picture \"" + name + "\"";
+        error = "the skin has no image \"" + name + "\"";
         return QString();
     }
     if (size.width() > MAX_PICTURE_SIDE || size.height() > MAX_PICTURE_SIDE) {
@@ -914,8 +914,8 @@ QString Skins::install(const QString& pathOrUrl) {
     }
     const QJsonObject json = QJsonDocument::fromJson(files.value(prefix + SKIN_FILE)).object();
     QString id = json["name"].toString().trimmed().toLower();
-    id.replace(QRegExp("[^a-z0-9]+"), "-");
-    id = id.left(40).remove(QRegExp("^-+|-+$"));
+    id.replace(QRegularExpression("[^a-z0-9]+"), "-");
+    id = id.left(40).remove(QRegularExpression("^-+|-+$"));
     if (id.isEmpty()) {
         return "skin.json has no name";
     }

@@ -395,14 +395,18 @@ inline glm::vec4 extractFov( const glm::mat4& m) {
     return result;
 }
 
-inline bool operator<(const glm::vec3& lhs, const glm::vec3& rhs) {
-    return (lhs.x < rhs.x) || (
-                (lhs.x == rhs.x) && (
-                     (lhs.y < rhs.y) || (
-                        (lhs.y == rhs.y) && (lhs.z < rhs.z)
-                     )
-                )
-           );
+// In glm's namespace, so a comparison made from inside std:: finds it by argument lookup: std::less, and Qt 6's comparison
+// of a QList<glm::vec3>, which MSVC refuses otherwise
+namespace glm {
+    inline bool operator<(const vec3& lhs, const vec3& rhs) {
+        return (lhs.x < rhs.x) || (
+                    (lhs.x == rhs.x) && (
+                         (lhs.y < rhs.y) || (
+                            (lhs.y == rhs.y) && (lhs.z < rhs.z)
+                         )
+                    )
+               );
+    }
 }
 
 #endif // hifi_GLMHelpers_h

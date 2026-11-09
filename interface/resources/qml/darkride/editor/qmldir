@@ -1,0 +1,3 @@
+singleton BuildTheme 1.0 BuildTheme.qml
+BuildButton 1.0 BuildButton.qml
+BuildToggle 1.0 BuildToggle.qml

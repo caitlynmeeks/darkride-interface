@@ -17,27 +17,57 @@
 #include <glm/glm.hpp>
 #include <QtWidgets/QMessageBox>
 #include <OffscreenUi.h>
+#include <PathUtils.h>
+#include <ScriptCaller.h>
 #include <ScriptEngines.h>
+#include "InterfaceLogging.h"
 #include "avatar/AvatarManager.h"
 #include "avatar/AvatarImporter.h"
 
 using namespace std;
 
+namespace {
+// The world the avatar's scripts run as (ScriptCaller): what they make is theirs, not the world's nor the visitor's,
+// and goes when the avatar changes. 0: none running.
+int avatarScriptsWorld = 0;
+}
+
+// An avatar's scripts (the .fst's script lines) come with content the visitor wears, not from the visitor: they run
+// under a world's rules (ScriptEngine::holdsWorldRules) as a world of their own, and only from the avatar's own
+// folder (security finding #66). A script line that points elsewhere is logged and not loaded.
 void Application::loadAvatarScripts(const QVector<QString>& urls) {
     auto scriptEngines = DependencyManager::get<ScriptEngines>();
     auto runningScripts = scriptEngines->getRunningScripts();
+    // a path's dots are decoded before its segments are normalized, so an encoded ".." counts as one
+    auto plainPath = [](const QUrl& given) {
+        QUrl url = given;
+        url.setPath(url.path(QUrl::FullyDecoded), QUrl::DecodedMode);
+        return url.adjusted(QUrl::NormalizePathSegments);
+    };
+    const QUrl avatarUrl = plainPath(getMyAvatar()->getSkeletonModelURL());
     for (auto url : urls) {
-        int index = runningScripts.indexOf(url);
-        if (index < 0) {
-            auto scriptEnginePointer = scriptEngines->loadScript(url, false);
-            if (scriptEnginePointer) {
-                scriptEnginePointer->setType(ScriptEngine::Type::AVATAR);
+        const QUrl scriptUrl = plainPath(QUrl(url));
+        if (!PathUtils::isDescendantOf(scriptUrl, avatarUrl)) {
+            qCWarning(interfaceapp) << "Avatar script" << url << "is outside the avatar's own folder"
+                                    << PathUtils::stripFilename(avatarUrl) << "and is not loaded";
+            continue;
+        }
+        if (runningScripts.indexOf(url) < 0) {
+            if (avatarScriptsWorld == 0) {
+                avatarScriptsWorld = ScriptCaller::newWorld();
             }
+            scriptEngines->loadAvatarScript(url, avatarScriptsWorld);
         }
     }
 }
 
 void Application::unloadAvatarScripts() {
+    if (avatarScriptsWorld != 0) {
+        // before they are stopped, as when a world is left: from here on the old avatar's scripts get nothing done, and
+        // what they made outside their engines (mappings, pointers, picks, 2D overlays, their entities) goes
+        getEntities()->markWorldLeft(avatarScriptsWorld);
+        avatarScriptsWorld = 0;
+    }
     auto scriptEngines = DependencyManager::get<ScriptEngines>();
     auto urls = scriptEngines->getRunningScripts();
     for (auto url : urls) {

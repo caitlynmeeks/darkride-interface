@@ -123,11 +123,16 @@ public:
     static EntityItemPointer constructEntityItem(EntityType entityType, const EntityItemID& entityID, const EntityItemProperties& properties);
     static EntityItemPointer constructEntityItem(const unsigned char* data, int bytesToRead);
     static EntityItemPointer constructEntityItem(const QUuid& id, const EntityItemProperties& properties);
+    // An entity of the type's own class, as the entity server builds it, even where a renderer registered its own
+    // factory for the type (the client's Model, Terrain and Track): a stand-in to measure, never added to a tree.
+    static EntityItemPointer constructBaseEntityItem(EntityType entityType, const EntityItemID& entityID,
+                                                     const EntityItemProperties& properties);
 
 private:
     static QMap<EntityType, QString> _typeToNameMap;
     static QMap<QString, EntityTypes::EntityType> _nameToTypeMap;
     static EntityTypeFactory _factories[NUM_TYPES];
+    static EntityTypeFactory _baseFactories[NUM_TYPES];  // each type's first factory, its own class's
     static bool _factoriesInitialized;
 };
 

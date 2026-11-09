@@ -149,7 +149,18 @@ if (SERVER_ONLY)
   set(BUILD_TESTS_OPTION OFF)
 endif()
 
-set(PLATFORM_QT_COMPONENTS WebEngine Xml)
+# The Qt major version to build with. The build names the Qt${QT_VERSION_MAJOR} packages and the versionless Qt::
+# targets and qt_ commands, which Qt 5.15 and Qt 6 both provide; Qt 5 stays the default until the Qt 6 build works
+set(QT_VERSION_MAJOR 5 CACHE STRING "The Qt major version to build with: 5 or 6")
+# the versionless qt_ commands follow it
+set(QT_DEFAULT_MAJOR_VERSION ${QT_VERSION_MAJOR})
+
+if (QT_VERSION_MAJOR EQUAL 6)
+  # Qt 6 has no WebEngine module: the QML web view is WebEngineQuick, which brings WebEngineCore with it
+  set(PLATFORM_QT_COMPONENTS WebEngineQuick Xml)
+else()
+  set(PLATFORM_QT_COMPONENTS WebEngine Xml)
+endif()
 
 option(HIFI_USE_OPTIMIZED_IK "Use optimized IK" ${HIFI_USE_OPTIMIZED_IK_OPTION})
 option(BUILD_CLIENT "Build client components" ${BUILD_CLIENT_OPTION})
@@ -183,7 +194,7 @@ else()
 endif()
 
 foreach(PLATFORM_QT_COMPONENT ${PLATFORM_QT_COMPONENTS})
-  list(APPEND PLATFORM_QT_LIBRARIES "Qt5::${PLATFORM_QT_COMPONENT}")
+  list(APPEND PLATFORM_QT_LIBRARIES "Qt::${PLATFORM_QT_COMPONENT}")
 endforeach()
 
 MESSAGE(STATUS "Use optimized IK:      " ${HIFI_USE_OPTIMIZED_IK})
@@ -291,4 +302,23 @@ if (BUILD_INSTALLER)
     )
   endif()
   generate_installers()
+endif()
+
+# Qt 6 defines UNICODE on every target that links it on Windows; Qt 5 doesn't, and our Win32 calls are written for that. The
+# property is read when the build files are generated, so one walk over every target here covers them all.
+function(disable_qt_unicode_defines dir)
+  get_property(targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(target ${targets})
+    get_target_property(target_type ${target} TYPE)
+    if (NOT target_type STREQUAL "INTERFACE_LIBRARY" AND NOT target_type STREQUAL "UTILITY")
+      set_property(TARGET ${target} PROPERTY QT_NO_UNICODE_DEFINES TRUE)
+    endif()
+  endforeach()
+  get_property(subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+  foreach(subdir ${subdirs})
+    disable_qt_unicode_defines("${subdir}")
+  endforeach()
+endfunction()
+if (WIN32 AND QT_VERSION_MAJOR EQUAL 6)
+  disable_qt_unicode_defines("${CMAKE_SOURCE_DIR}")
 endif()

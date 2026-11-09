@@ -18,28 +18,19 @@
 #include <QtCore/QPoint>
 #include <QtCore/QUrl>
 #include <QtCore/QUuid>
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
-#include <QtScript/QScriptValueIterator>
 
 #include <PlainScriptValue.h>
 #include <PlainScriptValueConversions.h>
 #include <RegisteredMetaTypes.h>
-#include <VariantMapToScriptValue.h>
 
+#include "Golden.h"
 #include "SameVariant.h"
 
 QTEST_GUILESS_MAIN(PlainScriptValueTests)
 
 namespace {
 
-// A number set as a property on each engine's object and read back, the way the conversions make numbers.
-QScriptValue scriptNumber(QScriptEngine& engine, double value) {
-    QScriptValue object = engine.newObject();
-    object.setProperty("v", QScriptValue(value));
-    return object.property("v");
-}
-
+// A number set as a property on an object and read back, the way the conversions make numbers.
 PlainScriptValue plainNumber(double value) {
     PlainScriptValue object = PlainScriptValue::newObject();
     object.setProperty("v", PlainScriptValue(value));
@@ -52,33 +43,61 @@ const double INFINITY_VALUE = std::numeric_limits<double>::infinity();
 }  // namespace
 
 void PlainScriptValueTests::testNumbers() {
-    QScriptEngine engine;
-    const QList<double> numbers {
-        0.0, -0.0, 1.0, -1.0, 1.5, -1.5, 0.1 + 0.2, 100.0, 2147483647.0, 2147483648.0, -2147483648.0, -2147483649.0,
-        4294967295.0, 4294967296.0, 123456789012.0, 1e21, 1e-7, 0.000001, 1e100, 5e-324, 1.7976931348623157e308,
-        NAN_VALUE, INFINITY_VALUE, -INFINITY_VALUE
+    // a script's number conversions (ECMAScript's ToString, ToBoolean, ToInt32, ToUint32, ToUint16, ToInteger), as
+    // the QtScript engine made them, by example
+    struct Case {
+        double value;
+        const char* text;
+        bool boolean;
+        qint32 int32;
+        quint32 uint32;
+        quint16 uint16;
+        double integer;
+        bool integral;   // the variant is an int, not a double
     };
-    for (double number : numbers) {
-        const QScriptValue script = scriptNumber(engine, number);
-        const PlainScriptValue plain = plainNumber(number);
-        const QString name = QString::number(number, 'g', 17);
-        QString where;
-        QVERIFY2(sameVariant(script.toVariant(), plain.toVariant(), where), qPrintable(name + ": " + where));
-        QVERIFY2(script.toString() == plain.toString(),
-                 qPrintable(name + ": text " + script.toString() + " vs " + plain.toString()));
-        QCOMPARE(plain.toBool(), script.toBool());
-        QCOMPARE(plain.toInt32(), script.toInt32());
-        QCOMPARE(plain.toUInt32(), script.toUInt32());
-        QCOMPARE(plain.toUInt16(), script.toUInt16());
-        if (std::isnan(number)) {
-            QVERIFY(std::isnan(plain.toNumber()) && std::isnan(script.toNumber()));
-            QCOMPARE(plain.toInteger(), script.toInteger());
+    const Case cases[] = {
+        { 0.0, "0", false, 0, 0, 0, 0.0, true },
+        { 1.0, "1", true, 1, 1, 1, 1.0, true },
+        { -1.0, "-1", true, -1, 4294967295u, 65535, -1.0, true },
+        { 1.5, "1.5", true, 1, 1, 1, 1.0, false },
+        { -1.5, "-1.5", true, -1, 4294967295u, 65535, -1.0, false },
+        { 0.1 + 0.2, "0.30000000000000004", true, 0, 0, 0, 0.0, false },
+        { 100.0, "100", true, 100, 100, 100, 100.0, true },
+        { 2147483647.0, "2147483647", true, 2147483647, 2147483647u, 65535, 2147483647.0, true },
+        { 2147483648.0, "2147483648", true, -2147483647 - 1, 2147483648u, 0, 2147483648.0, false },
+        { -2147483648.0, "-2147483648", true, -2147483647 - 1, 2147483648u, 0, -2147483648.0, true },
+        { -2147483649.0, "-2147483649", true, 2147483647, 2147483647u, 65535, -2147483649.0, false },
+        { 4294967295.0, "4294967295", true, -1, 4294967295u, 65535, 4294967295.0, false },
+        { 4294967296.0, "4294967296", true, 0, 0, 0, 4294967296.0, false },
+        { 123456789012.0, "123456789012", true, -1097262572, 3197704724u, 6676, 123456789012.0, false },
+        { 1e-7, "1e-7", true, 0, 0, 0, 0.0, false },
+        { 0.000001, "0.000001", true, 0, 0, 0, 0.0, false },
+        { 1e100, "1e+100", true, 0, 0, 0, 1e100, false },
+        { 5e-324, "5e-324", true, 0, 0, 0, 0.0, false },
+        { NAN_VALUE, "NaN", false, 0, 0, 0, 0.0, false },
+        { INFINITY_VALUE, "Infinity", true, 0, 0, 0, INFINITY_VALUE, false },
+        { -INFINITY_VALUE, "-Infinity", true, 0, 0, 0, -INFINITY_VALUE, false },
+    };
+    for (const Case& c : cases) {
+        const PlainScriptValue plain = plainNumber(c.value);
+        const QString name = QString::number(c.value, 'g', 17);
+        QVERIFY2(plain.toString() == QString(c.text), qPrintable(name + ": text " + plain.toString() + " vs " + c.text));
+        QVERIFY2(plain.toBool() == c.boolean, qPrintable(name + ": bool"));
+        QVERIFY2(plain.toInt32() == c.int32, qPrintable(name + QString(": int32 %1 vs %2").arg(plain.toInt32()).arg(c.int32)));
+        QVERIFY2(plain.toUInt32() == c.uint32, qPrintable(name + QString(": uint32 %1 vs %2").arg(plain.toUInt32()).arg(c.uint32)));
+        QVERIFY2(plain.toUInt16() == c.uint16, qPrintable(name + QString(": uint16 %1 vs %2").arg(plain.toUInt16()).arg(c.uint16)));
+        if (std::isnan(c.value)) {
+            QVERIFY(std::isnan(plain.toNumber()));
         } else {
-            QCOMPARE(plain.toNumber(), script.toNumber());
-            QCOMPARE(plain.toInteger(), script.toInteger());
+            QVERIFY2(plain.toNumber() == c.value, qPrintable(name + ": number"));
+            QVERIFY2(plain.toInteger() == c.integer, qPrintable(name + QString(": integer %1 vs %2").arg(plain.toInteger()).arg(c.integer)));
         }
+        QVERIFY2(c.integral == (plain.toVariant().userType() == QMetaType::Int), qPrintable(name + ": the variant's type " + plain.toVariant().typeName()));
         QVERIFY(plain.isNumber() && !plain.isString() && !plain.isObject());
     }
+    // the sign of zero is lost in its text
+    QCOMPARE(plainNumber(-0.0).toString(), QString("0"));
+    QVERIFY(!plainNumber(-0.0).toBool());
     // the integer and unsigned constructors
     QCOMPARE(PlainScriptValue(7).toVariant().userType(), (int)QMetaType::Int);
     QCOMPARE(PlainScriptValue(7u).toVariant().userType(), (int)QMetaType::Int);
@@ -102,116 +121,120 @@ void PlainScriptValueTests::testNumberText() {
     QCOMPARE(PlainScriptValue::numberToString(4294967295.0), QString("4294967295"));
     QCOMPARE(PlainScriptValue::numberToString(1.0), QString("1"));
     QCOMPARE(PlainScriptValue::numberToString(12.5), QString("12.5"));
-    // and against QtScript's own, over a spread of magnitudes
-    QScriptEngine engine;
+    // and over a spread of magnitudes, as recorded (what the QtScript engine printed for each)
+    QStringList lines;
     for (int exponent = -12; exponent <= 24; ++exponent) {
         for (double mantissa : { 1.0, 1.5, 1.25, 9.999, 3.14159265358979, 7.0 }) {
             const double value = mantissa * std::pow(10.0, exponent);
-            const QString expected = scriptNumber(engine, value).toString();
-            const QString actual = PlainScriptValue::numberToString(value);
-            QVERIFY2(actual == expected, qPrintable(QString("%1: %2 vs %3").arg(value, 0, 'g', 17).arg(actual).arg(expected)));
+            lines << QString("%1 -> %2").arg(value, 0, 'g', 17).arg(PlainScriptValue::numberToString(value));
         }
     }
+    QString where;
+    QVERIFY2(checkGolden("number-text.txt", lines.join("\n") + "\n", where), qPrintable(where));
 }
 
 void PlainScriptValueTests::testStrings() {
-    QScriptEngine engine;
-    const QStringList texts { "", " ", "12", " 12 ", "1.5", "-1.5", "abc", "0x10", "1e3", "Infinity", "-0", "1.", ".5",
-                              "12abc", "true", "{00000000-0000-0000-0000-000000000000}" };
-    for (const QString& text : texts) {
-        const QScriptValue script(text);
-        const PlainScriptValue plain(text);
-        const QString name = "'" + text + "'";
-        QString where;
-        QVERIFY2(sameVariant(script.toVariant(), plain.toVariant(), where), qPrintable(name + ": " + where));
-        QCOMPARE(plain.toString(), script.toString());
-        QCOMPARE(plain.toBool(), script.toBool());
-        if (std::isnan(script.toNumber())) {
+    // a script's string conversions (ToNumber on text, ToBoolean, ToInt32, ToUint32), by example
+    struct Case {
+        const char* text;
+        double number;   // NaN where the text is no number
+        bool boolean;
+        qint32 int32;
+        quint32 uint32;
+    };
+    const Case cases[] = {
+        { "", 0.0, false, 0, 0 },
+        { " ", 0.0, true, 0, 0 },
+        { "12", 12.0, true, 12, 12 },
+        { " 12 ", 12.0, true, 12, 12 },
+        { "1.5", 1.5, true, 1, 1 },
+        { "-1.5", -1.5, true, -1, 4294967295u },
+        { "abc", NAN_VALUE, true, 0, 0 },
+        { "0x10", 16.0, true, 16, 16 },
+        { "1e3", 1000.0, true, 1000, 1000 },
+        { "Infinity", INFINITY_VALUE, true, 0, 0 },
+        { "-0", 0.0, true, 0, 0 },
+        { "1.", 1.0, true, 1, 1 },
+        { ".5", 0.5, true, 0, 0 },
+        { "12abc", NAN_VALUE, true, 0, 0 },
+        { "true", NAN_VALUE, true, 0, 0 },
+        { "{00000000-0000-0000-0000-000000000000}", NAN_VALUE, true, 0, 0 },
+    };
+    for (const Case& c : cases) {
+        const PlainScriptValue plain(QString(c.text));
+        const QString name = QString("'%1'").arg(c.text);
+        QCOMPARE(plain.toString(), QString(c.text));
+        QCOMPARE(plain.toVariant(), QVariant(QString(c.text)));
+        QVERIFY2(plain.toBool() == c.boolean, qPrintable(name + ": bool"));
+        if (std::isnan(c.number)) {
             QVERIFY2(std::isnan(plain.toNumber()), qPrintable(name + ": NaN expected"));
         } else {
-            QVERIFY2(plain.toNumber() == script.toNumber(),
-                     qPrintable(name + QString(": %1 vs %2").arg(plain.toNumber()).arg(script.toNumber())));
+            QVERIFY2(plain.toNumber() == c.number, qPrintable(name + QString(": %1 vs %2").arg(plain.toNumber()).arg(c.number)));
         }
-        QCOMPARE(plain.toInt32(), script.toInt32());
-        QCOMPARE(plain.toUInt32(), script.toUInt32());
+        QVERIFY2(plain.toInt32() == c.int32, qPrintable(name + ": int32"));
+        QVERIFY2(plain.toUInt32() == c.uint32, qPrintable(name + ": uint32"));
         QVERIFY(plain.isString() && !plain.isNumber() && !plain.isObject());
     }
     // the other primitives and the absent value
     QVERIFY(!PlainScriptValue().isValid());
-    QVERIFY(PlainScriptValue().toVariant().isNull() && !QScriptValue().toVariant().isValid());
-    QCOMPARE(PlainScriptValue().toString(), QScriptValue().toString());
-    QCOMPARE(PlainScriptValue().toNumber(), QScriptValue().toNumber());
-    QCOMPARE(PlainScriptValue::undefinedValue().toString(), engine.undefinedValue().toString());
-    QVERIFY(std::isnan(PlainScriptValue::undefinedValue().toNumber()) && std::isnan(engine.undefinedValue().toNumber()));
-    QVERIFY(!PlainScriptValue::undefinedValue().toVariant().isValid() && !engine.undefinedValue().toVariant().isValid());
-    QCOMPARE(PlainScriptValue::nullValue().toString(), engine.nullValue().toString());
-    QCOMPARE(PlainScriptValue::nullValue().toNumber(), engine.nullValue().toNumber());
-    QVERIFY(!PlainScriptValue::nullValue().toVariant().isValid() && !engine.nullValue().toVariant().isValid());
-    QCOMPARE(PlainScriptValue(true).toString(), QScriptValue(true).toString());
-    QCOMPARE(PlainScriptValue(false).toNumber(), QScriptValue(false).toNumber());
-    QCOMPARE(PlainScriptValue(true).toVariant(), QScriptValue(true).toVariant());
-    QCOMPARE(PlainScriptValue("text").toVariant(), QScriptValue("text").toVariant());
+    QVERIFY(PlainScriptValue().toVariant().isNull());
+    QCOMPARE(PlainScriptValue().toString(), QString());
+    QCOMPARE(PlainScriptValue().toNumber(), 0.0);
+    QCOMPARE(PlainScriptValue::undefinedValue().toString(), QString("undefined"));
+    QVERIFY(std::isnan(PlainScriptValue::undefinedValue().toNumber()));
+    QVERIFY(!PlainScriptValue::undefinedValue().toVariant().isValid());
+    QCOMPARE(PlainScriptValue::nullValue().toString(), QString("null"));
+    QCOMPARE(PlainScriptValue::nullValue().toNumber(), 0.0);
+    QVERIFY(!PlainScriptValue::nullValue().toVariant().isValid());
+    QCOMPARE(PlainScriptValue(true).toString(), QString("true"));
+    QCOMPARE(PlainScriptValue(false).toString(), QString("false"));
+    QCOMPARE(PlainScriptValue(false).toNumber(), 0.0);
+    QCOMPARE(PlainScriptValue(true).toNumber(), 1.0);
+    QCOMPARE(PlainScriptValue(true).toVariant(), QVariant(true));
+    QCOMPARE(PlainScriptValue("text").toVariant(), QVariant(QString("text")));
 }
 
 void PlainScriptValueTests::testObjects() {
-    QScriptEngine engine;
-    QScriptValue script = engine.newObject();
     PlainScriptValue plain = PlainScriptValue::newObject();
-    // the same properties set in the same order, with every kind of value, a nested object and a replacement
-    script.setProperty("name", "box");
+    // properties set in order, with every kind of value, a nested object and a replacement
     plain.setProperty("name", "box");
-    script.setProperty("count", 3);
     plain.setProperty("count", 3);
-    script.setProperty("scale", 0.5);
     plain.setProperty("scale", 0.5);
-    script.setProperty("visible", true);
     plain.setProperty("visible", true);
-    script.setProperty("nothing", engine.nullValue());
     plain.setProperty("nothing", PlainScriptValue::nullValue());
-    script.setProperty("unset", engine.undefinedValue());
     plain.setProperty("unset", PlainScriptValue::undefinedValue());
-    QScriptValue scriptInner = engine.newObject();
     PlainScriptValue plainInner = PlainScriptValue::newObject();
-    scriptInner.setProperty("x", 1);
     plainInner.setProperty("x", 1);
-    scriptInner.setProperty("y", 2.5);
     plainInner.setProperty("y", 2.5);
-    script.setProperty("position", scriptInner);
     plain.setProperty("position", plainInner);
-    script.setProperty("count", 4);  // set again: the value changes, the place stays
-    plain.setProperty("count", 4);
-    script.setProperty("gone", "for now");
+    plain.setProperty("count", 4);  // set again: the value changes, the place stays
     plain.setProperty("gone", "for now");
-    script.setProperty("gone", QScriptValue());  // an invalid value removes the property
-    plain.setProperty("gone", PlainScriptValue());
+    plain.setProperty("gone", PlainScriptValue());  // an invalid value removes the property
 
-    QString where;
-    QVERIFY2(sameVariant(script.toVariant(), plain.toVariant(), where), qPrintable(where));
-    // the order of the properties, as an iterator and the plain names give it
-    QStringList scriptNames;
-    QScriptValueIterator it(script);
-    while (it.hasNext()) {
-        it.next();
-        scriptNames.append(it.name());
-    }
-    QCOMPARE(plain.propertyNames(), scriptNames);
+    // the order of the properties, as a script's iteration gives it
     QCOMPARE(plain.propertyNames(), QStringList({ "name", "count", "scale", "visible", "nothing", "unset", "position" }));
+    const QVariantMap map = plain.toVariant().toMap();
+    QCOMPARE(map.value("name"), QVariant(QString("box")));
+    QCOMPARE(map.value("count"), QVariant(4));
+    QCOMPARE(map.value("scale"), QVariant(0.5));
+    QCOMPARE(map.value("visible"), QVariant(true));
+    QCOMPARE(map.value("position").toMap().value("x"), QVariant(1));
+    QCOMPARE(map.value("position").toMap().value("y"), QVariant(2.5));
+    QVERIFY(!map.contains("gone"));
     // reading: present, absent, through a non-object, a nested property
-    QVERIFY(plain.property("name").isValid() && script.property("name").isValid());
-    QVERIFY(!plain.property("absent").isValid() && !script.property("absent").isValid());
-    QVERIFY(!plain.property("gone").isValid() && !script.property("gone").isValid());
-    QVERIFY(plain.property("nothing").isValid() && script.property("nothing").isValid());
-    QVERIFY(plain.property("nothing").isNull() && script.property("nothing").isNull());
-    QVERIFY(plain.property("unset").isValid() && script.property("unset").isValid());
-    QVERIFY(plain.property("unset").isUndefined() && script.property("unset").isUndefined());
-    QVERIFY(!plain.property("count").property("x").isValid() && !script.property("count").property("x").isValid());
-    QVERIFY(!PlainScriptValue("text").property("length").isValid() && !QScriptValue("text").property("length").isValid());
-    QCOMPARE(plain.property("position").property("y").toNumber(), script.property("position").property("y").toNumber());
-    QCOMPARE(plain.property("count").toVariant(), script.property("count").toVariant());
-    QVERIFY(plain.isObject() && !plain.isArray() && script.isObject() && !script.isArray());
-    QCOMPARE(plain.toString(), script.toString());
-    QCOMPARE(plain.toBool(), script.toBool());
-    QVERIFY(std::isnan(plain.toNumber()) && std::isnan(script.toNumber()));
+    QVERIFY(plain.property("name").isValid());
+    QVERIFY(!plain.property("absent").isValid());
+    QVERIFY(!plain.property("gone").isValid());
+    QVERIFY(plain.property("nothing").isValid() && plain.property("nothing").isNull());
+    QVERIFY(plain.property("unset").isValid() && plain.property("unset").isUndefined());
+    QVERIFY(!plain.property("count").property("x").isValid());
+    QVERIFY(!PlainScriptValue("text").property("length").isValid());
+    QCOMPARE(plain.property("position").property("y").toNumber(), 2.5);
+    QCOMPARE(plain.property("count").toVariant(), QVariant(4));
+    QVERIFY(plain.isObject() && !plain.isArray());
+    QCOMPARE(plain.toString(), QString("[object Object]"));
+    QVERIFY(plain.toBool());
+    QVERIFY(std::isnan(plain.toNumber()));
     // setting on a non-object does nothing
     PlainScriptValue number(5);
     number.setProperty("x", 1);
@@ -219,42 +242,34 @@ void PlainScriptValueTests::testObjects() {
 }
 
 void PlainScriptValueTests::testArrays() {
-    QScriptEngine engine;
-    QScriptValue script = engine.newArray();
     PlainScriptValue plain = PlainScriptValue::newArray();
-    script.setProperty(0, 1);
     plain.setProperty(0, 1);
-    script.setProperty(1, "two");
     plain.setProperty(1, "two");
-    script.setProperty(2, 2.5);
     plain.setProperty(2, 2.5);
-    script.setProperty(4, true);  // index 3 is a hole
-    plain.setProperty(4, true);
-    QScriptValue scriptInner = engine.newObject();
+    plain.setProperty(4, true);  // index 3 is a hole
     PlainScriptValue plainInner = PlainScriptValue::newObject();
-    scriptInner.setProperty("x", 0);
     plainInner.setProperty("x", 0);
-    script.setProperty(5, scriptInner);
     plain.setProperty(5, plainInner);
 
-    QString where;
-    QVERIFY2(sameVariant(script.toVariant(), plain.toVariant(), where), qPrintable(where));
-    QCOMPARE(plain.property("length").toInteger(), script.property("length").toInteger());
     QCOMPARE(plain.property("length").toInteger(), 6.0);
-    QVERIFY(!plain.property(3).isValid() && !script.property(3).isValid());
-    QVERIFY(!plain.property(9).isValid() && !script.property(9).isValid());
-    QVERIFY(!plain.property("3").isValid() && !script.property("3").isValid());
-    QCOMPARE(plain.property("1").toString(), script.property("1").toString());
-    QCOMPARE(plain.property(2).toNumber(), script.property(2).toNumber());
-    QVERIFY(plain.isArray() && plain.isObject() && script.isArray() && script.isObject());
-    QCOMPARE(plain.toString(), script.toString());
+    QVERIFY(!plain.property(3).isValid());
+    QVERIFY(!plain.property(9).isValid());
+    QVERIFY(!plain.property("3").isValid());
+    QCOMPARE(plain.property("1").toString(), QString("two"));
+    QCOMPARE(plain.property(2).toNumber(), 2.5);
+    QVERIFY(plain.isArray() && plain.isObject());
+    QCOMPARE(plain.toString(), QString("1,two,2.5,,true,[object Object]"));
     QCOMPARE(plain.propertyNames(), QStringList({ "0", "1", "2", "4", "5" }));
-    QVERIFY(plain.toVariant().userType() == QMetaType::QVariantList && script.toVariant().userType() == QMetaType::QVariantList);
+    QVERIFY(plain.toVariant().userType() == QMetaType::QVariantList);
+    const QVariantList list = plain.toVariant().toList();
+    QCOMPARE(list.size(), 6);
+    QCOMPARE(list.at(1), QVariant(QString("two")));
+    QVERIFY(!list.at(3).isValid());
+    QCOMPARE(list.at(4), QVariant(true));
     // the length set shorter drops the elements beyond it
-    script.setProperty("length", 2);
     plain.setProperty("length", 2);
-    QVERIFY2(sameVariant(script.toVariant(), plain.toVariant(), where), qPrintable(where));
     QCOMPARE(plain.property("length").toInteger(), 2.0);
+    QCOMPARE(plain.toVariant().toList(), QVariantList({ 1, QString("two") }));
     // a one-element array reads as its element's text, an empty one as nothing
     PlainScriptValue single = PlainScriptValue::newArray();
     single.setProperty(0, 7);
@@ -265,7 +280,7 @@ void PlainScriptValueTests::testArrays() {
 }
 
 void PlainScriptValueTests::testSharing() {
-    // a property set through a copy is seen through the original, as with a QScriptValue
+    // a property set through a copy is seen through the original, as a script's object is one object
     PlainScriptValue object = PlainScriptValue::newObject();
     PlainScriptValue group = PlainScriptValue::newObject();
     object.setProperty("group", group);
@@ -332,10 +347,9 @@ void PlainScriptValueTests::testCbor() {
 }
 
 void PlainScriptValueTests::testFromVariant() {
-    QScriptEngine engine;
-    // Every kind of QVariant a world file, avatar-entity data or an overlay's properties hold, and some that
-    // none should, through variantToScriptValue, which the QtScript callers outside scripting use, and through
-    // fromVariant: the same variant back, the same members in the same order, the same members left out
+    // Every kind of QVariant a world file, avatar-entity data or an overlay's properties hold, and some that none
+    // should, through fromVariant (what the callers outside scripting use): the members in the map's order, the
+    // kinds a script has no value for left out
     QVariantMap nested;
     nested.insert("x", 1.0);
     nested.insert("y", 2.5);
@@ -367,103 +381,50 @@ void PlainScriptValueTests::testFromVariant() {
     map.insert("holes", holes);
     map.insert("empty", QVariantMap());
 
-    QVariant variant(map);
-    const QScriptValue script = variantToScriptValue(variant, engine);
     const PlainScriptValue plain = PlainScriptValue::fromVariant(map);
-    QString where;
-    QVERIFY2(sameVariant(script.toVariant(), plain.toVariant(), where), qPrintable(where));
-    QStringList scriptNames;
-    QScriptValueIterator it(script);
-    while (it.hasNext()) {
-        it.next();
-        scriptNames.append(it.name());
+    // the kinds a script has no value for are left out (as the QtScript engine's conversion left them out: a
+    // bool, a number, text, a URL, a map or a list cross, and anything else only when it converts to a number)
+    QStringList expectedNames = map.keys();   // a QVariantMap lists its keys sorted
+    for (const char* leftOut : { "null", "point", "char", "uuid", "dateTime" }) {
+        expectedNames.removeAll(leftOut);
+        QVERIFY2(!plain.property(leftOut).isValid(), leftOut);
     }
-    QCOMPARE(plain.propertyNames(), scriptNames);
-    for (const QString& name : map.keys()) {
-        QVERIFY2(plain.property(name).isValid() == script.property(name).isValid(), qPrintable(name));
-    }
-    QVERIFY(!plain.property("null").isValid());
-    QVERIFY(!plain.property("point").isValid());
-    // a 64-bit integer goes through a float on both paths (variantToScriptValue's rule for any other type), and
-    // QJsonDocument gives one for a whole number: an entity's creation time loses its low bits on a world load
+    QCOMPARE(plain.propertyNames(), expectedNames);
+    QCOMPARE(plain.property("bool").toVariant(), QVariant(true));
+    QCOMPARE(plain.property("int").toVariant(), QVariant(7));
+    QCOMPARE(plain.property("double").toNumber(), 2.5);
+    QCOMPARE(plain.property("string").toString(), QString("text"));
+    QCOMPARE(plain.property("url").toString(), QString("https://example.invalid/a?b=c"));
+    QCOMPARE(plain.property("bytes").toNumber(), 12.5);   // a byte array crosses as the number it converts to
+    QCOMPARE(plain.property("letters").toNumber(), 0.0);
+    QCOMPARE(plain.property("float").toNumber(), (double)0.1f);
+    QCOMPARE(plain.property("uint").toNumber(), 3000000000.0);
+    // a 64-bit integer goes through a float (the rule for any other type), and QJsonDocument gives one for a whole
+    // number: an entity's creation time loses its low bits on a world load
     QCOMPARE(plain.property("longLong").toNumber(), (double)(float)123456789012345);
     const QVariantMap fromJson = QJsonDocument::fromJson("{\"created\": 1792340679910596}").toVariant().toMap();
     QCOMPARE(fromJson.value("created").userType(), (int)QMetaType::LongLong);
-    QVariant createdVariant = fromJson.value("created");
-    QCOMPARE(variantToScriptValue(createdVariant, engine).toNumber(), (double)(float)1792340679910596);
-    QCOMPARE(PlainScriptValue::fromVariant(createdVariant).toNumber(), (double)(float)1792340679910596);
+    QCOMPARE(PlainScriptValue::fromVariant(fromJson.value("created")).toNumber(), (double)(float)1792340679910596);
     QCOMPARE(plain.property("uint").toNumber(), 3000000000.0);
     QCOMPARE(plain.property("url").toString(), QString("https://example.invalid/a?b=c"));
     QVERIFY(plain.property("list").isArray());
-    QCOMPARE(plain.property("list").property("length").toInteger(), script.property("list").property("length").toInteger());
-    QCOMPARE(plain.property("holes").property("length").toInteger(), script.property("holes").property("length").toInteger());
+    QCOMPARE(plain.property("list").property("length").toInteger(), 7.0);
+    QCOMPARE(plain.property("list").property(6).property("y").toNumber(), 2.5);
     QCOMPARE(plain.property("holes").property("length").toInteger(), 3.0);  // the elements never set do not count
     QVERIFY(!plain.property("holes").property(1).isValid());
+    QVERIFY(plain.property("empty").isObject() && plain.property("empty").propertyNames().isEmpty());
 
-    // Overlays.cpp read a PolyLine's points and widths through QScriptEngine::newVariant: a variant object, not
-    // an array, whose length is undefined, so both lists always read as empty. The plain path reads them.
+    // a PolyLine's points and widths, as Overlays reads them from a script's properties
     const QVariantList points { nested, nested };
     const QVariantList widths { 0.1, 0.2 };
-    const QScriptValue wrappedPoints = engine.newVariant(QVariant(points));
-    QVERIFY(wrappedPoints.isVariant());
-    QVERIFY(!wrappedPoints.isArray());
-    QVERIFY(!wrappedPoints.property("length").isValid());
-    QCOMPARE(qVectorVec3FromScriptValue(wrappedPoints).size(), 0);
-    QCOMPARE(qVectorFloatFromScriptValue(engine.newVariant(QVariant(widths))).size(), 0);
-    QVariant pointsVariant(points);
-    QCOMPARE(qVectorVec3FromScriptValue(variantToScriptValue(pointsVariant, engine)).size(), 2);
     QCOMPARE(qVectorVec3FromScriptValue(PlainScriptValue::fromVariant(points)).size(), 2);
     QCOMPARE(qVectorVec3FromScriptValue(PlainScriptValue::fromVariant(points)).at(1), glm::vec3(1.0f, 2.5f, -3.0f));
     QCOMPARE(qVectorFloatFromScriptValue(PlainScriptValue::fromVariant(widths)), QVector<float>({ 0.1f, 0.2f }));
 }
 
-namespace {
-
-// The same value on QtScript, kind for kind and in the same order
-QScriptValue mirror(QScriptEngine& engine, const PlainScriptValue& plain) {
-    if (plain.isUndefined() || !plain.isValid()) {
-        return QScriptValue(QScriptValue::UndefinedValue);
-    }
-    if (plain.isNull()) {
-        return QScriptValue(QScriptValue::NullValue);
-    }
-    if (plain.isBool()) {
-        return QScriptValue(plain.toBool());
-    }
-    if (plain.isNumber()) {
-        return QScriptValue(plain.toNumber());
-    }
-    if (plain.isString()) {
-        return QScriptValue(plain.toString());
-    }
-    if (plain.isArray()) {
-        QScriptValue array = engine.newArray();
-        const quint32 length = plain.property("length").toUInt32();
-        for (quint32 i = 0; i < length; ++i) {
-            if (plain.property(i).isValid()) {
-                array.setProperty(i, mirror(engine, plain.property(i)));
-            }
-        }
-        array.setProperty("length", QScriptValue(length));
-        return array;
-    }
-    QScriptValue object = engine.newObject();
-    for (const QString& name : plain.propertyNames()) {
-        object.setProperty(name, mirror(engine, plain.property(name)));
-    }
-    return object;
-}
-
-QString stringify(QScriptEngine& engine, const QScriptValue& value, const QString& indent) {
-    QScriptValue json = engine.globalObject().property("JSON");
-    QScriptValue text = json.property("stringify").call(json, QScriptValueList() << value << QScriptValue(QScriptValue::NullValue) << QScriptValue(indent));
-    return text.isUndefined() ? QString("undefined") : text.toString();
-}
-
-}  // namespace
-
 void PlainScriptValueTests::testJson() {
-    QScriptEngine engine;
+    // JSON.stringify's text (recorded from the QtScript engine's own JSON.stringify of the same object): every
+    // kind of value, the escapes, the numbers' layout, undefined members left out, holes as null
     PlainScriptValue object = PlainScriptValue::newObject();
     object.setProperty("id", "{1a2b3c4d-0000-0000-0000-000000000001}");
     object.setProperty("type", "Box");
@@ -505,11 +466,11 @@ void PlainScriptValueTests::testJson() {
     object.setProperty("nested", nested);
     object.setProperty("key with \"quotes\"", 1);
 
-    const QScriptValue script = mirror(engine, object);
-    for (const QString& indent : { QString(), QString("    "), QString("\t"), QString("  ") }) {
-        const QString expected = stringify(engine, script, indent);
-        const QString actual = object.toJson(indent);
-        QVERIFY2(actual == expected, qPrintable("indent '" + indent + "':\n" + actual + "\nvs QtScript\n" + expected));
+    struct Indent { const char* name; const char* indent; };
+    const Indent indents[] = { { "json-compact.txt", "" }, { "json-four-spaces.txt", "    " }, { "json-tab.txt", "\t" }, { "json-two-spaces.txt", "  " } };
+    for (const Indent& indent : indents) {
+        QString where;
+        QVERIFY2(checkGolden(indent.name, object.toJson(indent.indent) + "\n", where), qPrintable(where));
     }
     // the parts on their own
     QCOMPARE(PlainScriptValue("a\"b").toJson(), QString("\"a\\\"b\""));
@@ -520,5 +481,6 @@ void PlainScriptValueTests::testJson() {
     QCOMPARE(PlainScriptValue::undefinedValue().toJson(), QString());
     QCOMPARE(PlainScriptValue::newObject().toJson("    "), QString("{}"));
     QCOMPARE(PlainScriptValue::newArray().toJson("    "), QString("[]"));
-    QCOMPARE(stringify(engine, mirror(engine, PlainScriptValue::undefinedValue()), QString()), QString("undefined"));
+    QCOMPARE(object.property("nested").toJson(), QString("{\"list\":[{\"k\":\"v\"}]}"));
+    QCOMPARE(object.property("mixed").toJson(), QString("[true,null,null,null,\"after a hole\",{},[]]"));
 }

@@ -1,7 +1,7 @@
 # Declare dependencies
 macro (SETUP_TESTCASE_DEPENDENCIES)
   # link in the shared libraries
-  link_hifi_libraries(shared audio networking plugins)
+  link_hifi_libraries(shared audio audio-client networking plugins)
 
   package_libraries_for_deployment()
 endmacro ()

@@ -913,18 +913,13 @@ public:
      *     MyAvatar.removeAnimationStateHandler(handler);
      * }, 100);
      */
-    Q_INVOKABLE QScriptValue addAnimationStateHandler(QScriptValue handler, QScriptValue propertiesList) { return _skeletonModel->getRig().addAnimationStateHandler(handler, propertiesList); }
-
     /**jsdoc
      * Removes an animation state handler function.
      * @function MyAvatar.removeAnimationStateHandler
      * @param {number} handler - The ID of the animation state handler function to remove.
      */
-    // Removes a handler previously added by addAnimationStateHandler.
-    Q_INVOKABLE void removeAnimationStateHandler(QScriptValue handler) { _skeletonModel->getRig().removeAnimationStateHandler(handler); }
-
-    // The same pair for a script on the WebAssembly engine (its functions cross as ScriptCallback values; the
-    // guest maps addAnimationStateHandler and removeAnimationStateHandler to these): the handler's id back.
+    // What a script's addAnimationStateHandler and removeAnimationStateHandler reach (the JavaScript guest maps the
+    // names; a script's function crosses as a ScriptCallback): the handler's id back.
     Q_INVOKABLE int addAnimationStateCallback(const ScriptCallback& handler, const QVariant& propertiesList) {
         const bool useNames = propertiesList.type() == QVariant::List || propertiesList.type() == QVariant::StringList;
         return _skeletonModel->getRig().addAnimationStateCallback(handler, useNames ? propertiesList.toStringList() : QStringList(), useNames);
@@ -3277,12 +3272,6 @@ private:
     float _cameraHeadClearance { 0.0f };   // the camera's step forward that keeps the hidden head out of view
     float _landingAfterJumpTime { 0.0f };
 };
-
-QScriptValue audioListenModeToScriptValue(QScriptEngine* engine, const AudioListenerMode& audioListenerMode);
-void audioListenModeFromScriptValue(const QScriptValue& object, AudioListenerMode& audioListenerMode);
-
-QScriptValue driveKeysToScriptValue(QScriptEngine* engine, const MyAvatar::DriveKeys& driveKeys);
-void driveKeysFromScriptValue(const QScriptValue& object, MyAvatar::DriveKeys& driveKeys);
 
 bool isWearableEntity(const EntityItemPointer& entity);
 

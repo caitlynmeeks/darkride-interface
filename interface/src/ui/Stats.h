@@ -19,6 +19,8 @@
 #ifndef hifi_Stats_h
 #define hifi_Stats_h
 
+#include <atomic>
+
 #include <QtGui/QVector3D>
 
 #include <OffscreenQmlElement.h>
@@ -1931,6 +1933,11 @@ private:
     int _recentMaxPackets{ 0 } ; // recent max incoming voxel packets to process
     bool _resetRecentMaxPacketsSoon{ true };
     bool _expanded{ false };
+    // entry 32 Amendment A: whether anyone reads the render details now (Show Statistics, or a test's forced update in
+    // the last second); written by updateStats on the main thread every frame, read by setRenderDetails on the render
+    // thread, which skips its updates while it's false
+    std::atomic<bool> _renderDetailsShown{ false };
+    quint64 _lastForcedUpdate{ 0 };   // usecs; the main thread's only
     bool _showTimingDetails{ false };
     bool _showGameUpdateStats{ false };
     QString _monospaceFont;

@@ -15,14 +15,14 @@
 ScriptHighlighting::ScriptHighlighting(QTextDocument* parent) :
     QSyntaxHighlighter(parent)
 {
-    _keywordRegex = QRegExp("\\b(break|case|catch|continue|debugger|default|delete|do|else|finally|for|function|if|in|instanceof|new|return|switch|this|throw|try|typeof|var|void|while|with)\\b");
-    _quotedTextRegex = QRegExp("(\"[^\"]*(\"){0,1}|\'[^\']*(\'){0,1})");
-    _multiLineCommentBegin = QRegExp("/\\*");
-    _multiLineCommentEnd = QRegExp("\\*/");
-    _numberRegex = QRegExp("[0-9]+(\\.[0-9]+){0,1}");
-    _singleLineComment = QRegExp("//[^\n]*");
-    _truefalseRegex = QRegExp("\\b(true|false)\\b");
-    _alphacharRegex = QRegExp("[A-Za-z]");
+    _keywordRegex = HighlightPattern("\\b(break|case|catch|continue|debugger|default|delete|do|else|finally|for|function|if|in|instanceof|new|return|switch|this|throw|try|typeof|var|void|while|with)\\b");
+    _quotedTextRegex = HighlightPattern("(\"[^\"]*(\"){0,1}|\'[^\']*(\'){0,1})");
+    _multiLineCommentBegin = HighlightPattern("/\\*");
+    _multiLineCommentEnd = HighlightPattern("\\*/");
+    _numberRegex = HighlightPattern("[0-9]+(\\.[0-9]+){0,1}");
+    _singleLineComment = HighlightPattern("//[^\n]*");
+    _truefalseRegex = HighlightPattern("\\b(true|false)\\b");
+    _alphacharRegex = HighlightPattern("[A-Za-z]");
 }
 
 void ScriptHighlighting::highlightBlock(const QString& text) {
@@ -46,13 +46,13 @@ void ScriptHighlighting::formatComments(const QString& text) {
 
     setCurrentBlockState(BlockStateClean);
 
-    int start = (previousBlockState() != BlockStateInMultiComment) ? text.indexOf(_multiLineCommentBegin) : 0;
+    int start = (previousBlockState() != BlockStateInMultiComment) ? _multiLineCommentBegin.indexIn(text) : 0;
 
     while (start > -1) {
-        int end = text.indexOf(_multiLineCommentEnd, start);
+        int end = _multiLineCommentEnd.indexIn(text, start);
         int length = (end == -1 ? text.length() : (end + _multiLineCommentEnd.matchedLength())) - start;
         setFormat(start, length, Qt::lightGray);
-        start = text.indexOf(_multiLineCommentBegin, start + length);
+        start = _multiLineCommentBegin.indexIn(text, start + length);
         if (end == -1) {
             setCurrentBlockState(BlockStateInMultiComment);
         }

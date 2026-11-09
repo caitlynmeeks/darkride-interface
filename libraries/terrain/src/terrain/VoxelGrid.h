@@ -17,8 +17,9 @@
 //  (ChunkSamples): its own voxels and one layer of its neighbours' all around, at its own level, so neighbouring
 //  meshes of one level meet without a seam, and across each low face and low edge where the neighbours are at
 //  another level, their voxels at that level (SampleBlock), so the meshes meet there too (SurfaceNets.h). Nothing
-//  here is thread safe: edit on one thread, sample there, mesh the samples anywhere (AsyncMesher does that on a
-//  thread pool).
+//  here locks: edit on one thread; sample there, or on any thread from a snapshot of the grid (VoxelGrid::snapshot,
+//  a GridView: it shares the chunks, which are copied before they are written while shared, so it reads the grid
+//  as it was when taken); mesh the samples anywhere (AsyncMesher does that on a thread pool).
 //
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
@@ -123,11 +124,14 @@ struct ChunkKeyHash {
     }
 };
 
-// One place in the octree under a level-0 chunk: a chunk, or eight nodes at the next level in its stead.
+// One place in the octree under a level-0 chunk: a chunk, or eight nodes at the next level in its stead. The chunk
+// is held through a shared pointer and never written while shared: a copy of the node (a GridView's) shares it and
+// goes on reading it as it was, and mutableChunk() gives the grid a chunk of its own to write to first (copy on
+// write, as Qt's implicitly shared classes do).
 class ChunkNode {
 public:
-    ChunkNode() = default;
-    explicit ChunkNode(Chunk chunk) : _chunk(std::move(chunk)) {}
+    ChunkNode();
+    explicit ChunkNode(Chunk chunk);
     ChunkNode(const ChunkNode& other);
     ChunkNode(ChunkNode&&) = default;
     ChunkNode& operator=(const ChunkNode& other);
@@ -135,8 +139,9 @@ public:
 
     bool isSplit() const { return _children != nullptr; }
     // The chunk, while the node is not split.
-    const Chunk& getChunk() const { return _chunk; }
-    Chunk& getChunk() { return _chunk; }
+    const Chunk& getChunk() const { return *_chunk; }
+    // The chunk to write to, while the node is not split: the node's own once nothing else shares it.
+    Chunk& mutableChunk();
     // Child i, as ChunkKey::getChild numbers them, while the node is split.
     const ChunkNode& getChild(int i) const { return _children[i]; }
     ChunkNode& getChild(int i) { return _children[i]; }
@@ -147,7 +152,7 @@ public:
     void merge(Chunk chunk);
 
 private:
-    Chunk _chunk;
+    std::shared_ptr<Chunk> _chunk;   // never null; written only through mutableChunk()
     std::unique_ptr<ChunkNode[]> _children;
 };
 
@@ -232,7 +237,13 @@ private:
     bool _capLow[3] { false, false, false };
 };
 
-class VoxelGrid {
+// What is read of a grid: its size, its closed faces and its chunks, with every reading of the field. A VoxelGrid
+// is one of these with the writers added; a copy of one (VoxelGrid::snapshot) is a snapshot: it shares the chunks,
+// which the grid copies before writing while they are shared (ChunkNode::mutableChunk), and has its own table of
+// places, so it reads the grid as it was when it was taken, on any thread, while the grid goes on being edited on
+// its own. Taking one costs a pointer per level-0 place (a few thousand); dropping one releases the chunks the grid
+// has replaced since.
+class GridView {
 public:
     // The distance field between voxels at a point, in grid voxels, and the material there.
     struct FieldSample {
@@ -240,19 +251,10 @@ public:
         uint8_t material { 0 };
     };
 
-    VoxelGrid() = default;
-    VoxelGrid(const glm::ivec3& voxelCount, const Voxel& fill = Voxel());
-
-    // Every chunk at level 0 again, all of one value.
-    void reset(const glm::ivec3& voxelCount, const Voxel& fill = Voxel());
-
     const glm::ivec3& getVoxelCount() const { return _voxelCount; }
     // Level-0 chunks along each side: the places the octrees of finer chunks hang under.
     const glm::ivec3& getChunkCount() const { return _chunkCount; }
     bool isEmpty() const { return _slots.empty(); }
-    // The finest level refine() splits chunks to here; at most MAX_CHUNK_LEVEL.
-    int getMaxLevel() const { return _maxLevel; }
-    void setMaxLevel(int level);
 
     // The level-0 chunk of a grid voxel (floor division, so voxel -1 lies in chunk -1), and the voxel within it.
     static glm::ivec3 chunkOf(const glm::ivec3& voxel);
@@ -275,20 +277,13 @@ public:
     // Whether the grid has finer chunks under the key: a place split into eight.
     bool isSplit(const ChunkKey& key) const;
     const Chunk& getChunk(const ChunkKey& key) const;
-    // The chunk at a key, to edit in place; null when none is there. voxelsChanged() afterwards says what to re-mesh.
-    Chunk* findChunk(const ChunkKey& key);
+    // The chunk at a key; null when none is there.
     const Chunk* findChunk(const ChunkKey& key) const;
-    // The chunk's voxels from localLow to localHigh (inclusive) changed: the chunk and every chunk whose samples
-    // read them are dirty now.
-    void voxelsChanged(const ChunkKey& key, const glm::ivec3& localLow, const glm::ivec3& localHigh);
 
     // The voxel at a grid voxel: the covering chunk's own voxel there (a finer chunk has one at every grid point).
     // Outside the grid the nearest voxel in it is returned, so the surface runs open to the grid's sides and the
     // mesher draws no walls or floor there.
     const Voxel& get(const glm::ivec3& voxel) const;
-    // Sets the covering chunk's voxel at a grid voxel. Voxels outside the grid are ignored. Returns true when the
-    // voxel changed.
-    bool set(const glm::ivec3& voxel, const Voxel& value);
     // The voxel at one of a level's points (grid position point / 2^level), from whatever chunk covers it: that
     // chunk's own voxel when it is at the level or finer, interpolated between a coarser chunk's voxels otherwise,
     // the distance in the level's voxels either way. Points beyond the grid read its edge, as get() does. A level
@@ -308,6 +303,104 @@ public:
     // The field at any grid position: the distance interpolated between the covering chunk's voxels, in grid
     // voxels, and the material of the voxel nearest.
     FieldSample fieldAt(const glm::vec3& position) const;
+
+    // The chunk's voxels and one layer of its neighbours' around them, at the chunk's level; and, for the
+    // mesher, the neighbours' levels across the low faces and edges with their voxels at those levels where they
+    // differ (ChunkSamples' blocks), which a resampling of the chunk alone has no use for, and the box's closed
+    // faces applied (applyCaps).
+    void sampleChunk(const ChunkKey& key, ChunkSamples& samples, bool forMeshing = true) const;
+
+    // Which faces of the box are closed (the CAP_ bits, VoxelGrid::setCaps): the ground is capped at a closed face
+    // as if the space beyond it were air, and runs out of the box open at an open one.
+    uint8_t getCaps() const { return _caps; }
+    // Whether the grid voxels from low to high (inclusive) touch a closed face: a node there may need a cap even
+    // where the voxels are all ground.
+    bool capsReach(const glm::ivec3& low, const glm::ivec3& high) const;
+    // Closes meshing samples at the box's closed faces: a sample's distance becomes at least its distance outside
+    // the face's plane, half a voxel of the finest level past the grid's first and last voxels (within every
+    // level's layer of samples), so every level meets the plane at the same place and beyond it the samples are
+    // air; and marks the samples' closed low faces for the mesher (capsLow). Nothing to do without closed faces.
+    void applyCaps(ChunkSamples& samples) const;
+
+    int countChunks() const;
+    int countDenseChunks() const;
+    // The level of the finest chunk here: 0 while none is split.
+    int getFinestLevel() const;
+
+    // f(const ChunkKey& key, const Chunk& chunk) for every chunk, in storage order: level-0 places in x, y, z
+    // order, the chunks under a split one in child order.
+    template <typename F> void forEachChunk(F&& f) const {
+        int index = 0;
+        for (int z = 0; z < _chunkCount.z; ++z) {
+            for (int y = 0; y < _chunkCount.y; ++y) {
+                for (int x = 0; x < _chunkCount.x; ++x) {
+                    forEachLeaf(_slots[index++], ChunkKey(0, glm::ivec3(x, y, z)), f);
+                }
+            }
+        }
+    }
+
+protected:
+    struct Found {
+        const ChunkNode* node;
+        ChunkKey key;
+    };
+
+    template <typename F> static void forEachLeaf(const ChunkNode& node, const ChunkKey& key, F&& f) {
+        if (!node.isSplit()) {
+            f(key, node.getChunk());
+            return;
+        }
+        for (int i = 0; i < 8; ++i) {
+            forEachLeaf(node.getChild(i), key.getChild(i), f);
+        }
+    }
+
+    int chunkIndexOf(const glm::ivec3& chunk) const {
+        return (chunk.z * _chunkCount.y + chunk.y) * _chunkCount.x + chunk.x;
+    }
+    // The chunk covering a point in finest units (grid position times 2^MAX_CHUNK_LEVEL), which must lie in the grid.
+    Found locate(const glm::ivec3& fine) const;
+    // The node at a key, split or not; null when a chunk coarser than the key covers it, or the key is outside.
+    const ChunkNode* nodeAt(const ChunkKey& key) const;
+    Voxel interpolateAt(const Found& found, const glm::ivec3& fine, int level) const;
+    void collectLeaves(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
+                       std::vector<ChunkKey>& keys) const;
+    bool leavesAreOneSided(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
+                           int& side) const;
+
+    glm::ivec3 _voxelCount { 0 };
+    glm::ivec3 _chunkCount { 0 };
+    std::vector<ChunkNode> _slots;
+    uint8_t _caps { CAP_NONE };
+};
+
+class VoxelGrid : public GridView {
+public:
+    VoxelGrid() = default;
+    VoxelGrid(const glm::ivec3& voxelCount, const Voxel& fill = Voxel());
+
+    // Every chunk at level 0 again, all of one value.
+    void reset(const glm::ivec3& voxelCount, const Voxel& fill = Voxel());
+
+    // The finest level refine() splits chunks to here; at most MAX_CHUNK_LEVEL.
+    int getMaxLevel() const { return _maxLevel; }
+    void setMaxLevel(int level);
+
+    // The grid as it is now, to read on any thread while this one goes on editing (the class comment of GridView).
+    // Take one per batch of readers, not one per reader.
+    GridView snapshot() const { return *this; }
+
+    using GridView::findChunk;
+    // The chunk at a key, to edit in place; null when none is there. voxelsChanged() afterwards says what to re-mesh.
+    Chunk* findChunk(const ChunkKey& key);
+    // The chunk's voxels from localLow to localHigh (inclusive) changed: the chunk and every chunk whose samples
+    // read them are dirty now.
+    void voxelsChanged(const ChunkKey& key, const glm::ivec3& localLow, const glm::ivec3& localHigh);
+
+    // Sets the covering chunk's voxel at a grid voxel. Voxels outside the grid are ignored. Returns true when the
+    // voxel changed.
+    bool set(const glm::ivec3& voxel, const Voxel& value);
 
     // The chunk at the key becomes this one and is dirty, with every chunk that samples it. Finer chunks under
     // the key go; a coarser chunk over it is split first, its other parts resampled from it as splitChunk() does,
@@ -346,25 +439,9 @@ public:
     bool takeChanges(std::vector<std::pair<glm::ivec3, glm::ivec3>>& boxes, ChangeLog log = ChangeLog::LevelOfDetail);
     static const size_t MAX_CHANGE_BOXES = 4096;
 
-    // The chunk's voxels and one layer of its neighbours' around them, at the chunk's level; and, for the
-    // mesher, the neighbours' levels across the low faces and edges with their voxels at those levels where they
-    // differ (ChunkSamples' blocks), which a resampling of the chunk alone has no use for, and the box's closed
-    // faces applied (applyCaps).
-    void sampleChunk(const ChunkKey& key, ChunkSamples& samples, bool forMeshing = true) const;
-
-    // Which faces of the box are closed (the CAP_ bits): the ground is capped at a closed face as if the space
-    // beyond it were air, and runs out of the box open at an open one. A change marks every chunk dirty. Kept by
-    // reset(); the terrain file carries them (version 6).
-    uint8_t getCaps() const { return _caps; }
+    // Which faces of the box are closed (the CAP_ bits; GridView::getCaps). A change marks every chunk dirty. Kept
+    // by reset(); the terrain file carries them (version 6).
     void setCaps(uint8_t caps);
-    // Whether the grid voxels from low to high (inclusive) touch a closed face: a node there may need a cap even
-    // where the voxels are all ground.
-    bool capsReach(const glm::ivec3& low, const glm::ivec3& high) const;
-    // Closes meshing samples at the box's closed faces: a sample's distance becomes at least its distance outside
-    // the face's plane, half a voxel of the finest level past the grid's first and last voxels (within every
-    // level's layer of samples), so every level meets the plane at the same place and beyond it the samples are
-    // air; and marks the samples' closed low faces for the mesher (capsLow). Nothing to do without closed faces.
-    void applyCaps(ChunkSamples& samples) const;
 
     // Ground below a height field: height(x, z) in grid voxels is where the surface lies in that column. Every
     // chunk is at level 0 again afterwards.
@@ -372,42 +449,11 @@ public:
     void fillBelow(float height, uint8_t material = 0);
 
     void compactChunks();
-    int countChunks() const;
-    int countDenseChunks() const;
-    // The level of the finest chunk here: 0 while none is split.
-    int getFinestLevel() const;
-
-    // f(const ChunkKey& key, const Chunk& chunk) for every chunk, in storage order: level-0 places in x, y, z
-    // order, the chunks under a split one in child order.
-    template <typename F> void forEachChunk(F&& f) const {
-        int index = 0;
-        for (int z = 0; z < _chunkCount.z; ++z) {
-            for (int y = 0; y < _chunkCount.y; ++y) {
-                for (int x = 0; x < _chunkCount.x; ++x) {
-                    forEachLeaf(_slots[index++], ChunkKey(0, glm::ivec3(x, y, z)), f);
-                }
-            }
-        }
-    }
 
 private:
-    struct Found {
-        const ChunkNode* node;
-        ChunkKey key;
-    };
-
-    template <typename F> static void forEachLeaf(const ChunkNode& node, const ChunkKey& key, F&& f) {
-        if (!node.isSplit()) {
-            f(key, node.getChunk());
-            return;
-        }
-        for (int i = 0; i < 8; ++i) {
-            forEachLeaf(node.getChild(i), key.getChild(i), f);
-        }
-    }
     template <typename F> static void forEachLeaf(ChunkNode& node, const ChunkKey& key, F&& f) {
         if (!node.isSplit()) {
-            f(key, node.getChunk());
+            f(key, node);
             return;
         }
         for (int i = 0; i < 8; ++i) {
@@ -415,32 +461,17 @@ private:
         }
     }
 
-    int chunkIndexOf(const glm::ivec3& chunk) const {
-        return (chunk.z * _chunkCount.y + chunk.y) * _chunkCount.x + chunk.x;
-    }
-    // The chunk covering a point in finest units (grid position times 2^MAX_CHUNK_LEVEL), which must lie in the grid.
-    Found locate(const glm::ivec3& fine) const;
-    // The node at a key, split or not; null when a chunk coarser than the key covers it, or the key is outside.
-    const ChunkNode* nodeAt(const ChunkKey& key) const;
+    using GridView::nodeAt;
     ChunkNode* nodeAt(const ChunkKey& key);
-    Voxel interpolateAt(const Found& found, const glm::ivec3& fine, int level) const;
     std::array<Chunk, 8> resampleChildren(const ChunkKey& key) const;
     void splitNode(ChunkNode& node, const ChunkKey& key, bool resample);
     void refineNode(const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high, int level);
     void installChunk(const ChunkKey& key, Chunk value, bool resample);
-    void collectLeaves(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
-                       std::vector<ChunkKey>& keys) const;
-    bool leavesAreOneSided(const ChunkNode& node, const ChunkKey& key, const glm::ivec3& low, const glm::ivec3& high,
-                           int& side) const;
     void noteChange(const glm::ivec3& fineLow, const glm::ivec3& fineHigh);
 
-    glm::ivec3 _voxelCount { 0 };
-    glm::ivec3 _chunkCount { 0 };
     int _maxLevel { MAX_CHUNK_LEVEL };
-    std::vector<ChunkNode> _slots;
     ChunkKeySet _dirtyChunks;
     uint64_t _structureVersion { 0 };
-    uint8_t _caps { CAP_NONE };
     struct Changes {
         std::vector<std::pair<glm::ivec3, glm::ivec3>> boxes;
         bool everything { true };

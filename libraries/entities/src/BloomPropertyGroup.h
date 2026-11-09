@@ -15,7 +15,6 @@
 #include <stdint.h>
 #include <glm/glm.hpp>
 
-#include <QtScript/QScriptEngine>
 
 #include "PropertyGroup.h"
 #include "EntityItemPropertiesMacros.h"

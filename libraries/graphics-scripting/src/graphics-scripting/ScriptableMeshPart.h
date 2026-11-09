@@ -55,7 +55,7 @@ namespace scriptable {
      * @borrows GraphicsMesh.getVertexAttributes as getVertextAttributes
      * @borrows GraphicsMesh.setVertexAttributes as setVertextAttributes
      */
-    class ScriptableMeshPart : public QObject, QScriptable {
+    class ScriptableMeshPart : public QObject {
         Q_OBJECT
         Q_PROPERTY(bool valid READ isValid)
         Q_PROPERTY(glm::uint32 partIndex MEMBER partIndex CONSTANT)
@@ -78,7 +78,7 @@ namespace scriptable {
     public:
         ScriptableMeshPart(scriptable::ScriptableMeshPointer parentMesh, int partIndex);
         ScriptableMeshPart& operator=(const ScriptableMeshPart& view) { parentMesh=view.parentMesh; return *this; };
-        ScriptableMeshPart(const ScriptableMeshPart& other) : QObject(other.parent()), QScriptable(), parentMesh(other.parentMesh), partIndex(other.partIndex) {}
+        ScriptableMeshPart(const ScriptableMeshPart& other) : QObject(other.parent()), parentMesh(other.parentMesh), partIndex(other.partIndex) {}
         bool isValid() const { auto mesh = getMeshPointer(); return mesh && partIndex < mesh->getNumParts(); }
 
     public slots:
@@ -275,22 +275,7 @@ namespace scriptable {
 
         // QScriptEngine-specific wrappers
 
-        /**jsdoc
-         * Updates vertex attributes by calling a function for each vertex in the <em>whole</em> mesh (i.e., the parent and 
-         * mesh parts). The function can return modified attributes to update the vertex with.
-         * @function GraphicsMeshPart.updateVertexAttributes
-         * @param {GraphicsMesh~updateVertexAttributesCallback} callback - The function to call for each vertex.
-         * @returns {number} The number of vertices the callback was called for.
-         */
-        glm::uint32 updateVertexAttributes(QScriptValue callback);
 
-        /**jsdoc
-         * Calls a function for each vertex in the <em>whole</em> mesh (i.e., parent and mesh parts).
-         * @function GraphicsMeshPArt.forEachVertex
-         * @param {GraphicsMesh~forEachVertexCallback} callback - The function to call for each vertex.
-         * @returns {number} The number of vertices the callback was called for.
-         */
-        glm::uint32 forEachVertex(QScriptValue callback);
 
         /**jsdoc
          * Checks if an index is valid and, optionally, that vertex has a particular attribute.
@@ -334,5 +319,8 @@ namespace scriptable {
     };
 }
 
+// Qt 5 declares a QPointer's metatype after its class (Qt 6 declares these in Forward.h, before any use)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 Q_DECLARE_METATYPE(scriptable::ScriptableMeshPartPointer)
 Q_DECLARE_METATYPE(QVector<scriptable::ScriptableMeshPartPointer>)
+#endif

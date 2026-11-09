@@ -10,6 +10,7 @@
 
 #include <thread>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
@@ -32,8 +33,14 @@ QString guestModulePath() {
     if (!fromEnvironment.isEmpty()) {
         return fromEnvironment;
     }
-    // this source file is tests/wasm-scripting/src/...; the module is built beside the tools
-    return QFileInfo(QString(__FILE__)).dir().absoluteFilePath("../../../tools/wasm-js/build/darkride-js.wasm");
+    // this source file is tests/wasm-scripting/src/...; a module built from source sits beside the tools
+    const QString built = QFileInfo(QString(__FILE__)).dir().absoluteFilePath("../../../tools/wasm-js/build/darkride-js.wasm");
+    if (QFileInfo::exists(built)) {
+        return built;
+    }
+    // else the pinned module the build copies for the servers (CopyJavaScriptGuest): this test runs from
+    // <build>/tests/wasm-scripting
+    return QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../../assignment-client/resources/wasm/darkride-js.wasm");
 }
 
 struct Guest {
@@ -703,5 +710,41 @@ void JavaScriptGuestTests::testErrorsAndPrintedNamesAsOnQtScript() {
     QCOMPARE(out[4].toBool(), true);
     QCOMPARE(out[5].toString(), QString("TypeError"));
     QCOMPARE(out[6].toBool(), true);
+    guest.stop();
+}
+
+void JavaScriptGuestTests::testConsoleLines() {
+    // the scripting console's lines (console_eval, revision 6): in the script's global scope, what a line declares
+    // stays for the next, a throw is shown as an error and the script goes on
+    Guest guest;
+    START_OR_SKIP(guest, "var fromTheScript = 40;");
+    if (!guest.instance->hasExport("console_eval")) {
+        QSKIP("this guest is from before revision 6 (no console_eval)");
+    }
+    auto line = [&guest](const QString& code) {
+        QVariant result;
+        QString error;
+        if (!guest.host->callWithPayload("console_eval", QVariant(code), result, error)) {
+            return QVariantMap { { "text", "the call failed: " + error }, { "error", true } };
+        }
+        return result.toMap();
+    };
+    QVariantMap shown = line("fromTheScript + 2");
+    QCOMPARE(shown.value("text").toString(), QString("42"));
+    QCOMPARE(shown.value("error").toBool(), false);
+    shown = line("var typed = 'kept'; function twice(x) { return 2 * x; }");
+    QCOMPARE(shown.value("text").toString(), QString("undefined"));
+    QCOMPARE(line("typed + ' ' + twice(21)").value("text").toString(), QString("kept 42"));
+    shown = line("throw new Error('typed wrong')");
+    QCOMPARE(shown.value("error").toBool(), true);
+    QCOMPARE(shown.value("text").toString(), QString("Error: typed wrong"));
+    shown = line("}{");
+    QVERIFY(shown.value("error").toBool());
+    QVERIFY2(shown.value("text").toString().startsWith("SyntaxError"), qPrintable(shown.value("text").toString()));
+    // the host's objects, as the script reaches them
+    shown = line("typeof Probe.ping");
+    QCOMPARE(shown.value("text").toString(), QString("function"));
+    QCOMPARE(line("fromTheScript").value("text").toString(), QString("40"));
+    QVERIFY2(guest.failures.isEmpty(), qPrintable(guest.failures.join(" | ")));
     guest.stop();
 }

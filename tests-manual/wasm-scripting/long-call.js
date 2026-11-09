@@ -7,7 +7,7 @@
 //  script would be stopped); this prints LONG-CALL lines to show it went on.
 //
 //  Run (a 1 s limit, so the test is quick):
-//    DARKRIDE_RUN_JS_ON_WASM=1 DARKRIDE_SCRIPT_CALL_LIMIT_MS=1000 tests-manual/wasm-scripting/run-client.sh long-call 60 \
+//    DARKRIDE_SCRIPT_CALL_LIMIT_MS=1000 tests-manual/wasm-scripting/run-client.sh long-call 60 \
 //        --url file://$PWD/tests-manual/wasm-scripting/world.json --testScript $PWD/tests-manual/wasm-scripting/long-call.js
 //
 //  Distributed under the Apache License, Version 2.0.

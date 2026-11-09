@@ -4,10 +4,9 @@
 //
 //  The default scripts in a test client: loads this checkout's defaultScripts.js (a scripted client goes straight in,
 //  signed out, so the default scripts do not load by themselves), lets them run for a minute, prints each running
-//  script's name and engine, and quits. With DARKRIDE_RUN_JS_ON_WASM=1 they run on the WebAssembly engine; the
-//  client's log then shows what, if anything, still crosses through QtScript's conversions.
+//  script's name and engine, and quits.
 //
-//    DARKRIDE_RUN_JS_ON_WASM=1 tests-manual/wasm-scripting/run-client.sh default-scripts-wasm 110 \
+//    tests-manual/wasm-scripting/run-client.sh default-scripts-wasm 110 \
 //        --url file://$PWD/tests-manual/wasm-scripting/world.json --testScript $PWD/tests-manual/wasm-scripting/default-scripts.js
 //
 //  Distributed under the Apache License, Version 2.0.

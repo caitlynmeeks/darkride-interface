@@ -40,15 +40,8 @@ Controls.WebView {
 
     userScripts: [ createGlobalEventBridge, raiseAndLowerKeyboard, userScript ]
 
-    function onWebEventReceived(event) {
-        if (typeof event === "string" && event.slice(0, 17) === "CLARA.IO DOWNLOAD") {
-            ApplicationInterface.addAssetToWorldFromURL(event.slice(18));
-        }
-    }
-
     Component.onCompleted: {
         webChannel.registerObject("eventBridge", eventBridge);
         webChannel.registerObject("eventBridgeWrapper", eventBridgeWrapper);
-        eventBridge.webEventReceived.connect(onWebEventReceived);
     }
 }

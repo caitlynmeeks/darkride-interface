@@ -11,6 +11,7 @@
 #ifndef hifi_UnityAvatar_h
 #define hifi_UnityAvatar_h
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 #include <QVariantMap>
@@ -31,6 +32,11 @@ struct AvatarSource {
     QString modelPath;
     QVariantMap descriptor;  // the VRCAvatarDescriptor's fields
 };
+
+// The .fst's jointMap lines ("jointMap = <standard name> = <the model's joint>") from Unity's humanoid map, the
+// humanDescription of the model's .meta; skeletonNames gets each mapped joint's standard name. A joint whose name an
+// .fst line cannot hold (FSTReader::isLineValue) is left out, with a note.
+QStringList jointMapLines(const QVariantMap& humanDescription, QHash<QString, QString>& skeletonNames, QStringList& notes);
 
 // The avatars in a package, PC ones before those for phones and Quest.
 QVector<AvatarSource> findAvatars(const unity::Package& package);

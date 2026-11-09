@@ -15,10 +15,11 @@
 #include <gl/Config.h>
 #include <gl/GLHelpers.h>
 #include <gpu/gl/GLBackend.h>
+#include <shaders/Shaders.h>
 #include <NumericalConstants.h>
 
-#include <quazip5/quazip.h>
-#include <quazip5/JlCompress.h>
+#include <quazip/quazip.h>
+#include <quazip/JlCompress.h>
 
 #include <test-utils/QTestExtensions.h>
 #include <test-utils/Utils.h>
@@ -31,39 +32,6 @@ QTEST_MAIN(TextureTest)
 static const QString TEST_DATA("https://hifi-public.s3.amazonaws.com/austin/test_data/test_ktx.zip");
 static const QString TEST_DIR_NAME("{630b8f02-52af-4cdf-a896-24e472b94b28}");
 static const QString KTX_TEST_DIR_ENV("HIFI_KTX_TEST_DIR");
-
-std::string vertexShaderSource = R"SHADER(
-layout(location = 0) out vec2 outTexCoord0;
-
-const vec4 VERTICES[] = vec4[](
-    vec4(-1.0, -1.0, 0.0, 1.0), 
-    vec4( 1.0, -1.0, 0.0, 1.0),    
-    vec4(-1.0,  1.0, 0.0, 1.0),
-    vec4( 1.0,  1.0, 0.0, 1.0)
-);   
-
-void main() {
-    outTexCoord0 = VERTICES[gl_VertexID].xy;
-    outTexCoord0 += 1.0;
-    outTexCoord0 /= 2.0;
-    gl_Position = VERTICES[gl_VertexID];
-}
-)SHADER";
-
-std::string fragmentShaderSource = R"SHADER(
-uniform sampler2D tex;
-
-layout(location = 0) in vec2 inTexCoord0;
-layout(location = 0) out vec4 outFragColor;
-
-void main() {
-    outFragColor = texture(tex, inTexCoord0);
-    outFragColor.a = 1.0;
-    //outFragColor.rb = inTexCoord0;
-}
-
-)SHADER";
-
 QtMessageHandler originalHandler;
 
 void messageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message) {
@@ -108,9 +76,8 @@ void TextureTest::initTestCase() {
 
     _canvas.makeCurrent();
     {
-        auto VS = gpu::Shader::createVertex(vertexShaderSource);
-        auto PS = gpu::Shader::createPixel(fragmentShaderSource);
-        auto program = gpu::Shader::createProgram(VS, PS);
+        // the library's textured unit quad (colorMap at binding 0, a 4-vertex strip), as the test drew with its own text
+        auto program = gpu::Shader::createProgram(shader::gpu::program::DrawTexture);
         // If the pipeline did not exist, make it
         auto state = std::make_shared<gpu::State>();
         state->setCullMode(gpu::State::CULL_NONE);

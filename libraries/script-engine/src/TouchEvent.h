@@ -17,17 +17,11 @@
 #include <QVector>
 #include <QTouchEvent>
 
-class QScriptValue;
-class QScriptEngine;
-
 class TouchEvent {
 public:
     TouchEvent();
     TouchEvent(const QTouchEvent& event);
     TouchEvent(const QTouchEvent& event, const TouchEvent& other);
-    
-    static QScriptValue toScriptValue(QScriptEngine* engine, const TouchEvent& event);
-    static void fromScriptValue(const QScriptValue& object, TouchEvent& event);
     
     float x;
     float y;

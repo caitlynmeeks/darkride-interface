@@ -11,6 +11,8 @@
 
 #include <algorithm>
 
+#include <QElapsedTimer>
+
 #include <GeometryUtil.h>
 #include <GLMHelpers.h>
 #include <NumericalConstants.h>
@@ -28,7 +30,7 @@
 static const int MAX_TARGET_MARKERS = 30;
 static const float JOINT_CHAIN_INTERP_TIME = 0.5f;
 
-static QTime debounceJointWarningsClock;
+static QElapsedTimer debounceJointWarningsClock;
 static const int JOINT_WARNING_DEBOUNCE_TIME = 30000; // 30 seconds
 
 static void lookupJointInfo(const AnimInverseKinematics::JointChainInfo& jointChainInfo,

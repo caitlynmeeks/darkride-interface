@@ -1041,7 +1041,7 @@ void GLTFFile::normalizeNodeTransforms() {
     }
 }
 
-bool GLTFSerializer::buildGeometry(HFMModel& hfmModel, const hifi::VariantHash& mapping, const hifi::URL& url) {
+bool GLTFSerializer::buildGeometry(HFMModel& hfmModel, const hifi::VariantMultiHash& mapping, const hifi::URL& url) {
     hfmModel.originalURL = url.toString();
     
     int numNodes = _file.nodes.size();
@@ -1519,7 +1519,7 @@ bool GLTFSerializer::buildGeometry(HFMModel& hfmModel, const hifi::VariantHash& 
 
                 // Build list of blendshapes from FST and model
                 typedef QPair<int, float> WeightedIndex;
-                hifi::VariantHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
+                hifi::VariantMultiHash blendshapeMappings = FSTReader::getBlendshapeMappings(mapping);
                 QMultiHash<QString, WeightedIndex> blendshapeIndices;
 
                 for (int i = 0;; ++i) {
@@ -1657,7 +1657,7 @@ std::unique_ptr<hfm::Serializer::Factory> GLTFSerializer::getFactory() const {
     return std::make_unique<hfm::Serializer::SimpleFactory<GLTFSerializer>>();
 }
 
-HFMModel::Pointer GLTFSerializer::read(const hifi::ByteArray& data, const hifi::VariantHash& mapping, const hifi::URL& url) {
+HFMModel::Pointer GLTFSerializer::read(const hifi::ByteArray& data, const hifi::VariantMultiHash& mapping, const hifi::URL& url) {
     _url = url;
 
     // Normalize url for local files
@@ -1742,7 +1742,7 @@ QNetworkReply* GLTFSerializer::request(hifi::URL& url, bool isTest) {
     auto connection = QObject::connect(qApp, &QCoreApplication::aboutToQuit, [&] { aboutToQuit = true; });
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
     QNetworkRequest netRequest(url);
-    netRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    netRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     QNetworkReply* netReply = isTest ? networkAccessManager.head(netRequest) : networkAccessManager.get(netRequest);
     if (!qApp || aboutToQuit) {
         netReply->deleteLater();

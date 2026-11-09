@@ -190,6 +190,11 @@ void ResourceManager::cleanup() {
     _thread.wait();
 }
 
+void ResourceManager::ruleEveryWebRequest(const QUrl& origin) {
+    QMutexLocker locker(&_ruleLock);
+    _everyWebRequestRuleOrigin = origin;
+}
+
 ResourceRequest* ResourceManager::createResourceRequest(
     QObject* parent,
     const QUrl& url,
@@ -206,6 +211,10 @@ ResourceRequest* ResourceManager::createResourceRequest(
         request = new FileResourceRequest(normalizedURL, isObservable, callerId, extra);
     } else if (scheme == HIFI_URL_SCHEME_HTTP || scheme == HIFI_URL_SCHEME_HTTPS || scheme == HIFI_URL_SCHEME_FTP) {
         request = new HTTPResourceRequest(normalizedURL, isObservable, callerId, extra);
+        QMutexLocker locker(&_ruleLock);
+        if (!_everyWebRequestRuleOrigin.isEmpty()) {
+            request->setNetworkRule(_everyWebRequestRuleOrigin, false);
+        }
     } else if (scheme == URL_SCHEME_ATP) {
         if (!_atpSupportEnabled) {
             qCDebug(networking) << "ATP support not enabled, unable to create request for URL: " << url.url();
@@ -242,7 +251,7 @@ bool ResourceManager::resourceExists(const QUrl& url) {
         auto& networkAccessManager = NetworkAccessManager::getInstance();
         QNetworkRequest request{ url };
 
-        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
         request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
 
         auto reply = networkAccessManager.head(request);

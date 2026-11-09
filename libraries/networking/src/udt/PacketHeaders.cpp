@@ -16,7 +16,9 @@
 
 #include <QtCore/QDataStream>
 #include <QtCore/QDebug>
+#include <QtCore/QIODevice>
 #include <QtCore/QMetaEnum>
+#include <shared/WireStream.h>
 
 
 Q_DECLARE_METATYPE(PacketType);
@@ -140,6 +142,7 @@ static void ensureProtocolVersionsSignature() {
     std::call_once(once, [&] {
         QByteArray buffer;
         QDataStream stream(&buffer, QIODevice::WriteOnly);
+        hifi::stream::pin(stream);
         uint8_t numberOfProtocols = static_cast<uint8_t>(PacketType::NUM_PACKET_TYPE);
         stream << numberOfProtocols;
         for (uint8_t packetType = 0; packetType < numberOfProtocols; packetType++) {

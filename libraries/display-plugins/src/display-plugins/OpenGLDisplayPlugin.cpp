@@ -35,7 +35,10 @@
 
 #include <QtGui/QImage>
 #include <QtGui/QImageWriter>
-#include <QtGui/QOpenGLFramebufferObject>
+#include <QOpenGLFramebufferObject>   // QtGui on Qt 5, the QtOpenGL module on Qt 6
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtCore/QPointer>
+#endif
 
 #include <NumericalConstants.h>
 #include <DependencyManager.h>
@@ -172,6 +175,12 @@ public:
         _context->makeCurrent();
         CHECK_GL_ERROR();
         while (!_shutdown) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+            // one autorelease pool per pass: Qt 6.11's Cocoa plugin autoreleases the window's colour profile data in
+            // every swap, and this thread has no event loop to drain it (16 KB a present, kept for the thread's life,
+            // 11-05); the pool ends with the pass, after the swap and the lock's release
+            gl::AutoreleasePool autoreleasePool;
+#endif
             if (_pendingOtherThreadOperation) {
                 setPresentStage(PresentLendingContext);
                 PROFILE_RANGE(render, "MainThreadOp")
@@ -279,6 +288,7 @@ public:
             // for the main thread (QCocoaGLContext::update), which there attaches the view's new surface: drawing
             // meanwhile crashed in Apple's GL driver (10-18). The lock is let go while the main thread runs it, and the
             // next pass draws.
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
             if (gl::takeViewChanged()) {
                 setPresentStage(PresentViewCatchUp);
                 _context->doneCurrent();
@@ -287,6 +297,10 @@ public:
                 gl::waitForMainQueue(VIEW_UPDATE_WAIT_MS);
                 continue;
             }
+#else
+            // Qt 6: the view-change guard ran the context's update on the main thread before it let the lock go, and
+            // this thread's makeCurrent is native (gl::Context::makeCurrent), so there is nothing to wait for
+#endif
 #endif
             // Execute the frame and present it to the display device.
             {
@@ -421,7 +435,25 @@ bool OpenGLDisplayPlugin::activate() {
     // (DisplayLink, RefreshRateController); it follows the window from screen to screen
     if (!isHmd()) {
         auto widget = _container->getPrimaryWidget();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Qt 6 replaces the main window's QWindow when a QQuickWidget dock joins it (QWidget::setParent's recreate()):
+        // the lambdas below resolve the window at every use instead of keeping the one of the activation, whose
+        // frameGeometry() the watchdog read after its death (run 12, 11-05). The screen and visibility connections
+        // are made again by the watchdog when the window object has changed.
+        struct LiveWindow {
+            PluginContainer* container;
+            QWindow* get() const {
+                auto widget = container->getPrimaryWidget();
+                return (widget && widget->window()) ? widget->window()->windowHandle() : nullptr;
+            }
+            QWindow* operator->() const { return get(); }
+            explicit operator bool() const { return get() != nullptr; }
+        };
+        LiveWindow window { _container };
+        Q_UNUSED(widget);   // the Qt 5 line above stays; here the lambdas look the widget up themselves
+#else
         QWindow* window = (widget && widget->window()) ? widget->window()->windowHandle() : nullptr;
+#endif
         if (window) {
             // the link runs while the window can be seen: a minimized or hidden window has nothing to pace, and the
             // link's thread would wake at every refresh for nothing (10-21 review). The display is the one under the
@@ -451,8 +483,13 @@ bool OpenGLDisplayPlugin::activate() {
             startLink();
             QObject::disconnect(_screenConnection);
             QObject::disconnect(_visibilityConnection);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            _screenConnection = connect(window.get(), &QWindow::screenChanged, this, [startLink](QScreen*) { startLink(); });
+            _visibilityConnection = connect(window.get(), &QWindow::visibilityChanged, this, [startLink](QWindow::Visibility) { startLink(); });
+#else
             _screenConnection = connect(window, &QWindow::screenChanged, this, [startLink](QScreen*) { startLink(); });
             _visibilityConnection = connect(window, &QWindow::visibilityChanged, this, [startLink](QWindow::Visibility) { startLink(); });
+#endif
             // the watchdog, every 2 s on the main thread: a link on another display than the window's, or one that has
             // gone quiet while the window can be seen, is started again on the window's display, and said so
             if (!_linkWatchdog) {
@@ -461,7 +498,24 @@ bool OpenGLDisplayPlugin::activate() {
                 _linkWatchdog->setTimerType(Qt::VeryCoarseTimer);
             }
             _linkWatchdog->disconnect();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            connect(_linkWatchdog, &QTimer::timeout, this, [this, window, displayUnderWindow, startLink, tracked = QPointer<QWindow>()]() mutable {
+                QWindow* now = window.get();
+                if (!now) {
+                    return;
+                }
+                if (now != tracked.data()) {
+                    // the window object changed (or this is the first tick): the screen and visibility signals of the
+                    // window it has now
+                    QObject::disconnect(_screenConnection);
+                    QObject::disconnect(_visibilityConnection);
+                    _screenConnection = connect(now, &QWindow::screenChanged, this, [startLink](QScreen*) { startLink(); });
+                    _visibilityConnection = connect(now, &QWindow::visibilityChanged, this, [startLink](QWindow::Visibility) { startLink(); });
+                    tracked = now;
+                }
+#else
             connect(_linkWatchdog, &QTimer::timeout, this, [this, window, displayUnderWindow] {
+#endif
                 QWindow::Visibility visibility = window->visibility();
                 if (visibility == QWindow::Minimized || visibility == QWindow::Hidden) {
                     return;
@@ -1167,13 +1221,19 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     refreshRateController->notePresentCost(presentUsecs > _lastSwapUsecs ? (int)(presentUsecs - _lastSwapUsecs) : 0,
                                            _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
     _previousPresentStart = startPresent;
-    if (FrameTrace::enabled() && _currentFrame) {
-        // how long before the refresh this present's picture was due the present returned; negative when it missed
+    {
+        // how long before the refresh this present's picture was due the present returned; negative when it missed.
+        // The cadence counters take it on every present (the governor's missed-present count, entry 34); the frame
+        // trace takes it as a column when it runs
         const int64_t deadlineNs = refreshRateController->getPresentDeadlineNs();
         if (deadlineNs > 0) {
             const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            FrameTrace::set(_currentFrame->traceFrame, "present.slack_us", (double)(deadlineNs - nowNs) / 1000.0);
+            const int64_t slackNs = deadlineNs - nowNs;
+            refreshRateController->notePresentSlack((int)(slackNs / 1000));
+            if (FrameTrace::enabled() && _currentFrame) {
+                FrameTrace::set(_currentFrame->traceFrame, "present.slack_us", (double)slackNs / 1000.0);
+            }
         }
     }
 }

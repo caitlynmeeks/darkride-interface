@@ -40,6 +40,27 @@ void addBlockingForbiddenThread(const QString& name, QThread* thread) {
     threadHash[thread] = name;
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+bool checkedBlockingInvoke(const char* function, const std::function<bool()>& invoke) {
+    auto currentThread = QThread::currentThread();
+    if (currentThread == qApp->thread()) {
+        qCWarning(thread_safety) << "BlockingQueuedConnection invoked on main thread from " << function;
+        return invoke();
+    }
+
+    {
+        QReadLocker locker(&threadHashLock);
+        for (const auto& thread : threadHash.keys()) {
+            if (currentThread == thread) {
+                qCWarning(thread_safety) << "BlockingQueuedConnection invoked on forbidden thread " << threadHash[thread];
+            }
+        }
+    }
+
+    PROFILE_RANGE(app, function);
+    return invoke();
+}
+#else
 bool blockingInvokeMethod(
     const char* function,
     QObject *obj, const char *member,
@@ -90,6 +111,7 @@ bool blockingInvokeMethod(
     QGenericArgument val9) {
     return blockingInvokeMethod(function, obj, member, QGenericReturnArgument(), val0, val1, val2, val3, val4, val5, val6, val7, val8, val9);
 }
+#endif
 
 void blockingInvoke(const char* function, QObject* obj, const std::function<void()>& f) {
     auto currentThread = QThread::currentThread();

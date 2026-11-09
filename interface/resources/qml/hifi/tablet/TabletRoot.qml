@@ -93,13 +93,13 @@ Rectangle {
 
     function loadSource(url) {
         tabletApps.clear();
-        tabletApps.append({"appUrl": url, "isWebUrl": false, "scriptUrl": "", "appWebUrl": ""});
+        tabletApps.append({"appUrl": url, "isWebUrl": false, "scriptUrl": "", "appWebUrl": "", "worldPage": false});
         loader.load(url)
     }
 
     function loadQMLOnTop(url) {
         if (!isUrlLoaded(url)) {
-            tabletApps.append({"appUrl": url, "isWebUrl": false, "scriptUrl": "", "appWebUrl": ""});
+            tabletApps.append({"appUrl": url, "isWebUrl": false, "scriptUrl": "", "appWebUrl": "", "worldPage": false});
             loader.load(tabletApps.get(currentApp).appUrl, function(){
 	            if (loader.item.hasOwnProperty("gotoPreviousApp")) {
 	                loader.item.gotoPreviousApp = true;
@@ -112,22 +112,28 @@ Rectangle {
         }
     }
 
-    function loadWebContent(source, url, injectJavaScriptUrl) {
+    // worldPage: a page a world's script opened (security finding #54): the web view knows (it drops its EventBridge
+    // when the page navigates, opens no window for it) and the screen type is WorldWeb, which no app's handler matches
+    function loadWebContent(source, url, injectJavaScriptUrl, worldPage) {
+        worldPage = !!worldPage;
         if (!isUrlLoaded(url)) {
-            tabletApps.append({"appUrl": source, "isWebUrl": true, "scriptUrl": injectJavaScriptUrl, "appWebUrl": url});
+            tabletApps.append({"appUrl": source, "isWebUrl": true, "scriptUrl": injectJavaScriptUrl, "appWebUrl": url, "worldPage": worldPage});
             loader.load(source, function() {
                 loader.item.scriptURL = injectJavaScriptUrl;
+                if (loader.item.hasOwnProperty("worldPage")) {
+                    loader.item.worldPage = worldPage;   // before the address, so the view knows from its first load
+                }
                 loader.item.url = url;
                 if (loader.item.hasOwnProperty("gotoPreviousApp")) {
                     loader.item.gotoPreviousApp = true;
                 }
-                screenChanged("Web", url)
+                screenChanged(worldPage ? "WorldWeb" : "Web", url)
             });
         }
     }
 
-    function loadWebBase(url, injectJavaScriptUrl) {
-        loadWebContent("hifi/tablet/TabletWebView.qml", url, injectJavaScriptUrl);
+    function loadWebBase(url, injectJavaScriptUrl, worldPage) {
+        loadWebContent("hifi/tablet/TabletWebView.qml", url, injectJavaScriptUrl, worldPage);
     }
 
     function loadTabletWebBase(url, injectJavaScriptUrl) {
@@ -140,7 +146,7 @@ Rectangle {
         if (isWebPage) {
             var webUrl = tabletApps.get(currentApp).appWebUrl;
             var scriptUrl = tabletApps.get(currentApp).scriptUrl;
-            loadWebBase(webUrl, scriptUrl);
+            loadWebBase(webUrl, scriptUrl, tabletApps.get(currentApp).worldPage);
         } else {
         	loader.load(tabletApps.get(currentApp).appUrl);
         }
@@ -192,17 +198,6 @@ Rectangle {
         id: tabletApps
         onCountChanged: {
             currentApp = count - 1
-        }
-    }
-
-    // Hook up the callback for a clara.io download.
-    Connections {
-        id: eventBridgeConnection
-        target: eventBridge
-        function onWebEventReceived() {
-            if (typeof message === "string" && message.slice(0, 17) === "CLARA.IO DOWNLOAD") {
-                ApplicationInterface.addAssetToWorldFromURL(message.slice(18));
-            }
         }
     }
 

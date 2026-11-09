@@ -39,7 +39,11 @@ ShutdownEventListener::ShutdownEventListener(QObject* parent) : QObject(parent) 
 }
 
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+bool ShutdownEventListener::nativeEventFilter(const QByteArray &eventType, void* msg, qintptr* result) {
+#else
 bool ShutdownEventListener::nativeEventFilter(const QByteArray &eventType, void* msg, long* result) {
+#endif
 #ifdef Q_OS_WIN
     if (eventType == "windows_generic_MSG") {
         MSG* message = (MSG*)msg;

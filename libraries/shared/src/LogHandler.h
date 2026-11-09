@@ -15,7 +15,7 @@
 
 #include <QObject>
 #include <QString>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QMutex>
 #include <vector>
 #include <memory>
@@ -73,7 +73,11 @@ private:
         QString repeatString;
     };
     std::vector<RepeatedMessageRecord> _repeatedMessageRecords;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    static QRecursiveMutex _mutex;   // Qt 6 has no QMutex::Recursive; the same lock as below
+#else
     static QMutex _mutex;
+#endif
 };
 
 #define HIFI_FCDEBUG(category, message) \

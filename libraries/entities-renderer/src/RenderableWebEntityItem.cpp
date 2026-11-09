@@ -11,7 +11,11 @@
 
 #include <QtCore/QTimer>
 #include <QtGui/QOpenGLContext>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QPointingDevice>
+#else
 #include <QtGui/QTouchDevice>
+#endif
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <QtQml/QQmlContext>
@@ -49,7 +53,17 @@ static uint64_t MAX_NO_RENDER_INTERVAL = 30 * USECS_PER_SECOND;
 static std::atomic<uint32_t> _currentWebCount(0);
 static const uint32_t MAX_CONCURRENT_WEB_VIEWS = 20;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt 6: a pointing device is made with its properties, once the application exists (it registers itself)
+static OffscreenTouchDevice& touchDevice() {
+    static QPointingDevice* device = new QPointingDevice("WebEntityRendererTouchDevice", 0, QInputDevice::DeviceType::TouchScreen,
+                                                        QPointingDevice::PointerType::Finger, QInputDevice::Capability::Position, 4, 0);
+    return *device;
+}
+#else
 static QTouchDevice _touchDevice;
+static QTouchDevice& touchDevice() { return _touchDevice; }
+#endif
 
 QStringList WebEntityRenderer::_trustedQmlUrls;
 
@@ -86,10 +100,12 @@ WebEntityRenderer::ContentType WebEntityRenderer::getContentType(const QString& 
 WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(entity) {
     static std::once_flag once;
     std::call_once(once, [&]{
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         _touchDevice.setCapabilities(QTouchDevice::Position);
         _touchDevice.setType(QTouchDevice::TouchScreen);
         _touchDevice.setName("WebEntityRendererTouchDevice");
         _touchDevice.setMaximumTouchPoints(4);
+#endif
     });
     _geometryId = DependencyManager::get<GeometryCache>()->allocateID();
 
@@ -431,7 +447,7 @@ void WebEntityRenderer::hoverEnterEntity(const PointerEvent& event) {
         if (_webSurface) {
             PointerEvent webEvent = event;
             webEvent.setPos2D(event.getPos2D() * (METERS_TO_INCHES * _dpi));
-            _webSurface->hoverBeginEvent(webEvent, _touchDevice);
+            _webSurface->hoverBeginEvent(webEvent, touchDevice());
         }
     });
 }
@@ -451,7 +467,7 @@ void WebEntityRenderer::hoverLeaveEntity(const PointerEvent& event) {
         if (_webSurface) {
             PointerEvent webEvent = event;
             webEvent.setPos2D(event.getPos2D() * (METERS_TO_INCHES * _dpi));
-            _webSurface->hoverEndEvent(webEvent, _touchDevice);
+            _webSurface->hoverEndEvent(webEvent, touchDevice());
         }
     });
 }
@@ -473,7 +489,7 @@ void WebEntityRenderer::handlePointerEvent(const PointerEvent& event) {
 void WebEntityRenderer::handlePointerEventAsTouch(const PointerEvent& event) {
     PointerEvent webEvent = event;
     webEvent.setPos2D(event.getPos2D() * (METERS_TO_INCHES * _dpi));
-    _webSurface->handlePointerEvent(webEvent, _touchDevice);
+    _webSurface->handlePointerEvent(webEvent, touchDevice());
 }
 
 void WebEntityRenderer::handlePointerEventAsMouse(const PointerEvent& event) {

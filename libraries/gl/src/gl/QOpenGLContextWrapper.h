@@ -25,8 +25,23 @@ class QThread;
 #include <QtPlatformHeaders/QEGLNativeContext>
 using QGLNativeContext = QEGLNativeContext;
 #elif defined(Q_OS_WIN)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt 6 has no QWGLNativeContext (QtPlatformHeaders are gone); the pair comes from QNativeInterface::QWGLContext
+#include <QtCore/qt_windows.h>
+class QGLNativeContext {
+public:
+    QGLNativeContext() = default;
+    QGLNativeContext(HGLRC context, HWND window) : _context(context), _window(window) {}
+    HGLRC context() const { return _context; }
+    HWND window() const { return _window; }
+private:
+    HGLRC _context { nullptr };
+    HWND _window { nullptr };
+};
+#else
 class QWGLNativeContext;
 using QGLNativeContext = QWGLNativeContext;
+#endif
 #else
 using QGLNativeContext = void*;
 #endif

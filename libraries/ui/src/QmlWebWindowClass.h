@@ -143,20 +143,10 @@ class QmlWebWindowClass : public QmlWindowClass {
     Q_OBJECT
     Q_PROPERTY(QString url READ getURL CONSTANT)
 
-private:
-    static QScriptValue internal_constructor(QScriptContext* context, QScriptEngine* engine, bool restricted);
 public:
     /// A web window from the constructor's properties, initialised on the main thread; the caller owns it.
     static QmlWebWindowClass* createWebWindow(QVariantMap properties, bool restricted);
     QmlWebWindowClass(bool restricted) : QmlWindowClass(restricted) {}
-
-    static QScriptValue constructor(QScriptContext* context, QScriptEngine* engine) {
-        return internal_constructor(context, engine, false);
-    }
-
-    static QScriptValue restricted_constructor(QScriptContext* context, QScriptEngine* engine ){
-        return internal_constructor(context, engine, true);
-    }
 
 public slots:
 

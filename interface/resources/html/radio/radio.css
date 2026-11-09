@@ -33,7 +33,7 @@ html, body {
     margin: 0;
     height: 100%;
     overflow: hidden;
-    background: var(--navy);
+    background: transparent;   /* the panel's colour shows through (RadioPanel.qml's view): one margin, the panel's */
     color: var(--cream);
     font: 500 11px/1.35 Jost, Futura, "Avenir Next", Arial, sans-serif;
 }
@@ -44,7 +44,7 @@ html, body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 8px 0;
+    padding: 0;   /* the panel's margin is the only one */
 }
 
 /* the station list in Jost a size up from Webamp's 9 px: at 1x, 9 px Jost's small x-height closed up its letters

@@ -28,7 +28,11 @@ public:
     static void clearCache();
 
 protected:
+#if SHARED_WEB_PROFILES
+    FileTypeProfile(const QString& storageName, bool restricted);
+#else
     FileTypeProfile(QQmlContext* parent);
+#endif
     virtual ~FileTypeProfile();
 
     class RequestInterceptor : public Parent::RequestInterceptor {

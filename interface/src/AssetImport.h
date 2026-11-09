@@ -3,15 +3,14 @@
 //  interface/src
 //
 //  A model, image or zip from a URL or a drop becomes an asset on the domain's asset server and then an entity in the
-//  world. addAssetToWorldFromURL() downloads it and hands it to the unzipper; handleUnzip() takes the unzipper's
+//  world. handleUnzip() takes the unzipper's
 //  result (the files to add, or the asset server widget when nothing is to be added automatically);
 //  addAssetToWorld() uploads a file under a free mapping (the name counted up while it is taken), sets the mapping
 //  and adds the entity in front of the avatar, which addAssetToWorldCheckModelSize() resizes once its model's
 //  dimensions arrive (a timer, once a second); the info and error messages along the way (an info box the code no
 //  longer shows, an alert for an error); addAssetToWorldMessageClose() clears them when the domain changes or the
 //  client quits. A QObject: it owns timers and receives the requests' and uploads' signals. Application owns one,
-//  reached by getAssetImport(); QML's ApplicationInterface.addAssetToWorldFromURL reaches it through Application's
-//  slot of that name, and Application's URL dispatch (a dropped image) through addAssetToWorld(). These were
+//  reached by getAssetImport(); Application's URL dispatch (a dropped image) reaches it through addAssetToWorld(). These were
 //  Application's addAssetToWorld members, handleUnzip and their state; the members keep the flow's original name
 //  (ARCHITECTURE.md §5.4 step 4, the sixth owner class).
 //
@@ -38,13 +37,11 @@ class AssetImport : public QObject {
 public:
     AssetImport();   // the timers set up: the size check once a second, the info and error messages' time-outs
 
-    void addAssetToWorldFromURL(QString url);                                                          // download, then unzip and add
     void addAssetToWorld(QString filePath, QString zipFile, bool isZip = false, bool isBlocks = false);   // upload, map, add
     void handleUnzip(QString sourceFile, QStringList destinationFile, bool autoAdd, bool isZip, bool isBlocks);   // the unzipper's result
     void addAssetToWorldMessageClose();   // the messages cleared: the domain changed, the client quits, the box was closed by hand
 
 private slots:
-    void addAssetToWorldFromURLRequestFinished();
     void addAssetToWorldCheckModelSize();
     void addAssetToWorldInfoTimeout();
     void addAssetToWorldErrorTimeout();

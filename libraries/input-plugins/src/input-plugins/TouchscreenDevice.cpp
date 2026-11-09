@@ -24,11 +24,19 @@
 const char* TouchscreenDevice::NAME = "Touchscreen";
 
 bool TouchscreenDevice::isSupported() const {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    for (auto inputDevice : QInputDevice::devices()) {
+        if (inputDevice->type() == QInputDevice::DeviceType::TouchScreen) {
+            return true;
+        }
+    }
+#else
     for (auto touchDevice : QTouchDevice::devices()) {
         if (touchDevice->type() == QTouchDevice::TouchScreen) {
             return true;
         }
     }
+#endif
     return false;
 }
 
@@ -76,7 +84,15 @@ void TouchscreenDevice::touchBeginEvent(const QTouchEvent* event) {
     const QTouchEvent::TouchPoint& point = event->touchPoints().at(0);
     _firstTouchVec = glm::vec2(point.pos().x(), point.pos().y());
     KeyboardMouseDevice::enableTouch(false);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 has no QTouchEvent::window(): the screen under the touch, else the main screen
+    QScreen* eventScreen = QGuiApplication::screenAt(point.globalPosition().toPoint());
+    if (!eventScreen) {
+        eventScreen = QGuiApplication::primaryScreen();
+    }
+#else
     QScreen* eventScreen = event->window()->screen();
+#endif
     if (_screenDPI != eventScreen->physicalDotsPerInch()) {
         _screenDPIScale.x = (float)eventScreen->physicalDotsPerInchX();
         _screenDPIScale.y = (float)eventScreen->physicalDotsPerInchY();

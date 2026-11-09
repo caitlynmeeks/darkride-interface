@@ -18,3 +18,5 @@ CollectionTile 1.0 CollectionTile.qml
 SkinFrame 1.0 SkinFrame.qml
 SkinDecorations 1.0 SkinDecorations.qml
 RightsLine 1.0 RightsLine.qml
+Checkmark 1.0 Checkmark.qml
+Star 1.0 Star.qml

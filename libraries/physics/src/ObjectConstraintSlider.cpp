@@ -20,6 +20,7 @@
 #include "QVariantGLM.h"
 
 #include "EntityTree.h"
+#include <shared/WireStream.h>
 #include "PhysicsLogging.h"
 
 
@@ -375,6 +376,7 @@ QVariantMap ObjectConstraintSlider::getArguments() {
 QByteArray ObjectConstraintSlider::serialize() const {
     QByteArray serializedConstraintArguments;
     QDataStream dataStream(&serializedConstraintArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     dataStream << DYNAMIC_TYPE_SLIDER;
     dataStream << getID();
@@ -400,6 +402,7 @@ QByteArray ObjectConstraintSlider::serialize() const {
 
 void ObjectConstraintSlider::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;

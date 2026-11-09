@@ -11,6 +11,8 @@
 
 #include "AvatarActionFarGrab.h"
 
+#include <shared/WireStream.h>
+
 AvatarActionFarGrab::AvatarActionFarGrab(const QUuid& id, EntityItemPointer ownerEntity) :
     ObjectActionTractor(id, ownerEntity) {
     _type = DYNAMIC_TYPE_FAR_GRAB;
@@ -29,6 +31,7 @@ AvatarActionFarGrab::~AvatarActionFarGrab() {
 QByteArray AvatarActionFarGrab::serialize() const {
     QByteArray serializedActionArguments;
     QDataStream dataStream(&serializedActionArguments, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
 
     dataStream << DYNAMIC_TYPE_FAR_GRAB;
     dataStream << getID();
@@ -41,6 +44,7 @@ QByteArray AvatarActionFarGrab::serialize() const {
 
 void AvatarActionFarGrab::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;

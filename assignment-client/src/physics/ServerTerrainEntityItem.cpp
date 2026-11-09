@@ -24,6 +24,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <QtCore/QUrl>
+#include <QtCore/QScopedPointer>
 #include <QtCore/QUrlQuery>
 
 #include <EntityTree.h>
@@ -81,95 +82,146 @@ void ServerTerrainEntityItem::computeShapeInfo(ShapeInfo& info) {
 }
 
 void ServerTerrainEntityItem::update() {
-    QString url = getTerrainURL();
-    uint32_t version = getTerrainVersion();
-    glm::ivec3 voxelCount = getVoxelCount();
-    if (_built && url == _builtURL && version == _builtVersion && voxelCount == _builtVoxelCount) {
-        if (_retryTime == 0 || usecTimestampNow() < _retryTime) {
-            return;
+    // The properties are read outside the lock (their getters take the entity's read lock); the fetch and build state
+    // under it
+    const QString url = getTerrainURL();
+    const uint32_t version = getTerrainVersion();
+    const glm::ivec3 voxelCount = getVoxelCount();
+    bool flatGround = false;
+    bool fetchNow = false;
+    withWriteLock([&] {
+        if (_built && url == _builtURL && version == _builtVersion && voxelCount == _builtVoxelCount) {
+            if (_retryTime == 0 || usecTimestampNow() < _retryTime) {
+                return;
+            }
+            _retryTime = 0;   // a failed fetch, tried again
         }
-        _retryTime = 0;   // a failed fetch, tried again
-    }
-    if (_request && url == _requestURL && version == _requestVersion) {
-        return;   // on its way
-    }
-    if (url.trimmed().isEmpty()) {
+        if ((_request || _building) && url == _requestURL && version == _requestVersion) {
+            return;   // on its way, or being built
+        }
+        if (url.trimmed().isEmpty()) {
+            flatGround = true;
+        } else {
+            fetchNow = true;
+        }
+    });
+    if (flatGround) {
         // no file yet: flat ground halfway up the box, as the client makes it
         dropRequest();
         terrain::VoxelGrid grid(voxelCount);
         grid.fillBelow(0.5f * voxelCount.y);
-        _builtURL = url;
-        _builtVersion = version;
+        withWriteLock([&] {
+            _builtURL = url;
+            _builtVersion = version;
+        });
         build(grid);
         return;
     }
-    fetch(url, version);
+    if (fetchNow) {
+        fetch(url, version);
+    }
 }
 
 void ServerTerrainEntityItem::fetch(const QString& url, uint32_t version) {
     dropRequest();
-    _requestURL = url;
-    _requestVersion = version;
     QUrl fetchURL(url);
     QUrlQuery query(fetchURL);
     query.addQueryItem("v", QString::number(version));
     fetchURL.setQuery(query);
-    _request = DependencyManager::get<ResourceManager>()->createResourceRequest(this, fetchURL, true, -1, "ServerTerrainEntityItem::fetch");
-    if (!_request) {
+    ResourceRequest* request = DependencyManager::get<ResourceManager>()->createResourceRequest(this, fetchURL, true, -1, "ServerTerrainEntityItem::fetch");
+    const glm::ivec3 voxelCount = getVoxelCount();
+    uint64_t serial = 0;
+    withWriteLock([&] {
+        _requestURL = url;
+        _requestVersion = version;
+        _request = request;
+        serial = ++_fetchSerial;   // this fetch's own number: the handler answers to it, never to an address
+        if (!request) {
+            _built = true;   // nothing more to try until the entity changes
+            _builtURL = url;
+            _builtVersion = version;
+            _builtVoxelCount = voxelCount;
+        }
+    });
+    if (!request) {
         qCWarning(physics) << "physics-server: terrain file" << url << "cannot be fetched: no request for that kind of URL";
-        _built = true;   // nothing more to try until the entity changes
-        _builtURL = url;
-        _builtVersion = version;
-        _builtVoxelCount = getVoxelCount();
         return;
     }
-    _request->setCacheEnabled(false);
-    connect(_request, &ResourceRequest::finished, this, [this, url, version] {
-        ResourceRequest* request = _request;
-        _request = nullptr;
-        if (!request) {
-            return;
+    request->setCacheEnabled(false);
+    // The handler owns the request from the moment it takes it below: it keeps the object alive until it returns, on
+    // every way out, and lets it go only then. While the file is being read and built the entity counts as still
+    // fetching (_building), so update() asks once per URL and version.
+    connect(request, &ResourceRequest::finished, this, [this, request, url, version, serial] {
+        bool mine = false;
+        withWriteLock([&] {
+            if (_request == request && _fetchSerial == serial) {
+                _request = nullptr;
+                _building = true;
+                mine = true;
+            }
+        });
+        if (!mine) {
+            return;   // dropped meanwhile: dropRequest() lets it go
         }
-        request->deleteLater();
-        _builtURL = url;
-        _builtVersion = version;
-        if (request->getResult() != ResourceRequest::Success) {
+        QScopedPointer<ResourceRequest, QScopedPointerDeleteLater> holder(request);
+        const ResourceRequest::Result result = request->getResult();
+        const QString resultString = request->getResultString();
+        const QByteArray data = request->getData();
+        const glm::ivec3 expected = getVoxelCount();
+        auto done = [this] { withWriteLock([&] { _building = false; }); };
+        withWriteLock([&] {
+            _builtURL = url;
+            _builtVersion = version;
+        });
+        if (result != ResourceRequest::Success) {
             const quint64 RETRY_INTERVAL = 10 * USECS_PER_SECOND;
-            qCWarning(physics) << "physics-server: terrain file" << url << "could not be fetched:" << request->getResultString()
+            qCWarning(physics) << "physics-server: terrain file" << url << "could not be fetched:" << resultString
                 << "(trying again in 10 s)";
-            _built = true;
-            _builtVoxelCount = getVoxelCount();
-            _retryTime = usecTimestampNow() + RETRY_INTERVAL;
+            withWriteLock([&] {
+                _built = true;
+                _builtVoxelCount = expected;
+                _retryTime = usecTimestampNow() + RETRY_INTERVAL;
+            });
+            done();
             return;
         }
         terrain::VoxelGrid grid;
         std::string error;
-        QByteArray data = request->getData();
         if (!terrain::loadTerrain(reinterpret_cast<const uint8_t*>(data.constData()), (size_t)data.size(), grid, nullptr, nullptr,
                                   &error)) {
             qCWarning(physics) << "physics-server: terrain file" << url << "is not usable:" << QString::fromStdString(error);
-            _built = true;
-            _builtVoxelCount = getVoxelCount();
+            withWriteLock([&] {
+                _built = true;
+                _builtVoxelCount = expected;
+            });
+            done();
             return;
         }
-        glm::ivec3 expected = getVoxelCount();
         if (grid.getVoxelCount() != expected) {
             qCWarning(physics) << "physics-server: terrain" << getID() << "file holds" << grid.getVoxelCount().x << "x" << grid.getVoxelCount().y
                 << "x" << grid.getVoxelCount().z << "voxels but the entity's dimensions hold" << expected.x << "x" << expected.y << "x" << expected.z;
-            _built = true;
-            _builtVoxelCount = expected;
+            withWriteLock([&] {
+                _built = true;
+                _builtVoxelCount = expected;
+            });
+            done();
             return;
         }
         build(grid);
+        done();
     });
-    _request->send();
+    request->send();
 }
 
 void ServerTerrainEntityItem::dropRequest() {
-    if (_request) {
-        _request->disconnect(this);
-        _request->deleteLater();
+    ResourceRequest* request = nullptr;
+    withWriteLock([&] {
+        request = _request;
         _request = nullptr;
+    });
+    if (request) {
+        request->disconnect(this);
+        request->deleteLater();
     }
 }
 
@@ -224,7 +276,9 @@ void ServerTerrainEntityItem::build(const terrain::VoxelGrid& grid) {
         info.setParams(SHAPE_TYPE_NONE, 0.5f * getScaledDimensions());
     }
     _triangles = info.getTriangleIndices().size() / 3;
+    QString builtURL;
     withWriteLock([&] {
+        builtURL = _builtURL;
         _shapeInfo = info;
         _shapeReady = true;
         _built = true;
@@ -237,5 +291,5 @@ void ServerTerrainEntityItem::build(const terrain::VoxelGrid& grid) {
         tree->entityChanged(getThisPointer());
     }
     qCInfo(physics) << "physics-server: terrain" << getName() << getID() << "built:" << meshed << "chunks," << points.size()
-        << "points," << _triangles << "triangles from" << (_builtURL.isEmpty() ? QString("flat ground") : _builtURL);
+        << "points," << _triangles << "triangles from" << (builtURL.isEmpty() ? QString("flat ground") : builtURL);
 }
