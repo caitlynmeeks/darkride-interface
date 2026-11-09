@@ -858,12 +858,8 @@ Page {
                     }
                     devicePicker.open = false;
                 }
-                Text {
-                    text: "✓"
-                    color: Theme.tint
-                    font.pixelSize: Theme.bodySize
-                    font.bold: true
-                    opacity: selected ? 1 : 0
+                Checkmark {
+                    checked: selected
                 }
             }
         }

@@ -167,8 +167,20 @@ Menu::Menu() {
     // File > Import Avatar: wear an .fst, or auto rig a character file (AUTO-RIGGING.md)
     addActionToQMenuAndActionHash(fileMenu, MenuOption::ImportAvatar, 0, qApp, SLOT(importAvatarDialog()));
 
-    // File > Put Avatar in My Files: the worn avatar, when it is on this computer, goes up, private, so others see it
-    addActionToQMenuAndActionHash(fileMenu, MenuOption::PutAvatarInMyFiles, 0, qApp, SLOT(putAvatarInMyFiles()));
+    // File > Put Avatar in My Files: the worn avatar, when it is on this computer, goes up, private, so others see it.
+    // Greyed out for any other avatar (a web link, the default), where it can't do anything (mary's Avatar redo, 11-08)
+    {
+        QAction* putInMyFiles = addActionToQMenuAndActionHash(fileMenu, MenuOption::PutAvatarInMyFiles, 0, qApp,
+                                                              SLOT(putAvatarInMyFiles()));
+        auto myAvatar = DependencyManager::get<AvatarManager>()->getMyAvatar();
+        if (myAvatar) {
+            auto update = [putInMyFiles, avatar = myAvatar.get()] {
+                putInMyFiles->setEnabled(avatar->getFullAvatarURLFromPreferences().isLocalFile());
+            };
+            update();
+            connect(myAvatar.get(), &AvatarData::skeletonModelURLChanged, putInMyFiles, update);
+        }
+    }
 
     // File > Quit (Cmd+Q, and macOS's own Quit Darkride, which Qt merges with it): what isn't saved is asked about
     // first (ui/QuitCheck.h)
