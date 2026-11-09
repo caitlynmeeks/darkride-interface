@@ -31,13 +31,30 @@
 #include "DockTitleBar.h"
 #include "InterfaceLogging.h"
 
-// The keys a panel's page took. The page sees every release as ever; what stops is the send onward, for a key whose press it
-// took, as that press never went on either. Only a fresh press counts: a repeat can belong to a key held before the page had the
-// keyboard, and the controls are waiting for that key's release. Each fresh press sets or clears its key, so a press that went
-// on always has its release go on too. A key stays taken through its repeats' releases (X11 sends them in pairs).
+// Return, Enter and "/" never leave a panel, whatever has its keyboard (a text field, a button, a row or nothing): in the 3D
+// view they open Local Chat (ui/ChatButton.cpp), and a text field doesn't take the Return that finishes it (Qt's design, so a
+// dialog hears it too), so that Return went on to the controls and chat opened, taking the keyboard from the field (Caity's
+// Avatar search, 11-08). Held back the way chat looks for them: with Shift too ("/" on a Spanish keyboard), not with Control,
+// Option or Command (Option-Return is full screen, from a panel too).
+static bool staysInPanel(const QKeyEvent* event) {
+    if (event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
+        return false;
+    }
+    const int key = event->key();
+    return key == Qt::Key_Return || key == Qt::Key_Enter || key == Qt::Key_Slash;
+}
+
+// The keys a panel's page took, and the ones that stay in a panel (staysInPanel), taken here. The page sees every release as
+// ever; what stops is the send onward, for a key whose press it took, as that press never went on either. Only a fresh press
+// counts: a repeat can belong to a key held before the page had the keyboard, and the controls are waiting for that key's
+// release. Each fresh press sets or clears its key, so a press that went on always has its release go on too. A key stays
+// taken through its repeats' releases (X11 sends them in pairs).
 class PageKeys {
 public:
-    void pressed(const QKeyEvent* event) {
+    void pressed(QKeyEvent* event) {
+        if (staysInPanel(event)) {
+            event->accept();
+        }
         if (event->isAutoRepeat()) {
             return;
         }
