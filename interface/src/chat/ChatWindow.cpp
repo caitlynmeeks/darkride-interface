@@ -1501,7 +1501,7 @@ QString ChatWindow::mediaHtml(const QJsonObject& item) {
     }
     // a file, a sound, or a video under its still: its name to open it by, and its size
     static const QMap<QString, QString> words { { "file", "File" }, { "video", "Video" }, { "audio", "Sound" },
-                                               { "image", "Picture" } };
+                                               { "image", "Image" } };
     html += QString("<span style=\"color:%1;\">%2:</span> <a href=\"%3\">%4</a>")
                 .arg(muted, words.value(kind), open, body.toHtmlEscaped());
     QString bytes = sizeText(size);

@@ -126,7 +126,7 @@ TerrainToolBar::TerrainToolBar(QWidget* parent) : QToolBar("Terrain", parent) {
     _hardness->setSuffix(" %");
     _hardness->setValue(50.0);
     addField("Hardness", _hardness, 0.5, false, "The part of the brush with its full effect, before the soft edge; with a shape "
-             "picture, pushes its greys toward white (harder) or black (softer), the picture as it is at 50 %");
+             "image, pushes its greys toward white (harder) or black (softer), the image as it is at 50 %");
 
     // the brush's shape: round, or a picture from the client's brushes or a file, turned by the angle
     auto shapeName = new QLabel("Shape", this);
@@ -136,8 +136,8 @@ TerrainToolBar::TerrainToolBar(QWidget* parent) : QToolBar("Terrain", parent) {
     _shape->setPopupMode(QToolButton::InstantPopup);
     _shape->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     _shape->setFocusPolicy(Qt::NoFocus);
-    _shape->setToolTip("The brush's shape: round, or a picture laid over the brush seen from above, white where the brush has its "
-                       "full effect and black where none; Dig and Fill keep their sphere. Load Picture… takes any picture from disk");
+    _shape->setToolTip("The brush's shape: round, or an image laid over the brush seen from above, white where the brush has its "
+                       "full effect and black where none; Dig and Fill keep their sphere. Load Image… takes any image from disk");
     _shapeMenu = new QMenu(_shape);
     const QString roundThumbnail = QString(BRUSHES_FOLDER) + ROUND_THUMBNAIL;
     addShape("Round", QString(), roundThumbnail);
@@ -154,7 +154,7 @@ TerrainToolBar::TerrainToolBar(QWidget* parent) : QToolBar("Terrain", parent) {
         }
     }
     _shapeMenu->addSeparator();
-    _loadShape = _shapeMenu->addAction("Load Picture…");
+    _loadShape = _shapeMenu->addAction("Load Image…");
     connect(_loadShape, &QAction::triggered, this, &TerrainToolBar::loadShapePicture);
     _shape->setMenu(_shapeMenu);
     addWidget(_shape);
@@ -168,15 +168,15 @@ TerrainToolBar::TerrainToolBar(QWidget* parent) : QToolBar("Terrain", parent) {
     _angle->setSingleStep(15.0);
     _angle->setSuffix(QString::fromUtf8("°"));
     _angle->setValue(0.0);
-    addField("Angle", _angle, 0.5, false, "Turns the shape picture about the brush's centre");
+    addField("Angle", _angle, 0.5, false, "Turns the shape image about the brush's centre");
     // a new angle at random for each stroke, so a stamped picture doesn't repeat itself (Piper's ask through Caity,
     // 2026-10-26). Per stroke, not per step: a stroke applies a step every frame, and a new turn each time would blur
     // the picture into a round smudge
     _randomAngle = new QCheckBox("Random", this);
     _randomAngle->setObjectName("EditorTerrainRandomAngle");
     _randomAngle->setFocusPolicy(Qt::NoFocus);
-    _randomAngle->setToolTip("A new angle at random for each stroke: the shape picture lands turned a different way each "
-                             "time you press, and the outline shows the next one. For a shape picture, not Round");
+    _randomAngle->setToolTip("A new angle at random for each stroke: the shape image lands turned a different way each "
+                             "time you press, and the outline shows the next one. For a shape image, not Round");
     addWidget(_randomAngle);
     connect(_randomAngle, &QCheckBox::toggled, this, [this](bool on) {
         _angle->setEnabled(!on);
@@ -309,8 +309,8 @@ void TerrainToolBar::chooseShape(const QString& name, const QString& path, const
 }
 
 void TerrainToolBar::loadShapePicture() {
-    const QString path = QFileDialog::getOpenFileName(this, "Choose a brush picture", QDir::homePath(),
-        "Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tga *.tif *.tiff)");
+    const QString path = QFileDialog::getOpenFileName(this, "Choose a Brush Image", QDir::homePath(),
+        "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tga *.tif *.tiff)");
     if (path.isEmpty()) {
         return;
     }

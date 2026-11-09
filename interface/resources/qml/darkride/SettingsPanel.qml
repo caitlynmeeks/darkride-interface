@@ -277,7 +277,7 @@ Page {
 
         Section {
             title: "Cache"
-            footer: "The cache keeps the models, sounds and pictures of the worlds you visit, so a second visit loads "
+            footer: "The cache keeps the models, sounds and images of the worlds you visit, so a second visit loads "
                 + "from this computer. Clearing it makes every world download again."
 
             ListRow {
@@ -1177,7 +1177,7 @@ Page {
         Section {
             title: "Skin"
             footer: appearance.skinStatus !== "" ? appearance.skinStatus
-                : "A skin is pictures, colours and fonts only: nothing in it runs, so a skin from anyone is safe to load."
+                : "A skin is images, colours and fonts only: nothing in it runs, so a skin from anyone is safe to load."
 
             PickerRow {
                 label: "Skin"

@@ -73,7 +73,7 @@ UserFile::Kind UserFile::kindOf(const QString& name, bool folder) {
 QString UserFile::kindName(Kind kind) {
     switch (kind) {
         case Kind::Folder: return "Folder";
-        case Kind::Picture: return "Picture";
+        case Kind::Picture: return "Image";
         case Kind::Model: return "Model";
         case Kind::Avatar: return "Avatar";
         case Kind::Sound: return "Sound";

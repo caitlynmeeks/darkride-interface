@@ -388,7 +388,7 @@ Page {
             }
             AvatarThumbnails.fromFile(path, function (error, url) {
                 if (error) {
-                    status = "Couldn't use that picture: " + error + ".";
+                    status = "Couldn't use that image: " + error + ".";
                     return;
                 }
                 pending = url;
