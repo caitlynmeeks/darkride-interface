@@ -313,7 +313,7 @@ Item {
                                         asynchronous: true
                                         sourceSize.width: 192
                                         Accessible.role: Accessible.Graphic
-                                        Accessible.name: "Your picture"
+                                        Accessible.name: "Your image"
                                     }
                                 }
                             }
@@ -548,7 +548,7 @@ Item {
         border.color: BuildTheme.selection
         Text {
             anchors.centerIn: parent
-            text: "Drop pictures to add them"
+            text: "Drop images to add them"
             textFormat: Text.PlainText
             color: BuildTheme.text
             font.pixelSize: BuildTheme.textSize

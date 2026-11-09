@@ -145,7 +145,7 @@ namespace {
                 reader.setDecideFormatFromContent(true);
                 const QSize size = reader.size();
                 if (!size.isValid() || size.width() > PICTURE_MAX_SIDE || size.height() > PICTURE_MAX_SIDE) {
-                    _error = "not a picture Make can show";
+                    _error = "not an image Make can show";
                 } else {
                     if (_frontOnly) {
                         // a model's sheet is 2x2 views: the front is the top left one
@@ -1171,8 +1171,8 @@ void MakeDock::addPictures() {
     if (!takeRealInput("addPictures") || _chooser) {
         return;
     }
-    auto chooser = new QFileDialog(qApp->getWindow(), "Add Pictures", QDir::homePath(),
-                                   "Pictures (*.png *.jpg *.jpeg *.webp)");
+    auto chooser = new QFileDialog(qApp->getWindow(), "Add Images", QDir::homePath(),
+                                   "Images (*.png *.jpg *.jpeg *.webp)");
     chooser->setFileMode(QFileDialog::ExistingFiles);
     chooser->setAttribute(Qt::WA_DeleteOnClose);
     QObject::connect(chooser, &QFileDialog::filesSelected, this, [this](const QStringList& files) {
@@ -1215,7 +1215,7 @@ void MakeDock::cleanPictures(const QStringList& files) {
         QStringList ids;
         QStringList refusals;
         if (tooMany) {
-            refusals << QString("Only %1 pictures at a time: the first %1 were taken.").arg(PICTURES_PER_ADD);
+            refusals << QString("Only %1 images at a time: the first %1 were taken.").arg(PICTURES_PER_ADD);
         }
         QDir().mkpath(folder);
         for (const auto& file : chosen) {
@@ -1233,12 +1233,12 @@ void MakeDock::cleanPictures(const QStringList& files) {
             reader.setDecideFormatFromContent(true);
             const QByteArray format = reader.format().toLower();
             if (format != "png" && format != "jpeg" && format != "jpg" && format != "webp") {
-                refusals << name + " isn't a PNG, JPEG or WebP picture.";
+                refusals << name + " isn't a PNG, JPEG or WebP image.";
                 continue;
             }
             const QSize size = reader.size();
             if (!size.isValid() || size.width() > PICTURE_MAX_SIDE || size.height() > PICTURE_MAX_SIDE) {
-                refusals << name + " is too large a picture (8192 pixels a side at most).";
+                refusals << name + " is too large an image (8192 pixels a side at most).";
                 continue;
             }
             if (size.width() > PICTURE_KEEP_SIDE || size.height() > PICTURE_KEEP_SIDE) {
@@ -1246,7 +1246,7 @@ void MakeDock::cleanPictures(const QStringList& files) {
             }
             QImage image = reader.read();
             if (image.isNull()) {
-                refusals << name + " couldn't be read as a picture.";
+                refusals << name + " couldn't be read as an image.";
                 continue;
             }
             const QString id = QString::number(QRandomGenerator::system()->generate64(), 16).rightJustified(16, '0');
