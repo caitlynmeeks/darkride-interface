@@ -8,6 +8,7 @@
 
 #include "GLTexture.h"
 
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QThread>
 #include <NumericalConstants.h>
 
@@ -50,6 +51,38 @@ enum class MemoryPressureState
 static MemoryPressureState _memoryPressureState{ MemoryPressureState::Idle };
 // the loading boost's turn (entry 33, Amendment 2): allocation one frame, upload the next, while both have work
 static bool _boostAllocationTurn{ false };
+
+// test-only (TIVOLI_TEXTURE_ENGINE_TRACE): one line a second on what the engine did on the present thread, so a second
+// with a late present can be read against its texture work (the judder read of 2026-11-09). Unset: one static bool
+// read a frame.
+static bool textureEngineTrace() {
+    static const bool trace = !qgetenv("TIVOLI_TEXTURE_ENGINE_TRACE").isEmpty();
+    return trace;
+}
+struct TextureEngineTraceSecond {
+    uint32_t frames{ 0 }, allocationFrames{ 0 }, transferFrames{ 0 }, demoteFrames{ 0 };
+    uint32_t allocations{ 0 }, uploads{ 0 }, demotes{ 0 };
+    size_t allocatedBytes{ 0 }, uploadedBytes{ 0 }, demotedBytes{ 0 };
+    qint64 maxFrameUs{ 0 };   // the longest manageMemory call of the second
+};
+static TextureEngineTraceSecond _traceSecond;
+static QElapsedTimer _traceTimer;
+
+static void traceSecondDone() {
+    const double MB = 1024.0 * 1024.0;
+    const TextureEngineTraceSecond& t = _traceSecond;
+    qCDebug(gpugllogging).nospace() << "texture engine: frames=" << t.frames << " alloc=" << t.allocationFrames
+        << " transfer=" << t.transferFrames << " demote=" << t.demoteFrames
+        << " allocations=" << t.allocations << " allocatedMB=" << QString::number(t.allocatedBytes / MB, 'f', 1)
+        << " uploads=" << t.uploads << " uploadedMB=" << QString::number(t.uploadedBytes / MB, 'f', 1)
+        << " demotes=" << t.demotes << " demotedMB=" << QString::number(t.demotedBytes / MB, 'f', 1)
+        << " maxFrameMs=" << QString::number(t.maxFrameUs / 1000.0, 'f', 2)
+        << " pendingMB=" << QString::number(Backend::texturePendingGPUTransferMemSize.getValue() / MB, 'f', 1)
+        << " resourceMB=" << QString::number(Backend::textureResourceGPUMemSize.getValue() / MB, 'f', 1)
+        << " boost=" << (Texture::getTransferBoost() ? 1 : 0);
+    _traceSecond = TextureEngineTraceSecond();
+    _traceTimer.start();
+}
 
 template <typename T>
 struct LessPairSecond {
@@ -182,6 +215,14 @@ void GLTextureTransferEngineDefault::shutdown() {
 
 void GLTextureTransferEngineDefault::manageMemory() {
     PROFILE_RANGE(render_gpu_gl, __FUNCTION__);
+    const bool trace = textureEngineTrace();
+    QElapsedTimer frameTimer;
+    if (trace) {
+        frameTimer.start();
+        if (!_traceTimer.isValid()) {
+            _traceTimer.start();
+        }
+    }
     // reset the count used to limit the number of textures created per frame
     resetFrameTextureCreated();
     // Determine the current memory management state.  It will be either idle (no work to do),
@@ -191,9 +232,18 @@ void GLTextureTransferEngineDefault::manageMemory() {
     if (MemoryPressureState::Undersubscribed == _memoryPressureState) {
         // If we're undersubscribed, we need to process some of the textures that can have additional allocation
         processPromotes();
+        _traceSecond.allocationFrames += trace ? 1 : 0;
     } else if (MemoryPressureState::Transfer == _memoryPressureState) {
         // If we're in transfer mode we need to manage the buffering and upload queues
         processTransferQueues();
+        _traceSecond.transferFrames += trace ? 1 : 0;
+    }
+    if (trace) {
+        ++_traceSecond.frames;
+        _traceSecond.maxFrameUs = std::max(_traceSecond.maxFrameUs, frameTimer.nsecsElapsed() / 1000);
+        if (_traceTimer.hasExpired(1000)) {
+            traceSecondDone();
+        }
     }
 }
 
@@ -243,6 +293,7 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
         auto overPressure = pressure - OVERSUBSCRIBED_PRESSURE_VALUE;
         size_t relief = (size_t)(overPressure * totalVariableMemoryAllocation);
         Backend::textureTransferEngineBusy.set(1);   // demoting is work too (the arrival gate's read, below)
+        _traceSecond.demoteFrames += textureEngineTrace() ? 1 : 0;
         processDemotes(relief, strongTextures);
         return;
     }
@@ -333,6 +384,10 @@ void GLTextureTransferEngineDefault::processTransferQueues() {
             const auto& tranferJob = activeTransferJob.second;
             if (tranferJob->sourceMip() < vargltexture->populatedMip()) {
                 tranferJob->transfer(texturePointer);
+                if (textureEngineTrace()) {
+                    ++_traceSecond.uploads;
+                    _traceSecond.uploadedBytes += tranferJob->size();
+                }
             }
             // The pop_front MUST be the last call since all of these varaibles in scope are
             // references that will be invalid after the pop
@@ -492,6 +547,10 @@ void GLTextureTransferEngineDefault::processPromotes() {
             vartexture->promote();
         }
         auto allocationDelta = gltexture->size() - originalSize;
+        if (textureEngineTrace()) {
+            ++_traceSecond.allocations;
+            _traceSecond.allocatedBytes += allocationDelta;
+        }
         if (vartexture->canPromote()) {
             // Promote smallest first
             _promoteQueue.push({ texture, 1.0f / (float)gltexture->size() });
@@ -534,6 +593,10 @@ void GLTextureTransferEngineDefault::processDemotes(size_t reliefRequired, const
             vargltexture->demote();
             auto newSize = gltexture->size();
             relieved += (oldSize - newSize);
+            if (textureEngineTrace()) {
+                ++_traceSecond.demotes;
+                _traceSecond.demotedBytes += oldSize - newSize;
+            }
         }
         demoteQueue.pop();
     }
