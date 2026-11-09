@@ -162,7 +162,14 @@
         tick();
     }
 
-    function end() {
+    // why: said in the log when the arrival's wait ends before physics is on, i.e. before the world near the avatar and
+    // its textures are in (DomainSession only waits for them while the wait is held), so a bare arrival names its cause
+    // in one line (Caity's 11-09 ride: a refusal had ended it unexplained)
+    function end(why) {
+        if (Window.isPhysicsEnabled && !Window.isPhysicsEnabled()) {
+            print("World loading: the arrival's wait ends before physics is on (" + (why || "no reason given") +
+                "): the world shows as it streams in");
+        }
         way = null;
         if (timer) {
             Script.clearInterval(timer);
@@ -218,7 +225,7 @@
         var now = Date.now();
         if (way.failed) {
             if (now - way.failed.at >= FAILED_SHOWN) {
-                end();
+                end("the new instance couldn't start");
                 Messages.sendLocalMessage(EXPLORE_CHANNEL, "open");
             } else {
                 send(true, way.failed.text, -1, false, false);
@@ -230,7 +237,7 @@
         }
         if (way.starting && now - way.started > STARTING_LIMIT * 1000) {
             print("World loading: no server after " + STARTING_LIMIT + " s, the screen lifts");
-            end();
+            end("no server after " + STARTING_LIMIT + " s");
             return;
         }
         var loading = loadingState();
@@ -241,7 +248,7 @@
         } else if (way.retryingSince && now - way.retryingSince > LOGIN_RETRY_LIMIT * 1000) {
             print("World loading: still not in " + LOGIN_RETRY_LIMIT + " s after the world couldn't check the sign-in's key, " +
                 "the screen lifts");
-            end();
+            end("still not in " + LOGIN_RETRY_LIMIT + " s after the sign-in's key was refused");
             return;
         }
         if (way.left && (!physics || !connected)) {
@@ -259,7 +266,7 @@
         var arrived = !loading.active && landed && (avatarLoaded() || now - way.physicsOnAt > AVATAR_GRACE * 1000);
         if ((arrived && now - way.started >= MIN_SHOWN && (!way.notice || now - way.notice.at >= NOTICE_SHOWN)) ||
                 (!loading.active && !way.starting && now - way.waitFrom > TIME_LIMIT * 1000)) {
-            end();
+            end(arrived ? "arrived" : "the " + TIME_LIMIT + " s limit");
             return;
         }
 
@@ -497,7 +504,7 @@
                 way.failed = { text: String(data.reason), at: Date.now() };
                 tick();
             } else {
-                end();
+                end("the hop was called off");
             }
         }
     }
@@ -530,7 +537,7 @@
         } else if (button === "cancel" && canCancel()) {
             if (!canGoBack()) {
                 print("World loading: Cancel pressed, going to an empty place and opening Explore");
-                end();
+                end("Cancel");
                 location.handleLookupString(EMPTY_PLACE);
                 Messages.sendLocalMessage(EXPLORE_CHANNEL, "open");
                 return;
@@ -540,7 +547,7 @@
                 "going back to \"" + (from ? from.world : "") + "\""));
             if (way.kind === "hop" && !way.left) {
                 Messages.sendLocalMessage(CHANNEL, JSON.stringify({ type: "cancel" }));
-                end();
+                end("Cancel");
                 return;
             }
             var keepLaunch = way.launchReleased;
@@ -591,14 +598,14 @@
             }
             return;
         }
-        end();
+        end("the world refused the connection: " + reason);
     }
 
     // the world doesn't answer: the viewer gives up on it for now and opens its connection failure window, which the
     // screen would hide until its time limit (avatar-ai, 10-22: "Can't reach" hidden for 80 s), so the screen lifts
     function onDomainConnectionTimedOut() {
         if (way) {
-            end();
+            end("the world didn't answer");
         }
     }
 
@@ -619,7 +626,7 @@
     // a hop to a place that doesn't exist or is offline goes nowhere: the old world stays, so the screen lifts at once
     function onLookupFailed() {
         if (way && way.kind === "hop" && !way.left && !way.starting) {
-            end();
+            end("the place wasn't found or is offline");
         }
     }
 
@@ -657,6 +664,10 @@
     }
 
     Script.scriptEnding.connect(function () {
+        if (way && Window.isPhysicsEnabled && !Window.isPhysicsEnabled()) {
+            print("World loading: the arrival's wait ends before physics is on (the loading script stopped): the world " +
+                "shows as it streams in");
+        }
         if (timer) {
             Script.clearInterval(timer);
             timer = null;
