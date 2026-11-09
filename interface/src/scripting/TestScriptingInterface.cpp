@@ -1510,6 +1510,13 @@ void TestScriptingInterface::answerNextAlert(const QString& button, const QStrin
         if (!picturePath.isEmpty()) {
             alert->grab().save(picturePath);
         }
+        // its words as shown: each label's text and whether it's drawn as plain text (a popup's words are never markup)
+        for (auto wordLabel : alert->findChildren<QLabel*>()) {
+            if (!wordLabel->text().isEmpty()) {
+                qCDebug(interfaceapp) << "Test.answerNextAlert: label" << wordLabel->objectName() << wordLabel->text()
+                                      << (wordLabel->textFormat() == Qt::PlainText ? "plain" : "may be read as markup");
+            }
+        }
         for (auto pushButton : alert->findChildren<QPushButton*>()) {
             if (pushButton->text() == button) {
                 qCInfo(interfaceapp) << "Test.answerNextAlert: pressing" << button << "on" << alert->windowTitle();
