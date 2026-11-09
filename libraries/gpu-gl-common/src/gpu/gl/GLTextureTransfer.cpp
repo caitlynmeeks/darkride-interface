@@ -60,7 +60,8 @@ static bool _boostAllocationTurn{ false };
 // Both backends promote two mips at a time, to the texture's finest allowed level, so the step's bytes are exact.
 // allocatedBytes is the GL object's size, already in hand wherever this is asked: one size evaluation per promotable
 // texture and none for a settled one (performance's read of 2026-11-09)
-static size_t promotionBytes(const Texture& texture, const GLVariableAllocationSupport& vartexture, size_t allocatedBytes) {
+static size_t promotionBytes(const Texture& texture, const GLVariableAllocationSupport& vartexture,
+                             size_t allocatedBytes) {
     const uint16 allocated = vartexture.allocatedMip();
     const uint16 target = std::max<uint16>(vartexture.minAllocatedMip(), allocated - std::min<uint16>(allocated, 2));
     if (target >= allocated) {
@@ -69,8 +70,8 @@ static size_t promotionBytes(const Texture& texture, const GLVariableAllocationS
     const size_t grown = texture.evalTotalSize(target);
     return grown > allocatedBytes ? grown - allocatedBytes : 0;
 }
-static bool canPromoteWithin(const Texture& texture, const GLVariableAllocationSupport& vartexture, size_t allocatedBytes,
-                             size_t headroom) {
+static bool canPromoteWithin(const Texture& texture, const GLVariableAllocationSupport& vartexture,
+                             size_t allocatedBytes, size_t headroom) {
     return vartexture.canPromote() && promotionBytes(texture, vartexture, allocatedBytes) <= headroom;
 }
 // the headroom under the over mark at this frame's scan, for the promote queue's build and the promotes themselves
@@ -289,7 +290,9 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     bool hasTransfers = false;
     // the textures with a finer level left, for the cap rule's second look below (a handful once a world is in)
     struct Promotable { const Texture* texture; const GLVariableAllocationSupport* vartexture; size_t allocatedBytes; };
-    std::vector<Promotable> promotable;
+    // present thread only; kept between frames for its capacity (no allocation per frame), cleared for this one
+    static std::vector<Promotable> promotable;
+    promotable.clear();
     for (const auto& texture : strongTextures) {
         GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
         GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
