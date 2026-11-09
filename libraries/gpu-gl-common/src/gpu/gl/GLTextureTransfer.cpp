@@ -21,16 +21,19 @@
 #define THREADED_TEXTURE_BUFFERING 1
 
 static const size_t DEFAULT_ALLOWED_TEXTURE_MEMORY = MB_TO_BYTES(DEFAULT_ALLOWED_TEXTURE_MEMORY_MB);
-// the loading boost (gpu::Texture::getTransferBoost, entry 33): the per-frame allocation and upload budgets times this
-// while the loading screen is up; the GPU and the present thread have nothing else to show then
+// the loading boost (gpu::Texture::getTransferBoost, entry 33): the per-frame allocation budget times this while the
+// loading screen is up; the GPU and the present thread have nothing else to show then
 static const size_t TRANSFER_BOOST_FACTOR = 4;
-// the upload budget's factor under the loading screen; TIVOLI_TRANSFER_UPLOAD_BOOST (1-4, test-only, read once)
-// overrides it for the sitting that weighs the budget against the memory it holds (entry 33, Amendment 2)
+// the upload budget's factor under the loading screen. Two, not four: the loading screen is as short with either (the
+// uploads wait on the allocation turns and the one buffering thread, not on this budget), and the staging the
+// allocator keeps after the loading screen follows this number (+21 MB at two, +37 at four, performance's maps of
+// 2026-11-09). TIVOLI_TRANSFER_UPLOAD_BOOST (1-4, test-only, read once) overrides it for a sitting.
+static const size_t UPLOAD_BOOST_FACTOR = 2;
 static size_t uploadBoostFactor() {
     static const size_t factor = [] {
         bool ok = false;
         const int value = qgetenv("TIVOLI_TRANSFER_UPLOAD_BOOST").toInt(&ok);
-        return (ok && value >= 1 && value <= (int)TRANSFER_BOOST_FACTOR) ? (size_t)value : TRANSFER_BOOST_FACTOR;
+        return (ok && value >= 1 && value <= (int)TRANSFER_BOOST_FACTOR) ? (size_t)value : UPLOAD_BOOST_FACTOR;
     }();
     return factor;
 }
