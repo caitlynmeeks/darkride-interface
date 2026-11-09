@@ -259,6 +259,9 @@ void DomainSession::resetPhysicsReadyInformation() {
     _textureEngineIdleWait.invalidate();
     _textureEngineIdleWaitStarts = 0;
     _textureGateOpenedBy.clear();
+    _textureGateCeiling.invalidate();
+    _textureGateCeilingAnchor.clear();
+    _textureSizeChanges = 0;
     _arrivalTraceTimer.invalidate();
     _arrivalTraceTail.invalidate();
     const bool wasEnabled = _physicsEnabled;
@@ -708,6 +711,8 @@ void DomainSession::traceArrivalGate() {
         << " settleMs=" << (_gpuTextureMemSizeStableFor.isValid() ? _gpuTextureMemSizeStableFor.elapsed() : (qint64)-1)
         << " idleWaitMs=" << (_textureEngineIdleWait.isValid() ? _textureEngineIdleWait.elapsed() : (qint64)-1)
         << " restarts=" << std::max(0, _textureEngineIdleWaitStarts - 1)
+        << " ceilingMs=" << (_textureGateCeiling.isValid() ? _textureGateCeiling.elapsed() : (qint64)-1)
+        << " sizeChanges=" << _textureSizeChanges
         << " landing=" << (_octreeProcessor.safeLandingIsActive() ? "tracking" : "idle")
         << " received=" << progress.received << " waiting=" << progress.waiting << " serverDone=" << progress.serverDone
         << " arrivalWait=" << _arrivalWaitsForNearby.load() << " worldLoading=" << _worldLoading.active
@@ -727,13 +732,34 @@ bool DomainSession::gpuTextureMemSizeStable() {
     // warm-up's compiles (4 programs a present, 3-115 ms each) the loading screen presents 6-19 times a second and the
     // 30 checks took 1.5-5 s (item 53). The settle is a time now, with a small floor of checks so a few slow presents
     // cannot pass it on two readings; the populated-size and pending-transfer tests below still hold uploads in flight.
+    // Entry 33, Amendment 3: the test's own ceiling. A texture budget smaller than the world's textures (the Potato
+    // preset's 64 MB against Port Amarelle's 225) left the engine cycling at its cap, the sizes never settled, and the
+    // loading screen ran to the script's 90 s (2026-11-09). The ceiling counts from the first check once there is
+    // something to wait for: a full scene received, or a serverless world, which never counts one (editor-ui). Past it
+    // the test passes with its reason on the "Physics enabled" line. The engine's own cap rule (GLTextureTransfer.cpp)
+    // is the cure that lets the sizes settle; this is the safety net under it.
+    static const qint64 TEXTURE_GATE_CEILING_MS = 15 * MSECS_PER_SECOND;
+    if (!_textureGateCeiling.isValid() && (_fullSceneReceivedCounter > 0 || isServerlessMode())) {
+        _textureGateCeiling.start();
+        _textureGateCeilingAnchor = _fullSceneReceivedCounter > 0 ? "the first full scene" : "the arrival (serverless)";
+    }
     if (_gpuTextureMemSizeStableFor.isValid() && _gpuTextureMemSizeAtLastCheck == textureResourceGPUMemSize) {
         _gpuTextureMemSizeStabilityCount++;
     } else {
         _gpuTextureMemSizeStabilityCount = 0;
         _gpuTextureMemSizeStableFor.start();   // a monotonic clock: a wall-clock step can neither pass nor hold the gate (physics)
+        if (_textureGateCeiling.isValid()) {
+            ++_textureSizeChanges;
+        }
     }
     _gpuTextureMemSizeAtLastCheck = textureResourceGPUMemSize;
+    if (_textureGateCeiling.isValid() && _textureGateCeiling.hasExpired(TEXTURE_GATE_CEILING_MS)) {
+        // the reason names what was still waiting: the sizes, or the engine once they had settled (editor-ui's read)
+        _textureGateOpenedBy = QString(_textureEngineIdleWait.isValid() ? "texture engine still busy %1 s after %2"
+                                                                        : "texture sizes never settled %1 s after %2")
+            .arg(TEXTURE_GATE_CEILING_MS / MSECS_PER_SECOND).arg(_textureGateCeilingAnchor);
+        return true;
+    }
 
     const bool sizesSettled = _gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount &&
         _gpuTextureMemSizeStableFor.hasExpired(_gpuTextureMemSettleMs) &&
