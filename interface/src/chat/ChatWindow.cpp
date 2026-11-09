@@ -612,7 +612,7 @@ void ChatWindow::openWorld(bool command) {
     chat->selectRoom(WORLD_ROOM);
     chat->showRooms(false);
     chat->_composer->setFocus();
-    if (command && chat->_composer->toPlainText().isEmpty()) {
+    if (command && chat->_composer->isEnabled() && chat->_composer->toPlainText().isEmpty()) {
         chat->_composer->setPlainText("/");
         chat->_composer->moveCursor(QTextCursor::End);
     }
@@ -1053,6 +1053,12 @@ ChatWindow::ChatWindow(QWidget* parent) : QWidget(parent) {
         }
     });
     connect(world, &WorldChat::peopleChanged, this, &ChatWindow::updateRoomTopic);
+    // Local Chat's box comes alive on arrival, and waits again while the next world loads
+    connect(world, &WorldChat::arrivedChanged, this, [this] {
+        if (_room == WORLD_ROOM && !_friendsShown && _pages->currentIndex() == 2) {
+            showRoomPage();
+        }
+    });
     connect(world, &WorldChat::unreadChanged, this, [this](int unread) {
         for (int i = 0; i < _roomList->count(); i++) {
             if (_roomList->item(i)->data(RoomIdRole).toString() == WORLD_ROOM) {
@@ -1338,8 +1344,13 @@ void ChatWindow::showRoomPage() {
         _pages->setCurrentIndex(1);
         return;
     }
-    _composer->setPlaceholderText(room.value("world").toBool() ? QString("Message everyone in this world")
-                                                               : "Message " + mark + name);
+    // Local Chat's box waits, quiet, until you've arrived in the world: before that there's no one to hear it
+    bool world = room.value("world").toBool();
+    bool waiting = world && !WorldChat::instance()->arrived();
+    _composer->setEnabled(!waiting);
+    _composer->setPlaceholderText(waiting ? QString("You can chat once you've arrived")
+                                  : world ? QString("Message everyone in this world")
+                                          : "Message " + mark + name);
     if (_pages->currentIndex() != 2) {
         _pages->setCurrentIndex(2);
         if (isActiveWindow()) {
