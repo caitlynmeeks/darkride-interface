@@ -433,9 +433,9 @@ int streamCheckSize() {
     return size;
 }
 
-// What a live entity's stream header can take beyond the stand-in's: its two time deltas (ByteCountCoded) can each
-// grow by up to 9 bytes between the edit and the stream, so the stand-in is measured in a room this much smaller.
-const int STREAM_HEADER_GROWTH = 20;
+// The stand-in's margin (EntityItem::STREAM_HEADER_GROWTH): the client's check before an add or edit
+// (EntitySizeCheck) measures with the same one.
+const int STREAM_HEADER_GROWTH = EntityItem::STREAM_HEADER_GROWTH;
 
 // How far after a refused too-big edit its sender's copy is put back (sendBackRefusedTooBigEdit): a margin over the
 // sender's clock-offset estimate. For that long the entity's later edits keep this time.
