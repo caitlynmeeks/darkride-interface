@@ -652,8 +652,9 @@ void ChatWindow::toggle() {
         panel->activateWindow();
     }
     // it opens on Local Chat, the conversation of the place you're in (Caity 11-08); brought to the front, it stays
-    // where it was
-    if (!inSight) {
+    // where it was, and a problem with chat itself stays in sight (as updateState shows it)
+    auto service = DependencyManager::get<ChatService>();
+    if (!inSight && !(service && service->state() == ChatService::State::Unavailable)) {
         chat->selectRoom(WORLD_ROOM);
         chat->showRooms(false);
     }
@@ -1103,10 +1104,12 @@ void ChatWindow::updateState() {
         _avatarImages.clear();
         qDeleteAll(_movies);
         _movies.clear();
-        // Local Chat needs no chat account: it stays in the list, and in sight when it was
+        // Local Chat needs no chat account: it stays in the list, and chat shows it, signed out or signing in, however
+        // chat was opened (Caity 11-08). Only a problem with chat itself (the account can't use it, Darkride can't be
+        // reached) is shown instead, with Try Again, unless Local Chat was already in sight
         QListWidgetItem* worldRow = nullptr;
         addWorldRow(worldRow);
-        if (inWorld) {
+        if (service && (inWorld || service->state() != ChatService::State::Unavailable)) {
             selectRoom(WORLD_ROOM);
             return;
         }
