@@ -1221,13 +1221,19 @@ void OpenGLDisplayPlugin::present(const std::shared_ptr<RefreshRateController>& 
     refreshRateController->notePresentCost(presentUsecs > _lastSwapUsecs ? (int)(presentUsecs - _lastSwapUsecs) : 0,
                                            _gpuContext ? (float)_gpuContext->getFrameTimerGPUAverage() : 0.0f);
     _previousPresentStart = startPresent;
-    if (FrameTrace::enabled() && _currentFrame) {
-        // how long before the refresh this present's picture was due the present returned; negative when it missed
+    {
+        // how long before the refresh this present's picture was due the present returned; negative when it missed.
+        // The cadence counters take it on every present (the governor's missed-present count, entry 34); the frame
+        // trace takes it as a column when it runs
         const int64_t deadlineNs = refreshRateController->getPresentDeadlineNs();
         if (deadlineNs > 0) {
             const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            FrameTrace::set(_currentFrame->traceFrame, "present.slack_us", (double)(deadlineNs - nowNs) / 1000.0);
+            const int64_t slackNs = deadlineNs - nowNs;
+            refreshRateController->notePresentSlack((int)(slackNs / 1000));
+            if (FrameTrace::enabled() && _currentFrame) {
+                FrameTrace::set(_currentFrame->traceFrame, "present.slack_us", (double)slackNs / 1000.0);
+            }
         }
     }
 }
