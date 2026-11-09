@@ -1316,6 +1316,22 @@ bool OffscreenUi::eventFilter(QObject* originalDestination, QEvent* event) {
     auto key = keyEvent->key();
     bool& pressed = _pressedKeys[key];
 
+    // A Return or Enter that a text field of the overlay didn't take stays here: a field doesn't take the Return that
+    // finishes it (Qt's design), and in the 3D view Return opens Local Chat (interface's ui/ChatButton.cpp), over the field.
+    // windows/Window.qml already keeps every unmodified key while it has the focus, so what came through were Shift-Return,
+    // the keypad's Enter (its keys carry the keypad flag) and fields outside such a window. Only while the focused item
+    // takes text: the overlay sees every key first, and with nothing focused in it (a click in the 3D view unfocuses it)
+    // Return still opens chat. Not with Control, Option or Command (Option-Return is full screen), as in the docked panels
+    // (interface's ui/QmlDock.cpp). Taken here, its release is swallowed below like any other taken key's.
+    if (type == QEvent::KeyPress && !result && (key == Qt::Key_Return || key == Qt::Key_Enter) &&
+        !(keyEvent->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+        QQuickWindow* window = getWindow();
+        QQuickItem* focus = window ? window->activeFocusItem() : nullptr;
+        if (focus && focus->inputMethodQuery(Qt::ImEnabled).toBool()) {
+            result = true;
+        }
+    }
+
     // Keep track of which key press events the QML has accepted
     if (result && QEvent::KeyPress == type) {
         pressed = true;
