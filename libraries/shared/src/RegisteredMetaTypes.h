@@ -19,6 +19,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+// before the metatypes below: Qt 6 decides whether a QList<glm::vec3> can go to QDebug when it first sees that type, for the
+// whole file
+#include "StreamUtils.h"
 #include "AACube.h"
 #include "ShapeInfo.h"
 #include "SharedUtil.h"

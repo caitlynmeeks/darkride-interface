@@ -25,6 +25,10 @@
 #include <ui/Menu.h>
 #include "../../interface/src/Menu.h"
 
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>  // isOculusPresent's Win32 calls: on Qt 5 QQuickWindow brought this in, on Qt 6 it doesn't
+#endif
+
 Q_DECLARE_LOGGING_CATEGORY(displayplugins)
 Q_LOGGING_CATEGORY(displayplugins, "hifi.plugins.display")
 

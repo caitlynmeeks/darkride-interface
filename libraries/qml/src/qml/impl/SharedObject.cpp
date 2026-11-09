@@ -14,6 +14,8 @@
 #include <QtQuick/QQuickGraphicsDevice>
 #include <QtQuick/QQuickRenderTarget>
 #include <QtQuick/QSGRendererInterface>
+#include <rhi/qrhi.h>            // Gui's private include set (Qt::GuiPrivate, libraries/qml/CMakeLists.txt)
+#include <rhi/qrhi_platform.h>
 #include <mutex>
 #endif
 #include <QtQuick/QQuickItem>
@@ -105,6 +107,13 @@ SharedObject::~SharedObject() {
     if (_renderControl) {
         delete _renderControl;
         _renderControl = nullptr;
+    }
+    // the render interface after the control that drew through it and before the canvas it rests on goes with the
+    // event handler: its destroy makes the context current on the canvas's surface, here on the main thread, where
+    // onQuit moved them back
+    if (_rhi) {
+        delete _rhi;
+        _rhi = nullptr;
     }
 #endif
     // Destroy the event hand
@@ -290,21 +299,43 @@ bool SharedObject::event(QEvent* e) {
 }
 
 // Called by the render event handler, from the render thread
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+void SharedObject::initializeRenderControl(QOpenGLContext* context, QSurface* fallbackSurface) {
+    if (context->shareContext() != getSharedContext()) {
+        qFatal("QML rendering context has no share context");
+    }
+
+    if (!nsightActive()) {
+        // Qt 6: the render interface the window draws through is made here, on our context and the canvas's own
+        // offscreen surface, and handed to the window. Made by Qt inside initialize() (the context given as the
+        // graphics device) it brought a fallback offscreen surface of Qt's own, created on this thread: on Windows a
+        // hidden window, which must be made on the GUI thread (a start-up crash one launch in three, 11-06); macOS
+        // has a native offscreen surface and never minded. The canvas's surface is made on the main thread, and this
+        // thread makes the context current on it round every frame already.
+        QRhiGles2InitParams params;
+        params.format = context->format();
+        params.fallbackSurface = fallbackSurface;
+        QRhiGles2NativeHandles native;
+        native.context = context;
+        _rhi = QRhi::create(QRhi::OpenGLES2, &params, {}, &native);
+        if (!_rhi) {
+            qFatal("QML render interface could not be made on the surface's context");
+        }
+        _quickWindow->setGraphicsDevice(QQuickGraphicsDevice::fromRhi(_rhi));
+        _renderControl->initialize();
+    }
+}
+#else
 void SharedObject::initializeRenderControl(QOpenGLContext* context) {
     if (context->shareContext() != getSharedContext()) {
         qFatal("QML rendering context has no share context");
     }
 
     if (!nsightActive()) {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-        // Qt 6: the context is handed to the window as its graphics device, then the control initialises on it
-        _quickWindow->setGraphicsDevice(QQuickGraphicsDevice::fromOpenGLContext(context));
-        _renderControl->initialize();
-#else
         _renderControl->initialize(context);
-#endif
     }
 }
+#endif
 
 void SharedObject::releaseTextureAndFence() {
     QMutexLocker lock(&_mutex);

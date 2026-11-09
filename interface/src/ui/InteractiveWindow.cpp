@@ -30,7 +30,7 @@
 #include "MainWindow.h"
 
 #ifdef Q_OS_WIN
-#include <WinUser.h>
+#include <Windows.h>
 #endif
 
 static auto CONTENT_WINDOW_QML = QUrl("InteractiveWindow.qml");

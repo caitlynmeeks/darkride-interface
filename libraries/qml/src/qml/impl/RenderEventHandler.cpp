@@ -16,6 +16,7 @@
 #include <QtCore/QString>
 #include <QtQuick/QQuickWindow>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QOffscreenSurface>   // the canvas's surface, handed over as a QSurface
 #include <QtQuick/QQuickOpenGLUtils>
 #include <QtQuick/QQuickRenderControl>
 #include <mutex>
@@ -74,7 +75,11 @@ void RenderEventHandler::onInitalize() {
     if (!_canvas.makeCurrent()) {
         qFatal("Unable to make QML rendering context current on render thread");
     }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    _shared->initializeRenderControl(_canvas.getContext(), _canvas.getOffscreenSurface());
+#else
     _shared->initializeRenderControl(_canvas.getContext());
+#endif
     _initialized = true;
 }
 
