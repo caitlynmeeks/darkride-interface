@@ -280,6 +280,8 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     size_t idealMemoryAllocation = 0;
     bool canDemote = false;
     bool hasTransfers = false;
+    // the textures with a finer level left, for the cap rule's second look below (a handful once a world is in)
+    std::vector<std::pair<const Texture*, const GLVariableAllocationSupport*>> promotable;
     for (const auto& texture : strongTextures) {
         GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
         GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
@@ -291,6 +293,9 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
         totalVariableMemoryAllocation += gltexture->size();
         if (vartexture->canDemote()) {
             canDemote |= true;
+        }
+        if (vartexture->canPromote()) {
+            promotable.emplace_back(texture.get(), vartexture);
         }
         if (vartexture->hasPendingTransfers()) {
             hasTransfers |= true;
@@ -312,15 +317,14 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     }
 
     // the cap rule (above): a texture counts as promotable only when its next step fits under the over mark, so the
-    // state, the busy flag and the queue agree with what a promote will do; a second walk, only while under the mark
+    // state, the busy flag and the queue agree with what a promote will do; the look is over the promotable few from
+    // the walk above (no second walk over every texture: that cost the present thread a drop at 144, 2026-11-09)
     const size_t overMark = (size_t)(OVERSUBSCRIBED_PRESSURE_VALUE * (double)allowedMemoryAllocation);
     _frameHeadroom = totalVariableMemoryAllocation < overMark ? overMark - totalVariableMemoryAllocation : 0;
     bool canPromote = false;
     if (pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && unallocated != 0) {
-        for (const auto& texture : strongTextures) {
-            GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
-            GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
-            if (canPromoteWithin(*texture, *vartexture, _frameHeadroom)) {
+        for (const auto& candidate : promotable) {
+            if (canPromoteWithin(*candidate.first, *candidate.second, _frameHeadroom)) {
                 canPromote = true;
                 break;
             }
