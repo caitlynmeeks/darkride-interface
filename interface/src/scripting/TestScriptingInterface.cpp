@@ -1054,7 +1054,7 @@ QVariantMap TestScriptingInterface::codePanel() {
     return {
         { "rows", rows },
         { "hasDocument", code->hasDocument() }, { "pageReady", code->isPageReady() }, { "fileName", code->fileName() },
-        { "kind", code->kind() }, { "where", code->where() }, { "canSave", code->canSave() },
+        { "kind", code->kind() }, { "where", code->where() }, { "place", code->place() }, { "canSave", code->canSave() },
         { "readOnlyReason", code->readOnlyReason() }, { "problem", code->problem() }, { "saving", code->isSaving() },
         { "savedText", code->savedText() }, { "note", code->note() }, { "status", code->status() },
         { "statusState", code->statusState() }, { "errorLine", code->errorLine() }, { "errorText", code->errorText() },

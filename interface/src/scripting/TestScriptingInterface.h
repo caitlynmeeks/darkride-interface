@@ -417,7 +417,7 @@ public slots:
     Q_INVOKABLE bool openInCode(const QUuid& id, const QString& which);
 
     /**jsdoc
-     * The Code panel's document as the panel shows it: <code>hasDocument, pageReady, fileName, kind, where, canSave,
+     * The Code panel's document as the panel shows it: <code>hasDocument, pageReady, fileName, kind, where, place, canSave,
      * readOnlyReason, problem, saving, savedText, note, status, statusState, errorLine, errorText, claudeWriting,
      * showingChange, nearby</code> (Code near you's row count), <code>rows</code> (its rows), <code>path, usedBy, sharedBy, isShader, language,
      * openKey, loading, drafts</code> (how many files have an unsaved change kept), <code>isNew</code> (a new script not

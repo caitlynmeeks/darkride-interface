@@ -520,6 +520,20 @@ QString CodeEditor::where() const {
     }
 }
 
+QString CodeEditor::place() const {
+    switch (_place) {
+        case Place::WrittenIn:
+            // kept inside the thing: its name (world text, shown as plain text), or "this thing" when it has none
+            return _entityName.simplified().isEmpty() ? QStringLiteral("Inside this thing") : "Inside " + thingName(_entityName);
+        case Place::MyFiles:
+            return "In My Files";
+        case Place::Web:
+            return "On the web";
+        default:
+            return QString();   // the world's files: the path on the first line says it
+    }
+}
+
 bool CodeEditor::readEntity(QString& value, QString& name, bool& locked) const {
     auto entities = DependencyManager::get<EntityScriptingInterface>();
     EntityPropertyFlags flags;
@@ -623,7 +637,8 @@ bool CodeEditor::open(QUuid entityId, QString which) {
     }
     updateRights();
     updateUsedBy();
-    qCDebug(interfaceapp) << "Code: opened" << _entity << _which << where() << (_problem.isEmpty() ? "" : "problem");
+    qCDebug(interfaceapp) << "Code: opened" << _entity << _which << where() << "| header:" << place()
+                          << (_problem.isEmpty() ? "" : "problem");
     emit documentChanged();
     emit savedChanged();
     emit noteChanged();

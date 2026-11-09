@@ -78,6 +78,9 @@ class CodeEditor : public QObject, public Dependency {
     Q_PROPERTY(QString fileName READ fileName NOTIFY headerChanged)
     Q_PROPERTY(QString kind READ kind NOTIFY documentChanged)
     Q_PROPERTY(QString where READ where NOTIFY headerChanged)
+    // the header's second line: where the script is kept, as a place (mary 11-08): "Inside Greeter", "In My Files",
+    // "On the web"; nothing for the world's files
+    Q_PROPERTY(QString place READ place NOTIFY headerChanged)
     Q_PROPERTY(QString entityName READ entityName NOTIFY documentChanged)
     Q_PROPERTY(QString language READ language NOTIFY documentChanged)
     Q_PROPERTY(QString problem READ problem NOTIFY documentChanged)
@@ -156,6 +159,7 @@ public:
     QString fileName() const { return _fileName; }
     QString kind() const;
     QString where() const;
+    QString place() const;
     QString entityName() const { return _entityName; }
     QString language() const { return isShader() ? QStringLiteral("glsl") : QStringLiteral("javascript"); }
     bool isShader() const;
