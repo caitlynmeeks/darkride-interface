@@ -15,7 +15,6 @@
 #include <QtCore/QObject>
 
 #include <RegisteredMetaTypes.h>
-class QScriptEngine;
 
 /**jsdoc
  * The <code>Model</code> API provides the ability to manipulate meshes. You can get the meshes for an entity using 
@@ -92,12 +91,7 @@ public:
      */
     Q_INVOKABLE QVariant getVertex(MeshProxy* meshProxy, int vertexIndex);
 
-    // The results are plain values (a MeshProxy*, false, a number, a vec3), which the QtScript engine converts with
-    // the conversions registered for their types, as it did when these methods returned QScriptValues, and which
-    // the WebAssembly engine's codec converts too.
-
-private:
-    QScriptEngine* _modelScriptEngine { nullptr };
+    // The results are plain values (a MeshProxy*, false, a number, a vec3), which the engine's codec converts.
 };
 
 #endif // hifi_ModelScriptingInterface_h

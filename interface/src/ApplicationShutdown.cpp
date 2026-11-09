@@ -13,6 +13,8 @@
 //  Distributed under the MIT License.
 //
 
+#include "make/MakeDock.h"
+#include "make/MakeLink.h"
 #include "Application.h"
 #include "ApplicationConstants.h"
 #include <thread>
@@ -30,7 +32,10 @@
 #include <CrashHelpers.h>
 #include <EntityScriptingInterface.h>
 #include <FramebufferCache.h>
+#include <cstdlib>
+
 #include <LogHandler.h>
+#include <RunningMarker.h>
 #include <MainWindow.h>
 #include <hfm/ModelFormatRegistry.h>
 #include <model-networking/ModelCacheScriptingInterface.h>
@@ -62,6 +67,9 @@
 #include "ui/Popup.h"
 #include <PickManager.h>
 #include <PointerManager.h>
+#if defined(Q_OS_WIN)
+#include <Windows.h>   // TerminateProcess, endBeforeQtTeardown's end
+#endif
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>
 #include "AndroidHelper.h"
@@ -173,6 +181,9 @@ void Application::cleanupBeforeQuit() {
     // FIXME: Something is still holding on to the ScriptEnginePointers contained in ScriptEngines, and they hold backpointers to ScriptEngines,
     // so this doesn't shut down properly
 
+    // Make first: Claude Code's connection, a running Blender and the building tools' engine end with it
+    DependencyManager::destroy<MakeDock>();   // the dock's object first: it listens to MakeLink
+    DependencyManager::destroy<MakeLink>();
     DependencyManager::get<ScriptEngines>()->shutdownScripting(); // stop all currently running global scripts
 
     // These classes hold ScriptEnginePointers, so they must be destroyed before ScriptEngines
@@ -235,6 +246,36 @@ void Application::cleanupBeforeQuit() {
     DependencyManager::destroy<Keyboard>();
 
     qCDebug(interfaceapp) << "Application::cleanupBeforeQuit() complete";
+}
+
+namespace Setting {
+    void cleanupSettingsSaveThread();   // SettingInterface.cpp: stops the settings thread and saves every setting
+}
+
+// The Windows quit crash (qa + windowz 11-09: 2 of Caity's 3 quits of 1.1.4's cand-4): Qt WebEngine's own teardown, a
+// post routine inside ~QApplication, deletes our shared web profiles while web views made on libraries/qml's surfaces
+// are still on them, and the heap is corrupted. (Those views' lifetimes are frozen code; deleting the profiles ourselves
+// crashes on the same views: editor-ui's Mac quit kit, 11-09.) Everything of ours is done by the end of ~Application, so
+// on Windows the process ends there: the settings saved now (the post routine that would save them, taken off Qt's
+// list), the running marker removed (as main's scope would), the log written out. main() already ends release builds
+// with _exit, only after that teardown. Compiled everywhere so every build checks it; called on Windows only.
+[[maybe_unused]] static void endBeforeQtTeardown(FileLogger* logger) {
+    qCDebug(interfaceapp) << "Quit: settings saved and the process ended before Qt's late teardown (Windows)";
+    qRemovePostRoutine(Setting::cleanupSettingsSaveThread);
+    Setting::cleanupSettingsSaveThread();
+    RunningMarker(RUNNING_MARKER_FILENAME).deleteRunningMarkerFile();
+    if (logger) {
+        logger->sync();
+    }
+#if defined(Q_OS_WIN)
+    // Not _Exit: on Windows that's ExitProcess, which still runs every DLL's detach; Qt6Core's sends the events left, a
+    // deleteLater'd QML engine among them, and that crashed 10 of 10 quits in Qt6Quick (windowz 11-09, c866fd686f).
+    // TerminateProcess runs no DLL detach and no event (as Chromium ends its own processes); the settings and the log
+    // are on disk by now. It doesn't return.
+    TerminateProcess(GetCurrentProcess(), 0);
+#else
+    std::_Exit(0);   // not called off Windows (see ~Application): here only so the function never returns anywhere
+#endif
 }
 
 Application::~Application() {
@@ -301,6 +342,10 @@ Application::~Application() {
     _window->setMenuBar(nullptr);
 
     _window->deleteLater();
+
+#if defined(Q_OS_WIN) && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    endBeforeQtTeardown(_logger);   // still logging to the file here
+#endif
 
     // Can't log to file past this point, FileLogger about to be deleted
     qInstallMessageHandler(LogHandler::verboseMessageHandler);

@@ -11,9 +11,10 @@
 #include <functional>
 #include <mutex>
 #include <QSharedPointer>
+#include <QString>
 #include "../DependencyManager.h"
 
-class QScriptEngine;
+class QObject;
 class ScriptEngine;
 
 template <typename T> class ScriptInitializerMixin {
@@ -36,11 +37,14 @@ protected:
     std::list<ScriptInitializer> _scriptInitializers;
 };
 
-class ScriptInitializers : public ScriptInitializerMixin<QScriptEngine*>, public Dependency {
-public:
-    // Lightweight `QScriptEngine*` initializer (only depends on built-in Qt components)
-    // example registration:
-    // eg: [&](QScriptEngine* engine) {
-    //     engine->globalObject().setProperties("API", engine->newQObject(...instance...))
-    // };
+/// What a plugin's script initializer is handed for each new script engine: a function that gives the engine's scripts
+/// a global object, through the engine's own registerGlobalObject (so either engine, and the script API policy for a
+/// world's scripts, apply). The object stays the plugin's.
+using ScriptGlobalObjectAdder = std::function<void(const QString& name, QObject* object)>;
+
+// Lightweight initializer for code that doesn't link the script engine (a plugin), e.g.:
+//     initializers->registerScriptInitializer([this](const ScriptGlobalObjectAdder& addGlobalObject) {
+//         addGlobalObject("API", &_instance);
+//     });
+class ScriptInitializers : public ScriptInitializerMixin<const ScriptGlobalObjectAdder&>, public Dependency {
 };

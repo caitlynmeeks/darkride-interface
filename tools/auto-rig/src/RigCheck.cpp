@@ -255,7 +255,7 @@ bool checkWritten(const QString& fbxPath, const autorig::Body& body, const autor
         fprintf(stdout, "read back: cannot open %s\n", qPrintable(fbxPath));
         return false;
     }
-    HFMModel::Pointer model = FBXSerializer().read(file.readAll(), QVariantHash(), QUrl::fromLocalFile(fbxPath));
+    HFMModel::Pointer model = FBXSerializer().read(file.readAll(), hifi::VariantMultiHash(), QUrl::fromLocalFile(fbxPath));
     if (!model) {
         fprintf(stdout, "read back: the engine could not read it\n");
         return false;

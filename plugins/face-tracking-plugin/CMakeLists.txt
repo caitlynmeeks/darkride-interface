@@ -65,7 +65,7 @@ include_hifi_library_headers(gpu)  # DisplayPlugin.h, for whether a headset is i
 target_tflite()
 
 # setup_hifi_plugin builds src/'s .h, .cpp and .qrc; the model's resource and the Mac's own file are added here
-qt5_add_big_resources(FACE_LANDMARKER_RESOURCE "${FACE_LANDMARKER_QRC}" OPTIONS -no-compress)
+qt_add_big_resources(FACE_LANDMARKER_RESOURCE "${FACE_LANDMARKER_QRC}" OPTIONS -no-compress)
 target_sources(${TARGET_NAME} PRIVATE ${FACE_LANDMARKER_RESOURCE})
 if (APPLE)
   # the camera permission, from AVFoundation (CameraPermission.cpp is the other systems')

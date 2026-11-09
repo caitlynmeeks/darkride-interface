@@ -28,21 +28,24 @@ BackgroundStage::Index BackgroundStage::findBackground(const BackgroundPointer& 
 
 }
 
-BackgroundStage::Index BackgroundStage::addBackground(const BackgroundPointer& background) {
-
+BackgroundStage::Index BackgroundStage::addBackground(const BackgroundPointer& background, bool shouldSetAsDefault) {
+    Index backgroundId;
     auto found = _backgroundMap.find(background);
     if (found == _backgroundMap.end()) {
-        auto backgroundId = _backgrounds.newElement(background);
+        backgroundId = _backgrounds.newElement(background);
         // Avoid failing to allocate a background, just pass
         if (backgroundId != INVALID_INDEX) {
 
             // Insert the background and its index in the reverse map
             _backgroundMap.insert(BackgroundMap::value_type(background, backgroundId));
         }
-        return backgroundId;
     } else {
-        return (*found).second;
+        backgroundId = (*found).second;
     }
+    if (shouldSetAsDefault && backgroundId != INVALID_INDEX) {
+        _defaultBackgroundId = backgroundId;
+    }
+    return backgroundId;
 }
 
 
@@ -51,6 +54,9 @@ BackgroundStage::BackgroundPointer BackgroundStage::removeBackground(Index index
     
     if (removed) {
         _backgroundMap.erase(removed);
+        if (index == _defaultBackgroundId) {
+            _defaultBackgroundId = INVALID_INDEX;
+        }
     }
     return removed;
 }

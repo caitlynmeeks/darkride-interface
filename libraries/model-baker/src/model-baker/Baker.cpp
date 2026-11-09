@@ -104,13 +104,8 @@ namespace baker {
                     const auto& normals = safeGet(normalsPerBlendshape, j);
                     const auto& tangents = safeGet(tangentsPerBlendshape, j);
                     auto& blendshape = blendshapesOut[j];
-                    #if (QT_VERSION < QT_VERSION_CHECK(5, 14, 0))
-                    blendshape.normals = QVector<glm::vec3>::fromStdVector(normals);
-                    blendshape.tangents = QVector<glm::vec3>::fromStdVector(tangents);
-                    #else
                     blendshape.normals = QVector<glm::vec3>(normals.begin(), normals.end());
                     blendshape.tangents = QVector<glm::vec3>(tangents.begin(), tangents.end());
-                    #endif
                 }
             }
         }
@@ -136,11 +131,6 @@ namespace baker {
                 auto& meshOut = meshesOut[i];
                 meshOut.triangleListMesh = triangleListMeshesIn[i];
                 meshOut._mesh = safeGet(graphicsMeshesIn, i);
-                #if (QT_VERSION < QT_VERSION_CHECK(5, 14, 0))
-                meshOut.normals = QVector<glm::vec3>::fromStdVector(safeGet(normalsPerMeshIn, i));
-                meshOut.tangents = QVector<glm::vec3>::fromStdVector(safeGet(tangentsPerMeshIn, i));
-                meshOut.blendshapes = QVector<hfm::Blendshape>::fromStdVector(safeGet(blendshapesPerMeshIn, i));
-                #else
                 meshOut.normals = QVector<glm::vec3>(
                     safeGet(normalsPerMeshIn, i).begin(),
                     safeGet(normalsPerMeshIn, i).end()
@@ -153,7 +143,6 @@ namespace baker {
                     safeGet(blendshapesPerMeshIn, i).begin(),
                     safeGet(blendshapesPerMeshIn, i).end()
                 );
-                #endif
             }
             output = meshesOut;
         }
@@ -162,7 +151,7 @@ namespace baker {
     // "retarget = humanoid" and "humanoid = {...}" in the .fst (hfm::HumanoidSettings, animation/src/Humanoid.h).
     class ParseHumanoidTask {
     public:
-        using Input = hifi::VariantHash;
+        using Input = hifi::VariantMultiHash;
         using Output = hfm::HumanoidSettings;
         using JobModel = Job::ModelIO<ParseHumanoidTask, Input, Output>;
 
@@ -172,7 +161,7 @@ namespace baker {
             output.muscleFrames = frames.isEmpty() ? QVariantMap() : QJsonDocument::fromJson(frames).toVariant().toMap();
             const QByteArray menu = input.value("avatarMenu").toByteArray();
             output.avatarMenu = menu.isEmpty() ? QJsonObject() : QJsonDocument::fromJson(menu).object();
-            const QVariantHash constraints = input.value("rotationConstraint").toHash();
+            const hifi::VariantMultiHash constraints = hifi::multiHashFromVariant(input.value("rotationConstraint"));
             for (auto it = constraints.begin(); it != constraints.end(); ++it) {
                 QVariantMap constraint = QJsonDocument::fromJson(it.value().toByteArray()).toVariant().toMap();
                 if (!constraint.isEmpty()) {
@@ -216,7 +205,7 @@ namespace baker {
 
     class BakerEngineBuilder {
     public:
-        using Input = VaryingSet3<hfm::Model::Pointer, hifi::VariantHash, hifi::URL>;
+        using Input = VaryingSet3<hfm::Model::Pointer, hifi::VariantMultiHash, hifi::URL>;
         using Output = VaryingSet5<hfm::Model::Pointer, MaterialMapping, std::vector<hifi::ByteArray>, std::vector<bool>, std::vector<std::vector<hifi::ByteArray>>>;
         using JobModel = Task::ModelIO<BakerEngineBuilder, Input, Output>;
         void build(JobModel& model, const Varying& input, Varying& output) {
@@ -308,7 +297,7 @@ namespace baker {
         }
     };
 
-    Baker::Baker(const hfm::Model::Pointer& hfmModel, const hifi::VariantHash& mapping, const hifi::URL& materialMappingBaseURL) :
+    Baker::Baker(const hfm::Model::Pointer& hfmModel, const hifi::VariantMultiHash& mapping, const hifi::URL& materialMappingBaseURL) :
         _engine(std::make_shared<Engine>(BakerEngineBuilder::JobModel::create("Baker"), std::make_shared<BakeContext>())) {
         _engine->feedInput<BakerEngineBuilder::Input>(0, hfmModel);
         _engine->feedInput<BakerEngineBuilder::Input>(1, mapping);

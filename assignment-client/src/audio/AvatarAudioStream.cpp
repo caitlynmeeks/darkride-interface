@@ -11,6 +11,8 @@
 
 #include "AvatarAudioStream.h"
 
+#include <cstring>
+
 #include <udt/PacketHeaders.h>
 
 #include "AudioLogging.h"
@@ -22,8 +24,12 @@ int AvatarAudioStream::parseStreamProperties(PacketType type, const QByteArray& 
     int readBytes = 0;
 
     if (type == PacketType::SilentAudioFrame) {
-        const char* dataAt = packetAfterSeqNum.constData();
-        SilentSamplesBytes numSilentSamples = *(reinterpret_cast<const quint16*>(dataAt));
+        SilentSamplesBytes numSilentSamples = 0;
+        if (packetAfterSeqNum.size() < (int)sizeof(SilentSamplesBytes)) {
+            numAudioSamples = 0;
+            return packetAfterSeqNum.size();
+        }
+        memcpy(&numSilentSamples, packetAfterSeqNum.constData(), sizeof(SilentSamplesBytes));
         readBytes += sizeof(SilentSamplesBytes);
         numAudioSamples = (int) numSilentSamples;
 
@@ -34,15 +40,17 @@ int AvatarAudioStream::parseStreamProperties(PacketType type, const QByteArray& 
         _shouldLoopbackForNode = (type == PacketType::MicrophoneAudioWithEcho);
 
         // read the channel flag
+        if (packetAfterSeqNum.size() < (int)sizeof(ChannelFlag)) {
+            numAudioSamples = 0;
+            return packetAfterSeqNum.size();
+        }
         ChannelFlag channelFlag = packetAfterSeqNum.at(readBytes);
         bool isStereo = channelFlag == 1;
         readBytes += sizeof(ChannelFlag);
 
         // if isStereo value has changed, restart the ring buffer with new frame size
-        if (isStereo != _isStereo) {
-            _ringBuffer.resizeForFrameSize(isStereo
-                                           ? AudioConstants::NETWORK_FRAME_SAMPLES_STEREO
-                                           : AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL);
+        if (isStereo != _isStereo && changeFrameSize(isStereo ? AudioConstants::NETWORK_FRAME_SAMPLES_STEREO
+                                                              : AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL)) {
             // restart the codec
             if (_codec) {
                 QMutexLocker lock(&_decoderMutex);

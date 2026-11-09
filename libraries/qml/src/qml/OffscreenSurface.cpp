@@ -5,6 +5,10 @@
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
+#include <QtCore/QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <gl/Config.h>   // the GL types (GLsync) before any Qt header; Qt 5's GL headers brought them along
+#endif
 #include "OffscreenSurface.h"
 
 #include <unordered_set>
@@ -175,9 +179,15 @@ bool OffscreenSurface::eventFilter(QObject* originalDestination, QEvent* event) 
 
         case QEvent::Wheel: {
             QWheelEvent* wheelEvent = static_cast<QWheelEvent*>(event);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            QPointF transformedPos = mapToVirtualScreen(wheelEvent->position());
+            QWheelEvent mappedEvent(transformedPos, wheelEvent->globalPosition(), wheelEvent->pixelDelta(), wheelEvent->angleDelta(),
+                                    wheelEvent->buttons(), wheelEvent->modifiers(), wheelEvent->phase(), wheelEvent->inverted());
+#else
             QPointF transformedPos = mapToVirtualScreen(wheelEvent->pos());
             QWheelEvent mappedEvent(transformedPos, wheelEvent->delta(), wheelEvent->buttons(), wheelEvent->modifiers(),
                                     wheelEvent->orientation());
+#endif
             mappedEvent.ignore();
             if (QCoreApplication::sendEvent(_sharedObject->getWindow(), &mappedEvent)) {
                 return mappedEvent.isAccepted();
@@ -191,7 +201,14 @@ bool OffscreenSurface::eventFilter(QObject* originalDestination, QEvent* event) 
                                     mouseEvent->buttons(), mouseEvent->modifiers());
             mappedEvent.ignore();
             if (QCoreApplication::sendEvent(_sharedObject->getWindow(), &mappedEvent)) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                // Qt Quick accepts a move whenever anything is hovered, and the desktop's hover area always is. So a
+                // move stays in the QML only if it is a drag an item holds; any other goes on to the view and the app.
+                // (Qt Quick gives a holder no move without a button, so one whose release went missing keeps nothing.)
+                return mappedEvent.buttons() != Qt::NoButton && mappedEvent.exclusivePointGrabber() != nullptr;
+#else
                 return mappedEvent.isAccepted();
+#endif
             }
             break;
         }

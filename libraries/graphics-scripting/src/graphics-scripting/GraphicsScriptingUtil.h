@@ -1,7 +1,5 @@
 #pragma once
 
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
 #include <QtCore/QPointer>
 #include <QtCore/QObject>
 #include <QtCore/QLoggingCategory>
@@ -23,16 +21,9 @@ namespace scriptable {
     QVariant toVariant(const gpu::Element& element);
     QVariant toVariant(const glm::mat4& mat4);
 
-    // helper that automatically resolves Qt-signal-like scoped callbacks
-    // ... C++ side: `void MyClass::asyncMethod(..., QScriptValue callback)` 
-    // ... JS side:
-    //     * `API.asyncMethod(..., function(){})`
-    //     * `API.asyncMethod(..., scope, function(){})`
-    //     * `API.asyncMethod(..., scope, "methodName")`
-    QScriptValue jsBindCallback(QScriptValue callback);
-
-    // cast engine->thisObject() => C++ class instance
-    template <typename T> T this_qobject_cast(QScriptEngine* engine);
+    // What a check that would have thrown into a script does now: the error in the log (a script's call that fails
+    // its own argument check is refused before it reaches here).
+    void reportError(const QString& message);
 
     QString toDebugString(QObject* tmp);
     template <typename T> QString toDebugString(std::shared_ptr<T> tmp);

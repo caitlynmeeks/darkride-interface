@@ -9,7 +9,6 @@
 //
 
 import QtQuick 2.5
-import QtQuick.Controls 1.4
 
 import controlsUit 1.0
 import stylesUit 1.0
@@ -92,7 +91,7 @@ Item {
             leftMargin: hifi.dimensions.menuPadding.x + check.width
             rightMargin: hifi.dimensions.menuPadding.x + tail.width
         }
-        visible: source !== null ? source.type === MenuItemType.Separator : false
+        visible: source !== null ? source.type === 0 : false  // a separator (VrMenuEntry.Separator)
 
         Rectangle {
             anchors {

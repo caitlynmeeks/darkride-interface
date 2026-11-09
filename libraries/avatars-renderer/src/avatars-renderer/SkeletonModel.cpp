@@ -39,7 +39,7 @@ SkeletonModel::SkeletonModel(Avatar* owningAvatar, QObject* parent) :
 
     // A model worn without an .fst has its humanoid joints worked out automatically, names and rotation offsets, as an
     // .fst with "autoHumanoid = true" asks (PrepareJointsTask); one with any other .fst is read as the .fst says
-    _resourceMapping.insert("autoHumanoid", true);
+    _resourceMapping.replace("autoHumanoid", true);
 
     // Avatars all cast shadow
     setCanCastShadow(true);

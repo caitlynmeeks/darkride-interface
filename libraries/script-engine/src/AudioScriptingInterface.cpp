@@ -18,11 +18,6 @@
 #include "ScriptAudioInjector.h"
 #include "ScriptEngineLogging.h"
 
-void registerAudioMetaTypes(QScriptEngine* engine) {
-    qScriptRegisterMetaType(engine, injectorOptionsToScriptValue, injectorOptionsFromScriptValue);
-    qScriptRegisterMetaType(engine, soundSharedPointerToScriptValue, soundSharedPointerFromScriptValue);
-}
-
 
 void AudioScriptingInterface::setLocalAudioInterface(AbstractAudioInterface* audioInterface) {
     if (_localAudioInterface) {

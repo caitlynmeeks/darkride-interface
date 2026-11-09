@@ -184,6 +184,9 @@ private:
 
     bool containsValidPosition(ReceivedMessage& message) const;
 
+    // true when a new injector stream may be added (a quiet one may be removed to make room)
+    bool makeRoomForInjector();
+
     Streams _streams;
 
     quint16 _outgoingMixedAudioSequenceNumber;

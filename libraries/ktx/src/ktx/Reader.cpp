@@ -71,6 +71,10 @@ namespace ktx {
 
             // TODO: endian conversion if !endianMatch - for now, this is for local use and is unnecessary
 
+            // the formats, dimensions, faces and mip count a texture can have (Validation.cpp)
+            if (!header->isValid()) {
+                throw ReaderException("header invalid");
+            }
 
             // TODO: calculated bytesOfTexData
             if (srcSize < (sizeof(Header) + header->bytesOfKeyValueData)) {
@@ -92,22 +96,26 @@ namespace ktx {
     }
 
     KeyValue KeyValue::parseSerializedKeyAndValue(uint32_t srcSize, const Byte* srcBytes) {
+        // every read stays inside the srcSize bytes given: the size field, then the key's end inside the pair's bytes
+        if (srcSize < sizeof(uint32_t)) {
+            throw ReaderException("invalid key-value size");
+        }
         uint32_t keyAndValueByteSize;
         memcpy(&keyAndValueByteSize, srcBytes, sizeof(uint32_t));
-        if (keyAndValueByteSize + sizeof(uint32_t) > srcSize) {
+        if (keyAndValueByteSize == 0 || keyAndValueByteSize > srcSize - sizeof(uint32_t)) {
             throw ReaderException("invalid key-value size");
         }
         auto keyValueBytes = srcBytes + sizeof(uint32_t);
 
-        // find the first null character \0 and extract the key
+        // the key ends at the first null character, which must lie inside the pair's bytes
         uint32_t keyLength = 0;
-        while (reinterpret_cast<const char*>(keyValueBytes)[++keyLength] != '\0') {
-            if (keyLength == keyAndValueByteSize) {
-                // key must be null-terminated, and there must be space for the value
-                throw ReaderException("invalid key-value " + std::string(reinterpret_cast<const char*>(keyValueBytes), keyLength));
-            }
+        while (keyLength < keyAndValueByteSize && reinterpret_cast<const char*>(keyValueBytes)[keyLength] != '\0') {
+            ++keyLength;
         }
-        uint32_t valueStartOffset = keyLength + 1;
+        if (keyLength == keyAndValueByteSize) {
+            throw ReaderException("invalid key-value: the key has no end");
+        }
+        uint32_t valueStartOffset = keyLength + 1;   // at most keyAndValueByteSize
 
         // parse the key-value
         return KeyValue(std::string(reinterpret_cast<const char*>(keyValueBytes), keyLength),

@@ -17,6 +17,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
+#include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
 #include <QtCore/QTextStream>
 #include <QtCore/QRegularExpression>
@@ -37,6 +38,12 @@ const QStringList& FileUtils::getFileSelectors() {
 
 #if defined(USE_GLES)
         extraSelectors << "gles";
+#endif
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // the Qt 6 twins (+qt6/ folders) of the QML files that can't be written for both Qt 5 and Qt 6: the web
+        // views (team/editor-ui/WEB-QT6-PLAN.md section 3). Qt 5 never looks in those folders
+        extraSelectors << "qt6";
 #endif
 
 #ifndef Q_OS_ANDROID
@@ -134,7 +141,7 @@ QString FileUtils::standardPath(QString subfolder) {
 #ifdef Q_OS_ANDROID
         path = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
 #else
-        path = QStandardPaths::writableLocation(QStandardPaths::DataLocation);
+        path = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
 #endif
     }
     if (!subfolder.startsWith("/")) {

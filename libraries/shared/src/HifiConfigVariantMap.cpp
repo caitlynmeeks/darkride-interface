@@ -18,6 +18,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QVariant>
 
@@ -32,7 +33,9 @@ QVariantMap HifiConfigVariantMap::mergeCLParametersWithJSONConfig(const QStringL
     // Take anything with a dash in it as a key, and the values after it as the value.
 
     const QString DASHED_KEY_REGEX_STRING = "(^-{1,2})([\\w-]+)";
-    QRegExp dashedKeyRegex(DASHED_KEY_REGEX_STRING);
+    // an exact (anchored) match, as QStringList::indexOf always made; \\w as Unicode, as QRegExp read it
+    const QRegularExpression dashedKeyRegex(QRegularExpression::anchoredPattern(DASHED_KEY_REGEX_STRING),
+                                            QRegularExpression::UseUnicodePropertiesOption);
 
     int keyIndex = argumentList.indexOf(dashedKeyRegex);
     int nextKeyIndex = 0;
@@ -43,13 +46,17 @@ QVariantMap HifiConfigVariantMap::mergeCLParametersWithJSONConfig(const QStringL
     while (keyIndex != -1) {
         if (argumentList[keyIndex] != CONFIG_FILE_OPTION) {
             // we have a key - look forward to see how many values associate to it
-            QString key = dashedKeyRegex.cap(2);
+            QString key = dashedKeyRegex.match(argumentList[keyIndex]).captured(2);
 
             nextKeyIndex = argumentList.indexOf(dashedKeyRegex, keyIndex + 1);
 
             if (nextKeyIndex == keyIndex + 1 || keyIndex == argumentList.size() - 1) {
                 // this option is simply a switch, so add it to the map with a value of `true`
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                mergedMap.insert(key, QVariant(true));   // Qt 6's QMap keeps one value per key; value() reads the same
+#else
                 mergedMap.insertMulti(key, QVariant(true));
+#endif
             } else {
                 int maxIndex = (nextKeyIndex == -1) ? argumentList.size() : nextKeyIndex;
 

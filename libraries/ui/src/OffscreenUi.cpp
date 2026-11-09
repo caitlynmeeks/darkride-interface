@@ -10,6 +10,12 @@
 //
 #include "OffscreenUi.h"
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QPointingDevice>
+#else
+#include <QtGui/QTouchDevice>
+#endif
+
 #include <QtCore/QMetaMethod>
 #include <QtCore/QVariant>
 #include <QtGui/QGuiApplication>
@@ -152,16 +158,27 @@ bool OffscreenUi::editFocusedItem(const char* action) {
     return false;
 }
 
-static QTouchDevice _touchDevice;
-OffscreenUi::OffscreenUi() {
+// the touch device the pointer events are delivered as (Qt 6: a QPointingDevice, made once the app exists)
+static OffscreenTouchDevice& touchDevice() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    static QPointingDevice* device = new QPointingDevice("OffscreenUiTouchDevice", 0, QInputDevice::DeviceType::TouchScreen,
+                                                         QPointingDevice::PointerType::Finger,
+                                                         QInputDevice::Capability::Position, 4, 0);
+    return *device;
+#else
+    static QTouchDevice device;
     static std::once_flag once;
     std::call_once(once, [&] {
-        _touchDevice.setCapabilities(QTouchDevice::Position);
-        _touchDevice.setType(QTouchDevice::TouchScreen);
-        _touchDevice.setName("OffscreenUiTouchDevice");
-        _touchDevice.setMaximumTouchPoints(4);
+        device.setCapabilities(QTouchDevice::Position);
+        device.setType(QTouchDevice::TouchScreen);
+        device.setName("OffscreenUiTouchDevice");
+        device.setMaximumTouchPoints(4);
     });
+    return device;
+#endif
+}
 
+OffscreenUi::OffscreenUi() {
     auto pointerManager = DependencyManager::get<PointerManager>();
     connect(pointerManager.data(), &PointerManager::hoverBeginHUD, this, &OffscreenUi::hoverBeginEvent);
     connect(pointerManager.data(), &PointerManager::hoverContinueHUD, this, &OffscreenUi::handlePointerEvent);
@@ -172,15 +189,15 @@ OffscreenUi::OffscreenUi() {
 }
 
 void OffscreenUi::hoverBeginEvent(const PointerEvent& event) {
-    OffscreenQmlSurface::hoverBeginEvent(event, _touchDevice);
+    OffscreenQmlSurface::hoverBeginEvent(event, touchDevice());
 }
 
 void OffscreenUi::hoverEndEvent(const PointerEvent& event) {
-    OffscreenQmlSurface::hoverEndEvent(event, _touchDevice);
+    OffscreenQmlSurface::hoverEndEvent(event, touchDevice());
 }
 
 void OffscreenUi::handlePointerEvent(const PointerEvent& event) {
-    OffscreenQmlSurface::handlePointerEvent(event, _touchDevice);
+    OffscreenQmlSurface::handlePointerEvent(event, touchDevice());
 }
 
 QObject* OffscreenUi::getFlags() {
@@ -845,8 +862,8 @@ QString OffscreenUi::fileDialog(const QVariantMap& properties) {
             QString file = fileDialog->selectedFiles()[0];
             if (properties["saveDialog"].toBool()) { // make sure file ends with extension
                 QString fileExt = properties["filter"].toString().trimmed();
-                if (fileExt.contains(QRegExp("^\\*\\.\\S+$"))) {
-                    fileExt = fileExt.replace(QRegExp("^\\*"), "");
+                if (fileExt.contains(QRegularExpression("^\\*\\.\\S+$"))) {
+                    fileExt = fileExt.replace(QRegularExpression("^\\*"), "");
                     if (!file.endsWith(fileExt, Qt::CaseInsensitive)) file += fileExt;
                 }
             }
@@ -908,8 +925,8 @@ ModalDialogListener* OffscreenUi::fileDialogAsync(const QVariantMap& properties)
             QString file = fileConst;
             if (properties["saveDialog"].toBool()) { // make sure file ends with extension
                 QString fileExt = properties["filter"].toString().trimmed();
-                if (fileExt.contains(QRegExp("^\\*\\.\\S+$"))) {
-                    fileExt = fileExt.replace(QRegExp("^\\*"), "");
+                if (fileExt.contains(QRegularExpression("^\\*\\.\\S+$"))) {
+                    fileExt = fileExt.replace(QRegularExpression("^\\*"), "");
                     if (!file.endsWith(fileExt, Qt::CaseInsensitive)) file += fileExt;
                 }
             }
@@ -1269,7 +1286,11 @@ bool OffscreenUi::eventFilter(QObject* originalDestination, QEvent* event) {
         case QEvent::MouseButtonDblClick:
         case QEvent::MouseButtonPress:
         case QEvent::MouseButtonRelease:
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         case QEvent::MouseMove: {
+#else
+        {   // (a move went to the QML in the filter above, and has its answer in result)
+#endif
             QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
             QPointF transformedPos = mapToVirtualScreen(mouseEvent->localPos());
             // FIXME: touch events are always being accepted.  Use mouse events on the OffScreenUi for now, and investigate properly switching to touch events
@@ -1295,6 +1316,22 @@ bool OffscreenUi::eventFilter(QObject* originalDestination, QEvent* event) {
     auto key = keyEvent->key();
     bool& pressed = _pressedKeys[key];
 
+    // A Return or Enter that a text field of the overlay didn't take stays here: a field doesn't take the Return that
+    // finishes it (Qt's design), and in the 3D view Return opens Local Chat (interface's ui/ChatButton.cpp), over the field.
+    // windows/Window.qml already keeps every unmodified key while it has the focus, so what came through were Shift-Return,
+    // the keypad's Enter (its keys carry the keypad flag) and fields outside such a window. Only while the focused item
+    // takes text: the overlay sees every key first, and with nothing focused in it (a click in the 3D view unfocuses it)
+    // Return still opens chat. Not with Control, Option or Command (Option-Return is full screen), as in the docked panels
+    // (interface's ui/QmlDock.cpp). Taken here, its release is swallowed below like any other taken key's.
+    if (type == QEvent::KeyPress && !result && (key == Qt::Key_Return || key == Qt::Key_Enter) &&
+        !(keyEvent->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+        QQuickWindow* window = getWindow();
+        QQuickItem* focus = window ? window->activeFocusItem() : nullptr;
+        if (focus && focus->inputMethodQuery(Qt::ImEnabled).toBool()) {
+            result = true;
+        }
+    }
+
     // Keep track of which key press events the QML has accepted
     if (result && QEvent::KeyPress == type) {
         pressed = true;
@@ -1309,10 +1346,6 @@ bool OffscreenUi::eventFilter(QObject* originalDestination, QEvent* event) {
     }
 
     return result;
-}
-
-unsigned int OffscreenUi::getMenuUserDataId() const {
-    return _vrMenu->_userDataId;
 }
 
 ModalDialogListener::ModalDialogListener(QQuickItem *dialog) : _dialog(dialog) {

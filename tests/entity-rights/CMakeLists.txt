@@ -11,4 +11,4 @@ macro (setup_testcase_dependencies)
 endmacro ()
 
 # EntityRightsTests: what the entity server lets a node change, delete and add, by its rights
-setup_hifi_testcase(Script Network)
+setup_hifi_testcase(Network)

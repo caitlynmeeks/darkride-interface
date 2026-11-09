@@ -20,9 +20,10 @@
 #include <hfm/HFM.h>
 #include <NetworkAccessManager.h>
 #include <SharedUtil.h>
+#include <hfm/ModelFormatLogging.h>
 
-QVariantHash FSTReader::parseMapping(QIODevice* device) {
-    QVariantHash properties;
+hifi::VariantMultiHash FSTReader::parseMapping(QIODevice* device) {
+    hifi::VariantMultiHash properties;
 
     QByteArray line;
     while (!(line = device->readLine()).isEmpty()) {
@@ -35,32 +36,32 @@ QVariantHash FSTReader::parseMapping(QIODevice* device) {
         }
         QByteArray name = sections.at(0).trimmed();
         if (sections.size() == 2) {
-            properties.insertMulti(name, sections.at(1).trimmed());
+            properties.insert(name, sections.at(1).trimmed());
         } else if (sections.size() == 3) {
-            QVariantHash heading = properties.value(name).toHash();
-            heading.insertMulti(sections.at(1).trimmed(), sections.at(2).trimmed());
-            properties.insert(name, heading);
+            hifi::VariantMultiHash heading = hifi::multiHashFromVariant(properties.value(name));
+            heading.insert(sections.at(1).trimmed(), sections.at(2).trimmed());
+            properties.replace(name, hifi::variantFromMultiHash(heading));
         } else if (sections.size() >= 4) {
-            QVariantHash heading = properties.value(name).toHash();
+            hifi::VariantMultiHash heading = hifi::multiHashFromVariant(properties.value(name));
             QVariantList contents;
             for (int i = 2; i < sections.size(); i++) {
                 contents.append(sections.at(i).trimmed());
             }
-            heading.insertMulti(sections.at(1).trimmed(), contents);
-            properties.insert(name, heading);
+            heading.insert(sections.at(1).trimmed(), contents);
+            properties.replace(name, hifi::variantFromMultiHash(heading));
         }
     }
 
     return properties;
 }
 
-static void removeBlendshape(QVariantHash& bs, const QString& key) {
+static void removeBlendshape(hifi::VariantMultiHash& bs, const QString& key) {
     if (bs.contains(key)) {
         bs.remove(key);
     }
 }
 
-static void splitBlendshapes(QVariantHash& bs, const QString& key, const QString& leftKey, const QString& rightKey) {
+static void splitBlendshapes(hifi::VariantMultiHash& bs, const QString& key, const QString& leftKey, const QString& rightKey) {
     if (bs.contains(key) && !(bs.contains(leftKey) || bs.contains(rightKey))) {
         // key has been split into leftKey and rightKey blendshapes
         QVariantList origShapes = bs.values(key);
@@ -70,15 +71,15 @@ static void splitBlendshapes(QVariantHash& bs, const QString& key, const QString
             QVariantList halfShape;
             halfShape.append(origShape[0]);
             halfShape.append(QVariant(0.5f * origShape[1].toFloat()));
-            bs.insertMulti(leftKey, halfShape);
-            bs.insertMulti(rightKey, halfShape);
+            bs.insert(leftKey, halfShape);
+            bs.insert(rightKey, halfShape);
         }
     }
 }
 
 // convert legacy blendshapes to arkit blendshapes
-static void fixUpLegacyBlendshapes(QVariantHash& properties) {
-    QVariantHash bs = properties.value("bs").toHash();
+static void fixUpLegacyBlendshapes(hifi::VariantMultiHash& properties) {
+    hifi::VariantMultiHash bs = hifi::multiHashFromVariant(properties.value("bs"));
 
     // These blendshapes have no ARKit equivalent, so we remove them.
     removeBlendshape(bs, "JawChew");
@@ -93,19 +94,19 @@ static void fixUpLegacyBlendshapes(QVariantHash& properties) {
     splitBlendshapes(bs, "Sneer", "NoseSneer_L", "NoseSneer_R");
 
     // re-insert new mutated bs hash into mapping properties.
-    properties.insert("bs", bs);
+    properties.replace("bs", hifi::variantFromMultiHash(bs));
 }
 
-QVariantHash FSTReader::readMapping(const QByteArray& data) {
+hifi::VariantMultiHash FSTReader::readMapping(const QByteArray& data) {
     QBuffer buffer(const_cast<QByteArray*>(&data));
     buffer.open(QIODevice::ReadOnly);
-    QVariantHash mapping = FSTReader::parseMapping(&buffer);
+    hifi::VariantMultiHash mapping = FSTReader::parseMapping(&buffer);
     fixUpLegacyBlendshapes(mapping);
     return mapping;
 }
 
-void FSTReader::applyBlendshapeGains(const QVariantHash& mapping, hfm::Model& model) {
-    const QVariantHash gains = mapping.value(BLENDSHAPE_GAIN_FIELD).toHash();
+void FSTReader::applyBlendshapeGains(const hifi::VariantMultiHash& mapping, hfm::Model& model) {
+    const hifi::VariantMultiHash gains = hifi::multiHashFromVariant(mapping.value(BLENDSHAPE_GAIN_FIELD));
     for (auto it = gains.constBegin(); it != gains.constEnd(); ++it) {
         const int index = BLENDSHAPE_LOOKUP_MAP.value(it.key(), -1);
         bool ok = false;
@@ -121,19 +122,19 @@ void FSTReader::applyBlendshapeGains(const QVariantHash& mapping, hfm::Model& mo
     }
 }
 
-QVariantHash FSTReader::getBlendshapeMappings(const QVariantHash& mapping) {
-    QVariantHash blendshapes = mapping.value(BLENDSHAPE_FIELD).toHash();
-    const QVariantHash faceTracking = mapping.value(FACE_TRACKING_BLENDSHAPE_FIELD).toHash();
+hifi::VariantMultiHash FSTReader::getBlendshapeMappings(const hifi::VariantMultiHash& mapping) {
+    hifi::VariantMultiHash blendshapes = hifi::multiHashFromVariant(mapping.value(BLENDSHAPE_FIELD));
+    const hifi::VariantMultiHash faceTracking = hifi::multiHashFromVariant(mapping.value(FACE_TRACKING_BLENDSHAPE_FIELD));
     for (auto it = faceTracking.constBegin(); it != faceTracking.constEnd(); ++it) {
-        blendshapes.insertMulti(it.key(), it.value());
+        blendshapes.insert(it.key(), it.value());
     }
     return blendshapes;
 }
 
-QStringList FSTReader::getFaceTrackingOnlyBlendshapes(const QVariantHash& mapping) {
-    const QVariantHash blendshapes = mapping.value(BLENDSHAPE_FIELD).toHash();
+QStringList FSTReader::getFaceTrackingOnlyBlendshapes(const hifi::VariantMultiHash& mapping) {
+    const hifi::VariantMultiHash blendshapes = hifi::multiHashFromVariant(mapping.value(BLENDSHAPE_FIELD));
     QStringList names;
-    for (const QString& name : mapping.value(FACE_TRACKING_BLENDSHAPE_FIELD).toHash().uniqueKeys()) {
+    for (const QString& name : hifi::multiHashFromVariant(mapping.value(FACE_TRACKING_BLENDSHAPE_FIELD)).uniqueKeys()) {
         if (!blendshapes.contains(name)) {
             names << name;
         }
@@ -141,29 +142,74 @@ QStringList FSTReader::getFaceTrackingOnlyBlendshapes(const QVariantHash& mappin
     return names;
 }
 
-void FSTReader::writeVariant(QBuffer& buffer, QVariantHash::const_iterator& it) {
-    QByteArray key = it.key().toUtf8() + " = ";
-    QVariantHash hashValue = it.value().toHash();
-    if (hashValue.isEmpty()) {
-        buffer.write(key + it.value().toByteArray() + "\n");
+// A line of an .fst, written only when it stays one line: its keys and values can come from a model file's names.
+static void writeLine(QBuffer& buffer, const QByteArray& line) {
+    if (!FSTReader::isOneLine(QString::fromUtf8(line))) {
+        qCWarning(modelformat) << "FSTReader: left out a line holding a line break:" << line.left(line.indexOf(' '));
         return;
     }
-    for (QVariantHash::const_iterator second = hashValue.constBegin(); second != hashValue.constEnd(); second++) {
+    buffer.write(line + "\n");
+}
+
+// A heading's value as a list of values ("bs = JawOpen = MouthOpen = 0.7"), or empty for a single value. Only a real list
+// counts, as Qt 5's QVariant::toList() did: Qt 6's toList() also turns a text value into a list of its characters.
+static QVariantList listOf(const QVariant& value) {
+    const int type = value.userType();
+    return type == QMetaType::QVariantList || type == QMetaType::QStringList ? value.toList() : QVariantList();
+}
+
+void FSTReader::writeVariant(QBuffer& buffer, hifi::VariantMultiHash::const_iterator& it) {
+    QByteArray key = it.key().toUtf8() + " = ";
+    const hifi::VariantMultiHash hashValue = hifi::multiHashFromVariant(it.value());
+    if (hashValue.isEmpty()) {
+        writeLine(buffer, key + it.value().toByteArray());
+        return;
+    }
+    for (hifi::VariantMultiHash::const_iterator second = hashValue.constBegin(); second != hashValue.constEnd(); second++) {
         QByteArray extendedKey = key + second.key().toUtf8();
-        QVariantList listValue = second.value().toList();
+        QVariantList listValue = listOf(second.value());
         if (listValue.isEmpty()) {
-            buffer.write(extendedKey + " = " + second.value().toByteArray() + "\n");
+            writeLine(buffer, extendedKey + " = " + second.value().toByteArray());
             continue;
         }
-        buffer.write(extendedKey);
+        QByteArray line = extendedKey;
         for (QVariantList::const_iterator third = listValue.constBegin(); third != listValue.constEnd(); third++) {
-            buffer.write(" = " + third->toByteArray());
+            line += " = " + third->toByteArray();
         }
-        buffer.write("\n");
+        writeLine(buffer, line);
     }
 }
 
-QByteArray FSTReader::writeMapping(const QVariantHash& mapping) {
+bool FSTReader::isOneLine(const QString& text) {
+    for (const QChar c : text) {
+        const QChar::Category category = c.category();
+        if (category == QChar::Other_Control || category == QChar::Separator_Line ||
+            category == QChar::Separator_Paragraph) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool FSTReader::isLineValue(const QString& text) {
+    return !text.contains('=') && isOneLine(text);
+}
+
+QString FSTReader::jsonLineValue(const QJsonDocument& json) {
+    const QString compact = QString::fromUtf8(json.toJson(QJsonDocument::Compact));
+    QString value;
+    value.reserve(compact.size());
+    for (const QChar c : compact) {
+        if (c == '=' || !isOneLine(QString(c))) {
+            value += QString("\\u%1").arg((uint)c.unicode(), 4, 16, QChar('0'));
+        } else {
+            value += c;
+        }
+    }
+    return value;
+}
+
+QByteArray FSTReader::writeMapping(const hifi::VariantMultiHash& mapping) {
     static const QStringList PREFERED_ORDER = QStringList() << NAME_FIELD << TYPE_FIELD << SCALE_FIELD << FILENAME_FIELD
     << MARKETPLACE_ID_FIELD << TEXDIR_FIELD << SCRIPT_FIELD << JOINT_FIELD
     << BLENDSHAPE_FIELD << JOINT_INDEX_FIELD;
@@ -175,10 +221,7 @@ QByteArray FSTReader::writeMapping(const QVariantHash& mapping) {
         if (it != mapping.constEnd()) {
             if (key == SCRIPT_FIELD) { // writeVariant does not handle strings added using insertMulti.
                 for (auto multi : mapping.values(key)) {
-                    buffer.write(key.toUtf8());
-                    buffer.write(" = ");
-                    buffer.write(multi.toByteArray());
-                    buffer.write("\n");
+                    writeLine(buffer, key.toUtf8() + " = " + multi.toByteArray());
                 }
             } else {
                 writeVariant(buffer, it);
@@ -220,17 +263,13 @@ FSTReader::ModelType FSTReader::getTypeFromName(const QString& name) {
     return _namesToTypes[name];
 }
 
-FSTReader::ModelType FSTReader::predictModelType(const QVariantHash& mapping) {
+FSTReader::ModelType FSTReader::predictModelType(const hifi::VariantMultiHash& mapping) {
 
-    QVariantHash joints;
-
-    if (mapping.contains("joint") && mapping["joint"].type() == QVariant::Hash) {
-        joints = mapping["joint"].toHash();
-    }
+    const hifi::VariantMultiHash joints = hifi::multiHashFromVariant(mapping.value("joint"));
 
     // if the mapping includes the type hint... then we trust the mapping
     if (mapping.contains(TYPE_FIELD)) {
-        return FSTReader::getTypeFromName(mapping[TYPE_FIELD].toString());
+        return FSTReader::getTypeFromName(mapping.value(TYPE_FIELD).toString());
     }
     
     // check for blendshapes
@@ -268,7 +307,7 @@ FSTReader::ModelType FSTReader::predictModelType(const QVariantHash& mapping) {
     return ENTITY_MODEL;
 }
 
-QVector<QString> FSTReader::getScripts(const QUrl& url, const QVariantHash& mapping) {
+QVector<QString> FSTReader::getScripts(const QUrl& url, const hifi::VariantMultiHash& mapping) {
 
     auto fstMapping = mapping.isEmpty() ? downloadMapping(url.toString()) : mapping;
     QVector<QString> scriptPaths;
@@ -288,10 +327,10 @@ QVector<QString> FSTReader::getScripts(const QUrl& url, const QVariantHash& mapp
     return scriptPaths;
 }
 
-QVariantHash FSTReader::downloadMapping(const QString& url) {
+hifi::VariantMultiHash FSTReader::downloadMapping(const QString& url) {
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
     QNetworkRequest networkRequest = QNetworkRequest(url);
-    networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     networkRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
     QNetworkReply* reply = networkAccessManager.get(networkRequest);
     QEventLoop loop;

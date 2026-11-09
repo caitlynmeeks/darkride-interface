@@ -10,7 +10,7 @@
 
 #include <QtCore/QSet>
 #include <QtCore/QTimer>
-#include <QtWidgets/QUndoCommand>
+#include <QUndoCommand>   // QtWidgets in Qt 5, QtGui in Qt 6
 
 #include <EntitiesLogging.h>
 #include <EntityItem.h>

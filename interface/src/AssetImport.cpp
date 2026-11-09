@@ -13,7 +13,7 @@
 
 #include "AssetImport.h"
 
-#include <QtCore/QTemporaryDir>
+#include <QtCore/QRegularExpression>
 #include <QtWidgets/QMessageBox>
 
 #include <AssetClient.h>
@@ -21,7 +21,6 @@
 #include <EntityScriptingInterface.h>
 #include <MappingRequest.h>
 #include <OffscreenUi.h>
-#include <ResourceRequest.h>
 
 #include "Application.h"
 #include "avatar/AvatarManager.h"
@@ -52,87 +51,6 @@ AssetImport::AssetImport() {
     connect(&_addAssetToWorldErrorTimer, &QTimer::timeout, this, &AssetImport::addAssetToWorldErrorTimeout);
 }
 
-void AssetImport::addAssetToWorldFromURL(QString url) {
-
-    QString filename;
-    if (url.contains("filename")) {
-        filename = url.section("filename=", 1, 1);  // Filename is in "?filename=" parameter at end of URL.
-    }
-    if (url.contains("poly.google.com/downloads")) {
-        filename = url.section('/', -1);
-        if (url.contains("noDownload")) {
-            filename.remove(".zip?noDownload=false");
-        } else {
-            filename.remove(".zip");
-        }
-
-    }
-
-    if (!DependencyManager::get<NodeList>()->getThisNodeCanWriteAssets()) {
-        // QString errorInfo = "You do not have permissions to write to the Asset Server.";
-        // qDebug(interfaceapp) << "Error downloading model: " + errorInfo;
-        // addAssetToWorldError(filename, errorInfo);
-        return;
-    }
-
-    addAssetToWorldInfo(filename, "Downloading model file " + filename + ".");
-
-    auto request = DependencyManager::get<ResourceManager>()->createResourceRequest(
-        nullptr, QUrl(url), true, -1, "AssetImport::addAssetToWorldFromURL");
-    connect(request, &ResourceRequest::finished, this, &AssetImport::addAssetToWorldFromURLRequestFinished);
-    request->send();
-}
-
-void AssetImport::addAssetToWorldFromURLRequestFinished() {
-    auto request = qobject_cast<ResourceRequest*>(sender());
-    auto url = request->getUrl().toString();
-    auto result = request->getResult();
-
-    QString filename;
-    bool isBlocks = false;
-
-    if (url.contains("filename")) {
-        filename = url.section("filename=", 1, 1);  // Filename is in "?filename=" parameter at end of URL.
-    }
-    if (url.contains("poly.google.com/downloads")) {
-        filename = url.section('/', -1);
-        if (url.contains("noDownload")) {
-            filename.remove(".zip?noDownload=false");
-        } else {
-            filename.remove(".zip");
-        }
-        isBlocks = true;
-    }
-
-    if (result == ResourceRequest::Success) {
-        QTemporaryDir temporaryDir;
-        temporaryDir.setAutoRemove(false);
-        if (temporaryDir.isValid()) {
-            QString temporaryDirPath = temporaryDir.path();
-            QString downloadPath = temporaryDirPath + "/" + filename;
-
-            QFile tempFile(downloadPath);
-            if (tempFile.open(QIODevice::WriteOnly)) {
-                tempFile.write(request->getData());
-                addAssetToWorldInfoClear(filename);  // Remove message from list; next one added will have a different key.
-                tempFile.close();
-                qApp->getFileDownloadInterface()->runUnzip(downloadPath, url, true, false, isBlocks);
-            } else {
-                qWarning(interfaceapp) << "Couldn't open temporary file for download";
-                addAssetToWorldError(filename, "It couldn't be downloaded.");
-            }
-        } else {
-            qWarning(interfaceapp) << "Couldn't create temporary directory for download";
-            addAssetToWorldError(filename, "It couldn't be downloaded.");
-        }
-    } else {
-        qWarning(interfaceapp) << "Error downloading" << url << ":" << request->getResultString();
-        addAssetToWorldError(filename, "It couldn't be downloaded.");
-    }
-
-    request->deleteLater();
-}
-
 static QString filenameFromPath(QString filePath) {
     return filePath.right(filePath.length() - filePath.lastIndexOf("/") - 1);
 }
@@ -148,7 +66,7 @@ void AssetImport::addAssetToWorld(QString path, QString zipFile, bool isZip, boo
     QString mapping;
     QString filename = filenameFromPath(path);
     if (isZip || isBlocks) {
-        QString assetName = zipFile.section("/", -1).remove(QRegExp("[.]zip(.*)$"));
+        QString assetName = zipFile.section("/", -1).remove(QRegularExpression("[.]zip(.*)$"));   // a search, as remove(QRegExp) was
         QString assetFolder = path.section("model_repo/", -1);
         mapping = "/" + assetName + "/" + assetFolder;
     } else {
@@ -537,6 +455,10 @@ void AssetImport::handleUnzip(QString zipFile, QStringList unzipFile, bool autoA
             addAssetToWorldUnzipFailure(zipFile);
         }
     } else {
+        if (unzipFile.isEmpty()) {
+            qCWarning(interfaceapp) << "Nothing was unpacked from" << zipFile << "to show";
+            return;
+        }
         qApp->showAssetServerWidget(unzipFile.first());
     }
 }

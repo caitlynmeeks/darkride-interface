@@ -30,8 +30,6 @@
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
 
-#include <QScriptEngine>
-
 #include <DependencyManager.h>
 
 #include "ResourceManager.h"
@@ -275,7 +273,7 @@ protected slots:
 
     void updateTotalSize(const qint64& deltaSize);
 
-    // Prefetches a resource to be held by the QScriptEngine.
+    // Prefetches a resource to be held by a script engine.
     // Left as a protected member so subclasses can overload prefetch
     // and delegate to it (see TextureCache::prefetch(const QUrl&, int).
     ScriptableResource* prefetch(const QUrl& url, void* extra, size_t extraHash);
@@ -293,10 +291,9 @@ private slots:
     void clearATPAssets();
 
 protected:
-    // Prefetches a resource to be held by the QScriptEngine.
-    // Pointers created through this method should be owned by the caller,
-    // which should be a QScriptEngine with ScriptableResource registered, so that
-    // the QScriptEngine will delete the pointer when it is garbage collected.
+    // Prefetches a resource to be held by a script engine.
+    // Pointers created through this method are owned by the caller: the script engine
+    // deletes the resource when the script lets go of it.
     // JSDoc is provided on more general function signature.
     Q_INVOKABLE ScriptableResource* prefetch(const QUrl& url) { return prefetch(url, nullptr, std::numeric_limits<size_t>::max()); }
 
@@ -624,6 +621,10 @@ private:
     bool _isInScript{ false };
 };
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+size_t qHash(const QPointer<QObject>& value, size_t seed = 0);
+#else
 uint qHash(const QPointer<QObject>& value, uint seed = 0);
+#endif
 
 #endif // hifi_ResourceCache_h

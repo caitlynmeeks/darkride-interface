@@ -23,30 +23,26 @@
 
 #include "ModelBakerLogging.h"
 
-QMap<QString, QString> getJointNameMapping(const hifi::VariantHash& mapping) {
+QMap<QString, QString> getJointNameMapping(const hifi::VariantMultiHash& mapping) {
     static const QString JOINT_NAME_MAPPING_FIELD = "jointMap";
     QMap<QString, QString> hfmToHifiJointNameMap;
-    if (!mapping.isEmpty() && mapping.contains(JOINT_NAME_MAPPING_FIELD) && mapping[JOINT_NAME_MAPPING_FIELD].type() == QVariant::Hash) {
-        auto jointNames = mapping[JOINT_NAME_MAPPING_FIELD].toHash();
-        for (auto itr = jointNames.begin(); itr != jointNames.end(); itr++) {
-            hfmToHifiJointNameMap.insert(itr.key(), itr.value().toString());
-            qCDebug(model_baker) << "the mapped key " << itr.key() << " has a value of " << hfmToHifiJointNameMap[itr.key()];
-        }
+    // empty unless the field is a heading ("jointMap = <model's name> = <engine's name>" lines)
+    const hifi::VariantMultiHash jointNames = hifi::multiHashFromVariant(mapping.value(JOINT_NAME_MAPPING_FIELD));
+    for (auto itr = jointNames.begin(); itr != jointNames.end(); itr++) {
+        hfmToHifiJointNameMap.insert(itr.key(), itr.value().toString());
+        qCDebug(model_baker) << "the mapped key " << itr.key() << " has a value of " << hfmToHifiJointNameMap[itr.key()];
     }
     return hfmToHifiJointNameMap;
 }
 
-QMap<QString, glm::quat> getJointRotationOffsets(const hifi::VariantHash& mapping) {
+QMap<QString, glm::quat> getJointRotationOffsets(const hifi::VariantMultiHash& mapping) {
     QMap<QString, glm::quat> jointRotationOffsets;
     static const QString JOINT_ROTATION_OFFSET_FIELD = "jointRotationOffset";
     static const QString JOINT_ROTATION_OFFSET2_FIELD = "jointRotationOffset2";
-    if (!mapping.isEmpty() && ((mapping.contains(JOINT_ROTATION_OFFSET_FIELD) && mapping[JOINT_ROTATION_OFFSET_FIELD].type() == QVariant::Hash) || (mapping.contains(JOINT_ROTATION_OFFSET2_FIELD) && mapping[JOINT_ROTATION_OFFSET2_FIELD].type() == QVariant::Hash))) {
-        QHash<QString, QVariant> offsets;
-        if (mapping.contains(JOINT_ROTATION_OFFSET_FIELD)) {
-            offsets = mapping[JOINT_ROTATION_OFFSET_FIELD].toHash();
-        } else {
-            offsets = mapping[JOINT_ROTATION_OFFSET2_FIELD].toHash();
-        }
+    {
+        // the first field when present, else the second; empty unless that field is a heading
+        const hifi::VariantMultiHash offsets = hifi::multiHashFromVariant(mapping.value(
+            mapping.contains(JOINT_ROTATION_OFFSET_FIELD) ? JOINT_ROTATION_OFFSET_FIELD : JOINT_ROTATION_OFFSET2_FIELD));
         for (auto itr = offsets.begin(); itr != offsets.end(); itr++) {
             QString jointName = itr.key();
             QString line = itr.value().toString();
@@ -69,7 +65,7 @@ QMap<QString, glm::quat> getJointRotationOffsets(const hifi::VariantHash& mappin
 // Whether the humanoid joints are worked out automatically (names and rotation offsets): for a model worn as an avatar
 // without an .fst (SkeletonModel asks for it), or one whose .fst says "autoHumanoid = true". An avatar worn with any
 // other .fst, a model entity and an animation are read as their files say.
-bool isAutoHumanoid(const hifi::VariantHash& mapping) {
+bool isAutoHumanoid(const hifi::VariantMultiHash& mapping) {
     static const QString AUTO_HUMANOID_FIELD = "autoHumanoid";
     return mapping.value(AUTO_HUMANOID_FIELD).toString().trimmed().compare("true", Qt::CaseInsensitive) == 0;
 }
@@ -128,10 +124,10 @@ QMap<int, glm::quat> getHumanoidRotationOffsets(const std::vector<hfm::Joint>& j
 // the model file names it or as jointMap renames it. An avatar can rest a bone differently from its model file this way: avatars from Unity packages set
 // bones in their prefab and in the animations that run before anyone touches the menu (a hidden hair tuft is a bone
 // scaled to 0.01). The joint's local transform becomes translation * rotation * scale.
-void applyJointDefaultPoses(const hifi::VariantHash& mapping, const std::vector<hfm::Joint>& jointsIn,
+void applyJointDefaultPoses(const hifi::VariantMultiHash& mapping, const std::vector<hfm::Joint>& jointsIn,
                             std::vector<hfm::Joint>& jointsOut) {
     static const QString JOINT_DEFAULT_POSE_FIELD = "jointDefaultPose";
-    const QVariantHash poses = mapping.value(JOINT_DEFAULT_POSE_FIELD).toHash();
+    const hifi::VariantMultiHash poses = hifi::multiHashFromVariant(mapping.value(JOINT_DEFAULT_POSE_FIELD));
     for (auto itr = poses.begin(); itr != poses.end(); itr++) {
         int index = -1;
         for (int i = 0; i < (int)jointsIn.size(); i++) {
@@ -218,8 +214,7 @@ void PrepareJointsTask::run(const baker::BakeContextPointer& context, const Inpu
         auto& jointRotationOffsets = output.edit1();
 
         static const QString JOINT_ROTATION_OFFSET2_FIELD = "jointRotationOffset2";
-        QVariantHash fstHashMap = mapping;
-        bool newJointRot = fstHashMap.contains(JOINT_ROTATION_OFFSET2_FIELD);
+        bool newJointRot = mapping.contains(JOINT_ROTATION_OFFSET2_FIELD);
 
         // Get joint renames
         QMap<QString, QString> jointNameMapping = getJointNameMapping(mapping);

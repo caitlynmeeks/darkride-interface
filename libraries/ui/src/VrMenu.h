@@ -15,7 +15,6 @@
 #include <QQuickItem>
 #include <QHash>
 #include <QList>
-#include <QSignalMapper>
 #include <QAction>
 #include <QMenu>
 #include "OffscreenUi.h"
@@ -37,7 +36,6 @@ protected:
 
     friend class MenuUserData;
     friend class OffscreenUi;
-    const unsigned int _userDataId { QObject::registerUserData() };
 };
 
 #endif // hifi_VrMenu_h

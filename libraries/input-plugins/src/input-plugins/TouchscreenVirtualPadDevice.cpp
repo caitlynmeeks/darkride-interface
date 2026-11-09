@@ -26,11 +26,19 @@
 const char* TouchscreenVirtualPadDevice::NAME = "TouchscreenVirtualPad";
 
 bool TouchscreenVirtualPadDevice::isSupported() const {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    for (auto inputDevice : QInputDevice::devices()) {
+        if (inputDevice->type() == QInputDevice::DeviceType::TouchScreen) {
+            return true;
+        }
+    }
+#else
     for (auto touchDevice : QTouchDevice::devices()) {
         if (touchDevice->type() == QTouchDevice::TouchScreen) {
             return true;
         }
     }
+#endif
 #if defined(Q_OS_ANDROID)
     // last chance, assume that if this is android, a touchscreen is indeed supported
     return true;
@@ -217,7 +225,15 @@ void TouchscreenVirtualPadDevice::debugPoints(const QTouchEvent* event, QString 
         glm::vec2 thisPoint(tPoints[i].pos().x(), tPoints[i].pos().y());
         points << thisPoint;
     }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 has no QTouchEvent::window(): the screen under the first touch, else the main screen
+    QScreen* eventScreen = tPoints.isEmpty() ? nullptr : QGuiApplication::screenAt(tPoints.first().globalPosition().toPoint());
+    if (!eventScreen) {
+        eventScreen = QGuiApplication::primaryScreen();
+    }
+#else
     QScreen* eventScreen = event->window()->screen();
+#endif
     int midScreenX = eventScreen->availableSize().width()/2;
     int lefties = 0;
     int righties = 0;

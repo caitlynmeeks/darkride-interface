@@ -31,7 +31,7 @@ std::map<QString, glm::quat> animationRotations(const HFMModel& animation, int f
     if (animation.animationFrames.isEmpty()) {
         return byName;
     }
-    frame = std::max(0, std::min(frame, animation.animationFrames.size() - 1));
+    frame = std::max(0, std::min(frame, (int)animation.animationFrames.size() - 1));
     const HFMAnimationFrame& pose = animation.animationFrames[frame];
     std::vector<glm::quat> absolute(animation.joints.size());
     for (size_t i = 0; i < animation.joints.size(); i++) {

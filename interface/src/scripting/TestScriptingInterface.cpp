@@ -25,6 +25,7 @@
 
 #include <SpringBones.h>
 
+#include <QtCore/QAbstractItemModel>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
 #include <QtCore/QElapsedTimer>
@@ -57,7 +58,10 @@
 
 #include "Application.h"
 #include "InterfaceLogging.h"
+#include <QtGui/QPainter>
 #include <QtGui/QPixmap>
+#include <QtQuick/QQuickWindow>
+#include "ui/QmlDock.h"
 #include <plugins/DisplayPlugin.h>
 #include <display-plugins/DisplayLink.h>
 #include <display-plugins/OpenGLDisplayPlugin.h>
@@ -75,6 +79,12 @@
 #include "graphics/GraphicsEngine.h"
 #include "editor/ui/PropertyEditors.h"
 #include "editor/ui/ScriptEditor.h"
+#include "ui/CodeEditor.h"
+#include "make/MakeBadge.h"
+#include "make/MakeDock.h"
+#include "make/MakeLink.h"
+#include <QtGui/QKeyEvent>
+#include <QtQml/QQmlEngine>
 #include <EntityTreeRenderer.h>
 #include <RenderableEntityItem.h>
 
@@ -207,11 +217,6 @@ void TestScriptingInterface::savePhysicsSimulationStats(QString originalPath) {
         return;
     }
     qApp->saveNextPhysicsStats(path);
-}
-
-void TestScriptingInterface::profileRange(const QString& name, QScriptValue fn) {
-    PROFILE_RANGE(script, name);
-    fn.call();
 }
 
 void TestScriptingInterface::clearCaches() {
@@ -359,6 +364,23 @@ bool TestScriptingInterface::reloadEditorScript(const QString& key) {
     }
     auto row = inspectorScriptRow(key);
     return row && row->pressReload();
+}
+
+QVariantMap TestScriptingInterface::inspectorScriptButton(const QString& key, bool click) {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "inspectorScriptButton", Q_RETURN_ARG(QVariantMap, result), Q_ARG(QString, key),
+                               Q_ARG(bool, click));
+        return result;
+    }
+    auto row = inspectorScriptRow(key);
+    if (!row) {
+        return { { "found", false } };
+    }
+    QVariantMap result = row->editButton();
+    result["found"] = true;
+    result["clicked"] = click && row->pressEdit();
+    return result;
 }
 
 QVariantMap TestScriptingInterface::inspectorField(const QString& key) {
@@ -629,6 +651,14 @@ void TestScriptingInterface::editorUndo() {
         return;
     }
     DependencyManager::get<Editor>()->undo();
+}
+
+void TestScriptingInterface::editorRedo() {
+    if (QThread::currentThread() != thread()) {
+        BLOCKING_INVOKE_METHOD(this, "editorRedo");
+        return;
+    }
+    DependencyManager::get<Editor>()->redo();
 }
 
 QString TestScriptingInterface::hierarchyRowColor(const QUuid& id) {
@@ -973,7 +1003,394 @@ bool TestScriptingInterface::saveDockPicture(const QString& objectName, const QS
         return false;
     }
     QPixmap picture = dock->grab();
-    return !picture.isNull() && picture.save(path);
+    if (picture.isNull()) {
+        return false;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // on Qt 6 a QML panel draws in its own window inside the dock (QmlDock), which the widget grab leaves blank: its
+    // Qt Quick window's own picture goes in on top, where its container sits
+    auto qmlDock = qobject_cast<QmlDock*>(dock);
+    auto item = qmlDock ? qmlDock->panel() : nullptr;
+    auto quickWindow = item ? item->window() : nullptr;
+    if (quickWindow && dock->widget()) {
+        const QImage content = quickWindow->grabWindow();
+        if (!content.isNull()) {
+            QPainter painter(&picture);
+            painter.drawImage(QRect(dock->widget()->mapTo(dock, QPoint(0, 0)), dock->widget()->size()), content);
+        }
+    }
+#endif
+    return picture.save(path);
+}
+
+bool TestScriptingInterface::openInCode(const QUuid& id, const QString& which) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "openInCode", Q_RETURN_ARG(bool, result), Q_ARG(QUuid, id), Q_ARG(QString, which));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->open(id, which);
+}
+
+QVariantMap TestScriptingInterface::codePanel() {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "codePanel", Q_RETURN_ARG(QVariantMap, result));
+        return result;
+    }
+    auto code = DependencyManager::get<CodeEditor>();
+    // the list's rows as it shows them
+    QVariantList rows;
+    if (auto model = qobject_cast<QAbstractItemModel*>(code->nearby())) {
+        const auto roles = model->roleNames();
+        for (int i = 0; i < model->rowCount(); ++i) {
+            QVariantMap row;
+            for (auto role = roles.begin(); role != roles.end(); ++role) {
+                row.insert(QString::fromUtf8(role.value()), model->data(model->index(i, 0), role.key()));
+            }
+            rows.append(row);
+        }
+    }
+    return {
+        { "rows", rows },
+        { "hasDocument", code->hasDocument() }, { "pageReady", code->isPageReady() }, { "fileName", code->fileName() },
+        { "kind", code->kind() }, { "where", code->where() }, { "place", code->place() }, { "canSave", code->canSave() },
+        { "readOnlyReason", code->readOnlyReason() }, { "problem", code->problem() }, { "saving", code->isSaving() },
+        { "savedText", code->savedText() }, { "note", code->note() }, { "status", code->status() },
+        { "statusState", code->statusState() }, { "errorLine", code->errorLine() }, { "errorText", code->errorText() },
+        { "claudeWriting", code->isClaudeWriting() }, { "showingChange", code->isShowingChange() },
+        { "nearby", code->nearby()->property("count") }, { "path", code->path() }, { "usedBy", code->usedBy() },
+        { "sharedBy", code->sharedBy() }, { "isShader", code->isShader() }, { "language", code->language() },
+        { "openKey", code->openKey() }, { "loading", code->isLoading() }, { "drafts", code->draftKeys().size() }, { "allDrafts", code->allDraftCount() },
+        { "isNew", code->isNew() }, { "newScriptOff", code->newScriptOff() }, { "newScriptTip", code->newScriptTip() },
+        { "fromMyFiles", code->isFromMyFiles() },
+    };
+}
+
+int TestScriptingInterface::codePageRun(const QString& source) {
+    if (QThread::currentThread() != thread()) {
+        int result = 0;
+        BLOCKING_INVOKE_METHOD(this, "codePageRun", Q_RETURN_ARG(int, result), Q_ARG(QString, source));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->testRun(source);
+}
+
+QVariant TestScriptingInterface::codePageAnswer(int run) {
+    if (QThread::currentThread() != thread()) {
+        QVariant result;
+        BLOCKING_INVOKE_METHOD(this, "codePageAnswer", Q_RETURN_ARG(QVariant, result), Q_ARG(int, run));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->testAnswerFor(run);
+}
+
+void TestScriptingInterface::codeSave() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeSave");
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testSave();
+}
+
+void TestScriptingInterface::codeNewScript() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeNewScript");
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testNewScript();
+}
+
+bool TestScriptingInterface::saveCodeMenuPicture(const QString& which, const QString& path) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "saveCodeMenuPicture", Q_RETURN_ARG(bool, result), Q_ARG(QString, which),
+                               Q_ARG(QString, path));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->saveMenuPicture(which, path);
+}
+
+void TestScriptingInterface::codeOpenRow(const QUuid& id, const QString& which) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeOpenRow", Q_ARG(QUuid, id), Q_ARG(QString, which));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testOpenRow(id, which);
+}
+
+void TestScriptingInterface::codeShowList(bool shown) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeShowList", Q_ARG(bool, shown));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testShowList(shown);
+}
+
+void TestScriptingInterface::codeSetWorld(const QString& name) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeSetWorld", Q_ARG(QString, name));
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testSetWorld(name);
+}
+
+QString TestScriptingInterface::makeSetFilesPlace(const QString& place) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeSetFilesPlace", Q_RETURN_ARG(QString, result), Q_ARG(QString, place));
+        return result;
+    }
+    auto link = DependencyManager::get<MakeLink>();
+    link->setFilesPlace(place);
+    return link->filesPlace();
+}
+
+bool TestScriptingInterface::codeOpenMyFile(const QString& path, const QString& link, const QString& name, double size) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "codeOpenMyFile", Q_RETURN_ARG(bool, result), Q_ARG(QString, path),
+            Q_ARG(QString, link), Q_ARG(QString, name), Q_ARG(double, size));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->openMyFile(path, QUrl(link), name, (qint64)size);
+}
+
+namespace {
+    // a list model's rows as plain maps, every role by its name
+    QVariantList rowsOf(QAbstractItemModel* model) {
+        QVariantList rows;
+        if (!model) {
+            return rows;
+        }
+        const auto roles = model->roleNames();
+        for (int i = 0; i < model->rowCount(); ++i) {
+            QVariantMap row;
+            for (auto role = roles.begin(); role != roles.end(); ++role) {
+                row.insert(QString::fromUtf8(role.value()), model->data(model->index(i, 0), role.key()));
+            }
+            rows.append(row);
+        }
+        return rows;
+    }
+
+    QmlDock* makeDockPanel() {
+        auto window = qApp->getWindow();
+        return window ? window->findChild<QmlDock*>("MakeDock") : nullptr;
+    }
+}
+
+QVariantMap TestScriptingInterface::makeDock() {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "makeDock", Q_RETURN_ARG(QVariantMap, result));
+        return result;
+    }
+    auto make = DependencyManager::get<MakeDock>();
+    if (!MakeDock::isAvailable() || !make) {
+        return { { "available", false } };
+    }
+    auto panel = makeDockPanel();
+    auto window = qApp->getWindow();
+    QString area;
+    if (panel && window && !panel->isFloating()) {
+        switch (window->dockWidgetArea(panel)) {
+            case Qt::LeftDockWidgetArea: area = "left"; break;
+            case Qt::RightDockWidgetArea: area = "right"; break;
+            case Qt::TopDockWidgetArea: area = "top"; break;
+            case Qt::BottomDockWidgetArea: area = "bottom"; break;
+            default: break;
+        }
+    }
+    QWindow* content = panel ? panel->contentWindow() : nullptr;
+    QQuickItem* page = panel ? panel->panel() : nullptr;
+    QQmlEngine* engine = page ? qmlEngine(page) : nullptr;
+    auto timeline = qobject_cast<QAbstractItemModel*>(make->timeline());
+    auto made = qobject_cast<QAbstractItemModel*>(make->made());
+    return {
+        { "available", true }, { "dockMade", panel != nullptr }, { "open", panel && !panel->isHidden() },
+        { "floating", panel && panel->isFloating() }, { "area", area },
+        { "state", make->state() }, { "reason", make->reason() }, { "route", make->route() },
+        { "hasKey", make->hasKey() }, { "claudeFound", make->claudeFound() }, { "blenderFound", make->blenderFound() },
+        { "blenderSealed", make->blenderSealed() }, { "blenderWhy", make->blenderWhy() },
+        { "keyStoreName", make->keyStoreName() }, { "working", make->isWorking() },
+        // the chat's state, read-only (the dock's own properties), and how many channel events the link has sent this
+        // Connect: a kit's proof that nothing but a Send makes one (security 21:48 11-07)
+        { "chat", make->chat() }, { "channelFlag", make->channelFlag() }, { "sentWaiting", make->sentWaiting() },
+        { "notGotIt", make->notGotIt() }, { "channelEvents", DependencyManager::get<MakeLink>()->channelEventCount() },
+        { "timeline", timeline ? timeline->rowCount() : -1 }, { "made", made ? made->rowCount() : -1 },
+        { "timelineRows", rowsOf(timeline) }, { "madeRows", rowsOf(made) },
+        { "watching", make->isWatching() }, { "provider", engine && engine->imageProvider("make") != nullptr },
+        { "windowActive", content && content->isActive() },
+        { "dockWindowActive", panel && panel->isActiveWindow() },
+        { "folder", DependencyManager::get<MakeLink>()->folder() },
+    };
+}
+
+bool TestScriptingInterface::makeDockTry(const QString& call) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockTry", Q_RETURN_ARG(bool, result), Q_ARG(QString, call));
+        return result;
+    }
+    auto make = DependencyManager::get<MakeDock>();
+    if (!MakeDock::isAvailable() || !make) {
+        return false;
+    }
+    QString which = call;
+    if (which.startsWith("events:")) {
+        which = which.mid(7);
+        // input made here, not by the window system: sendEvent marks it so (QEvent::spontaneous() false). In the
+        // window's top left corner, a release with no press: nothing in the dock is clicked by it
+        auto panel = makeDockPanel();
+        if (QWindow* content = panel ? panel->contentWindow() : nullptr) {
+            // mapToGlobal takes a QPoint on Qt 5 (QPointF is Qt 6 only)
+            QMouseEvent release(QEvent::MouseButtonRelease, QPointF(1, 1), content->mapToGlobal(QPoint(1, 1)),
+                                Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(content, &release);
+            QKeyEvent key(QEvent::KeyPress, Qt::Key_Shift, Qt::NoModifier);
+            QCoreApplication::sendEvent(content, &key);
+        }
+    }
+    if (which == "setRoute") {
+        // the route it isn't on: a setting in the client's own config, the only change if the gate let it through
+        return make->setRoute(make->route() == "key" ? "terminal" : "key");
+    }
+    return false;
+}
+
+void TestScriptingInterface::makeDockCard(int request, const QVariantMap& card) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "makeDockCard", Q_ARG(int, request), Q_ARG(QVariantMap, card));
+        return;
+    }
+    if (MakeDock::isAvailable()) {
+        emit DependencyManager::get<MakeLink>()->made(request, card);
+    }
+}
+
+void TestScriptingInterface::makeDockOpenCard(const QString& cardId) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "makeDockOpenCard", Q_ARG(QString, cardId));
+        return;
+    }
+    if (MakeDock::isAvailable()) {
+        DependencyManager::get<MakeDock>()->openInCode(cardId);
+    }
+}
+
+bool TestScriptingInterface::makeDockConnect(const QString& route) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockConnect", Q_RETURN_ARG(bool, result), Q_ARG(QString, route));
+        return result;
+    }
+    if ((route != "terminal" && route != "chat" && route != "off") || !MakeDock::isAvailable()) {
+        return false;   // never the key route
+    }
+    auto make = DependencyManager::get<MakeDock>();
+    if (route == "off") {
+        make->disconnect();   // the dock's own Disconnect, which only ends things: it needs no real input
+        return true;
+    }
+    return make->testConnectTerminal(route == "chat");
+}
+
+int TestScriptingInterface::makeDockSend(const QString& text) {
+    if (QThread::currentThread() != thread()) {
+        int result = 0;
+        BLOCKING_INVOKE_METHOD(this, "makeDockSend", Q_RETURN_ARG(int, result), Q_ARG(QString, text));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testSend(text) : 0;
+}
+
+bool TestScriptingInterface::makeDockUndo(int request) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockUndo", Q_RETURN_ARG(bool, result), Q_ARG(int, request));
+        return result;
+    }
+    return MakeDock::isAvailable() && DependencyManager::get<MakeDock>()->testUndo(request);
+}
+
+QVariantMap TestScriptingInterface::makeDockItem(const QString& name) {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "makeDockItem", Q_RETURN_ARG(QVariantMap, result), Q_ARG(QString, name));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testItem(name) : QVariantMap { { "found", false } };
+}
+
+bool TestScriptingInterface::makeDockMouse(const QString& name, double fromX, double fromY, double toX, double toY) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "makeDockMouse", Q_RETURN_ARG(bool, result), Q_ARG(QString, name),
+                               Q_ARG(double, fromX), Q_ARG(double, fromY), Q_ARG(double, toX), Q_ARG(double, toY));
+        return result;
+    }
+    return MakeDock::isAvailable() &&
+        DependencyManager::get<MakeDock>()->testMouse(name, QPointF(fromX, fromY), QPointF(toX, toY));
+}
+
+QString TestScriptingInterface::makeDockCopy(const QString& which) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeDockCopy", Q_RETURN_ARG(QString, result), Q_ARG(QString, which));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->testCopyLine(which) : QString();
+}
+
+QString TestScriptingInterface::makeBadge(const QString& state) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeBadge", Q_RETURN_ARG(QString, result), Q_ARG(QString, state));
+        return result;
+    }
+    static const QStringList STATES { "", "working", "answer", "done", "failed", "off" };
+    if (!MakeDock::isAvailable() || !STATES.contains(state)) {
+        return "unavailable";
+    }
+    auto badge = DependencyManager::get<MakeDock>()->badge();
+    badge->testForce(state);
+    return badge->state();
+}
+
+QVariantMap TestScriptingInterface::makeBadgeItem() {
+    if (QThread::currentThread() != thread()) {
+        QVariantMap result;
+        BLOCKING_INVOKE_METHOD(this, "makeBadgeItem", Q_RETURN_ARG(QVariantMap, result));
+        return result;
+    }
+    // where OffscreenUi::show put it (ApplicationScripting.cpp: darkride/make/Badge.qml, objectName "MakeBadge")
+    auto offscreenUi = DependencyManager::get<OffscreenUi>();
+    QQuickItem* root = offscreenUi ? offscreenUi->getRootItem() : nullptr;
+    QQuickItem* item = root ? root->findChild<QQuickItem*>("MakeBadge") : nullptr;
+    if (!item) {
+        return QVariantMap { { "found", false } };
+    }
+    return QVariantMap { { "found", true }, { "visible", item->isVisible() }, { "words", item->property("words") },
+                         { "lead", item->property("lead") }, { "badgeState", item->property("badgeState") } };
+}
+
+QString TestScriptingInterface::makeDockServed(const QString& what, const QString& id) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeDockServed", Q_RETURN_ARG(QString, result), Q_ARG(QString, what),
+                               Q_ARG(QString, id));
+        return result;
+    }
+    return MakeDock::isAvailable() ? DependencyManager::get<MakeDock>()->servedFile(what, id) : QString();
+}
+
+void TestScriptingInterface::codeShowNearby() {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "codeShowNearby");
+        return;
+    }
+    DependencyManager::get<CodeEditor>()->testShowNearby();
 }
 
 // the widget that has the keyboard; in a test client running behind other windows (no window active), the one that
@@ -1009,10 +1426,18 @@ QVariantMap TestScriptingInterface::worldChat() {
              { "focusText", box ? box->toPlainText() : QString() } };
 }
 
-void TestScriptingInterface::typeKeys(const QString& text, bool toView) {
+void TestScriptingInterface::typeKeys(const QString& text, bool toView, const QString& modifiers) {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "typeKeys", Q_ARG(QString, text), Q_ARG(bool, toView));
+        QMetaObject::invokeMethod(this, "typeKeys", Q_ARG(QString, text), Q_ARG(bool, toView), Q_ARG(QString, modifiers));
         return;
+    }
+    Qt::KeyboardModifiers held = Qt::NoModifier;
+    for (const QString& name : modifiers.split('+', Qt::SkipEmptyParts)) {
+        if (name == "shift") {
+            held |= Qt::ShiftModifier;
+        } else if (name == "keypad") {
+            held |= Qt::KeypadModifier;
+        }
     }
     for (QChar c : text) {
         // the 3D view's keys go to the application, as GLWidget hands them on; the rest to the focused widget
@@ -1020,10 +1445,11 @@ void TestScriptingInterface::typeKeys(const QString& text, bool toView) {
         if (!target) {
             return;
         }
-        int key = c == '\n' ? Qt::Key_Return : c == QChar(0x1b) ? Qt::Key_Escape : (int)c.toUpper().unicode();
+        int key = c == '\n' ? ((held & Qt::KeypadModifier) ? Qt::Key_Enter : Qt::Key_Return)
+                  : c == QChar(0x1b) ? Qt::Key_Escape : (int)c.toUpper().unicode();
         QString typed = c == '\n' ? QString("\r") : c == QChar(0x1b) ? QString(QChar(0x1b)) : QString(c);
-        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier, typed);
-        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier, typed);
+        QKeyEvent press(QEvent::KeyPress, key, held, typed);
+        QKeyEvent release(QEvent::KeyRelease, key, held, typed);
         QCoreApplication::sendEvent(target, &press);
         QCoreApplication::sendEvent(target, &release);
     }
@@ -1083,6 +1509,13 @@ void TestScriptingInterface::answerNextAlert(const QString& button, const QStrin
         }
         if (!picturePath.isEmpty()) {
             alert->grab().save(picturePath);
+        }
+        // its words as shown: each label's text and whether it's drawn as plain text (a popup's words are never markup)
+        for (auto wordLabel : alert->findChildren<QLabel*>()) {
+            if (!wordLabel->text().isEmpty()) {
+                qCDebug(interfaceapp) << "Test.answerNextAlert: label" << wordLabel->objectName() << wordLabel->text()
+                                      << (wordLabel->textFormat() == Qt::PlainText ? "plain" : "may be read as markup");
+            }
         }
         for (auto pushButton : alert->findChildren<QPushButton*>()) {
             if (pushButton->text() == button) {

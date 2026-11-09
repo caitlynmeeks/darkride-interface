@@ -19,7 +19,6 @@
 #include "../UserInputMapper.h"
 
 class QJSValue;
-class QScriptValue;
 class QJsonValue;
 
 namespace controller {
@@ -121,10 +120,9 @@ class RouteBuilderProxy : public QObject {
          *     Controller.disableMapping(MAPPING_NAME);
          * });
          */
-        /// To a plain value, for the WebAssembly engine (an action id, a script callback, or a list of those); its own
-    /// name, because QtScript finds a same-named QVariant overload ambiguous with the QScriptValue one.
-    Q_INVOKABLE void toValue(const QVariant& destination);
-    Q_INVOKABLE void to(const QScriptValue& destination);
+        /// To a plain value (an action id, a script callback, or a list of those): what a script's to(...) reaches
+        /// (the JavaScript guest maps the name).
+        Q_INVOKABLE void toValue(const QVariant& destination);
 
         /**jsdoc
          * Enables or disables writing debug information for a route to the program log.
@@ -202,8 +200,8 @@ class RouteBuilderProxy : public QObject {
          *     Controller.disableMapping(MAPPING_NAME);
          * });
          */
+        /// What a script's when(...) reaches (the JavaScript guest maps the name).
         Q_INVOKABLE QObject* whenValue(const QVariant& expression);
-    Q_INVOKABLE QObject* when(const QScriptValue& expression);
 
         /**jsdoc
          * Filters numeric route values to lie between two values; values outside this range are not passed on through the 

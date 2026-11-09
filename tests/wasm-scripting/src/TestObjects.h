@@ -18,7 +18,6 @@
 #include <QtCore/QStringList>
 #include <QtCore/QUuid>
 #include <QtCore/QVariant>
-#include <QtScript/QScriptValue>
 
 #include <RegisteredMetaTypes.h>
 
@@ -71,8 +70,6 @@ public:
     Q_INVOKABLE Mode currentMode() const { return _mode; }
     Q_INVOKABLE void useMode(Mode mode) { _mode = mode; }
     Q_INVOKABLE PlainLevels::Level plainLevel() const { return PlainLevels::High; }
-    // a method of the QtScript engine's, which a module cannot call
-    Q_INVOKABLE void takeScriptValue(const QScriptValue& value) { Q_UNUSED(value); }
 
 public slots:
     void setPosition(const glm::vec3& position) {

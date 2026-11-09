@@ -32,6 +32,7 @@
 
 
 #include <QtCore/QtGlobal>
+#include <QtCore/QRegularExpression>
 #include "SharedLogging.h"
 
 GPUIdent GPUIdent::_instance {};
@@ -262,7 +263,7 @@ GPUIdent* GPUIdent::ensureQuery(const QString& vendor, const QString& renderer) 
     // Alas, no combination of vendor, renderer, and adapter name seems to be a substring of the others.
     // Here we get a list of words that we'll match adapter names against. Most matches wins.
     // Alas, this won't work when someone has multiple variants of the same card installed.
-    QRegExp wordMatcher{ "\\W" };
+    const QRegularExpression wordMatcher{ "\\W", QRegularExpression::UseUnicodePropertiesOption };
     QStringList words;
     words << vendor.toUpper().split(wordMatcher) << renderer.toUpper().split(wordMatcher);
     words.removeAll("");

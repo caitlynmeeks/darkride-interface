@@ -24,6 +24,7 @@
 #include <QtCore/QDebug>
 #include <QtCore/QCoreApplication>
 #include <QUuid>
+#include <QtCore/QVariant>
 
 #include "NumericalConstants.h"
 

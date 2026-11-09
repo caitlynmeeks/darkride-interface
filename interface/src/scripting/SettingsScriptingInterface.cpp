@@ -43,11 +43,12 @@ void SettingsScriptingInterface::setValue(const QString& setting, const QVariant
     }
     // the key as it is stored, any case (Windows' registry ignores it)
     if (Setting::normalizedKey(setting).startsWith("private/", Qt::CaseInsensitive)) {
+        // the key only, never the value: private/ holds what mustn't leak, and logs get shared
         if (_restrictPrivateValues) {
-            qWarning() << "SettingsScriptingInterface::setValue -- restricted write: " << setting << value;
+            qWarning() << "SettingsScriptingInterface::setValue -- restricted write:" << setting;
             return;
         } else {
-            qInfo() << "SettingsScriptingInterface::setValue -- allowing restricted write: " << setting << value;
+            qInfo() << "SettingsScriptingInterface::setValue -- allowing restricted write:" << setting;
         }
     }
     

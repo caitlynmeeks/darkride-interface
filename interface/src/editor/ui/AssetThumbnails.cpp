@@ -11,19 +11,17 @@
 #include <QtCore/QBuffer>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
-#include <QtCore/QPointer>
 #include <QtGui/QImageReader>
-#include <QtNetwork/QNetworkReply>
-#include <QtNetwork/QNetworkRequest>
 
-#include <NetworkAccessManager.h>
+#include <DependencyManager.h>
 #include <PathUtils.h>
+#include <ResourceManager.h>
+#include <ResourceRequest.h>
 
 #include "../../InterfaceLogging.h"
 
 namespace {
     const int FETCHES_AT_ONCE = 4;
-    const qint64 LARGEST_FETCH = 64 * 1024 * 1024;   // a picture bigger than this is left without a thumbnail
 }
 
 AssetThumbnails::AssetThumbnails(QObject* parent) : QObject(parent) {
@@ -74,23 +72,21 @@ void AssetThumbnails::startNext() {
         UserFile file = _queue.takeFirst();
         QString key = keyOf(file);
         _inFlight.insert(key);
-        QNetworkRequest request{ QUrl(file.url) };
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // the files host redirects to the CDN
-        QNetworkReply* reply = NetworkAccessManager::getInstance().get(request);
-        QPointer<AssetThumbnails> self(this);
-        connect(reply, &QNetworkReply::downloadProgress, reply, [reply](qint64, qint64 total) {
-            if (total > LARGEST_FETCH) {
-                reply->abort();
-            }
-        });
-        connect(reply, &QNetworkReply::finished, reply, [self, reply, file] {
-            reply->deleteLater();
-            if (!self) {
-                return;
-            }
+        // through the app's own file requests (HTTPResourceRequest): a private file in the person's My Files, which our
+        // files host refuses (403) without their login, is asked once more with it, at that host only, as every other
+        // file the app fetches; a picture past the size limit for pictures is refused there too
+        ResourceRequest* request = DependencyManager::get<ResourceManager>()->createResourceRequest(this, QUrl(file.url));
+        if (!request) {
+            _inFlight.remove(key);
+            _missing.insert(key);
+            emit ready(file.id);
+            continue;
+        }
+        connect(request, &ResourceRequest::finished, this, [this, request, file] {
+            request->deleteLater();
             QPixmap pixmap;
-            if (reply->error() == QNetworkReply::NoError) {
-                QByteArray bytes = reply->readAll();
+            if (request->getResult() == ResourceRequest::Success) {
+                QByteArray bytes = request->getData();
                 QBuffer buffer(&bytes);
                 buffer.open(QIODevice::ReadOnly);
                 QImageReader reader(&buffer);
@@ -108,10 +104,11 @@ void AssetThumbnails::startNext() {
                     pixmap = QPixmap::fromImage(image);
                 }
             } else {
-                qCDebug(interfaceapp) << "thumbnail not fetched" << file.path << reply->errorString();
+                qCDebug(interfaceapp) << "thumbnail not fetched" << file.path << request->getResultString();
             }
-            self->finish(file, pixmap);
+            finish(file, pixmap);
         });
+        request->send();
     }
 }
 

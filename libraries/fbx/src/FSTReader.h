@@ -13,8 +13,11 @@
 #define hifi_FSTReader_h
 
 #include <QBuffer>
+#include <QJsonDocument>
 #include <QStringList>
 #include <QVariantHash>
+
+#include <shared/HifiTypes.h>
 
 namespace hfm {
     class Model;
@@ -58,32 +61,45 @@ public:
     };
 
     /// Reads an FST mapping from the supplied data.
-    static QVariantHash readMapping(const QByteArray& data);
+    static hifi::VariantMultiHash readMapping(const QByteArray& data);
 
     /// Writes an FST mapping to a byte array.
-    static QByteArray writeMapping(const QVariantHash& mapping);
+    static QByteArray writeMapping(const hifi::VariantMultiHash& mapping);
+
+    /// Whether text stays on one line of an .fst: no line break or other control character. The reader would start a
+    /// new line there, with a key of its own.
+    static bool isOneLine(const QString& text);
+
+    /// Whether text can be one value of an .fst line without changing what the line says: one line (isOneLine) and no
+    /// '=' (the reader splits a line at every '='). Model files and packages name joints and shape keys freely, so a
+    /// line built from such a name is written only when the name passes this.
+    static bool isLineValue(const QString& text);
+
+    /// JSON as one value of an .fst line: compact, with each character isLineValue refuses written as a \u escape
+    /// (such a character can only be inside a JSON string, where the escape means the same), so it always passes.
+    static QString jsonLineValue(const QJsonDocument& json);
 
     /// Predicts the type of model by examining the mapping 
-    static ModelType predictModelType(const QVariantHash& mapping);
+    static ModelType predictModelType(const hifi::VariantMultiHash& mapping);
 
-    static QVector<QString> getScripts(const QUrl& fstUrl, const QVariantHash& mapping = QVariantHash());
+    static QVector<QString> getScripts(const QUrl& fstUrl, const hifi::VariantMultiHash& mapping = hifi::VariantMultiHash());
 
     static QString getNameFromType(ModelType modelType);
     static FSTReader::ModelType getTypeFromName(const QString& name);
-    static QVariantHash downloadMapping(const QString& url);
+    static hifi::VariantMultiHash downloadMapping(const QString& url);
 
     /// The engine's face shapes to the model's own, as the serializers read them: the bs lines and the faceTrackingBs
     /// lines together, keyed by the engine's name, each value [model's shape, weight].
-    static QVariantHash getBlendshapeMappings(const QVariantHash& mapping);
+    static hifi::VariantMultiHash getBlendshapeMappings(const hifi::VariantMultiHash& mapping);
     // the .fst's bsGain lines over the model's own gains
-    static void applyBlendshapeGains(const QVariantHash& mapping, hfm::Model& model);
+    static void applyBlendshapeGains(const hifi::VariantMultiHash& mapping, hfm::Model& model);
 
     /// The engine's names that only faceTrackingBs lines map (no bs line names them).
-    static QStringList getFaceTrackingOnlyBlendshapes(const QVariantHash& mapping);
+    static QStringList getFaceTrackingOnlyBlendshapes(const hifi::VariantMultiHash& mapping);
 
 private:
-    static void writeVariant(QBuffer& buffer, QVariantHash::const_iterator& it);
-    static QVariantHash parseMapping(QIODevice* device);
+    static void writeVariant(QBuffer& buffer, hifi::VariantMultiHash::const_iterator& it);
+    static hifi::VariantMultiHash parseMapping(QIODevice* device);
 
     static QHash<FSTReader::ModelType, QString> _typesToNames;
     static QHash<QString, FSTReader::ModelType> _namesToTypes;

@@ -30,6 +30,7 @@
 #include <SpatiallyNestable.h>
 #include <TriangleSet.h>
 #include <DualQuaternion.h>
+#include <shared/HifiTypes.h>
 
 #include "RenderHifi.h"
 #include "GeometryCache.h"
@@ -43,7 +44,6 @@
 
 class ImpostorSwitch;
 class AbstractViewStateInterface;
-class QScriptEngine;
 
 class ViewFrustum;
 
@@ -484,7 +484,7 @@ protected:
     QVector<float> _blendedBlendshapeCoefficients;
     int _blendNumber { 0 };
 
-    mutable QMutex _mutex{ QMutex::Recursive };
+    mutable QRecursiveMutex _mutex;
 
     bool _overrideModelTransform { false };
     bool _triangleSetsValid { false };
@@ -496,7 +496,7 @@ protected:
     PrimitiveMode _primitiveMode { PrimitiveMode::SOLID };
     bool _useDualQuaternionSkinning { false };
     // What the model's file is read with when it isn't an .fst, which brings its own (SkeletonModel: worn as an avatar)
-    QVariantHash _resourceMapping;
+    hifi::VariantMultiHash _resourceMapping;
 
     // debug rendering support
     int _debugMeshBoxesID = GeometryCache::UNKNOWN_ID;

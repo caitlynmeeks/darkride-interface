@@ -20,7 +20,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/component_wise.hpp>
 
-#include <QtScript/QScriptEngine>
 #include <QtCore/QObject>
 #include <QVector>
 #include <QString>
@@ -148,17 +147,11 @@ public:
         }
     }
 
-    virtual QScriptValue copyToScriptValue(QScriptEngine* engine, bool skipDefaults, bool allowUnknownCreateTime = false,
-        bool strictSemantics = false, EntityPsuedoPropertyFlags psueudoPropertyFlags = EntityPsuedoPropertyFlags()) const;
-    virtual void copyFromScriptValue(const QScriptValue& object, bool honorReadOnly);
-    /// The same conversions for plain values (PlainScriptValue.h): what a WebAssembly module, a world file or
-    /// avatar-entity data gets, member for member and in the same order what a script gets.
+    /// The conversions for plain values (PlainScriptValue.h): what a script, a world file or avatar-entity data
+    /// gets, member for member and in the same order.
     PlainScriptValue copyToScriptValue(PlainScriptEngine* engine, bool skipDefaults, bool allowUnknownCreateTime = false,
         bool strictSemantics = false, EntityPsuedoPropertyFlags psueudoPropertyFlags = EntityPsuedoPropertyFlags()) const;
     void copyFromScriptValue(const PlainScriptValue& object, bool honorReadOnly);
-
-    static QScriptValue entityPropertyFlagsToScriptValue(QScriptEngine* engine, const EntityPropertyFlags& flags);
-    static void entityPropertyFlagsFromScriptValue(const QScriptValue& object, EntityPropertyFlags& flags);
 
     static bool getPropertyInfo(const QString& propertyName, EntityPropertyInfo& propertyInfo);
     // every property of a group, by the group's name ("grab", "vehicle"): empty for a name that is no group
@@ -560,8 +553,8 @@ protected:
     void setCollisionMaskFromString(const QString& maskString);
 
 private:
-    // One body for each conversion, over the value and engine types (QScriptValue with QScriptEngine,
-    // PlainScriptValue with PlainScriptEngine); the public overloads above call them.
+    // One body for each conversion, over the value and engine types (PlainScriptValue with PlainScriptEngine);
+    // the public methods above call them.
     template <typename Value, typename Engine>
     Value copyToScriptValueOf(Engine* engine, bool skipDefaults, bool allowUnknownCreateTime, bool strictSemantics,
                           EntityPsuedoPropertyFlags psueudoPropertyFlags) const;
@@ -592,18 +585,8 @@ private:
 };
 
 Q_DECLARE_METATYPE(EntityItemProperties);
-QScriptValue EntityItemPropertiesToScriptValue(QScriptEngine* engine, const EntityItemProperties& properties);
-QScriptValue EntityItemNonDefaultPropertiesToScriptValue(QScriptEngine* engine, const EntityItemProperties& properties);
-void EntityItemPropertiesFromScriptValueIgnoreReadOnly(const QScriptValue& object, EntityItemProperties& properties);
-void EntityItemPropertiesFromScriptValueHonorReadOnly(const QScriptValue& object, EntityItemProperties& properties);
-
 Q_DECLARE_METATYPE(EntityPropertyFlags);
-QScriptValue EntityPropertyFlagsToScriptValue(QScriptEngine* engine, const EntityPropertyFlags& flags);
-void EntityPropertyFlagsFromScriptValue(const QScriptValue& object, EntityPropertyFlags& flags);
-
 Q_DECLARE_METATYPE(EntityPropertyInfo);
-QScriptValue EntityPropertyInfoToScriptValue(QScriptEngine* engine, const EntityPropertyInfo& propertyInfo);
-void EntityPropertyInfoFromScriptValue(const QScriptValue& object, EntityPropertyInfo& propertyInfo);
 
 // define these inline here so the macros work
 inline void EntityItemProperties::setPosition(const glm::vec3& value)

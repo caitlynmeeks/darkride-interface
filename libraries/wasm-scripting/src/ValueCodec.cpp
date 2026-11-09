@@ -28,6 +28,10 @@
 #include <QtCore/QReadWriteLock>
 #include <QtCore/QRectF>
 #include <QtCore/QSet>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtCore/QAssociativeIterable>
+#include <QtCore/QSequentialIterable>
+#endif
 #include <QtCore/QSizeF>
 #include <QtCore/QUrl>
 #include <QtCore/QUuid>
@@ -314,7 +318,7 @@ bool ValueCodec::decodeRegistered(const QCborValue& value, int targetType, QVari
     }
     if (!decoder(*this, value, out)) {
         ok = false;
-        out = QVariant(targetType, nullptr);
+        out = variantOfType(targetType, nullptr);
     }
     return true;
 }
@@ -1023,31 +1027,31 @@ QVariant ValueCodec::decodeEnum(const QCborValue& value, int targetType, bool& o
         }
         if (!found) {
             ok = false;
-            return QVariant(targetType, nullptr);
+            return variantOfType(targetType, nullptr);
         }
     } else {
         ok = false;
-        return QVariant(targetType, nullptr);
+        return variantOfType(targetType, nullptr);
     }
     switch (QMetaType::sizeOf(targetType)) {
         case 1: {
             qint8 v = qint8(number);
-            return QVariant(targetType, &v);
+            return variantOfType(targetType, &v);
         }
         case 2: {
             qint16 v = qint16(number);
-            return QVariant(targetType, &v);
+            return variantOfType(targetType, &v);
         }
         case 4: {
             qint32 v = qint32(number);
-            return QVariant(targetType, &v);
+            return variantOfType(targetType, &v);
         }
         case 8: {
-            return QVariant(targetType, &number);
+            return variantOfType(targetType, &number);
         }
         default:
             ok = false;
-            return QVariant(targetType, nullptr);
+            return variantOfType(targetType, nullptr);
     }
 }
 
@@ -1073,7 +1077,7 @@ QVariant ValueCodec::decodeObjectPointer(const QCborValue& value, int targetType
     if (targetType == QMetaType::QObjectStar) {
         return QVariant::fromValue(object);
     }
-    return QVariant(targetType, &object);
+    return variantOfType(targetType, &object);
 }
 
 QVariant ValueCodec::decodeTyped(const QCborValue& value, int targetType, bool& ok) const {

@@ -105,7 +105,7 @@ bool ModelPackager::loadModel() {
         qCDebug(interfaceapp) << "Reading FBX file : " << _fbxInfo.filePath();
         QByteArray fbxContents = fbx.readAll();
 
-        _hfmModel = FBXSerializer().read(fbxContents, QVariantHash(), _fbxInfo.filePath());
+        _hfmModel = FBXSerializer().read(fbxContents, hifi::VariantMultiHash(), _fbxInfo.filePath());
 
         // make sure we have some basic mappings
         populateBasicMapping(_mapping, _fbxInfo.filePath(), *_hfmModel);
@@ -125,7 +125,7 @@ bool ModelPackager::editProperties() {
     _mapping = properties.getMapping();
 
     // Make sure that a mapping for the root joint has been specified
-    QVariantHash joints = _mapping.value(JOINT_FIELD).toHash();
+    const hifi::VariantMultiHash joints = hifi::multiHashFromVariant(_mapping.value(JOINT_FIELD));
     if (!joints.contains("jointRoot")) {
         qWarning() << "root joint not configured for skeleton.";
         
@@ -175,13 +175,13 @@ bool ModelPackager::zipModel() {
         auto list = wdir.entryList(QDir::NoDotAndDotDot | QDir::AllEntries);
         for (auto script : list) {
             auto sc = tempDir.relativeFilePath(scriptDir.path()) + "/" + QUrl(script).fileName();
-            _mapping.insertMulti(SCRIPT_FIELD, sc);
+            _mapping.insert(SCRIPT_FIELD, sc);
         }
         copyDirectoryContent(wdir, scriptDir);
     } 
     
     // Copy LODs
-    QVariantHash lodField = _mapping.value(LOD_FIELD).toHash();
+    const hifi::VariantMultiHash lodField = hifi::multiHashFromVariant(_mapping.value(LOD_FIELD));
     if (!lodField.empty()) {
         for (auto it = lodField.constBegin(); it != lodField.constEnd(); ++it) {
             QString oldPath = _modelFile.path() + "/" + it.key();
@@ -200,8 +200,8 @@ bool ModelPackager::zipModel() {
     fbx.copy(newPath);
     
     // Correct FST
-    _mapping[FILENAME_FIELD] = tempDir.relativeFilePath(newPath);
-    _mapping[TEXDIR_FIELD] = tempDir.relativeFilePath(texDir.path());
+    _mapping.replace(FILENAME_FIELD, tempDir.relativeFilePath(newPath));
+    _mapping.replace(TEXDIR_FIELD, tempDir.relativeFilePath(texDir.path()));
 
     for (auto multi : _mapping.values(SCRIPT_FIELD)) {
         multi.fromValue(tempDir.relativeFilePath(scriptDir.path()) + multi.toString());
@@ -229,7 +229,7 @@ bool ModelPackager::zipModel() {
     return true;
 }
 
-void ModelPackager::populateBasicMapping(QVariantHash& mapping, QString filename, const hfm::Model& hfmModel) {
+void ModelPackager::populateBasicMapping(hifi::VariantMultiHash& mapping, QString filename, const hfm::Model& hfmModel) {
 
     // mixamo files - in the event that a mixamo file was edited by some other tool, it's likely the applicationName will
     // be rewritten, so we detect the existence of several different blendshapes which indicate we're likely a mixamo file
@@ -258,7 +258,7 @@ void ModelPackager::populateBasicMapping(QVariantHash& mapping, QString filename
     if (!mapping.contains(SCALE_FIELD)) {
         mapping.insert(SCALE_FIELD, 1.0);
     }
-    QVariantHash joints = mapping.value(JOINT_FIELD).toHash();
+    hifi::VariantMultiHash joints = hifi::multiHashFromVariant(mapping.value(JOINT_FIELD));
     if (!joints.contains("jointEyeLeft")) {
         joints.insert("jointEyeLeft", hfmModel.jointIndices.contains("jointEyeLeft") ? "jointEyeLeft" :
                       (hfmModel.jointIndices.contains("EyeLeft") ? "EyeLeft" : "LeftEye"));
@@ -289,63 +289,63 @@ void ModelPackager::populateBasicMapping(QVariantHash& mapping, QString filename
         joints.insert("jointHead", hfmModel.jointIndices.contains(topName) ? topName : "Head");
     }
 
-    mapping.insert(JOINT_FIELD, joints);
+    mapping.replace(JOINT_FIELD, hifi::variantFromMultiHash(joints));
     
     // If there are no blendshape mappings, and we detect that this is likely a mixamo file,
     // then we can add the default mixamo to blendshape mappings
     if (!mapping.contains(BLENDSHAPE_FIELD) && likelyMixamoFile) {
-        QVariantHash blendshapes;
-        blendshapes.insertMulti("BrowsD_L", QVariantList() << "BrowsDown_Left" << 1.0);
-        blendshapes.insertMulti("BrowsD_R", QVariantList() << "BrowsDown_Right" << 1.0);
-        blendshapes.insertMulti("BrowsU_C", QVariantList() << "BrowsUp_Left" << 1.0);
-        blendshapes.insertMulti("BrowsU_C", QVariantList() << "BrowsUp_Right" << 1.0);
-        blendshapes.insertMulti("BrowsU_L", QVariantList() << "BrowsUp_Left" << 1.0);
-        blendshapes.insertMulti("BrowsU_R", QVariantList() << "BrowsUp_Right" << 1.0);
-        blendshapes.insertMulti("ChinLowerRaise", QVariantList() << "Jaw_Up" << 1.0);
-        blendshapes.insertMulti("ChinUpperRaise", QVariantList() << "UpperLipUp_Left" << 0.5);
-        blendshapes.insertMulti("ChinUpperRaise", QVariantList() << "UpperLipUp_Right" << 0.5);
-        blendshapes.insertMulti("EyeBlink_L", QVariantList() << "Blink_Left" << 1.0);
-        blendshapes.insertMulti("EyeBlink_R", QVariantList() << "Blink_Right" << 1.0);
-        blendshapes.insertMulti("EyeOpen_L", QVariantList() << "EyesWide_Left" << 1.0);
-        blendshapes.insertMulti("EyeOpen_R", QVariantList() << "EyesWide_Right" << 1.0);
-        blendshapes.insertMulti("EyeSquint_L", QVariantList() << "Squint_Left" << 1.0);
-        blendshapes.insertMulti("EyeSquint_R", QVariantList() << "Squint_Right" << 1.0);
-        blendshapes.insertMulti("JawFwd", QVariantList() << "JawForeward" << 1.0);
-        blendshapes.insertMulti("JawLeft", QVariantList() << "JawRotateY_Left" << 0.5);
-        blendshapes.insertMulti("JawOpen", QVariantList() << "MouthOpen" << 0.7);
-        blendshapes.insertMulti("JawRight", QVariantList() << "Jaw_Right" << 1.0);
-        blendshapes.insertMulti("LipsFunnel", QVariantList() << "JawForeward" << 0.39);
-        blendshapes.insertMulti("LipsFunnel", QVariantList() << "Jaw_Down" << 0.36);
-        blendshapes.insertMulti("LipsFunnel", QVariantList() << "MouthNarrow_Left" << 1.0);
-        blendshapes.insertMulti("LipsFunnel", QVariantList() << "MouthNarrow_Right" << 1.0);
-        blendshapes.insertMulti("LipsFunnel", QVariantList() << "MouthWhistle_NarrowAdjust_Left" << 0.5);
-        blendshapes.insertMulti("LipsFunnel", QVariantList() << "MouthWhistle_NarrowAdjust_Right" << 0.5);
-        blendshapes.insertMulti("LipsFunnel", QVariantList() << "TongueUp" << 1.0);
-        blendshapes.insertMulti("LipsLowerClose", QVariantList() << "LowerLipIn" << 1.0);
-        blendshapes.insertMulti("LipsLowerDown", QVariantList() << "LowerLipDown_Left" << 0.7);
-        blendshapes.insertMulti("LipsLowerDown", QVariantList() << "LowerLipDown_Right" << 0.7);
-        blendshapes.insertMulti("LipsLowerOpen", QVariantList() << "LowerLipOut" << 1.0);
-        blendshapes.insertMulti("LipsPucker", QVariantList() << "MouthNarrow_Left" << 1.0);
-        blendshapes.insertMulti("LipsPucker", QVariantList() << "MouthNarrow_Right" << 1.0);
-        blendshapes.insertMulti("LipsUpperClose", QVariantList() << "UpperLipIn" << 1.0);
-        blendshapes.insertMulti("LipsUpperOpen", QVariantList() << "UpperLipOut" << 1.0);
-        blendshapes.insertMulti("LipsUpperUp", QVariantList() << "UpperLipUp_Left" << 0.7);
-        blendshapes.insertMulti("LipsUpperUp", QVariantList() << "UpperLipUp_Right" << 0.7);
-        blendshapes.insertMulti("MouthDimple_L", QVariantList() << "Smile_Left" << 0.25);
-        blendshapes.insertMulti("MouthDimple_R", QVariantList() << "Smile_Right" << 0.25);
-        blendshapes.insertMulti("MouthFrown_L", QVariantList() << "Frown_Left" << 1.0);
-        blendshapes.insertMulti("MouthFrown_R", QVariantList() << "Frown_Right" << 1.0);
-        blendshapes.insertMulti("MouthLeft", QVariantList() << "Midmouth_Left" << 1.0);
-        blendshapes.insertMulti("MouthRight", QVariantList() << "Midmouth_Right" << 1.0);
-        blendshapes.insertMulti("MouthSmile_L", QVariantList() << "Smile_Left" << 1.0);
-        blendshapes.insertMulti("MouthSmile_R", QVariantList() << "Smile_Right" << 1.0);
-        blendshapes.insertMulti("Puff", QVariantList() << "CheekPuff_Left" << 1.0);
-        blendshapes.insertMulti("Puff", QVariantList() << "CheekPuff_Right" << 1.0);
-        blendshapes.insertMulti("Sneer", QVariantList() << "NoseScrunch_Left" << 0.75);
-        blendshapes.insertMulti("Sneer", QVariantList() << "NoseScrunch_Right" << 0.75);
-        blendshapes.insertMulti("Sneer", QVariantList() << "Squint_Left" << 0.5);
-        blendshapes.insertMulti("Sneer", QVariantList() << "Squint_Right" << 0.5);
-        mapping.insert(BLENDSHAPE_FIELD, blendshapes);
+        hifi::VariantMultiHash blendshapes;
+        blendshapes.insert("BrowsD_L", QVariantList() << "BrowsDown_Left" << 1.0);
+        blendshapes.insert("BrowsD_R", QVariantList() << "BrowsDown_Right" << 1.0);
+        blendshapes.insert("BrowsU_C", QVariantList() << "BrowsUp_Left" << 1.0);
+        blendshapes.insert("BrowsU_C", QVariantList() << "BrowsUp_Right" << 1.0);
+        blendshapes.insert("BrowsU_L", QVariantList() << "BrowsUp_Left" << 1.0);
+        blendshapes.insert("BrowsU_R", QVariantList() << "BrowsUp_Right" << 1.0);
+        blendshapes.insert("ChinLowerRaise", QVariantList() << "Jaw_Up" << 1.0);
+        blendshapes.insert("ChinUpperRaise", QVariantList() << "UpperLipUp_Left" << 0.5);
+        blendshapes.insert("ChinUpperRaise", QVariantList() << "UpperLipUp_Right" << 0.5);
+        blendshapes.insert("EyeBlink_L", QVariantList() << "Blink_Left" << 1.0);
+        blendshapes.insert("EyeBlink_R", QVariantList() << "Blink_Right" << 1.0);
+        blendshapes.insert("EyeOpen_L", QVariantList() << "EyesWide_Left" << 1.0);
+        blendshapes.insert("EyeOpen_R", QVariantList() << "EyesWide_Right" << 1.0);
+        blendshapes.insert("EyeSquint_L", QVariantList() << "Squint_Left" << 1.0);
+        blendshapes.insert("EyeSquint_R", QVariantList() << "Squint_Right" << 1.0);
+        blendshapes.insert("JawFwd", QVariantList() << "JawForeward" << 1.0);
+        blendshapes.insert("JawLeft", QVariantList() << "JawRotateY_Left" << 0.5);
+        blendshapes.insert("JawOpen", QVariantList() << "MouthOpen" << 0.7);
+        blendshapes.insert("JawRight", QVariantList() << "Jaw_Right" << 1.0);
+        blendshapes.insert("LipsFunnel", QVariantList() << "JawForeward" << 0.39);
+        blendshapes.insert("LipsFunnel", QVariantList() << "Jaw_Down" << 0.36);
+        blendshapes.insert("LipsFunnel", QVariantList() << "MouthNarrow_Left" << 1.0);
+        blendshapes.insert("LipsFunnel", QVariantList() << "MouthNarrow_Right" << 1.0);
+        blendshapes.insert("LipsFunnel", QVariantList() << "MouthWhistle_NarrowAdjust_Left" << 0.5);
+        blendshapes.insert("LipsFunnel", QVariantList() << "MouthWhistle_NarrowAdjust_Right" << 0.5);
+        blendshapes.insert("LipsFunnel", QVariantList() << "TongueUp" << 1.0);
+        blendshapes.insert("LipsLowerClose", QVariantList() << "LowerLipIn" << 1.0);
+        blendshapes.insert("LipsLowerDown", QVariantList() << "LowerLipDown_Left" << 0.7);
+        blendshapes.insert("LipsLowerDown", QVariantList() << "LowerLipDown_Right" << 0.7);
+        blendshapes.insert("LipsLowerOpen", QVariantList() << "LowerLipOut" << 1.0);
+        blendshapes.insert("LipsPucker", QVariantList() << "MouthNarrow_Left" << 1.0);
+        blendshapes.insert("LipsPucker", QVariantList() << "MouthNarrow_Right" << 1.0);
+        blendshapes.insert("LipsUpperClose", QVariantList() << "UpperLipIn" << 1.0);
+        blendshapes.insert("LipsUpperOpen", QVariantList() << "UpperLipOut" << 1.0);
+        blendshapes.insert("LipsUpperUp", QVariantList() << "UpperLipUp_Left" << 0.7);
+        blendshapes.insert("LipsUpperUp", QVariantList() << "UpperLipUp_Right" << 0.7);
+        blendshapes.insert("MouthDimple_L", QVariantList() << "Smile_Left" << 0.25);
+        blendshapes.insert("MouthDimple_R", QVariantList() << "Smile_Right" << 0.25);
+        blendshapes.insert("MouthFrown_L", QVariantList() << "Frown_Left" << 1.0);
+        blendshapes.insert("MouthFrown_R", QVariantList() << "Frown_Right" << 1.0);
+        blendshapes.insert("MouthLeft", QVariantList() << "Midmouth_Left" << 1.0);
+        blendshapes.insert("MouthRight", QVariantList() << "Midmouth_Right" << 1.0);
+        blendshapes.insert("MouthSmile_L", QVariantList() << "Smile_Left" << 1.0);
+        blendshapes.insert("MouthSmile_R", QVariantList() << "Smile_Right" << 1.0);
+        blendshapes.insert("Puff", QVariantList() << "CheekPuff_Left" << 1.0);
+        blendshapes.insert("Puff", QVariantList() << "CheekPuff_Right" << 1.0);
+        blendshapes.insert("Sneer", QVariantList() << "NoseScrunch_Left" << 0.75);
+        blendshapes.insert("Sneer", QVariantList() << "NoseScrunch_Right" << 0.75);
+        blendshapes.insert("Sneer", QVariantList() << "Squint_Left" << 0.5);
+        blendshapes.insert("Sneer", QVariantList() << "Squint_Right" << 0.5);
+        mapping.insert(BLENDSHAPE_FIELD, hifi::variantFromMultiHash(blendshapes));
     }
 }
 

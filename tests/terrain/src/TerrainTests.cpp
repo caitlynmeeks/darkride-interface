@@ -8,6 +8,7 @@
 
 #include "TerrainTests.h"
 
+#include <atomic>
 #include <cmath>
 #include <map>
 
@@ -1684,7 +1685,15 @@ void TerrainTests::levelOfDetailShowsANewCutOnceItsMeshesAreIn() {
 
     // The camera at the far corner: the cut drawn stays until every node of the new one has its mesh.
     camera = glm::vec3(236.0f, 20.0f, 236.0f);
-    lod.update(grid, camera, metres, gridChunkReady);
+    {   // the cut's choice is a job on the pool, adopted at a later update (entry 24, step 3c): update until it is
+        const std::vector<ChunkKey> was = cutKeys();
+        QElapsedTimer choice;
+        choice.start();
+        while (choice.elapsed() < 5000 && cutKeys() == was) {
+            lod.update(grid, camera, metres, gridChunkReady);
+            QThread::msleep(1);
+        }
+    }
     QVERIFY(cutKeys() != before);
     QVERIFY(drawnKeys() == before);
     QVERIFY(settle());
@@ -2798,7 +2807,15 @@ void TerrainTests::levelOfDetailAsksAgainForAStalledNodeAndThenShowsWithoutIt() 
 
     // the camera at the far corner: the new cut has the grid's own chunks near it, and one of them never gets its mesh
     camera = glm::vec3(236.0f, 20.0f, 236.0f);
-    update();
+    {   // the cut's choice is a job on the pool, adopted at a later update (entry 24, step 3c): update until it is
+        const std::vector<ChunkKey> was = cutKeys();
+        QElapsedTimer choice;
+        choice.start();
+        while (choice.elapsed() < 5000 && cutKeys() == was) {
+            lod.update(grid, camera, metres, gridChunkReady);
+            QThread::msleep(1);
+        }
+    }
     for (const LodCut::Node& node : lod.getCut().getNodes()) {
         if (node.isGridChunk && node.key.level == 0) {
             refused = node.key;
@@ -3450,4 +3467,122 @@ void TerrainTests::paintVoxelsPaintsTheStrengthsShareOfTheVoxels() {
     QVERIFY((float)middlePainted / (float)middle > 0.8f);
     QVERIFY((float)rimPainted / (float)rim < 0.2f);
     QCOMPARE((int)soft.get(glm::ivec3(32, 45, 32)).material, 1);   // air keeps its material
+}
+
+void TerrainTests::snapshotKeepsReadingTheGridAsItWasWhenTaken() {
+    // A snapshot of a grid (GridView) reads the grid as it was when it was taken, whatever the grid does afterwards:
+    // a voxel written in place (the grid copies the chunk first, since the snapshot shares it), a chunk split, a
+    // chunk put in its place, the box's faces closed, the grid reset; the grid itself reads the new state. A node
+    // sampled from the snapshot gets the samples the grid gave before the edits, which is what a sampling job on
+    // the pool relies on while the editing thread goes on.
+    VoxelGrid grid(glm::ivec3(96, 64, 96));
+    grid.fillHeightField(hills, 2);
+    // three chunks the surface crosses (dense ones): one to write a voxel of, one to split, one to replace
+    std::vector<ChunkKey> dense;
+    grid.forEachChunk([&](const ChunkKey& key, const Chunk& chunk) {
+        if (!chunk.isUniform()) {
+            dense.push_back(key);
+        }
+    });
+    QVERIFY(dense.size() >= 3);
+    const ChunkKey edited = dense[0];
+    const ChunkKey split = dense[1];
+    const ChunkKey replaced = dense[2];
+    const ChunkKey node = edited;
+    const NodeContext context = gridContext(grid, node);
+    ChunkSamples before;
+    sampleNode(grid, node, context, before);
+    const int chunks = grid.countChunks();
+    const glm::ivec3 voxel = edited.getOrigin() + glm::ivec3(5, 7, 9);
+    const Voxel was = grid.get(voxel);
+    QVERIFY(was != Voxel::ground(5));
+
+    const GridView snapshot = grid.snapshot();
+    QCOMPARE(snapshot.getVoxelCount(), grid.getVoxelCount());
+    QCOMPARE(snapshot.countChunks(), chunks);
+    // the snapshot shares the chunk; writing to it through the grid gives the grid a chunk of its own
+    const Chunk* shared = &snapshot.getChunk(edited);
+    QVERIFY(&grid.getChunk(edited) == shared);
+    Chunk* mine = grid.findChunk(edited);
+    QVERIFY(mine != nullptr);
+    QVERIFY(mine != shared);
+    QVERIFY(grid.findChunk(edited) == mine);   // and keeps it: nothing else shares it now
+    const glm::ivec3 local = VoxelGrid::localOf(voxel);
+    QVERIFY(mine->set(local.x, local.y, local.z, Voxel::ground(5)));
+    grid.voxelsChanged(edited, local, local);
+    QVERIFY(grid.get(voxel) == Voxel::ground(5));
+    QVERIFY(snapshot.get(voxel) == was);
+    QVERIFY(&snapshot.getChunk(edited) == shared);
+
+    QVERIFY(grid.splitChunk(split));
+    QVERIFY(!grid.hasChunk(split) && grid.isSplit(split));
+    QVERIFY(snapshot.hasChunk(split) && !snapshot.isSplit(split));
+    QVERIFY(snapshot.chunkCovering(split.getOrigin()) == split);
+
+    grid.setChunk(replaced, Chunk(Voxel::air()));
+    QVERIFY(grid.getChunk(replaced).isUniform());
+    QVERIFY(!snapshot.getChunk(replaced).isUniform());
+
+    grid.setCaps(CAP_ALL);
+    QCOMPARE((int)grid.getCaps(), (int)CAP_ALL);
+    QCOMPARE((int)snapshot.getCaps(), (int)CAP_NONE);
+
+    ChunkSamples after;
+    sampleNode(snapshot, node, context, after);
+    QString why;
+    QVERIFY2(samplesEqual(before, after, why), qPrintable(why));
+    ChunkSamples changed;
+    sampleNode(grid, node, context, changed);
+    QVERIFY(!samplesEqual(before, changed, why));
+
+    grid.reset(glm::ivec3(32));
+    QCOMPARE(grid.countChunks(), 1);
+    QCOMPARE(snapshot.countChunks(), chunks);
+    QVERIFY(snapshot.get(voxel) == was);
+
+    // Readers on a pool sample from one snapshot while this thread sculpts the grid: every one of them reads the
+    // grid as it was when the snapshot was taken.
+    VoxelGrid live(glm::ivec3(128, 64, 128));
+    live.fillHeightField(hills, 2);
+    std::vector<ChunkKey> keys;   // the dense chunks: the hills cross one chunk in each of the 16 columns
+    live.forEachChunk([&](const ChunkKey& key, const Chunk& chunk) {
+        if (!chunk.isUniform()) {
+            keys.push_back(key);
+        }
+    });
+    QVERIFY(keys.size() >= 12);
+    std::vector<ChunkSamples> expected(keys.size());
+    for (size_t i = 0; i < keys.size(); ++i) {
+        sampleNode(live, keys[i], gridContext(live, keys[i]), expected[i]);
+    }
+    auto taken = std::make_shared<const GridView>(live.snapshot());
+    QThreadPool pool;
+    pool.setMaxThreadCount(4);
+    std::atomic<int> mismatches { 0 };
+    std::atomic<int> done { 0 };
+    const int rounds = 8;
+    for (int round = 0; round < rounds; ++round) {
+        pool.start([&, taken] {
+            ChunkSamples samples;
+            QString reason;
+            for (size_t i = 0; i < keys.size(); ++i) {
+                sampleNode(*taken, keys[i], gridContext(*taken, keys[i]), samples);
+                if (!samplesEqual(expected[i], samples, reason)) {
+                    ++mismatches;
+                }
+            }
+            ++done;
+        });
+    }
+    taken.reset();   // the jobs hold it
+    Brush brush;
+    brush.radius = 6.0f;
+    for (int stroke = 0; done < rounds && stroke < 400; ++stroke) {
+        brush.center = glm::vec3(20.0f + (stroke % 50), hills(20 + stroke % 50, 30), 30.0f);
+        sculpt(live, brush, stroke % 2 ? SculptMode::Dig : SculptMode::Raise);
+        QThread::msleep(1);
+    }
+    pool.waitForDone();
+    QCOMPARE((int)mismatches, 0);
+    QCOMPARE((int)done, rounds);
 }

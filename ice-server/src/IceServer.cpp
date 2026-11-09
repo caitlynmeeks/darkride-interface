@@ -24,6 +24,7 @@
 #include <NetworkingConstants.h>
 #include <udt/PacketHeaders.h>
 #include <SharedUtil.h>
+#include <shared/WireStream.h>
 
 const int CLEAR_INACTIVE_PEERS_INTERVAL_MSECS = 1 * 1000;
 const int PEER_SILENCE_THRESHOLD_MSECS = 5 * 1000;
@@ -90,6 +91,7 @@ void IceServer::processPacket(std::unique_ptr<udt::Packet> packet) {
             }
         } else if (nlPacket->getType() == PacketType::ICEServerQuery) {
             QDataStream heartbeatStream(nlPacket.get());
+            hifi::stream::pin(heartbeatStream);
             
             // this is a node hoping to connect to a heartbeating peer - do we have the heartbeating peer?
             QUuid senderUUID;
@@ -132,6 +134,7 @@ SharedNetworkPeer IceServer::addOrUpdateHeartbeatingPeer(NLPacket& packet) {
     QByteArray signature;
 
     QDataStream heartbeatStream(&packet);
+    hifi::stream::pin(heartbeatStream);
     heartbeatStream >> senderUUID >> publicSocket >> localSocket;
 
     // cast to {xxxxxxxx-xxxx-1000-8000-xxxxxxxxxxxx}
@@ -229,7 +232,7 @@ void IceServer::requestDomainPublicKey(const QUuid& domainID) {
     publicKeyURL.setPath(publicKeyPath);
 
     QNetworkRequest publicKeyRequest { publicKeyURL };
-    publicKeyRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    publicKeyRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     publicKeyRequest.setAttribute(QNetworkRequest::User, domainID);
 
     qDebug() << "Requesting public key for domain with ID" << domainID;

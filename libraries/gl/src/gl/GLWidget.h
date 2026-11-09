@@ -38,9 +38,21 @@ public:
 
 
 protected:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    virtual bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;   // Qt 6's result type
+#else
     virtual bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
+#endif
     virtual bool event(QEvent* event) override;
     gl::Context* _context { nullptr };
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // The view's window made again as an OpenGL surface (Qt 6 creates a widget's window as a raster one, on every
+    // platform), at the context's creation and, on macOS, whenever Qt replaces the window (QWidget::setParent's
+    // recreate() for a texture-based widget in the main window); on macOS the guard round screen changes is
+    // connected here too.
+    void makeWindowAnOpenGLSurface();
+    bool _remakingWindow { false };
+#endif
 
 private:
     QPaintEngine* _paintEngine { nullptr };

@@ -19,6 +19,8 @@ private slots:
     void receivedFrames();
     void lostFrames_data();
     void lostFrames();
+    void silentPackets_data();
+    void silentPackets();
 };
 
 #endif // hifi_MixedProcessedAudioStreamTests_h

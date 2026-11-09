@@ -8,7 +8,6 @@
 
 #include "HostInterfaceTests.h"
 
-#include <QtScript/QScriptEngine>
 
 #include <QtCore/QCborValue>
 
@@ -346,10 +345,6 @@ void HostInterfaceTests::testCallErrors() {
     QVERIFY(f.objects.contains(probe));
     QCOMPARE(f.call(probe, "add", { 1, 2 }), QVariant(3));
     QCOMPARE(f.call(probe, "guarded", {}).toInt(), 9);
-    // a QScriptValue parameter: only the QtScript engine has such values (a QtScript engine registers the type, as
-    // the client's do)
-    QScriptEngine scriptEngine;
-    QVERIFY(errorMessage(f.call(probe, "takeScriptValue", { 1 })).contains("takes a QtScript value"));
     // a wrong-class handle for an object parameter
     Other other;
     QVariantMap record;
@@ -377,7 +372,7 @@ void HostInterfaceTests::testEnumResults() {
     QCOMPARE(f.call(probe, "currentMode", {}).toInt(), 10);
     f.call(probe, "useMode", { 1 });
     QCOMPARE(f.probe.mode(), Probe::Running);
-    // as QtScript, which throws for it too (QtScriptOverloadTests::testEnumResults)
+    // as QtScript did: it threw for it too
     QVERIFY(HostInterface::isErrorRecord(f.call(probe, "plainLevel", {})));
 }
 

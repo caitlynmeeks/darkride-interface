@@ -10,8 +10,6 @@
 
 import Hifi 1.0
 import QtQuick 2.7
-import QtQuick.Controls 1.4
-import QtQuick.Controls.Styles 1.4 as OriginalStyles
 
 import "." as LoginDialog
 
@@ -328,7 +326,7 @@ Item {
                 }
                 onClicked: {
                     Tablet.playSound(TabletEnums.ButtonClick);
-                    Window.openUrl("https://darkride.ai/?signUp");
+                    WindowScriptingInterface.openUrl("https://darkride.ai/?signUp");
                 }
             }
             TextMetrics {
@@ -356,7 +354,7 @@ Item {
                 linkColor: hifi.colors.blueAccent
                 onLinkActivated: {
                     Tablet.playSound(TabletEnums.ButtonClick);
-                    Window.openUrl(link);
+                    WindowScriptingInterface.openUrl(link);
                     lightboxPopup.titleText = "Can't Access Account";
                     lightboxPopup.bodyText = lightboxPopup.cantAccessBodyText;
                     lightboxPopup.button2text = "CLOSE";

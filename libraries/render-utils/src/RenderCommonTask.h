@@ -9,6 +9,7 @@
 #ifndef hifi_RenderCommonTask_h
 #define hifi_RenderCommonTask_h
 
+#include <set>
 #include <gpu/Pipeline.h>
 #include "LightStage.h"
 #include "HazeStage.h"
@@ -39,6 +40,49 @@ public:
     void run(const render::RenderContextPointer& renderContext, const gpu::RangeTimerPointer& timer);
 
 protected:
+};
+
+// Entry 29 step 2a: while the loading screen is up, the shape plumber's programs are compiled ahead of their first
+// draw, one a frame, on the thread that executes the frame (on a Mac every program compiles from source at its first
+// bind, 5-130 ms each, and a ride met them as content came into view). Off when the world is presented (the
+// interstitial mode's end turns it off); whatever was not reached compiles at first use as before.
+class WarmPipelinesConfig : public render::Job::Config {
+    Q_OBJECT
+    Q_PROPERTY(int perFrame MEMBER perFrame NOTIFY dirty)
+    Q_PROPERTY(int warmed READ getWarmed NOTIFY dirty)
+    Q_PROPERTY(int left READ getLeft NOTIFY dirty)
+public:
+    WarmPipelinesConfig() : render::Job::Config(true) {}   // enableable, on until the world is presented
+    int perFrame { 4 };   // distinct programs bound per frame (the plumber's pipelines share programs: ~960 keys, ~90 programs)
+    int getWarmed() const { return warmed; }
+    int getLeft() const { return left; }
+    int warmed { 0 };
+    int left { 0 };
+signals:
+    void dirty();
+};
+
+class WarmPipelines {
+public:
+    using Config = WarmPipelinesConfig;
+    using JobModel = render::Job::Model<WarmPipelines, Config>;
+
+    // extras: pipelines outside the plumber, bound after its (the sun shadow pass's shape pipelines, 2026-11-07)
+    WarmPipelines(const render::ShapePlumberPointer& shapePlumber, const std::vector<gpu::PipelinePointer>& extras = {}) :
+        _shapePlumber(shapePlumber), _extras(extras) {}
+
+    void configure(const Config& config);
+    void run(const render::RenderContextPointer& renderContext);
+
+protected:
+    render::ShapePlumberPointer _shapePlumber;
+    std::vector<gpu::PipelinePointer> _extras;
+    int _perFrame { 4 };
+    size_t _next { 0 };       // the next pipeline to look at: the plumber's filtered ones, then the extras
+    int _warmed { 0 };        // distinct programs bound so far
+    bool _done { false };
+    bool _wasEnabled { true };
+    std::set<const gpu::Shader*> _programsBound;   // a program shared by many keys is bound once
 };
 
 class DrawLayered3DConfig : public render::Job::Config {

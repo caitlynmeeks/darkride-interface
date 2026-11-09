@@ -14,7 +14,7 @@
 #   client <name> <args...>          the client walled off in $R/<name>-home, --allowMultipleInstances (a second
 #                                    client would otherwise hand its --url to one already running and exit) and
 #                                    --tokens "{}" (no sign-in), stdout and stderr to $R/<name>.log; the ktx cache
-#                                    is deleted when it exits (kept with KEEP_KTX=1, for a warm run of the same
+#                                    and web folder are deleted when it exits (kept with KEEP_KTX=1, for a warm run of the same
 #                                    client next). Titled "Darkride - $SESSION - TEST, not yours" ("QUIET TEST" while
 #                                    the lock is held --quiet) unless the runner passes its own --clientLabel; the
 #                                    client takes its Dock icon from those words (TestClientIcon.h). Takes the machine lock first (lock_take), unless
@@ -35,7 +35,12 @@
 #                                    puts ~/Library; HOME doesn't move it) unless the caller set one, and once it has
 #                                    quit, "WALLED OFF" or "NOT WALLED OFF" says whether ~/Library's Tivoli Cloud VR
 #                                    folders changed while it ran. Its caches, the ktx cache too (unless KEEP_KTX=1),
-#                                    are deleted after; its log stays. CLIENT_FOREGROUND=1 opens it in front
+#                                    are deleted after; its log stays. A dev or test build's folders are the user's too
+#                                    ("Tivoli Cloud VR - dev"), and TIVOLI_APP_DATA_DIR doesn't move Qt's own caches: it
+#                                    gets <the app's folder>/.wall-home, one per build tree, kept between runs so its QML
+#                                    cache stays warm after the build's first launch. A caller's CFFIXED_USER_HOME is left
+#                                    alone; CLIENT_REAL_HOME=1 keeps the real ~/Library: Caity's own hand tests only.
+#                                    CLIENT_FOREGROUND=1 opens it in front
 #                                    instead, still through open (a client someone plays, or a timing run that needs
 #                                    the window on top). Elsewhere than macOS it runs the binary straight.
 #                                    The client's pid goes in <log>.pid while it runs; CLIENT_TIMEOUT=<s> stops a
@@ -49,8 +54,22 @@
 #                                    (2026-10-25). The background launch never activates it; this covers a click.
 #                                    It passes --noAudioInput too (no microphone, so no macOS permission prompt over
 #                                    the test); CLIENT_MIC=1 keeps the microphone for a test that needs it.
+#                                    It exports DARKRIDE_AUTO_AVATAR_PICTURES=0 unless the caller set it: a test client
+#                                    takes no automatic avatar pictures (their secondary camera would switch on in the
+#                                    middle of a timing run); DARKRIDE_AUTO_AVATAR_PICTURES=1 for a test of the pictures.
 #                                    When the client has quit, the macOS helper services it left running are stopped
 #                                    (stop_client_helpers), whichever way it was launched.
+#                                    The window, checked twice (editor-ui's kit check, 11-07): before the start, the size
+#                                    the client was given (WindowGeometry in each Interface.json under XDG_CONFIG_HOME,
+#                                    which wall writes) must be 800 x 600 to 1100 x 800, or it refuses to start ("WINDOW
+#                                    REFUSED", status 1): under 800 x 600 the client throws the size away and opens on
+#                                    the whole main screen, behind the user's apps. After it quits, the client's own
+#                                    "main window at the start" line must say it opened where it was asked, or it ends
+#                                    "WINDOW FAIL" (status 4). The 1100 x 800 limit is for clients in the background: a
+#                                    run in front (CLIENT_FOREGROUND=1, with the lock --front) has its size as part of
+#                                    the test, and CLIENT_BIG=1 lifts it for a background one (on Caity's word only).
+#                                    Caity's own clients (label "Darkride - Caity - ...") aren't checked.
+#   window_asked                     the size check alone: prints the rects asked, or why not (status 1)
 #   stop_client_helpers <pid> <since>
 #                                    stops the VT decoder and encoder services and the Safari helper whose own logs
 #                                    name client <pid> since <since> ("YYYY-mm-dd HH:MM:SS"), and nothing else
@@ -59,7 +78,8 @@
 #                                    or the signal that ended it, from launchd's record in the system log since <since>,
 #                                    "YYYY-mm-dd HH:MM:SS", or the last 2 minutes) and when its log last wrote; printed,
 #                                    and added to the end of <log>
-#   lock_take [purpose] [minutes] [--quiet]
+#   lock_take [purpose] [minutes] [--quiet]   (LOCK_FLAGS=--quiet or --front in the environment asks the same for every
+#                                             take of the run, client_start's included)
 #                                    waits for the machine lock and holds it until this runner exits (or lock_give):
 #                                    one test with windows on the GPU at a time. --quiet for timing runs (no builds).
 #                                    Without the lock script (another machine) it says so and goes on.
@@ -107,7 +127,9 @@ lock_take() {
         [ -n "${_lock_said:-}" ] || echo "no machine lock at $MACHINE_LOCK: going on without one"
         _lock_said=1; return 0
     fi
-    "$MACHINE_LOCK" take "$SESSION" "${1:-test run $(basename "$R")}" "${2:-30}" --pid "${LOCK_PID:-$$}" ${3:+"$3"}
+    # LOCK_FLAGS=--quiet (or --front) in the environment asks for a quiet machine: builds through machine-lock.sh build
+    # wait, and the take waits for running ones; empty = a plain take, as before (physics, 2026-11-04)
+    "$MACHINE_LOCK" take "$SESSION" "${1:-test run $(basename "$R")}" "${2:-30}" --pid "${LOCK_PID:-$$}" ${3:+"$3"} ${LOCK_FLAGS:-}
 }
 
 lock_give() {
@@ -202,6 +224,46 @@ client_exit_line() {
     esac
 }
 
+window_asked() {
+    [ -n "${XDG_CONFIG_HOME:-}" ] || { echo "no XDG_CONFIG_HOME: the client has no config of the test's own, so no window size"; return 1; }
+    # the upper limit is for background clients: CLIENT_BIG=1 (her word) or a run in front lifts it
+    _big=${CLIENT_BIG:-}; [ -z "${CLIENT_FOREGROUND:-}" ] || _big=1
+    python3 -I - "$XDG_CONFIG_HOME" "$_big" <<'EOF'
+import glob, json, re, sys
+xdg, big = sys.argv[1], sys.argv[2] == "1"
+files = sorted(glob.glob(glob.escape(xdg) + "/*/Interface.json"))
+if not files:
+    print("no Interface.json in", xdg, "(the client would open on the whole main screen)"); sys.exit(1)
+rects = []
+for f in files:
+    try:
+        geom = json.load(open(f)).get("WindowGeometry", "")
+    except Exception as e:
+        print("can't read", f, e); sys.exit(1)
+    m = re.fullmatch(r"@Rect\((-?\d+) (-?\d+) (\d+) (\d+)\)", geom if isinstance(geom, str) else "")
+    if not m:
+        print(f, "has no WindowGeometry \"@Rect(x y w h)\" (the client would open on the whole main screen)"); sys.exit(1)
+    x, y, w, h = map(int, m.groups())
+    if w < 800 or h < 600:
+        print("%s asks %d x %d: under 800 x 600, the client would open on the whole main screen" % (f, w, h)); sys.exit(1)
+    if not big and (w > 1100 or h > 800):
+        print("%s asks %d x %d: over 1100 x 800, too big for a client in the background (CLIENT_BIG=1 only on Caity's word)" % (f, w, h)); sys.exit(1)
+    rects.append("%d %d %d %d" % (x, y, w, h))
+print(", ".join(rects))
+EOF
+}
+
+# after the client has quit: did it open where it was asked? Its log says so (builds from b3180e2ea3 on)
+window_check_after() {
+    [ -n "$_asked" ] || return 0
+    _opened=$(grep -a -h -m1 "main window at the start" "$_log" 2>/dev/null | sed 's/.*main window at the start: //')
+    case "$_opened" in
+        *"where it was left"*) echo "client_start: window as asked ($_asked)" ;;
+        "") echo "client_start: window unchecked (no \"main window at the start\" line in $_log: a build before b3180e2ea3, or it never opened)" >&2 ;;
+        *) echo "client_start: WINDOW FAIL: asked $_asked, the client opened $_opened" >&2; _status=4 ;;
+    esac
+}
+
 client_start() {
     _log=$1; shift
     case "$BIN" in
@@ -219,16 +281,37 @@ client_start() {
         _app=$(cd "$_app" 2>/dev/null && pwd) || { echo "client_start: no app at $BIN" >&2; return 1; }
     fi
     case "$_log" in /*) ;; *) _log="$(pwd)/$_log" ;; esac
+    # the window it was given (see the header); not Caity's own clients
+    _caity=""; _prev=""
+    case "${DARKRIDE_CLIENT_LABEL:-}" in "Darkride - Caity - "*) _caity=1 ;; esac
+    for _a in "$@"; do
+        if [ "$_prev" = --clientLabel ]; then case "$_a" in "Darkride - Caity - "*) _caity=1 ;; esac; fi
+        _prev=$_a
+    done
+    _asked=""
+    if [ -z "$_caity" ]; then
+        _asked=$(window_asked) || {
+            echo "client_start: WINDOW REFUSED: $_asked. Not starting (800 x 600 to 1100 x 800 in the background; bigger in front, CLIENT_FOREGROUND=1, or with CLIENT_BIG=1 on Caity's word)" >&2
+            return 1
+        }
+    fi
     # --noAudioInput: the client opens no microphone, so a rebuilt (ad-hoc signed) build raises no macOS microphone
     # prompt in front of the test; CLIENT_MIC=1 for a test that needs the microphone. Older builds list the option as
     # unknown and go on
     [ -n "${CLIENT_MIC:-}" ] || set -- --noAudioInput "$@"
+    # no automatic avatar pictures (AvatarThumbnails.cpp reads "0"): their secondary camera would cost a timing run
+    # frame time. Exported here, before both launches below: the open loop hands DARKRIDE_ variables over, and a
+    # binary run straight inherits them. A caller's own value (1 for a test of the pictures) stays
+    export DARKRIDE_AUTO_AVATAR_PICTURES="${DARKRIDE_AUTO_AVATAR_PICTURES:-0}"
     _since=$(date '+%Y-%m-%d %H:%M:%S')
-    # a release build's own home, away from the user's ~/Library (see the header); the user's folders are checked after
-    _wallhome=""
-    if [ -n "$_app" ] && [ -z "${CFFIXED_USER_HOME:-}" ] &&
-       [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$_app/Contents/Info.plist" 2>/dev/null)" = com.tivolicloud.interface ]; then
-        _wallhome="$_log.home"
+    # a home of its own, away from the user's ~/Library (see the header); the user's folders are checked after
+    _wallhome=""; _dropcaches=""
+    if [ -n "$_app" ] && [ -z "${CFFIXED_USER_HOME:-}" ] && [ -z "${CLIENT_REAL_HOME:-}" ]; then
+        if [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$_app/Contents/Info.plist" 2>/dev/null)" = com.tivolicloud.interface ]; then
+            _wallhome="$_log.home"; _dropcaches=1
+        else
+            _wallhome="$(dirname "$_app")/.wall-home"
+        fi
         mkdir -p "$_wallhome"
     fi
     [ -z "$_wallhome${CFFIXED_USER_HOME:-}" ] || : > "$_log.started"
@@ -238,6 +321,7 @@ client_start() {
         wait $_cpid
         _status=$?
         [ "$(uname)" != Darwin ] || stop_client_helpers "$_cpid" "$_since"
+        window_check_after
         return $_status
     fi
     # -DarkrideTestRun <log> marks this client's command line (an AppKit default nothing reads), so its pid can be
@@ -266,7 +350,15 @@ client_start() {
     _opener=$!
     _cpid=""; _i=0
     while [ -z "$_cpid" ] && [ "$_i" -lt 120 ] && kill -0 $_opener 2>/dev/null; do
-        _cpid=$(pgrep -f -- "-DarkrideTestRun $_log" | head -1)
+        # never open's own pid: its command line carries the flag too, and pgrep lists it first. By name, not by $!, which
+        # is another process when zsh sources this file (qa's client.log.pid held open's pid under zsh, 2026-11-05)
+        _cpid=""
+        for _p in $(pgrep -f -- "-DarkrideTestRun $_log"); do
+            case "$(ps -o comm= -p "$_p" 2>/dev/null)" in
+                */open|open|"") ;;
+                *) _cpid=$_p; break ;;
+            esac
+        done
         _i=$((_i + 1)); sleep 0.5
     done
     # the client's pid beside its log, and CLIENT_TIMEOUT=<s>: SIGTERM after that long, SIGKILL 5 s later (the client
@@ -296,7 +388,8 @@ client_start() {
         [ "$_status" != 0 ] || _status=1
     fi
     if [ -n "$_wallhome" ] || [ -n "${CFFIXED_USER_HOME:-}" ]; then
-        _touched=$(find "$HOME/Library/Application Support/Tivoli Cloud VR" "$HOME/Library/Caches/Tivoli Cloud VR" \
+        # all the user's Tivoli folders: a dev build's are "Tivoli Cloud VR - dev", which a check of the plain name misses
+        _touched=$(find "$HOME/Library/Application Support/Tivoli Cloud VR"* "$HOME/Library/Caches/Tivoli Cloud VR"* \
                        -newer "$_log.started" -type f 2>/dev/null | wc -l | tr -d ' ')
         if [ "$_touched" = 0 ]; then
             echo "client_start: WALLED OFF: nothing in ~/Library's Tivoli Cloud VR folders changed"
@@ -307,11 +400,12 @@ client_start() {
         rm -f "$_log.started"
         # its caches (QML, web, and the ktx cache, 0.3 to 1.5 GB, which 1.0.x keeps beside its log in Application
         # Support; KEEP_KTX=1 keeps it): the log stays, in $_wallhome/Library/Application Support
-        if [ -n "$_wallhome" ]; then
+        if [ -n "$_dropcaches" ]; then
             rm -rf "$_wallhome/Library/Caches"
             [ -n "${KEEP_KTX:-}" ] || find "$_wallhome" -type d -name ktx_cache -prune -exec rm -rf {} +
         fi
     fi
+    window_check_after
     return $_status
 }
 
@@ -326,7 +420,8 @@ client() {
     XDG_CONFIG_HOME="$R/$_name-home/config" TIVOLI_APP_DATA_DIR="$R/$_name-home/data" \
         client_start "$R/$_name.log" --allowMultipleInstances --tokens "{}" "$@"
     _status=$?
-    [ -n "${KEEP_KTX:-}" ] || rm -rf "$R/$_name-home/data/ktx_cache"
+    # the web views' folder goes with it: a walled client keeps its web storage and cache there
+    [ -n "${KEEP_KTX:-}" ] || rm -rf "$R/$_name-home/data/ktx_cache" "$R/$_name-home/data/QtWebEngine"
     return $_status
 }
 

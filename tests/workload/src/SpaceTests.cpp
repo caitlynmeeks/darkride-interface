@@ -1,6 +1,6 @@
 //
 //  SpaceTests.cpp
-//  tests/physics/src
+//  tests/workload/src
 //
 //  Created by Andrew Meadows on 2017.01.26
 //  Copyright 2017 High Fidelity, Inc.
@@ -11,270 +11,129 @@
 
 #include "SpaceTests.h"
 
-#include <iostream>
-
 #include <workload/Space.h>
-#include <StreamUtils.h>
-#include <SharedUtil.h>
 
+QTEST_GUILESS_MAIN(SpaceTests)
 
-const float INV_SQRT_3 = 1.0f / sqrtf(3.0f);
+using namespace workload;
 
-QTEST_MAIN(SpaceTests)
+static_assert(Region::NUM_TRACKED_REGIONS == 3, "the tests below set a near, a mid and a far region per view");
 
+// A view at `center` whose tracked regions R1, R2 and R3 are spheres of the given radii around it.
+static View makeView(const glm::vec3& center, float near, float mid, float far) {
+    View view;
+    view.origin = center;
+    const float radii[] = { near, mid, far };
+    for (uint32_t i = 0; i < Region::NUM_TRACKED_REGIONS; ++i) {
+        view.regions[i] = Sphere(center, radii[i]);
+    }
+    return view;
+}
+
+// Queue the transaction, close the frame and process it, as the workload engine does once per frame.
+static void apply(Space& space, Transaction& transaction) {
+    space.enqueueTransaction(transaction);
+    space.enqueueFrame();
+    space.processTransactionQueue();
+    transaction.clear();
+}
+
+// One proxy walks in from outside every region to R3, R2 and R1, then is removed.
 void SpaceTests::testOverlaps() {
-    workload::Space space;
-    using Changes = std::vector<workload::Space::Change>;
-    using Views = std::vector<workload::Space::View>;
-
-    glm::vec3 viewCenter(0.0f, 0.0f, 0.0f);
-    float near = 1.0f;
-    float mid = 2.0f;
-    float far = 3.0f;
-
+    Space space;
+    const glm::vec3 viewCenter(0.0f);
+    const float near = 1.0f;
+    const float mid = 2.0f;
+    const float far = 3.0f;
     Views views;
-    views.push_back(workload::Space::View(viewCenter, near, mid, far));
+    views.push_back(makeView(viewCenter, near, mid, far));
     space.setViews(views);
+    QCOMPARE(space.getNumViews(), 1u);
 
-    int32_t proxyId = 0;
     const float DELTA = 0.001f;
-    float proxyRadius = 0.5f;
-    glm::vec3 proxyPosition = viewCenter + glm::vec3(0.0f, 0.0f, far + proxyRadius + DELTA);
-    workload::Space::Sphere proxySphere(proxyPosition, proxyRadius);
+    Transaction transaction;
+    Changes changes;
 
-    { // create very_far proxy
-        proxyId = space.createProxy(proxySphere);
-        QVERIFY(space.getNumObjects() == 1);
+    // A new proxy just outside R3: known to the space but outside every tracked region, so R4 (from UNKNOWN).
+    const ProxyID proxyId = space.allocateID();
+    QVERIFY(space.isAllocatedID(proxyId));
+    const float proxyRadius = 0.5f;
+    const int OWNER_TAG = 7;
+    transaction.reset(proxyId, Sphere(viewCenter + glm::vec3(0.0f, 0.0f, far + proxyRadius + DELTA), proxyRadius), Owner(OWNER_TAG));
+    apply(space, transaction);
+    QCOMPARE(space.getNumObjects(), 1u);
+    QCOMPARE(space.getRegion(proxyId), (uint8_t)Region::UNKNOWN);
+    QCOMPARE(space.getOwner(proxyId).get<int>(), OWNER_TAG);
 
-        Changes changes;
-        space.categorizeAndGetChanges(changes);
-        QVERIFY(changes.size() == 0);
-    }
+    space.categorizeAndGetChanges(changes);
+    QCOMPARE(changes.size(), (size_t)1);
+    QCOMPARE(changes[0].proxyId, proxyId);
+    QCOMPARE(changes[0].region, (uint8_t)Region::R4);
+    QCOMPARE(changes[0].prevRegion, (uint8_t)Region::UNKNOWN);
 
-    { // move proxy far
-        float newRadius = 1.0f;
-        glm::vec3 newPosition = viewCenter + glm::vec3(0.0f, 0.0f, far + newRadius - DELTA);
-        workload::Space::Sphere newSphere(newPosition, newRadius);
-        std::vector<workload::Space::ProxyUpdate> updates;
-        updates.push_back(workload::Space::ProxyUpdate(proxyId, newSphere));
-        space.updateProxies(updates);
-        Changes changes;
-        space.categorizeAndGetChanges(changes);
-        QVERIFY(changes.size() == 1);
-        QVERIFY(changes[0].proxyId == proxyId);
-        QVERIFY(changes[0].region == workload::Space::REGION_FAR);
-        QVERIFY(changes[0].prevRegion == workload::Space::REGION_UNKNOWN);
-    }
+    // Nothing moved: no change.
+    changes.clear();
+    space.categorizeAndGetChanges(changes);
+    QVERIFY(changes.empty());
 
-    { // move proxy mid
-        float newRadius = 1.0f;
-        glm::vec3 newPosition = viewCenter + glm::vec3(0.0f, 0.0f, mid + newRadius - DELTA);
-        workload::Space::Sphere newSphere(newPosition, newRadius);
-        std::vector<workload::Space::ProxyUpdate> updates;
-        updates.push_back(workload::Space::ProxyUpdate(proxyId, newSphere));
-        space.updateProxies(updates);
-        Changes changes;
-        space.categorizeAndGetChanges(changes);
-        QVERIFY(changes.size() == 1);
-        QVERIFY(changes[0].proxyId == proxyId);
-        QVERIFY(changes[0].region == workload::Space::REGION_MIDDLE);
-        QVERIFY(changes[0].prevRegion == workload::Space::REGION_FAR);
-    }
-
-    { // move proxy near
-        float newRadius = 1.0f;
-        glm::vec3 newPosition = viewCenter + glm::vec3(0.0f, 0.0f, near + newRadius - DELTA);
-        workload::Space::Sphere newSphere(newPosition, newRadius);
-        std::vector<workload::Space::ProxyUpdate> updates;
-        updates.push_back(workload::Space::ProxyUpdate(proxyId, newSphere));
-        space.updateProxies(updates);
-        Changes changes;
-        space.categorizeAndGetChanges(changes);
-        QVERIFY(changes.size() == 1);
-        QVERIFY(changes[0].proxyId == proxyId);
-        QVERIFY(changes[0].region == workload::Space::REGION_NEAR);
-        QVERIFY(changes[0].prevRegion == workload::Space::REGION_MIDDLE);
-    }
-
-    { // delete proxy
-        // NOTE: atm deleting a proxy doesn't result in a "Change"
-        std::vector<int32_t> deadProxies;
-        deadProxies.push_back(proxyId);
-        space.deleteProxies(deadProxies);
-        Changes changes;
-        space.categorizeAndGetChanges(changes);
-        QVERIFY(changes.size() == 0);
-        QVERIFY(space.getNumObjects() == 0);
-    }
-}
-
-#ifdef MANUAL_TEST
-
-const float WORLD_WIDTH = 1000.0f;
-const float MIN_RADIUS = 1.0f;
-const float MAX_RADIUS = 100.0f;
-
-float randomFloat() {
-    return 2.0f * ((float)rand() / (float)RAND_MAX) - 1.0f;
-}
-
-glm::vec3 randomVec3() {
-    glm::vec3 v(randomFloat(), randomFloat(), randomFloat());
-    return v;
-}
-
-void generateSpheres(uint32_t numProxies, std::vector<workload::Space::Sphere>& spheres) {
-    spheres.reserve(numProxies);
-    for (uint32_t i = 0; i < numProxies; ++i) {
-        workload::Space::Sphere sphere(
-                WORLD_WIDTH * randomFloat(),
-                WORLD_WIDTH * randomFloat(),
-                WORLD_WIDTH * randomFloat(),
-                (MIN_RADIUS + (MAX_RADIUS - MIN_RADIUS)) * randomFloat());
-        spheres.push_back(sphere);
-    }
-}
-
-void generatePositions(uint32_t numProxies, std::vector<glm::vec3>& positions) {
-    positions.reserve(numProxies);
-    for (uint32_t i = 0; i < numProxies; ++i) {
-        positions.push_back(WORLD_WIDTH * randomVec3());
-    }
-}
-
-void generateRadiuses(uint32_t numRadiuses, std::vector<float>& radiuses) {
-    radiuses.reserve(numRadiuses);
-    for (uint32_t i = 0; i < numRadiuses; ++i) {
-        radiuses.push_back(MIN_RADIUS + (MAX_RADIUS - MIN_RADIUS) * randomFloat());
-    }
-}
-
-void SpaceTests::benchmark() {
-    uint32_t numProxies[] = { 100, 1000, 10000, 100000 };
-    uint32_t numTests = 4;
-    std::vector<uint64_t> timeToAddAll;
-    std::vector<uint64_t> timeToMoveView;
-    std::vector<uint64_t> timeToMoveProxies;
-    std::vector<uint64_t> timeToRemoveAll;
-    for (uint32_t i = 0; i < numTests; ++i) {
-
-        workload::Space space;
-
-        { // build the views
-            std::vector<glm::vec3> viewPositions;
-            viewPositions.push_back(glm::vec3(0.0f, 0.0f, 0.0f));
-            viewPositions.push_back(glm::vec3(0.0f, 0.0f, 0.1f * WORLD_WIDTH));
-            float radius0 = 0.25f * WORLD_WIDTH;
-            float radius1 = 0.50f * WORLD_WIDTH;
-            float radius2 = 0.75f * WORLD_WIDTH;
-            std::vector<workload::Space::View> views;
-            views.push_back(workload::Space::View(viewPositions[0], radius0, radius1, radius2));
-            views.push_back(workload::Space::View(viewPositions[1], radius0, radius1, radius2));
-            space.setViews(views);
-        }
-
-        // build the proxies
-        uint32_t n = numProxies[i];
-        std::vector<workload::Space::Sphere> proxySpheres;
-        generateSpheres(n, proxySpheres);
-        std::vector<int32_t> proxyKeys;
-        proxyKeys.reserve(n);
-
-        // measure time to put proxies in the space
-        uint64_t startTime = usecTimestampNow();
-        for (uint32_t j = 0; j < n; ++j) {
-            int32_t key = space.createProxy(proxySpheres[j]);
-            proxyKeys.push_back(key);
-        }
-        uint64_t usec = usecTimestampNow() - startTime;
-        timeToAddAll.push_back(usec);
-
-        {
-            // build the views
-            std::vector<glm::vec3> viewPositions;
-            viewPositions.push_back(glm::vec3(1.0f, 2.0f, 3.0f));
-            viewPositions.push_back(glm::vec3(1.0f, 2.0f, 3.0f + 0.1f * WORLD_WIDTH));
-            float radius0 = 0.25f * WORLD_WIDTH;
-            float radius1 = 0.50f * WORLD_WIDTH;
-            float radius2 = 0.75f * WORLD_WIDTH;
-            std::vector<workload::Space::View> views;
-            views.push_back(workload::Space::View(viewPositions[0], radius0, radius1, radius2));
-            views.push_back(workload::Space::View(viewPositions[1], radius0, radius1, radius2));
-            space.setViews(views);
-        }
-
-        // measure time to categorizeAndGetChanges everything
-        std::vector<workload::Space::Change> changes;
-        startTime = usecTimestampNow();
-        space.categorizeAndGetChanges(changes);
-        usec = usecTimestampNow() - startTime;
-        timeToMoveView.push_back(usec);
-
-        // move every 10th proxy around
-        const float proxySpeed = 1.0f;
-        std::vector<workload::Space::Sphere> newSpheres;
-        uint32_t numMovingProxies = n / 10;
-        uint32_t jstep = n / numMovingProxies;
-        uint32_t maxJ = numMovingProxies * jstep - 1;
-        glm::vec3 direction;
-        for (uint32_t j = 0; j < maxJ - jstep; j += jstep) {
-            glm::vec3 position = (glm::vec3)proxySpheres[j];
-            glm::vec3 destination = (glm::vec3)proxySpheres[j + jstep];
-            direction = glm::normalize(destination - position);
-            glm::vec3 newPosition = position + proxySpeed * direction;
-            newSpheres.push_back(workload::Space::Sphere(newPosition, proxySpheres[j].w));
-        }
-        glm::vec3 position = (glm::vec3)proxySpheres[maxJ = jstep];
-        glm::vec3 destination = (glm::vec3)proxySpheres[0];
-        direction = glm::normalize(destination - position);
-        direction = position + proxySpeed * direction;
-        newSpheres.push_back(workload::Space::Sphere(direction, proxySpheres[0].w));
-        uint32_t k = 0;
-        startTime = usecTimestampNow();
-        for (uint32_t j = 0; j < maxJ; j += jstep) {
-            space.updateProxy(proxyKeys[j], newSpheres[k++]);
-        }
+    // Into R3, R2 and R1 in turn. A proxy is in a region as soon as its sphere touches the region's sphere.
+    const uint8_t regions[] = { Region::R3, Region::R2, Region::R1 };
+    const float regionRadii[] = { far, mid, near };
+    const float newRadius = 1.0f;
+    uint8_t prevRegion = Region::R4;
+    for (int step = 0; step < 3; ++step) {
+        transaction.update(proxyId, Sphere(viewCenter + glm::vec3(0.0f, 0.0f, regionRadii[step] + newRadius - DELTA), newRadius));
+        apply(space, transaction);
         changes.clear();
         space.categorizeAndGetChanges(changes);
-        usec = usecTimestampNow() - startTime;
-        timeToMoveProxies.push_back(usec);
-
-        // measure time to remove proxies from space
-        startTime = usecTimestampNow();
-        for (uint32_t j = 0; j < n; ++j) {
-            space.deleteProxy(proxyKeys[j]);
-        }
-        usec = usecTimestampNow() - startTime;
-        timeToRemoveAll.push_back(usec);
+        QCOMPARE(changes.size(), (size_t)1);
+        QCOMPARE(changes[0].proxyId, proxyId);
+        QCOMPARE(changes[0].region, regions[step]);
+        QCOMPARE(changes[0].prevRegion, prevRegion);
+        QCOMPARE(space.getRegion(proxyId), regions[step]);
+        prevRegion = regions[step];
     }
 
-    std::cout << "[numProxies, timeToAddAll] = [" << std::endl;
-    for (uint32_t i = 0; i < timeToAddAll.size(); ++i) {
-        uint32_t n = numProxies[i];
-        std::cout << "    " << n << ", " << timeToAddAll[i] << std::endl;
-    }
-    std::cout << "];" << std::endl;
-
-    std::cout << "[numProxies, timeToMoveView] = [" << std::endl;
-    for (uint32_t i = 0; i < timeToMoveView.size(); ++i) {
-        uint32_t n = numProxies[i];
-        std::cout << "    " << n << ", " << timeToMoveView[i] << std::endl;
-    }
-    std::cout << "];" << std::endl;
-
-    std::cout << "[numProxies, timeToMoveProxies] = [" << std::endl;
-    for (uint32_t i = 0; i < timeToMoveProxies.size(); ++i) {
-        uint32_t n = numProxies[i];
-        std::cout << "    " << n << "/10, " << timeToMoveProxies[i] << std::endl;
-    }
-    std::cout << "];" << std::endl;
-
-    std::cout << "[numProxies, timeToRemoveAll] = [" << std::endl;
-    for (uint32_t i = 0; i < timeToRemoveAll.size(); ++i) {
-        uint32_t n = numProxies[i];
-        std::cout << "    " << n << ", " << timeToRemoveAll[i] << std::endl;
-    }
-    std::cout << "];" << std::endl;
+    // Removed: the proxy is INVALID, never categorized again, and its slot is free.
+    transaction.remove(proxyId);
+    apply(space, transaction);
+    changes.clear();
+    space.categorizeAndGetChanges(changes);
+    QVERIFY(changes.empty());
+    QCOMPARE(space.getRegion(proxyId), (uint8_t)Region::INVALID);
+    QCOMPARE(space.getNumObjects(), 0u);
 }
 
-#endif // MANUAL_TEST
+// Two views: a proxy near the second view's origin is R1 for the space, and drops to R4 when that view moves away.
+void SpaceTests::testSecondView() {
+    Space space;
+    const glm::vec3 farAway(100.0f, 0.0f, 0.0f);
+    Views views;
+    views.push_back(makeView(glm::vec3(0.0f), 1.0f, 2.0f, 3.0f));
+    views.push_back(makeView(farAway, 1.0f, 2.0f, 3.0f));
+    space.setViews(views);
+    QCOMPARE(space.getNumViews(), 2u);
+
+    Transaction transaction;
+    const ProxyID nearSecond = space.allocateID();
+    const ProxyID betweenViews = space.allocateID();
+    transaction.reset(nearSecond, Sphere(farAway + glm::vec3(0.0f, 0.5f, 0.0f), 0.25f), Owner());
+    transaction.reset(betweenViews, Sphere(glm::vec3(50.0f, 0.0f, 0.0f), 0.25f), Owner());
+    apply(space, transaction);
+    QCOMPARE(space.getNumObjects(), 2u);
+
+    Changes changes;
+    space.categorizeAndGetChanges(changes);
+    QCOMPARE(changes.size(), (size_t)2);
+    QCOMPARE(space.getRegion(nearSecond), (uint8_t)Region::R1);
+    QCOMPARE(space.getRegion(betweenViews), (uint8_t)Region::R4);
+
+    views[1] = makeView(farAway + glm::vec3(0.0f, 0.0f, 50.0f), 1.0f, 2.0f, 3.0f);
+    space.setViews(views);
+    changes.clear();
+    space.categorizeAndGetChanges(changes);
+    QCOMPARE(changes.size(), (size_t)1);
+    QCOMPARE(changes[0].proxyId, nearSecond);
+    QCOMPARE(changes[0].region, (uint8_t)Region::R4);
+    QCOMPARE(changes[0].prevRegion, (uint8_t)Region::R1);
+}

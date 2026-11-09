@@ -24,14 +24,6 @@ static const glm::quat X_ROT_NEG_90{ 0.70710678f, -0.70710678f, 0.0f, 0.0f };
 static const glm::vec3 DEFAULT_POSITION_OFFSET{0.0f, 0.0f, -StylusPick::WEB_STYLUS_LENGTH / 2.0f};
 static const glm::vec3 DEFAULT_MODEL_DIMENSIONS{0.01f, 0.01f, StylusPick::WEB_STYLUS_LENGTH};
 
-void PointerScriptingInterface::setIgnoreItems(unsigned int uid, const QScriptValue& ignoreItems) const {
-    DependencyManager::get<PointerManager>()->setIgnoreItems(uid, qVectorQUuidFromScriptValue(ignoreItems));
-}
-
-void PointerScriptingInterface::setIncludeItems(unsigned int uid, const QScriptValue& includeItems) const {
-    DependencyManager::get<PointerManager>()->setIncludeItems(uid, qVectorQUuidFromScriptValue(includeItems));
-}
-
 void PointerScriptingInterface::setIgnoreItemsVector(unsigned int uid, const QVector<QUuid>& ignoreItems) const {
     DependencyManager::get<PointerManager>()->setIgnoreItems(uid, ignoreItems);
 }

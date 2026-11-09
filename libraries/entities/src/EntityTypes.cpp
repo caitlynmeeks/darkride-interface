@@ -39,6 +39,7 @@
 QMap<EntityTypes::EntityType, QString> EntityTypes::_typeToNameMap;
 QMap<QString, EntityTypes::EntityType> EntityTypes::_nameToTypeMap;
 EntityTypeFactory EntityTypes::_factories[EntityTypes::NUM_TYPES];
+EntityTypeFactory EntityTypes::_baseFactories[EntityTypes::NUM_TYPES];
 bool EntityTypes::_factoriesInitialized = false;
 
 const QString ENTITY_TYPE_NAME_UNKNOWN = "Unknown";
@@ -90,13 +91,31 @@ bool EntityTypes::registerEntityType(EntityType entityType, const char* name, En
     _nameToTypeMap[name] = entityType;
     if (!_factoriesInitialized) {
         memset(&_factories,0,sizeof(_factories));
+        memset(&_baseFactories, 0, sizeof(_baseFactories));
         _factoriesInitialized = true;
     }
     if (entityType >= 0 && entityType < NUM_TYPES) {
         _factories[entityType] = factoryMethod;
+        if (!_baseFactories[entityType]) {
+            _baseFactories[entityType] = factoryMethod;
+        }
         return true;
     }
     return false;
+}
+
+EntityItemPointer EntityTypes::constructBaseEntityItem(EntityType entityType, const EntityItemID& entityID,
+                                                       const EntityItemProperties& properties) {
+    EntityTypeFactory factory = nullptr;
+    if (entityType >= 0 && entityType < NUM_TYPES) {
+        factory = _baseFactories[entityType];
+    }
+    if (!factory) {
+        return EntityItemPointer();
+    }
+    auto mutableProperties = properties;
+    mutableProperties.markAllChanged();
+    return factory(entityID, mutableProperties);
 }
 
 EntityItemPointer EntityTypes::constructEntityItem(EntityType entityType, const EntityItemID& entityID,

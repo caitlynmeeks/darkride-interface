@@ -34,7 +34,7 @@ void turnFlowCollisionsToRigAxes(QVariantMap& collisions, const QHash<QString, i
 class PrepareJointsTask {
 public:
     using Config = PrepareJointsConfig;
-    using Input = baker::VaryingSet2<std::vector<hfm::Joint>, hifi::VariantHash /*mapping*/>;
+    using Input = baker::VaryingSet2<std::vector<hfm::Joint>, hifi::VariantMultiHash /*mapping*/>;
     using Output = baker::VaryingSet3<std::vector<hfm::Joint>, QMap<int, glm::quat> /*jointRotationOffsets*/, QHash<QString, int> /*jointIndices*/>;
     using JobModel = baker::Job::ModelIO<PrepareJointsTask, Input, Output, Config>;
 

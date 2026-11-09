@@ -23,7 +23,7 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -86,7 +86,7 @@ HFMModel::Pointer readModel(const QString& path) {
     const QString suffix = info.suffix().toLower();
     const QUrl url = QUrl::fromLocalFile(info.absoluteFilePath());
     // with its own blend shapes by their names, which a rigged copy keeps and FstBake maps the face from
-    QVariantHash mapping;
+    hifi::VariantMultiHash mapping;
     mapping.insert("ownBlendshapes", "true");
     if (suffix == "fbx") {
         return FBXSerializer().read(data, mapping, url);
@@ -137,7 +137,7 @@ bool appendToFst(const QString& fstPath, const QStringList& lines) {
 
 QString avatarName(const QString& path) {
     QString name = QFileInfo(path).completeBaseName();
-    name.replace(QRegExp("[^A-Za-z0-9_-]+"), "_");
+    name.replace(QRegularExpression("[^A-Za-z0-9_-]+"), "_");
     return name.isEmpty() ? QString("avatar") : name;
 }
 

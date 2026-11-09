@@ -39,7 +39,10 @@ public:
 
 
     Index findBackground(const BackgroundPointer& background) const;
-    Index addBackground(const BackgroundPointer& background);
+    // shouldSetAsDefault: this background is the engine's default sky, the one a frame shows when no zone gives one;
+    // SetupZones pushes it by getDefaultBackground() (until 2026-11-07 it pushed index 0, which is the default only
+    // when the default was allocated before any zone's background)
+    Index addBackground(const BackgroundPointer& background, bool shouldSetAsDefault = false);
 
     BackgroundPointer removeBackground(Index index);
     
@@ -52,9 +55,11 @@ public:
     BackgroundPointer getBackground(Index backgroundId) const {
         return _backgrounds.get(backgroundId);
     }
+    Index getDefaultBackground() const { return _defaultBackgroundId; }
 
     Backgrounds _backgrounds;
     BackgroundMap _backgroundMap;
+    Index _defaultBackgroundId { INVALID_INDEX };
 
     class Frame {
     public:

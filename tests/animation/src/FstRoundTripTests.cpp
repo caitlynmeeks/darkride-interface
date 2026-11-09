@@ -59,7 +59,7 @@ struct Baked {
     QHash<QString, int> jointIndices;
 };
 
-Baked bake(const std::vector<hfm::Joint>& joints, const hifi::VariantHash& mapping) {
+Baked bake(const std::vector<hfm::Joint>& joints, const hifi::VariantMultiHash& mapping) {
     PrepareJointsTask task;
     PrepareJointsTask::Input input;
     input.edit0() = joints;
@@ -72,7 +72,7 @@ Baked bake(const std::vector<hfm::Joint>& joints, const hifi::VariantHash& mappi
 // Wearing the model without an .fst, and with the .fst Import Avatar writes for it: the same names, offsets and
 // colliders
 void verifyRoundTrip(const HFMModel& model, bool isVRM) {
-    hifi::VariantHash bare;
+    hifi::VariantMultiHash bare;
     bare.insert("autoHumanoid", true);
     const Baked worn = bake(model.joints, bare);
     QVariantMap wornCollisions = model.flowData._collisionsConfig;
@@ -80,7 +80,7 @@ void verifyRoundTrip(const HFMModel& model, bool isVRM) {
 
     QStringList lines, found;
     autorig::bakeFst(model, isVRM, lines, found);
-    const hifi::VariantHash mapping = FSTReader::readMapping(("name = test\nfilename = test.glb\n" + lines.join("\n")).toUtf8());
+    const hifi::VariantMultiHash mapping = FSTReader::readMapping(("name = test\nfilename = test.glb\n" + lines.join("\n")).toUtf8());
     const Baked baked = bake(model.joints, mapping);
     FlowData flowData;
     ParseFlowDataTask().run(nullptr, mapping, flowData);
@@ -134,8 +134,8 @@ void FstRoundTripTests::testVRMColliders() {
 void FstRoundTripTests::testFace() {
     const QStringList names { "jawOpen", "eyeBlinkLeft", "mouthSmileLeft", "EyeBlink_R" };
     const QStringList lines = autorig::bakeFaceLines(names);
-    const hifi::VariantHash mapping = FSTReader::readMapping(lines.join("\n").toUtf8());
-    const QVariantHash bs = mapping.value("bs").toHash();
+    const hifi::VariantMultiHash mapping = FSTReader::readMapping(lines.join("\n").toUtf8());
+    const hifi::VariantMultiHash bs = hifi::multiHashFromVariant(mapping.value("bs"));
     for (int i = 0; i < (int)Blendshapes::BlendshapeCount; i++) {
         const BlendshapeSource source = findBlendshapeSource(i, names);
         if (source.name.isEmpty() || source.name == BLENDSHAPE_NAMES[i]) {

@@ -3,8 +3,9 @@
 //  qml/darkride/panel
 //
 //  iOS's choice in a list: a row showing the chosen value; a click opens the choices under it as rows, the chosen one
-//  ticked, and picking one closes them. model: [{ text, value, swatches }] (swatches: colours shown beside the name,
-//  for a theme); current: the chosen value; chosen(value).
+//  ticked, and picking one closes them. The open choices are indented past the label, and a full-width separator
+//  closes them off, so the card's next row doesn't read as another choice. model: [{ text, value, swatches }]
+//  (swatches: colours shown beside the name, for a theme); current: the chosen value; chosen(value).
 //
 //  Copyright 2026 Darkride.
 //
@@ -23,6 +24,8 @@ Column {
     property var current
     property bool open: false
     signal chosen(var value)
+    // the card's next row draws its separator the whole width while the choices show (ListRow.separatorX)
+    readonly property bool fullWidthSeparatorBelow: open && model.length > 0
 
     readonly property string currentText: {
         for (var i = 0; i < model.length; i++) {
@@ -59,6 +62,7 @@ Column {
         delegate: ListRow {
             id: choiceRow
             label: modelData.text
+            indent: Theme.choiceIndent
             clickable: true
             onClicked: {
                 picker.chosen(modelData.value);
@@ -79,12 +83,8 @@ Column {
                     }
                 }
             }
-            Text {
-                text: "✓"   // ✓
-                color: Theme.tint
-                font.pixelSize: Theme.bodySize
-                font.bold: true
-                opacity: modelData.value === picker.current ? 1 : 0
+            Checkmark {
+                checked: modelData.value === picker.current
             }
         }
     }

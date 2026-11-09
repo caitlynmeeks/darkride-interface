@@ -16,12 +16,9 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QThread>
-#include <QtScript/QScriptValue>
-#include <QtScript/QScriptable>
 #include <AssetClient.h>
 #include <NetworkAccessManager.h>
 #include <BaseAssetScriptingInterface.h>
-#include <BaseScriptEngine.h>
 #include <ScriptCallback.h>
 #include <QtNetwork/QNetworkDiskCache>
 
@@ -42,11 +39,16 @@
  * @hifi-server-entity
  * @hifi-assignment-client
  */
-class AssetScriptingInterface : public BaseAssetScriptingInterface, QScriptable {
+class AssetScriptingInterface : public BaseAssetScriptingInterface {
     Q_OBJECT
 public:
     using Parent = BaseAssetScriptingInterface;
     AssetScriptingInterface(QObject* parent = nullptr);
+
+    // Each method takes its options as plain values and the script's callback as a ScriptCallback (the JavaScript
+    // guest binds the scope forms a script may use: a scope object and a function or a method name). A check that
+    // would throw in a script comes back as an error record, which the script's call raises. The callback is posted
+    // to the script, so it runs after the call returns.
 
     /**jsdoc
      * Called when an {@link Assets.uploadData} call is complete.
@@ -73,7 +75,7 @@ public:
      *     });
      * });
      */
-    Q_INVOKABLE void uploadData(QString data, QScriptValue callback);
+    Q_INVOKABLE QVariant uploadData(const QString& data, const ScriptCallback& callback);
 
     /**jsdoc
      * Called when an {@link Assets.downloadData} call is complete.
@@ -109,7 +111,7 @@ public:
      *     });
      * }, 1000);
      */
-    Q_INVOKABLE void downloadData(QString url, QScriptValue callback);
+    Q_INVOKABLE QVariant downloadData(const QString& url, const ScriptCallback& callback);
 
     /**jsdoc
      * Called when an {@link Assets.setMapping} call is complete.
@@ -123,7 +125,7 @@ public:
      * @param {string} hash - The hash in the asset server.
      * @param {Assets~setMappingCallback} callback - The function to call upon completion.
      */
-    Q_INVOKABLE void setMapping(QString path, QString hash, QScriptValue callback);
+    Q_INVOKABLE QVariant setMapping(const QString& path, const QString& hash, const ScriptCallback& callback);
 
     /**jsdoc
      * Called when an {@link Assets.getMapping} call is complete.
@@ -147,7 +149,7 @@ public:
      *     });
      * }
      */
-    Q_INVOKABLE void getMapping(QString path, QScriptValue callback);
+    Q_INVOKABLE QVariant getMapping(const QString& path, const ScriptCallback& callback);
 
 #if (PR_BUILD || DEV_BUILD)
     /**
@@ -203,7 +205,7 @@ public:
      *     }
      * );
      */
-    Q_INVOKABLE void getAsset(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant getAsset(const QVariant& options, const ScriptCallback& callback);
 
     /**jsdoc
      * Called when an {@link Assets.putAsset} call is complete.
@@ -240,7 +242,7 @@ public:
      *     }
      * );
      */
-    Q_INVOKABLE void putAsset(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant putAsset(const QVariant& options, const ScriptCallback& callback);
 
     /**jsdoc
      * Called when an {@link Assets.deleteAsset} call is complete.
@@ -257,7 +259,7 @@ public:
      * @param {object} scope - The scope that the <code>callback</code> function is defined in.
      * @param {Assets~deleteAssetCallback} callback - The function to call upon completion.
      */
-    Q_INVOKABLE void deleteAsset(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant deleteAsset(const QVariant& options, const ScriptCallback& callback);
 
     /**jsdoc
      * Called when an {@link Assets.resolveAsset} call is complete.
@@ -291,7 +293,7 @@ public:
      *     }
      * );
      */
-    Q_INVOKABLE void resolveAsset(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant resolveAsset(const QVariant& options, const ScriptCallback& callback);
     
     /**jsdoc
      * Called when an {@link Assets.decompressData} call is complete.
@@ -312,7 +314,7 @@ public:
      *     in a string. If the name of a function or a function identifier, it must be a member of the scope specified by
      *     <code>scopeOrCallback</code>.</p>
      */
-    Q_INVOKABLE void decompressData(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant decompressData(const QVariant& options, const ScriptCallback& callback);
     
     /**jsdoc
      * Called when an {@link Assets.compressData} call is complete.
@@ -334,7 +336,7 @@ public:
      *     in a string. If the name of a function or a function identifier, it must be a member of the scope specified by
      *     <code>scopeOrCallback</code>.</p>
      */
-    Q_INVOKABLE void compressData(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant compressData(const QVariant& options, const ScriptCallback& callback);
     
     /**jsdoc
      * Initializes the cache if it isn't already initialized.
@@ -379,9 +381,7 @@ public:
      *     print("- Status: " + JSON.stringify(status));
      * });
      */
-    Q_INVOKABLE void getCacheStatus(QScriptValue scope, QScriptValue callback = QScriptValue()) {
-        jsPromiseReady(Parent::getCacheStatus(), scope, callback);
-    }
+    Q_INVOKABLE QVariant getCacheStatus(const ScriptCallback& callback);
 
     /**jsdoc
      * Called when {@link Assets.queryCacheMeta} is complete.
@@ -419,7 +419,7 @@ public:
      *     }
      * );
      */
-    Q_INVOKABLE void queryCacheMeta(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant queryCacheMeta(const QVariant& options, const ScriptCallback& callback);
     
     /**jsdoc
      * Called when an {@link Assets.loadFromCache} call is complete.
@@ -459,7 +459,7 @@ public:
      *     }
      * );
      */
-    Q_INVOKABLE void loadFromCache(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant loadFromCache(const QVariant& options, const ScriptCallback& callback);
     
     /**jsdoc
      * Called when an {@link Assets.saveToCache} call is complete.
@@ -498,7 +498,7 @@ public:
      *     }
      * );
      */
-    Q_INVOKABLE void saveToCache(QScriptValue options, QScriptValue scope, QScriptValue callback = QScriptValue());
+    Q_INVOKABLE QVariant saveToCache(const QVariant& options, const ScriptCallback& callback);
     
     /**jsdoc
      * Saves asset data to the cache directly, without downloading it from a URL.
@@ -517,41 +517,11 @@ public:
      *     in a string. If the name of a function or a function identifier, it must be a member of the scope specified by
      *     <code>scopeOrCallback</code>.</p>
      */
-    Q_INVOKABLE void saveToCache(const QUrl& url, const QByteArray& data, const QVariantMap& metadata,
-                                 QScriptValue scope, QScriptValue callback = QScriptValue());
-
-    // The same methods for the WebAssembly script engine: plain values in, and the module's function (a
-    // ScriptCallback) called back with the arguments a script's callback gets above. The QtScript engine never
-    // chooses these (no script value converts to a ScriptCallback) and a module never chooses the ones above.
-    // A check that would throw in a script returns an error record, which the module's call raises. The scope
-    // forms (a scope object and a function or a method name) are the JavaScript guest's to bind.
-    Q_INVOKABLE QVariant uploadData(const QString& data, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant downloadData(const QString& url, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant setMapping(const QString& path, const QString& hash, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant getMapping(const QString& path, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant getAsset(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant putAsset(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant deleteAsset(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant resolveAsset(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant decompressData(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant compressData(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant getCacheStatus(const ScriptCallback& callback);
-    Q_INVOKABLE QVariant queryCacheMeta(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant loadFromCache(const QVariant& options, const ScriptCallback& callback);
-    Q_INVOKABLE QVariant saveToCache(const QVariant& options, const ScriptCallback& callback);
     Q_INVOKABLE QVariant saveToCache(const QUrl& url, const QByteArray& data, const QVariantMap& metadata,
                                      const ScriptCallback& callback);
 
 protected:
-    QScriptValue jsBindCallback(QScriptValue scope, QScriptValue callback = QScriptValue());
-    Promise jsPromiseReady(Promise promise, QScriptValue scope, QScriptValue callback = QScriptValue());
-
-    void jsCallback(const QScriptValue& handler, const QScriptValue& error, const QVariantMap& result);
-    void jsCallback(const QScriptValue& handler, const QScriptValue& error, const QScriptValue& result);
-    bool jsVerify(bool condition, const QString& error);
-
-    // the WebAssembly engine's counterparts: a promise's outcome posted to the module's function as
-    // (error or null, result)
+    // a promise's outcome posted to the script's function as (error or null, result)
     Promise callbackReady(Promise promise, const ScriptCallback& callback);
 };
 

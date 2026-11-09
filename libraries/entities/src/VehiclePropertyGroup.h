@@ -18,7 +18,6 @@
 #include <glm/glm.hpp>
 
 #include <QtCore/QUuid>
-#include <QtScript/QScriptEngine>
 
 #include "PropertyGroup.h"
 #include "EntityItemPropertiesMacros.h"

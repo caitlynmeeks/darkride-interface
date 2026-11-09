@@ -9,17 +9,15 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 //
-//  Entity properties are converted for two kinds of script value from one source: QtScript's QScriptValue (with a
-//  QScriptEngine) and PlainScriptValue (with a PlainScriptEngine), which the WebAssembly script engine and the code
-//  outside scripting use. The rule for new property code:
+//  Entity properties are converted to and from PlainScriptValue (with a PlainScriptEngine), which the script engine
+//  and the code outside scripting use (a script's entity properties, a world file, avatar-entity data). The rule for
+//  new property code:
 //  - a property goes through these macros, as before;
-//  - in a hand-written line of copyToScriptValue or copyFromScriptValue, a value is `auto`, not QScriptValue, and is
-//    converted with convertScriptValue(engine, value) or with the RegisteredMetaTypes.h conversion of the same name,
-//    which PlainScriptValueConversions.h has for plain values;
+//  - in a hand-written line of copyToScriptValue or copyFromScriptValue, a value is `auto`, and is converted with
+//    convertScriptValue(engine, value) or with the PlainScriptValueConversions.h conversion of the same name;
 //  - a property group's two conversions are member templates over the value and engine types (PropertyGroup.h), and
-//    its .cpp ends with INSTANTIATE_PROPERTY_GROUP_CONVERSIONS(TheGroup);
-//  - a conversion that only QtScript has does not compile for plain values: add its twin, under the same name, to
-//    PlainScriptValueConversions.h. tests/script-values compares the two kinds for every entity type.
+//    its .cpp ends with INSTANTIATE_PROPERTY_GROUP_CONVERSIONS(TheGroup).
+//  tests/script-values checks the conversions for every entity type against recorded values.
 //
 
 
@@ -196,40 +194,8 @@
         changedProperties += P;    \
     }
 
-inline QScriptValue convertScriptValue(QScriptEngine* e, const glm::vec2& v) { return vec2ToScriptValue(e, v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const glm::vec3& v) { return vec3ToScriptValue(e, v); }
-inline QScriptValue vec3Color_convertScriptValue(QScriptEngine* e, const glm::vec3& v) { return vec3ColorToScriptValue(e, v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const glm::u8vec3& v) { return u8vec3ToScriptValue(e, v); }
-inline QScriptValue u8vec3Color_convertScriptValue(QScriptEngine* e, const glm::u8vec3& v) { return u8vec3ColorToScriptValue(e, v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, float v) { return QScriptValue(v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, int v) { return QScriptValue(v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, bool v) { return QScriptValue(v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, quint16 v) { return QScriptValue(v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, quint32 v) { return QScriptValue(v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, quint64 v) { return QScriptValue((qsreal)v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QString& v) { return QScriptValue(v); }
-
-inline QScriptValue convertScriptValue(QScriptEngine* e, const glm::quat& v) { return quatToScriptValue(e, v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QScriptValue& v) { return v; }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QVector<glm::vec3>& v) {return qVectorVec3ToScriptValue(e, v); }
-inline QScriptValue qVectorVec3Color_convertScriptValue(QScriptEngine* e, const QVector<glm::vec3>& v) {return qVectorVec3ColorToScriptValue(e, v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QVector<glm::quat>& v) {return qVectorQuatToScriptValue(e, v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QVector<bool>& v) {return qVectorBoolToScriptValue(e, v); }
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QVector<float>& v) { return qVectorFloatToScriptValue(e, v); }
-
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QRect& v) { return qRectToScriptValue(e, v); }
-
-inline QScriptValue convertScriptValue(QScriptEngine* e, const QByteArray& v) {
-    QByteArray b64 = v.toBase64();
-    return QScriptValue(QString(b64));
-}
-
-inline QScriptValue convertScriptValue(QScriptEngine* e, const EntityItemID& v) { return QScriptValue(QUuid(v).toString()); }
-
-inline QScriptValue convertScriptValue(QScriptEngine* e, const AACube& v) { return aaCubeToScriptValue(e, v); }
-
-// The same for plain values (PlainScriptValue.h), member for member what a script gets: the one source of the
-// conversions below compiles for QtScript and for plain values (a module, a world file, avatar-entity data).
+// The conversions of each value type for plain values (PlainScriptValue.h): what a script gets, member for member
+// (a module, a world file, avatar-entity data).
 inline PlainScriptValue convertScriptValue(PlainScriptEngine* e, const glm::vec2& v) { return vec2ToScriptValue(e, v); }
 inline PlainScriptValue convertScriptValue(PlainScriptEngine* e, const glm::vec3& v) { return vec3ToScriptValue(e, v); }
 inline PlainScriptValue vec3Color_convertScriptValue(PlainScriptEngine* e, const glm::vec3& v) { return vec3ColorToScriptValue(e, v); }

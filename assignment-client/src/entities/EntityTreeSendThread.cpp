@@ -12,6 +12,8 @@
 #include "EntityTreeSendThread.h"
 
 #include <functional>
+#include <mutex>
+#include <set>
 
 #include <QtCore/QProcessEnvironment>
 
@@ -25,6 +27,11 @@
 EntityTreeSendThread::EntityTreeSendThread(OctreeServer* myServer, const SharedNodePointer& node) :
     OctreeSendThread(myServer, node)
 {
+    // the servers the domain server assigns, which only it can start: the entity script server, the avatar mixer and
+    // the physics server send filtered queries whose ancestors and descendants are tracked (preDistributionProcessing)
+    _tracksFamilies = node && (node->getType() == NodeType::EntityScriptServer || node->getType() == NodeType::AvatarMixer
+        || node->getType() == NodeType::PhysicsServer);
+
     connect(std::static_pointer_cast<EntityTree>(myServer->getOctree()).get(), &EntityTree::editingEntityPointer, this, &EntityTreeSendThread::editingEntityPointer, Qt::QueuedConnection);
     connect(std::static_pointer_cast<EntityTree>(myServer->getOctree()).get(), &EntityTree::deletingEntityPointer, this, &EntityTreeSendThread::deletingEntityPointer, Qt::QueuedConnection);
 
@@ -44,7 +51,9 @@ void EntityTreeSendThread::preDistributionProcessing() {
     auto node = _node.toStrongRef();
     auto nodeData = static_cast<EntityNodeData*>(node->getLinkedData());
 
-    if (nodeData) {
+    // only the domain's own servers have the ancestors and descendants their query asks for tracked (_tracksFamilies);
+    // a visitor's app or an agent gets what its view takes in
+    if (nodeData && _tracksFamilies) {
         auto jsonQuery = nodeData->getJSONParameters();
 
         // check if we have a JSON query with flags
@@ -64,9 +73,8 @@ void EntityTreeSendThread::preDistributionProcessing() {
 
                 auto entityTree = std::static_pointer_cast<EntityTree>(_myServer->getOctree());
 
-                bool requiresFullScene = false;
-
-                // enumerate the set of entity IDs we know currently match the filter
+                // enumerate the set of entity IDs we know currently match the filter; the extras that are new since
+                // the last pass are kept in _newExtraEntities, and the next traversal start puts them on the queue
                 foreach(const QUuid& entityID, nodeData->getSentFilteredEntities()) {
                     if (includeAncestors) {
                         // we need to include ancestors - recurse up to reach them all and add their IDs
@@ -74,7 +82,7 @@ void EntityTreeSendThread::preDistributionProcessing() {
                         entityTree->withReadLock([&]{
                             auto filteredEntity = entityTree->findEntityByID(entityID);
                             if (filteredEntity) {
-                                requiresFullScene |= addAncestorsToExtraFlaggedEntities(entityID, *filteredEntity, *nodeData);
+                                addAncestorsToExtraFlaggedEntities(entityID, *filteredEntity, *nodeData);
                             }
                         });
                     }
@@ -85,20 +93,13 @@ void EntityTreeSendThread::preDistributionProcessing() {
                         entityTree->withReadLock([&]{
                             auto filteredEntity = entityTree->findEntityByID(entityID);
                             if (filteredEntity) {
-                                requiresFullScene |= addDescendantsToExtraFlaggedEntities(entityID, *filteredEntity, *nodeData);
+                                addDescendantsToExtraFlaggedEntities(entityID, *filteredEntity, *nodeData);
                             }
                         });
                     }
                 }
 
-                if (requiresFullScene) {
-                    // for one or more of the entities matching our filter we found new extra entities to include
-
-                    // because it is possible that one of these entities hasn't changed since our last send
-                    // and therefore would not be recursed to, we need to force a full traversal for this pass
-                    // of the tree to allow it to grab all of the extra entities we're asking it to include
-                    nodeData->setShouldForceFullScene(requiresFullScene);
-                }
+                // the new extras go on the send queue at the next traversal start, without a full resend
             }
         }
     }
@@ -147,7 +148,11 @@ bool EntityTreeSendThread::traverseTreeAndSendContents(SharedNodePointer node, O
                     << "views" << newView.viewFrustums.size() << views
                     << "lodScale" << newView.lodScaleFactor << "cards" << newView.impostorCards
                     << "queue" << _sendQueue.size() << "known" << _knownState.size()
-                    << "sentSinceLast" << _diagSentSinceLog;
+                    << "sentSinceLast" << _diagSentSinceLog
+                    << "droppedTooBig" << _diagDroppedProperties << "serverStreamChecks" << EntityTree::streamChecksRun()
+                    << "editsStampedAhead" << EntityTree::editsStampedAhead()
+                    << "largestLeadMs" << (double)EntityTree::largestStampLeadUsec() / USECS_PER_MSEC
+                    << "sendBacksSkipped" << EntityTree::sendBacksSkipped();
                 _diagLastLog = now;
                 _diagSentSinceLog = 0;
             }
@@ -187,6 +192,22 @@ bool EntityTreeSendThread::traverseTreeAndSendContents(SharedNodePointer node, O
                     }
                 }
             }
+        }
+
+        // the ancestors and descendants flagged since the last traversal start, at this view's priority: the
+        // entities a First traversal would queue for them, without forgetting what the receiver already has. One
+        // already known goes once more: for a filtered query the known state also holds what the filter left out.
+        if (!_newExtraEntities.empty()) {
+            const auto& view = _traversal.getCurrentView();
+            for (const auto& entity : _newExtraEntities) {
+                if (entity && !_sendQueue.contains(entity.get())) {
+                    float priority = view.computePriority(entity);
+                    if (priority != PrioritizedEntity::DO_NOT_SEND) {
+                        _sendQueue.emplace(entity, priority);
+                    }
+                }
+            }
+            _newExtraEntities.clear();
         }
     }
 
@@ -278,6 +299,9 @@ bool EntityTreeSendThread::addAncestorsToExtraFlaggedEntities(const QUuid& filte
 
         // now recursively call ourselves to get its ancestors added too
         auto parentEntityItem = std::static_pointer_cast<EntityItem>(entityParent);
+        if (parentWasNew) {
+            _newExtraEntities.push_back(parentEntityItem);
+        }
         bool ancestorsWereNew = addAncestorsToExtraFlaggedEntities(filteredEntityID, *parentEntityItem, nodeData);
 
         // return boolean if our parent or any of our ancestors were new additions (via insertFlaggedExtraEntity)
@@ -300,10 +324,14 @@ bool EntityTreeSendThread::addDescendantsToExtraFlaggedEntities(const QUuid& fil
             // this is a child that is an entity
 
             // first add it to the extra list of things we need to send
-            hasNewChild |= nodeData.insertFlaggedExtraEntity(filteredEntityID, child->getID());
+            bool childWasNew = nodeData.insertFlaggedExtraEntity(filteredEntityID, child->getID());
+            hasNewChild |= childWasNew;
 
             // now recursively call ourselves to get its descendants added too
             auto childEntityItem = std::static_pointer_cast<EntityItem>(child);
+            if (childWasNew) {
+                _newExtraEntities.push_back(childEntityItem);
+            }
             hasNewDescendants |= addDescendantsToExtraFlaggedEntities(filteredEntityID, *childEntityItem, nodeData);
         }
     }
@@ -464,13 +492,29 @@ bool EntityTreeSendThread::traverseTreeAndBuildNextPacketPayload(EncodeBitstream
             bool entityPreviouslyMatchedFilter = entityNodeData->sentFilteredEntity(entityID);
 
             if (entityMatchesFilters || entityNodeData->isEntityFlaggedAsExtra(entityID) || entityPreviouslyMatchedFilter) {
-                if (!jsonFilters.isEmpty() && entityMatchesFilters) {
+                if (_tracksFamilies && !jsonFilters.isEmpty() && entityMatchesFilters) {
                     // Record explicitly filtered-in entity so that extra entities can be flagged.
                     entityNodeData->insertSentFilteredEntity(entityID);
                 }
                 OctreeElement::AppendState appendEntityState = entity->appendEntityData(&_packetData, params, _extraEncodeData, entityNode->getCanGetAndSetPrivateUserData());
 
                 if (appendEntityState != OctreeElement::COMPLETED) {
+                    if (appendEntityState == OctreeElement::NONE && _numEntities == 0 &&
+                        (int)_packetData.getTargetSize() >= EntityItem::streamSectionRoom()) {
+                        // Nothing more of this entity fits even an empty packet, so it never will. Drop what's left of
+                        // it for this viewer and go on; its first pass already sent every property that fit.
+                        dropUnsendableProperties(*entity, entityNode->getCanGetAndSetPrivateUserData());
+                        if (entityPreviouslyMatchedFilter && !entityMatchesFilters) {
+                            entityNodeData->removeSentFilteredEntity(entityID);
+                        }
+                        if (queuedItem.shouldForceRemove()) {
+                            _knownState.erase(entity.get());
+                        } else {
+                            _knownState[entity.get()] = sendTime;
+                        }
+                        _sendQueue.pop();
+                        continue;
+                    }
                     if (appendEntityState == OctreeElement::PARTIAL) {
                         ++_numEntities;
                     }
@@ -509,6 +553,70 @@ bool EntityTreeSendThread::traverseTreeAndBuildNextPacketPayload(EncodeBitstream
     _packetData.updatePriorBytes(_numEntitiesOffset, (const unsigned char*)&_numEntities, sizeof(_numEntities));
     OctreeServer::trackEncodeTime((float)(usecTimestampNow() - encodeStart));
     return true;
+}
+
+namespace {
+
+// An entity's name for a log line: it is world text, so at most 64 characters, without control, format (bidi) or
+// line-separator characters, and quoted, so it can't break the line or pass for another one.
+QString loggableName(const QString& name) {
+    const int MAX_NAME_CHARACTERS = 64;
+    QString out;
+    for (const QChar& c : name) {
+        if (out.size() >= MAX_NAME_CHARACTERS || (c.isHighSurrogate() && out.size() >= MAX_NAME_CHARACTERS - 1)) {
+            out += QStringLiteral("...");
+            break;
+        }
+        const QChar::Category category = c.category();
+        if (category == QChar::Other_Control || category == QChar::Other_Format ||
+            category == QChar::Separator_Line || category == QChar::Separator_Paragraph) {
+            continue;
+        }
+        out += (c == QChar('"') || c == QChar('\\')) ? QChar('\'') : c;
+    }
+    return QStringLiteral("\"") + out + QStringLiteral("\"");
+}
+
+// One warning per entity and property for the server's life, whatever the viewers, and at most this many in all
+std::mutex unsendableWarningsMutex;
+std::set<std::pair<QUuid, int>> unsendableWarnings;
+const size_t MAX_UNSENDABLE_WARNINGS = 1000;
+
+}
+
+void EntityTreeSendThread::dropUnsendableProperties(const EntityItem& entity, bool destinationCanGetAndSetPrivateUserData) {
+    const EntityItemID entityID = entity.getEntityItemID();
+    const EntityPropertyFlags leftover = _extraEncodeData->entities.value(entityID);
+    _extraEncodeData->entities.remove(entityID);
+    ++_diagDroppedProperties;
+
+    for (int flag = (int)leftover.firstFlag(); flag <= (int)leftover.lastFlag(); flag++) {
+        const EntityPropertyList property = (EntityPropertyList)flag;
+        if (!leftover.getHasProperty(property)) {
+            continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(unsendableWarningsMutex);
+            if (unsendableWarnings.size() > MAX_UNSENDABLE_WARNINGS) {
+                return;
+            }
+            if (!unsendableWarnings.insert({ entityID, flag }).second) {
+                continue;
+            }
+            if (unsendableWarnings.size() > MAX_UNSENDABLE_WARNINGS) {
+                qCWarning(entities) << "stream: more properties too big to send; no more of these warnings until the"
+                    << "entity server restarts";
+                return;
+            }
+        }
+        // the room it would need, found by the stream's own encoder
+        const int needed = entity.streamRoomNeededAlone(property, destinationCanGetAndSetPrivateUserData);
+        qCWarning(entities).noquote() << "stream: entity" << entityID.toString() << loggableName(entity.getName())
+            << "(" + EntityTypes::getEntityTypeName(entity.getType()) + ")" << "property" << EntityItem::propertyName(property)
+            << "needs" << (needed < 0 ? QString("more than %1").arg(2 * MAX_APPENDED_VALUE_LENGTH) : QString::number(needed))
+            << "bytes alone, more than the" << EntityItem::streamSectionRoom()
+            << "a stream packet holds: it is not sent to other viewers; the entity's other properties are";
+    }
 }
 
 void EntityTreeSendThread::editingEntityPointer(const EntityItemPointer& entity) {

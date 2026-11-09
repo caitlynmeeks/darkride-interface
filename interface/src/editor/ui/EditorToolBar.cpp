@@ -8,8 +8,8 @@
 
 #include "EditorToolBar.h"
 
-#include <QtWidgets/QAction>
-#include <QtWidgets/QActionGroup>
+#include <QAction>   // QtWidgets in Qt 5, QtGui in Qt 6
+#include <QActionGroup>   // QtWidgets in Qt 5, QtGui in Qt 6
 #include <QtWidgets/QMenu>
 #include <QtWidgets/QSizePolicy>
 #include <QtWidgets/QToolButton>

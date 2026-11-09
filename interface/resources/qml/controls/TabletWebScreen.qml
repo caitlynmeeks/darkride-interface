@@ -5,6 +5,7 @@ Item {
     id: root
     property alias url: webroot.url
     property alias scriptURL: webroot.userScriptUrl
+    property alias worldPage: webroot.worldPage   // a world's page (security finding #54): the roots set it before the url
     property alias canGoBack: webroot.canGoBack;
     property var goBack: webroot.webViewCore.goBack;
     property alias urlTag: webroot.urlTag

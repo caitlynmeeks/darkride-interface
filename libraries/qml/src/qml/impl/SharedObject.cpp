@@ -10,6 +10,14 @@
 
 #include <QtCore/qlogging.h>
 #include <QtQuick/QQuickWindow>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtQuick/QQuickGraphicsDevice>
+#include <QtQuick/QQuickRenderTarget>
+#include <QtQuick/QSGRendererInterface>
+#include <rhi/qrhi.h>            // Gui's private include set (Qt::GuiPrivate, libraries/qml/CMakeLists.txt)
+#include <rhi/qrhi_platform.h>
+#include <mutex>
+#endif
 #include <QtQuick/QQuickItem>
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
@@ -66,11 +74,21 @@ SharedObject::SharedObject() {
     // NOTE: Must be created on the main thread so that OffscreenQmlSurface can send it events
     // NOTE: Must be created on the rendering thread or it will refuse to render,
     //       so we wait until after its ctor to move object/context to this thread.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the scene graph is told to draw through OpenGL once, before the first QQuickWindow in the process (our
+    // renderer samples the surfaces' GL textures directly; any other backend would be a copy per frame). This is the
+    // right call only if no QQuickWindow was made before the first surface: main() is where it belongs (R2, to do).
+    static std::once_flag graphicsApiOnce;
+    std::call_once(graphicsApiOnce, [] { QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL); });
+#endif
     QQuickWindow::setDefaultAlphaBuffer(true);
     _quickWindow = new QQuickWindow(_renderControl);
     _quickWindow->setFormat(getDefaultOpenGLSurfaceFormat());
     _quickWindow->setColor(QColor(255, 255, 255, 0));
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    // (Qt 6 always clears to the window's colour)
     _quickWindow->setClearBeforeRendering(true);
+#endif
 
 
     QObject::connect(qApp, &QCoreApplication::aboutToQuit, this, &SharedObject::onAboutToQuit);
@@ -81,6 +99,23 @@ SharedObject::~SharedObject() {
     destroy();
 
     // _renderTimer is created with `this` as the parent, so need no explicit destruction
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the render control owns the QRhi it made from the canvas's context (setGraphicsDevice) and destroys it
+    // in its destructor, making that context current (this thread holds the context again after the render
+    // thread's quit): so the render control goes first, while the canvas and its context are still there (run 13,
+    // 11-05: a makeCurrent on the freed context). Qt 5's render control touched no GL at destruction.
+    if (_renderControl) {
+        delete _renderControl;
+        _renderControl = nullptr;
+    }
+    // the render interface after the control that drew through it and before the canvas it rests on goes with the
+    // event handler: its destroy makes the context current on the canvas's surface, here on the main thread, where
+    // onQuit moved them back
+    if (_rhi) {
+        delete _rhi;
+        _rhi = nullptr;
+    }
+#endif
     // Destroy the event hand
     if (_renderObject) {
         delete _renderObject;
@@ -264,6 +299,33 @@ bool SharedObject::event(QEvent* e) {
 }
 
 // Called by the render event handler, from the render thread
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+void SharedObject::initializeRenderControl(QOpenGLContext* context, QSurface* fallbackSurface) {
+    if (context->shareContext() != getSharedContext()) {
+        qFatal("QML rendering context has no share context");
+    }
+
+    if (!nsightActive()) {
+        // Qt 6: the render interface the window draws through is made here, on our context and the canvas's own
+        // offscreen surface, and handed to the window. Made by Qt inside initialize() (the context given as the
+        // graphics device) it brought a fallback offscreen surface of Qt's own, created on this thread: on Windows a
+        // hidden window, which must be made on the GUI thread (a start-up crash one launch in three, 11-06); macOS
+        // has a native offscreen surface and never minded. The canvas's surface is made on the main thread, and this
+        // thread makes the context current on it round every frame already.
+        QRhiGles2InitParams params;
+        params.format = context->format();
+        params.fallbackSurface = fallbackSurface;
+        QRhiGles2NativeHandles native;
+        native.context = context;
+        _rhi = QRhi::create(QRhi::OpenGLES2, &params, {}, &native);
+        if (!_rhi) {
+            qFatal("QML render interface could not be made on the surface's context");
+        }
+        _quickWindow->setGraphicsDevice(QQuickGraphicsDevice::fromRhi(_rhi));
+        _renderControl->initialize();
+    }
+}
+#else
 void SharedObject::initializeRenderControl(QOpenGLContext* context) {
     if (context->shareContext() != getSharedContext()) {
         qFatal("QML rendering context has no share context");
@@ -273,6 +335,7 @@ void SharedObject::initializeRenderControl(QOpenGLContext* context) {
         _renderControl->initialize(context);
     }
 }
+#endif
 
 void SharedObject::releaseTextureAndFence() {
     QMutexLocker lock(&_mutex);
@@ -283,9 +346,32 @@ void SharedObject::releaseTextureAndFence() {
     }
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt's own render target round the texture (Qt builds its depth-stencil; our FBO is unused): shape (A) gives it this
+// frame's cache texture, shape (B) one fixed texture per surface size (RenderEventHandler, entry 21)
+void SharedObject::setRenderTarget(uint32_t fbo, uint32_t texture, const QSize& size) {
+    Q_UNUSED(fbo);
+    _quickWindow->setRenderTarget(QQuickRenderTarget::fromOpenGLTexture(texture, size));
+}
+
+// Qt 6 draws the scene at the pixel ratio of the surface's render window (the proxy window; the desktop's is the main
+// window, so 1.25 at Windows' 125 % and 2 on a Retina screen) and shows the target's pixels / that ratio of the scene.
+// A target sized in the surface's own units showed only the scene's top-left part, enlarged by the ratio, while
+// clicks are read in the surface's units: the sign-in page and the loading screen drawn off-centre, their buttons
+// dead. (Qt 5 fitted the whole scene to the target.) So the target is the surface's size times the ratio Qt takes:
+// the render window's, read on the render thread as Qt reads it for the same frame. Without a render window Qt takes
+// the target's own ratio, left at 1
+QSize SharedObject::getPixelSize() const {
+    const QSize size = getSize();
+    QWindow* renderWindow = QQuickRenderControl::renderWindowFor(_quickWindow);
+    const qreal ratio = renderWindow ? renderWindow->devicePixelRatio() : 1.0;
+    return ratio == 1.0 ? size : size * ratio;
+}
+#else
 void SharedObject::setRenderTarget(uint32_t fbo, const QSize& size) {
     _quickWindow->setRenderTarget(fbo, size);
 }
+#endif
 
 QSize SharedObject::getSize() const {
     QMutexLocker locker(&_mutex);

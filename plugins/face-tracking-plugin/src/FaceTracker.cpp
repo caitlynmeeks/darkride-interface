@@ -15,10 +15,21 @@
 
 #include <QtCore/QFile>
 #include <QtCore/QLoggingCategory>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QtMultimedia/QAbstractVideoSurface>
 #include <QtMultimedia/QCameraInfo>
 #include <QtMultimedia/QCameraViewfinderSettings>
 #include <QtMultimedia/QVideoSurfaceFormat>
+#else
+#include <QtCore/QCoreApplication>
+#include <QtCore/QPermissions>
+#include <QtMultimedia/QCameraDevice>
+#include <QtMultimedia/QCameraFormat>
+#include <QtMultimedia/QMediaCaptureSession>
+#include <QtMultimedia/QMediaDevices>
+#include <QtMultimedia/QVideoFrameFormat>
+#include <QtMultimedia/QVideoSink>
+#endif
 
 #include "CameraPermission.h"
 
@@ -36,14 +47,24 @@ const int STILL_FRAME_MS = 33;
 const QSize WANTED_RESOLUTION(640, 480);
 const qreal MIN_FRAME_RATE = 24.0;
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 const QList<QVideoFrame::PixelFormat> FRAME_FORMATS = {
     QVideoFrame::Format_RGB32,   QVideoFrame::Format_ARGB32, QVideoFrame::Format_BGRA32, QVideoFrame::Format_BGR32,
     QVideoFrame::Format_NV12,    QVideoFrame::Format_NV21,   QVideoFrame::Format_YUV420P, QVideoFrame::Format_YV12,
     QVideoFrame::Format_UYVY,    QVideoFrame::Format_YUYV,   QVideoFrame::Format_RGB24,   QVideoFrame::Format_BGR24,
 };
+#else
+// Windows lists a virtual camera (a headset app's, a streaming app's) as a software device, "\\?\swd#..." (Windows 11's
+// virtual cameras) or "\\?\root#...", and a webcam by its bus, "\\?\usb#..."
+bool isVirtualCamera(const QCameraDevice& camera) {
+    const QString id = QString::fromUtf8(camera.id());
+    return id.startsWith("\\\\?\\swd#", Qt::CaseInsensitive) || id.startsWith("\\\\?\\root#", Qt::CaseInsensitive);
+}
+#endif
 
 }  // namespace
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 // The camera's frames, as they come; nothing is drawn.
 class FrameSurface : public QAbstractVideoSurface {
 public:
@@ -70,6 +91,7 @@ private:
     Callback _callback;
     bool _bottomToTop { false };
 };
+#endif
 
 FaceTracker::FaceTracker(Listener listener) : _listener(listener) {
 }
@@ -81,9 +103,15 @@ FaceTracker::~FaceTracker() {
 
 QList<QPair<QString, QString>> FaceTracker::cameras() {
     QList<QPair<QString, QString>> list;
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     for (const QCameraInfo& info : QCameraInfo::availableCameras()) {
         list << qMakePair(info.deviceName(), info.description());
     }
+#else
+    for (const QCameraDevice& camera : QMediaDevices::videoInputs()) {
+        list << qMakePair(QString::fromUtf8(camera.id()), camera.description());
+    }
+#endif
     return list;
 }
 
@@ -167,6 +195,7 @@ void FaceTracker::stop() {
     report(Status::Off);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 void FaceTracker::openCamera() {
     QCameraInfo info;
     const QList<QCameraInfo> cameras = QCameraInfo::availableCameras();
@@ -238,6 +267,92 @@ void FaceTracker::onCameraStatus(QCamera::Status status) {
         report(Status::LookingForFace);
     }
 }
+#else
+void FaceTracker::openCamera() {
+#if defined(Q_OS_MAC) && QT_CONFIG(permissions)
+    // Qt 6's Mac camera starts only when Qt's own permission check says yes, and that check needs Qt's camera permission
+    // plugin (QDarwinCameraPermissionPlugin) linked into the app; without it the camera stays off and says nothing
+    if (qApp->checkPermission(QCameraPermission()) != Qt::PermissionStatus::Granted) {
+        qCWarning(faceTracking) << "the camera is allowed, but Qt's permission check says no: Qt's camera permission"
+                                << "plugin isn't linked into this app";
+        report(Status::CameraFailed, "Qt's camera permission plugin isn't in this build");
+        return;
+    }
+#endif
+    QCameraDevice device;
+    const QList<QCameraDevice> cameras = QMediaDevices::videoInputs();
+    for (const QCameraDevice& camera : cameras) {
+        const QString id = QString::fromUtf8(camera.id());
+        // a camera chosen on Qt 5 keeps its id on the Mac; on Windows Qt 5's was DirectShow's "@device:pnp:<the path>",
+        // and the path is Qt 6's id
+        if (id == _cameraId ||
+            (_cameraId.startsWith("@device:pnp:") && _cameraId.mid(12).compare(id, Qt::CaseInsensitive) == 0)) {
+            device = camera;
+        }
+    }
+    if (device.isNull()) {
+        // none chosen, or the chosen one is gone: the system's default, but a real camera before a virtual one
+        device = QMediaDevices::defaultVideoInput();
+        if (isVirtualCamera(device)) {
+            for (const QCameraDevice& camera : cameras) {
+                if (!isVirtualCamera(camera)) {
+                    device = camera;
+                    break;
+                }
+            }
+        }
+    }
+    if (device.isNull()) {
+        report(Status::NoCamera);
+        return;
+    }
+    _camera = new QCamera(device, this);
+
+    // the size nearest 640 x 480 that keeps up at least 24 frames a second; of two such, the one that isn't JPEG (each
+    // JPEG frame is decoded). Qt 6 turns any of the camera's formats into a picture
+    QCameraFormat best;
+    int bestScore = INT_MAX;
+    for (const QCameraFormat& format : device.videoFormats()) {
+        if (format.maxFrameRate() < MIN_FRAME_RATE) {
+            continue;
+        }
+        const QSize size = format.resolution();
+        const int distance = std::abs(size.width() - WANTED_RESOLUTION.width()) +
+                             std::abs(size.height() - WANTED_RESOLUTION.height());
+        const int score = 2 * distance + (format.pixelFormat() == QVideoFrameFormat::Format_Jpeg ? 1 : 0);
+        if (score < bestScore) {
+            best = format;
+            bestScore = score;
+        }
+    }
+    if (!best.isNull()) {
+        qCDebug(faceTracking) << "camera" << best.resolution() << best.maxFrameRate() << "fps" << best.pixelFormat();
+        _camera->setCameraFormat(best);
+    }
+
+    _sink = new QVideoSink(this);
+    _session = new QMediaCaptureSession(this);
+    _session->setCamera(_camera);
+    _session->setVideoSink(_sink);
+    // the frames come on the camera's own thread, and are queued to this one. QVideoFrame::toImage applies the frame's
+    // scan-line direction (Windows' bottom-row-first frames), so none is passed on
+    connect(_sink, &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame& frame) {
+        if (_camera) {  // not one queued before the camera closed
+            onFrame(frame, false);
+        }
+    });
+    connect(_camera, &QCamera::activeChanged, this, [this](bool active) {
+        if (active) {
+            report(Status::LookingForFace);
+        }
+    });
+    connect(_camera, &QCamera::errorOccurred, this, [this](QCamera::Error, const QString& message) {
+        qCWarning(faceTracking) << "the camera failed:" << message;
+        report(Status::CameraFailed, message);
+    });
+    _camera->start();
+}
+#endif
 
 void FaceTracker::onFrame(const QVideoFrame& frame, bool bottomToTop) {
     // the latest frame only: one that comes while another is processed replaces the one waiting
@@ -258,14 +373,22 @@ void FaceTracker::processLatest() {
         return;
     }
     _sinceProcessed.start();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QImage image = _latest.image();
+#else
+    QImage image = _latest.toImage();
+#endif
     const bool bottomToTop = _latestBottomToTop;
     _latest = QVideoFrame();  // the camera's buffer goes back to it
     if (image.isNull()) {
         return;
     }
     if (bottomToTop) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         image = image.mirrored(false, true);
+#else
+        image = image.flipped(Qt::Vertical);
+#endif
     }
     Output output;
     output.result = _landmarker->process(image);
@@ -314,6 +437,7 @@ void FaceTracker::closeCamera() {
         delete _permissionCheck;
         _permissionCheck = nullptr;
     }
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     if (_camera) {
         _camera->disconnect(this);
         _camera->stop();
@@ -323,6 +447,21 @@ void FaceTracker::closeCamera() {
     }
     delete _surface;
     _surface = nullptr;
+#else
+    if (_camera) {
+        _camera->disconnect(this);
+        _camera->stop();
+    }
+    if (_sink) {
+        _sink->disconnect(this);
+    }
+    delete _session;
+    _session = nullptr;
+    delete _camera;
+    _camera = nullptr;
+    delete _sink;
+    _sink = nullptr;
+#endif
     _latest = QVideoFrame();
     _processQueued = false;
     _sinceProcessed.invalidate();

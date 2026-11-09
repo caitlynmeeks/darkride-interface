@@ -32,6 +32,7 @@
 #include <QRandomGenerator>
 
 #include <AccountManager.h>
+#include <RegexCompat.h>
 #include <AddressManager.h>
 #include <AssetClient.h>
 #include <BuildInfo.h>
@@ -55,12 +56,14 @@
 #include "AssetsBackupHandler.h"
 #include "ContentSettingsBackupHandler.h"
 #include "DomainServerNodeData.h"
+#include "NodeAddresses.h"
 #include "EntitiesBackupHandler.h"
 #include "NodeConnectionData.h"
 
 #include <Gzip.h>
 
 #include <OctreeDataUtils.h>
+#include <shared/WireStream.h>
 
 using namespace std::chrono;
 
@@ -216,7 +219,9 @@ DomainServer::DomainServer(int argc, char* argv[]) :
 #endif
 
     qRegisterMetaType<DomainServerWebSessionData>("DomainServerWebSessionData");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)  // Qt 6 registers the stream operators with the type
     qRegisterMetaTypeStreamOperators<DomainServerWebSessionData>("DomainServerWebSessionData");
+#endif
 
     // make sure we hear about newly connected nodes from our gatekeeper
     connect(&_gatekeeper, &DomainGatekeeper::connectedNode, this, &DomainServer::handleConnectedNode);
@@ -603,7 +608,7 @@ void DomainServer::handleTempDomainSuccess(QNetworkReply* requestReply) {
 
         // store the new token to the account info
         auto accountManager = DependencyManager::get<AccountManager>();
-        accountManager->setTemporaryDomain(id, key);
+        accountManager->setTemporaryDomain(QUuid(id), key);
 
         // change our domain ID immediately
         DependencyManager::get<LimitedNodeList>()->setSessionUUID(QUuid { id });
@@ -735,7 +740,7 @@ void DomainServer::setupNodeListAndAssignments() {
     } else {
         QVariant idValueVariant = _settingsManager.valueForKeyPath(METAVERSE_DOMAIN_ID_KEY_PATH);
         if (idValueVariant.isValid()) {
-            nodeList->setSessionUUID(idValueVariant.toString());
+            nodeList->setSessionUUID(QUuid(idValueVariant.toString()));
             isMetaverseDomain = true; // if we have an ID, we'll assume we're a metaverse domain
         } else {
             nodeList->setSessionUUID(QUuid::createUuid()); // Use random UUID
@@ -1091,6 +1096,7 @@ void DomainServer::populateDefaultStaticAssignmentsExcludingTypes(const QSet<Ass
 
 void DomainServer::processListRequestPacket(QSharedPointer<ReceivedMessage> message, SharedNodePointer sendingNode) {
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
     NodeConnectionData nodeRequestData = NodeConnectionData::fromDataStream(packetStream, message->getSenderSockAddr(), false);
 
     // update this node's sockets in case they have changed
@@ -1214,6 +1220,7 @@ void DomainServer::sendDomainListToNode(const SharedNodePointer& node, quint64 r
     // this data is at the beginning of each of the domain list packets
     QByteArray extendedHeader(NUM_DOMAIN_LIST_EXTENDED_HEADER_BYTES, 0);
     QDataStream extendedHeaderStream(&extendedHeader, QIODevice::WriteOnly);
+    hifi::stream::pin(extendedHeaderStream);
     DomainServerNodeData* nodeData = static_cast<DomainServerNodeData*>(node->getLinkedData());
     auto limitedNodeList = DependencyManager::get<LimitedNodeList>();
 
@@ -1231,6 +1238,7 @@ void DomainServer::sendDomainListToNode(const SharedNodePointer& node, quint64 r
 
     // always send the node their own UUID back
     QDataStream domainListStream(domainListPackets.get());
+    hifi::stream::pin(domainListStream);
 
     // store the nodeInterestSet on this DomainServerNodeData, in case it has changed
     auto& nodeInterestSet = nodeData->getNodeInterestSet();
@@ -1295,6 +1303,7 @@ void DomainServer::broadcastNewNode(const SharedNodePointer& addedNode) {
 
     // setup the add packet for this new node
     QDataStream addNodeStream(addNodePacket.get());
+    hifi::stream::pin(addNodeStream);
 
     addNodeStream << *addedNode.data();
 
@@ -1369,6 +1378,7 @@ void DomainServer::processRequestAssignmentPacket(QSharedPointer<ReceivedMessage
         assignmentPacket->reset();
 
         QDataStream assignmentStream(assignmentPacket.get());
+        hifi::stream::pin(assignmentStream);
 
         assignmentStream << uniqueAssignment;
 
@@ -1640,6 +1650,7 @@ void DomainServer::sendHeartbeatToIceServer() {
             // first read the sockets out from the current packet
             _iceServerHeartbeatPacket->seek(0);
             QDataStream heartbeatStream(_iceServerHeartbeatPacket.get());
+            hifi::stream::pin(heartbeatStream);
 
             QUuid senderUUID;
             HifiSockAddr publicSocket, localSocket;
@@ -1663,6 +1674,7 @@ void DomainServer::sendHeartbeatToIceServer() {
 
             // write our plaintext data to the packet
             QDataStream heartbeatDataStream(_iceServerHeartbeatPacket.get());
+            hifi::stream::pin(heartbeatDataStream);
             heartbeatDataStream << limitedNodeList->getSessionUUID()
                 << limitedNodeList->getPublicSockAddr() << limitedNodeList->getLocalSockAddr();
 
@@ -1966,11 +1978,12 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
 
     // check if this is a request for a scripted assignment (with a temp unique UUID)
     const QString ASSIGNMENT_REGEX_STRING = QString("\\%1\\/(%2)\\/?$").arg(URI_ASSIGNMENT).arg(UUID_REGEX_STRING);
-    QRegExp assignmentRegex(ASSIGNMENT_REGEX_STRING);
+    static const QRegularExpression ASSIGNMENT_REGEX = regex_compat::search(ASSIGNMENT_REGEX_STRING);
+    const QRegularExpressionMatch assignmentMatch = ASSIGNMENT_REGEX.match(url.path());
 
     if (connection->requestOperation() == QNetworkAccessManager::GetOperation
-        && assignmentRegex.indexIn(url.path()) != -1) {
-        QUuid nodeUUID = QUuid(assignmentRegex.cap(1));
+        && assignmentMatch.hasMatch()) {
+        QUuid nodeUUID = QUuid(assignmentMatch.captured(1));
 
         auto matchingNode = nodeList->nodeWithUUID(nodeUUID);
 
@@ -2196,10 +2209,11 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
         } else {
             // check if this is for json stats for a node
             const QString NODE_JSON_REGEX_STRING = QString("\\%1\\/(%2).json\\/?$").arg(URI_NODES).arg(UUID_REGEX_STRING);
-            QRegExp nodeShowRegex(NODE_JSON_REGEX_STRING);
+            static const QRegularExpression NODE_JSON_REGEX = regex_compat::search(NODE_JSON_REGEX_STRING);
+            const QRegularExpressionMatch nodeShowMatch = NODE_JSON_REGEX.match(url.path());
 
-            if (nodeShowRegex.indexIn(url.path()) != -1) {
-                QUuid matchingUUID = QUuid(nodeShowRegex.cap(1));
+            if (nodeShowMatch.hasMatch()) {
+                QUuid matchingUUID = QUuid(nodeShowMatch.captured(1));
 
                 // see if we have a node that matches this ID
                 SharedNodePointer matchingNode = nodeList->nodeWithUUID(matchingUUID);
@@ -2281,14 +2295,14 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
                 // check the file extension to see what kind of file this is
                 // to make sure we handle this filetype for a content restore
                 auto dispositionValue = QString(firstFormData.first.value("Content-Disposition"));
-                QRegExp formDataFieldsRegex(R":(name="(restore-file.*)".*filename="(.+)"):");
-                auto matchIndex = formDataFieldsRegex.indexIn(dispositionValue);
+                static const QRegularExpression FORM_DATA_FIELDS_REGEX = regex_compat::search(R":(name="(restore-file.*)".*filename="(.+)"):");
+                const QRegularExpressionMatch formDataFields = FORM_DATA_FIELDS_REGEX.match(dispositionValue);
 
                 QString formItemName = "";
                 QString uploadedFilename = "";
-                if (matchIndex != -1) {
-                    formItemName = formDataFieldsRegex.cap(1);
-                    uploadedFilename = formDataFieldsRegex.cap(2);
+                if (formDataFields.hasMatch()) {
+                    formItemName = formDataFields.captured(1);
+                    uploadedFilename = formDataFields.captured(2);
                 }
 
                 // Received a chunk
@@ -2435,8 +2449,10 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
         const QString ALL_NODE_DELETE_REGEX_STRING = QString("%1/?$").arg(URI_NODES);
         const QString NODE_DELETE_REGEX_STRING = QString("%1/(%2)$").arg(URI_NODES).arg(UUID_REGEX_STRING);
 
-        QRegExp allNodesDeleteRegex(ALL_NODE_DELETE_REGEX_STRING);
-        QRegExp nodeDeleteRegex(NODE_DELETE_REGEX_STRING);
+        static const QRegularExpression ALL_NODE_DELETE_REGEX = regex_compat::search(ALL_NODE_DELETE_REGEX_STRING);
+        static const QRegularExpression NODE_DELETE_REGEX = regex_compat::search(NODE_DELETE_REGEX_STRING);
+        const QRegularExpressionMatch allNodesDeleteMatch = ALL_NODE_DELETE_REGEX.match(url.path());
+        const QRegularExpressionMatch nodeDeleteMatch = NODE_DELETE_REGEX.match(url.path());
 
         if (url.path().startsWith(URI_API_BACKUPS_ID)) {
             auto id = url.path().mid(QString(URI_API_BACKUPS_ID).length());
@@ -2456,11 +2472,11 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
 
             return true;
 
-        } else if (nodeDeleteRegex.indexIn(url.path()) != -1) {
+        } else if (nodeDeleteMatch.hasMatch()) {
             // this is a request to DELETE one node by UUID
 
             // pull the captured string, if it exists
-            QUuid deleteUUID = QUuid(nodeDeleteRegex.cap(1));
+            QUuid deleteUUID = QUuid(nodeDeleteMatch.captured(1));
 
             SharedNodePointer nodeToKill = nodeList->nodeWithUUID(deleteUUID);
 
@@ -2476,7 +2492,7 @@ bool DomainServer::handleHTTPRequest(HTTPConnection* connection, const QUrl& url
             }
 
             return true;
-        } else if (allNodesDeleteRegex.indexIn(url.path()) != -1) {
+        } else if (allNodesDeleteMatch.hasMatch()) {
             qDebug() << "Received request to kill all nodes.";
             nodeList->eraseAllNodes(url.path());
 
@@ -2514,7 +2530,7 @@ bool DomainServer::handleHTTPSRequest(HTTPSConnection* connection, const QUrl &u
                 .arg(authorizationCode, oauthRedirectURL().toString(), _oauthClientID, _oauthClientSecret);
 
             QNetworkRequest tokenRequest(tokenRequestUrl);
-            tokenRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+            tokenRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
             tokenRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
             tokenRequest.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
 
@@ -2687,11 +2703,12 @@ std::pair<bool, QString>  DomainServer::isAuthenticatedRequest(HTTPConnection* c
     if (_oauthEnable) {
         QString cookieString = connection->requestHeader(HTTP_COOKIE_HEADER_KEY);
 
-        QRegExp cookieUUIDRegex(COOKIE_UUID_REGEX_STRING);
+        static const QRegularExpression COOKIE_UUID_REGEX = regex_compat::search(COOKIE_UUID_REGEX_STRING);
+        const QRegularExpressionMatch cookieUUIDMatch = COOKIE_UUID_REGEX.match(cookieString);
 
         QUuid cookieUUID;
-        if (cookieString.indexOf(cookieUUIDRegex) != -1) {
-            cookieUUID = cookieUUIDRegex.cap(1);
+        if (cookieUUIDMatch.hasMatch()) {
+            cookieUUID = QUuid(cookieUUIDMatch.captured(1));
         }
 
         if (_settingsManager.valueForKeyPath(BASIC_AUTH_USERNAME_KEY_PATH).isValid()) {
@@ -2778,8 +2795,8 @@ std::pair<bool, QString>  DomainServer::isAuthenticatedRequest(HTTPConnection* c
                     QVariant settingsPasswordVariant = _settingsManager.valueForKeyPath(BASIC_AUTH_PASSWORD_KEY_PATH);
 
                     QString settingsPassword = settingsPasswordVariant.isValid() ? settingsPasswordVariant.toString() : "";
-                    QString hexHeaderPassword = headerPassword.isEmpty() ?
-                        "" : QCryptographicHash::hash(headerPassword.toUtf8(), QCryptographicHash::Sha256).toHex();
+                    QString hexHeaderPassword = headerPassword.isEmpty() ? QString() :
+                        QString::fromLatin1(QCryptographicHash::hash(headerPassword.toUtf8(), QCryptographicHash::Sha256).toHex());
 
                     if (settingsUsername == headerUsername && hexHeaderPassword == settingsPassword) {
                         return { true, headerUsername };
@@ -2826,7 +2843,7 @@ QNetworkReply* DomainServer::profileRequestGivenTokenReply(QNetworkReply* tokenR
     qDebug() << "Sending profile request to: " << profileURL;
 
     QNetworkRequest profileRequest(profileURL);
-    profileRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    profileRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     profileRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
     return NetworkAccessManager::getInstance().get(profileRequest);
 }
@@ -2847,7 +2864,7 @@ Headers DomainServer::setupCookieHeadersFromProfileReply(QNetworkReply* profileR
     // setup expiry for cookie to 1 month from today
     QDateTime cookieExpiry = QDateTime::currentDateTimeUtc().addMonths(1);
 
-    QString cookieString = HIFI_SESSION_COOKIE_KEY + "=" + uuidStringWithoutCurlyBraces(cookieUUID.toString());
+    QString cookieString = HIFI_SESSION_COOKIE_KEY + "=" + uuidStringWithoutCurlyBraces(cookieUUID);
     cookieString += "; expires=" + cookieExpiry.toString("ddd, dd MMM yyyy HH:mm:ss") + " GMT";
     cookieString += "; domain=" + _hostname + "; path=/";
 
@@ -3184,6 +3201,14 @@ void DomainServer::addStaticAssignmentsToQueue() {
 
 void DomainServer::processPathQueryPacket(QSharedPointer<ReceivedMessage> message) {
     // this is a query for the viewpoint resulting from a path
+
+    // only a connected visitor's app or assignment client asks, so only the domain's nodes get an answer (security #60)
+    if (!node_addresses::isFromNode(message->getSenderSockAddr())) {
+        static node_addresses::UnansweredLog unanswered("path query");
+        unanswered.note(message->getSenderSockAddr());
+        return;
+    }
+
     // first pull the query path from the packet
 
     // figure out how many bytes the sender said this path is

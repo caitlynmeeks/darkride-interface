@@ -51,8 +51,7 @@ public:
     EntityEditFilters() {};
     EntityEditFilters(EntityTreePointer tree ): _tree(tree) {};
 
-    /// The engine a filter script runs in, chosen by whoever sets the factory (the entity server: QtScript or
-    /// WebAssembly, by the scripting setting). Without one, QtScript.
+    /// The engine a filter script runs in (the WebAssembly one; the entity server sets the factory).
     static void setEngineFactory(EntityEditFilterEngineFactory factory);
 
     void addFilter(EntityItemID entityID, QString filterURL);

@@ -28,6 +28,8 @@ public:
     /// The pointers the world `world`'s scripts made (tagged with ScriptCaller::world() when added) go, with their
     /// picks and visuals: its scripts have stopped. Returns how many went.
     int removeWorldPointers(int world);
+    /// A pointer a world's scripts made (its triggers aren't the visitor's clicks: security finding #54)
+    bool isWorldPointer(unsigned int uid) const;
     void enablePointer(unsigned int uid) const;
     void disablePointer(unsigned int uid) const;
     bool isPointerEnabled(unsigned int uid) const;

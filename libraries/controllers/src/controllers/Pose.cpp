@@ -8,10 +8,6 @@
 
 #include "Pose.h"
 
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
-
-#include <RegisteredMetaTypes.h>
 
 namespace controller {
 
@@ -39,39 +35,6 @@ namespace controller {
      * @property {Vec3} angularVelocity - Angular velocity in rad/s.
      * @property {boolean} valid - <code>true</code> if the pose is valid, otherwise <code>false</code>.
      */
-    QScriptValue Pose::toScriptValue(QScriptEngine* engine, const Pose& pose) {
-        QScriptValue obj = engine->newObject();
-        if (pose.isValid()) {
-            obj.setProperty("translation", vec3ToScriptValue(engine, pose.translation));
-            obj.setProperty("rotation", quatToScriptValue(engine, pose.rotation));
-            obj.setProperty("velocity", vec3ToScriptValue(engine, pose.velocity));
-            obj.setProperty("angularVelocity", vec3ToScriptValue(engine, pose.angularVelocity));
-            obj.setProperty("valid", true);
-        } else {
-            obj.setProperty("valid", false);
-        }
-
-        return obj;
-    }
-
-    void Pose::fromScriptValue(const QScriptValue& object, Pose& pose) {
-        auto translation = object.property("translation");
-        auto rotation = object.property("rotation");
-        auto velocity = object.property("velocity");
-        auto angularVelocity = object.property("angularVelocity");
-        if (translation.isValid() &&
-                rotation.isValid() &&
-                velocity.isValid() &&
-                angularVelocity.isValid()) {
-            vec3FromScriptValue(translation, pose.translation);
-            quatFromScriptValue(rotation, pose.rotation);
-            vec3FromScriptValue(velocity, pose.velocity);
-            vec3FromScriptValue(angularVelocity, pose.angularVelocity);
-            pose.valid = true;
-        } else {
-            pose.valid = false;
-        }
-    }
 
     Pose Pose::transform(const glm::mat4& mat) const {
         auto rot = glmExtractRotation(mat);

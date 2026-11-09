@@ -31,7 +31,6 @@
 #include <ScriptAddressCheck.h>
 #include <SoundCacheScriptingInterface.h>
 #include <UUID.h>
-#include <WebSocketServerClass.h>
 
 #include <EntityScriptClient.h> // for EntityScriptServerServices
 
@@ -65,7 +64,9 @@ EntityScriptServer::EntityScriptServer(ReceivedMessage& message) : ThreadedAssig
     DependencyManager::set<EntityScriptingInterface>(false)->setPacketSender(&_entityEditSender);
     DependencyManager::set<ResourceScriptingInterface>();
 
-    DependencyManager::set<ResourceManager>();
+    // what this server fetches over the web is for a world's scripts (their scripts, includes and sounds): held to the
+    // network rule as the scripts' own requests are, as from the network
+    DependencyManager::set<ResourceManager>()->ruleEveryWebRequest(QUrl("about:entity-server"));
     DependencyManager::set<PluginManager>()->instantiate();
 
     DependencyManager::registerInheritance<SpatialParentFinder, AssignmentParentFinder>();
@@ -460,9 +461,6 @@ void EntityScriptServer::selectAudioFormat(const QString& selectedCodecName) {
 void EntityScriptServer::resetEntitiesScriptEngine() {
     auto engineName = QString("about:Entities %1").arg(++_entitiesScriptEngineCount);
     auto newEngine = scriptEngineFactory(ScriptEngine::ENTITY_SERVER_SCRIPT, NO_SCRIPT, engineName);
-
-    auto webSocketServerConstructorValue = newEngine->newFunction(WebSocketServerClass::constructor);
-    newEngine->globalObject().setProperty("WebSocketServer", webSocketServerConstructorValue);
 
     newEngine->registerGlobalObject("SoundCache", DependencyManager::get<SoundCacheScriptingInterface>().data());
     newEngine->registerGlobalObject("AvatarList", DependencyManager::get<AvatarHashMap>().data());

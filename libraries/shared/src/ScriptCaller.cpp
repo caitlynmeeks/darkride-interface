@@ -25,6 +25,11 @@ QSet<int> retiredWorlds;                // under retiredLock
 std::atomic<int> highestRetired { 0 };  // no world above it was left: a newer world's call never takes the lock
 thread_local int refusalsLoggedFor = 0;        // the world whose refusals this thread has logged
 thread_local QSet<QByteArray> refusalsLogged;  // its refused members, each logged once
+std::atomic<int> worldsMade { 0 };             // newWorld's last id
+}
+
+int ScriptCaller::newWorld() {
+    return ++worldsMade;
 }
 
 int ScriptCaller::world() {

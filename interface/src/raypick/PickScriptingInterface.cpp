@@ -432,14 +432,6 @@ void PickScriptingInterface::setPrecisionPicking(unsigned int uid, bool precisio
     DependencyManager::get<PickManager>()->setPrecisionPicking(uid, precisionPicking);
 }
 
-void PickScriptingInterface::setIgnoreItems(unsigned int uid, const QScriptValue& ignoreItems) {
-    DependencyManager::get<PickManager>()->setIgnoreItems(uid, qVectorQUuidFromScriptValue(ignoreItems));
-}
-
-void PickScriptingInterface::setIncludeItems(unsigned int uid, const QScriptValue& includeItems) {
-    DependencyManager::get<PickManager>()->setIncludeItems(uid, qVectorQUuidFromScriptValue(includeItems));
-}
-
 void PickScriptingInterface::setIgnoreItemsVector(unsigned int uid, const QVector<QUuid>& ignoreItems) {
     DependencyManager::get<PickManager>()->setIgnoreItems(uid, ignoreItems);
 }
@@ -460,29 +452,13 @@ bool PickScriptingInterface::isMouse(unsigned int uid) {
     return DependencyManager::get<PickManager>()->isMouse(uid);
 }
 
-QScriptValue pickTypesToScriptValue(QScriptEngine* engine, const PickQuery::PickType& pickType) {
-    return pickType;
-}
-
-void pickTypesFromScriptValue(const QScriptValue& object, PickQuery::PickType& pickType) {
-    pickType = static_cast<PickQuery::PickType>(object.toUInt16());
-}
-
-void PickScriptingInterface::registerMetaTypes(QScriptEngine* engine) {
-    // PickType through the engine's registration, so that every script engine sees it (on QtScript the same plain
-    // object of the types' values as before)
+void PickScriptingInterface::registerPickType(ScriptEngine* engine) {
     QVariantMap pickTypes;
     auto metaEnum = QMetaEnum::fromType<PickQuery::PickType>();
     for (int i = 0; i < PickQuery::PickType::NUM_PICK_TYPES; ++i) {
         pickTypes[metaEnum.key(i)] = metaEnum.value(i);
     }
-    if (auto scriptEngine = qobject_cast<ScriptEngine*>(engine)) {
-        scriptEngine->registerGlobalValue("PickType", pickTypes);
-    } else {
-        engine->globalObject().setProperty("PickType", engine->toScriptValue(pickTypes));
-    }
-
-    qScriptRegisterMetaType(engine, pickTypesToScriptValue, pickTypesFromScriptValue);
+    engine->registerGlobalValue("PickType", pickTypes);
 }
 
 unsigned int PickScriptingInterface::getPerFrameTimeBudget() const {

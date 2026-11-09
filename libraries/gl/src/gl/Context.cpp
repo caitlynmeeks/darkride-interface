@@ -27,7 +27,7 @@
 #include "GLHelpers.h"
 #include "QOpenGLContextWrapper.h"
 
-#if defined(GL_CUSTOM_CONTEXT)
+#if defined(GL_CUSTOM_CONTEXT) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QtPlatformHeaders/QWGLNativeContext>
 #endif
 

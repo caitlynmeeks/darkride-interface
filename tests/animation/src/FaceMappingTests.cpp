@@ -97,7 +97,7 @@ QByteArray makeArkitGlb() {
     return glb;
 }
 
-HFMModel::Pointer read(const hifi::VariantHash& mapping) {
+HFMModel::Pointer read(const hifi::VariantMultiHash& mapping) {
     AssimpSerializer serializer;
     return serializer.read(makeArkitGlb(), mapping, hifi::URL("file:///arkit-face.glb"));
 }
@@ -137,7 +137,7 @@ void FaceMappingTests::cleanupTestCase() {
 // Worn without an .fst (SkeletonModel's "autoHumanoid"): ARKit's names make the engine's blendshapes, one to one, with
 // the voice's gains for the procedural face
 void FaceMappingTests::testWithoutFst() {
-    hifi::VariantHash mapping;
+    hifi::VariantMultiHash mapping;
     mapping.insert("autoHumanoid", true);
     HFMModel::Pointer model = read(mapping);
     QVERIFY(model);
@@ -159,10 +159,10 @@ void FaceMappingTests::testWithoutFst() {
 
 // An .fst that maps a few shapes (F1c) keeps its other shapes still: the voice doesn't move the model's brows or smile
 void FaceMappingTests::testFstMapsAFew() {
-    hifi::VariantHash blendshapes;
+    hifi::VariantMultiHash blendshapes;
     blendshapes.insert("JawOpen", QVariantList{ "jawOpen", 0.7 });
-    hifi::VariantHash mapping;
-    mapping.insert("bs", blendshapes);
+    hifi::VariantMultiHash mapping;
+    mapping.insert("bs", hifi::variantFromMultiHash(blendshapes));
     HFMModel::Pointer model = read(mapping);
     QVERIFY(model);
     QVERIFY(moves(*model, Blendshapes::JawOpen));
@@ -173,7 +173,7 @@ void FaceMappingTests::testFstMapsAFew() {
 
 // A model entity, read with no mapping at all, takes no other names either
 void FaceMappingTests::testModelEntity() {
-    HFMModel::Pointer model = read(hifi::VariantHash());
+    HFMModel::Pointer model = read(hifi::VariantMultiHash());
     QVERIFY(model);
     QVERIFY(!moves(*model, Blendshapes::JawOpen));
     QVERIFY(!moves(*model, Blendshapes::EyeBlink_L));
