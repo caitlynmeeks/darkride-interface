@@ -70,6 +70,7 @@ public:
         // counts above cannot see (entry 34, 2026-11-09: a heavy view at 144 with shadows, every present in phase, the
         // picture alternating on-time and one-step-old frames)
         int missed { 0 };
+        int slackPresents { 0 };        // presents in phase whose slack was read (the missed count's whole)
         int minSlackUs { 1000000 };     // the least slack of the second's presents (microseconds; negative past the refresh)
         int maxLateUs { 0 };            // the worst of them
         int repeated { 0 };             // showed the frame before again (no new frame was ready)

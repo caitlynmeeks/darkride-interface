@@ -418,9 +418,11 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
     qCDebug(interfaceapp).nospace() << "Refresh governor diag: " << (s_governorHeld ? "held" : (_halfRate ? "half" : "full")) << " rate, target "
         << _activeRefreshRate << " of " << sample.displayRate << " Hz; last second: presents " << sample.presents
         << " (on 1 refresh " << sample.onOneRefresh << ", on 2+ " << sample.onTwoOrMoreRefreshes << ", held " << sample.repeated
-        << ", missed " << sample.missed << ", slack min " << sample.minSlackUs / 1000.0 << " ms), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
+        << "), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
         << " ms; build slow " << sample.slowBuildFrames << ", max " << sample.maxBuildUs / 1000.0 << " ms), execute slow "
-        << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms; fit "
+        << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms, slack min "
+        << sample.minSlackUs / 1000.0 << " ms, under " << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000 << " ms " << sample.missed
+        << " of " << sample.slackPresents << "; fit "
         << _governorFitSeconds << " of " << _governorHoldSeconds << " s"
         << (sample.startedAtNs < _governorChangeNs + GOVERNOR_SETTLE_NS ? ", mixed (no verdict)" : "")
         << (_governorProbeSecondsLeft > 0 ? ", probe" : "")

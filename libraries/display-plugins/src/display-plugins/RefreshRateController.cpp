@@ -190,6 +190,7 @@ void RefreshRateController::notePresentCost(int executeUs, float gpuMs) {
 
 void RefreshRateController::notePresentSlack(int slackUs) {
     CadenceCounters& counting = _cadenceCounting;
+    counting.slackPresents++;
     counting.minSlackUs = std::min(counting.minSlackUs, slackUs);
     if (slackUs < PRESENT_SLACK_FLOOR_US) {
         counting.missed++;
