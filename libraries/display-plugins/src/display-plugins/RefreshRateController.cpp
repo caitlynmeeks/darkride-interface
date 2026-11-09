@@ -153,6 +153,7 @@ void RefreshRateController::logSchedule(bool inPhase, int refreshesPerPresent, i
 }
 
 void RefreshRateController::notePresentedFrame(bool newFrame) {
+    _presentRepeated = !newFrame;
     if (!newFrame) {
         _cadenceCounting.repeated++;
     }
@@ -192,7 +193,9 @@ void RefreshRateController::notePresentSlack(int slackUs) {
     CadenceCounters& counting = _cadenceCounting;
     counting.slackPresents++;
     counting.minSlackUs = std::min(counting.minSlackUs, slackUs);
-    if (slackUs < PRESENT_SLACK_FLOOR_US) {
+    // a present the interval count already took as a miss (two or more refreshes apart, which returns past its refresh
+    // too) or a held frame (counted as repeated) is not counted again: missed is the misses the other counts cannot see
+    if (slackUs < PRESENT_SLACK_FLOOR_US && _presentRefreshes < 2 && !_presentRepeated) {
         counting.missed++;
     }
 }

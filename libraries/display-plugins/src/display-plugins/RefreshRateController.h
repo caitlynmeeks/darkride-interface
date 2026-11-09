@@ -150,6 +150,7 @@ private:
     mutable std::mutex _cadenceMutex;
     int _presentRefreshes { 0 };
     int _presentLateUs { 0 };
+    bool _presentRepeated { false };   // the present under way shows the frame before again (counted as repeated, so never as missed)
     std::atomic<bool> _inPhase { false };
     // what the last log line said (present thread only)
     int _loggedInPhase { -1 };
