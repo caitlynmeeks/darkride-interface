@@ -67,6 +67,9 @@
 #include "ui/Popup.h"
 #include <PickManager.h>
 #include <PointerManager.h>
+#if defined(Q_OS_WIN)
+#include <Windows.h>   // TerminateProcess, endBeforeQtTeardown's end
+#endif
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>
 #include "AndroidHelper.h"
@@ -264,7 +267,15 @@ namespace Setting {
     if (logger) {
         logger->sync();
     }
-    std::_Exit(0);   // C++'s _exit: no static destructors, as main's
+#if defined(Q_OS_WIN)
+    // Not _Exit: on Windows that's ExitProcess, which still runs every DLL's detach; Qt6Core's sends the events left, a
+    // deleteLater'd QML engine among them, and that crashed 10 of 10 quits in Qt6Quick (windowz 11-09, c866fd686f).
+    // TerminateProcess runs no DLL detach and no event (as Chromium ends its own processes); the settings and the log
+    // are on disk by now. It doesn't return.
+    TerminateProcess(GetCurrentProcess(), 0);
+#else
+    std::_Exit(0);   // not called off Windows (see ~Application): here only so the function never returns anywhere
+#endif
 }
 
 Application::~Application() {
