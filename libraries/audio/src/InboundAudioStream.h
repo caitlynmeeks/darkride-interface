@@ -121,9 +121,10 @@ private:
     void framesAvailableChanged();
 
 protected:
-    // disallow copying of InboundAudioStream objects
-    InboundAudioStream(const InboundAudioStream&);
-    InboundAudioStream& operator= (const InboundAudioStream&);
+    // disallow copying of InboundAudioStream objects (deleted, not only undeclared-and-undefined: Qt 6's moc asks
+    // whether a class is copyable, and a subclass's implicit copy constructor would otherwise name this one)
+    InboundAudioStream(const InboundAudioStream&) = delete;
+    InboundAudioStream& operator= (const InboundAudioStream&) = delete;
 
     /// parses the info between the seq num and the audio data in the network packet and calculates
     /// how many audio samples this packet contains (used when filling in samples for dropped packets).
@@ -139,6 +140,11 @@ protected:
 
     /// writes silent frames to the buffer that may be dropped to reduce latency caused by the buffer
     virtual int writeDroppableSilentFrames(int silentFrames);
+
+    /// remakes the ring buffer for another frame size (a sender changing between mono and stereo) and forgets the frame
+    /// last popped, which was in the old buffer; at most once a second, since each change allocates. False when
+    /// refused: the stream keeps its frame size.
+    bool changeFrameSize(int numFrameSamples);
     
 protected:
 
@@ -147,6 +153,7 @@ protected:
 
     bool _lastPopSucceeded { false };
     AudioRingBuffer::ConstIterator _lastPopOutput;
+    quint64 _lastFrameSizeChange { 0 };   // usecs, 0 before the first change
     
     bool _dynamicJitterBufferEnabled { DEFAULT_DYNAMIC_JITTER_BUFFER_ENABLED };
     int _staticJitterBufferFrames { DEFAULT_STATIC_JITTER_FRAMES };

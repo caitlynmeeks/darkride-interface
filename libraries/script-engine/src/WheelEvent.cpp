@@ -11,9 +11,6 @@
 
 #include "WheelEvent.h"
 
-#include <QScriptEngine>
-#include <QScriptValue>
-
 WheelEvent::WheelEvent() :
     x(0.0f),
     y(0.0f),
@@ -31,13 +28,17 @@ WheelEvent::WheelEvent() :
 }
 
 WheelEvent::WheelEvent(const QWheelEvent& event) {
-    x = event.x();
-    y = event.y();
-    
-    delta = event.delta();
-    if (event.orientation() == Qt::Horizontal) {
+    const QPoint at = event.position().toPoint();
+    x = at.x();
+    y = at.y();
+
+    // the turn in eighths of a degree on one axis, as Qt 5's delta() and orientation() gave it
+    const QPoint angle = event.angleDelta();
+    if (angle.x() != 0 && angle.y() == 0) {
+        delta = angle.x();
         orientation = "HORIZONTAL";
     } else {
+        delta = angle.y();
         orientation = "VERTICAL";
     }
     
@@ -81,22 +82,3 @@ WheelEvent::WheelEvent(const QWheelEvent& event) {
  *     print(JSON.stringify(event));
  * });
  */
-QScriptValue WheelEvent::toScriptValue(QScriptEngine* engine, const WheelEvent& event) {
-    QScriptValue obj = engine->newObject();
-    obj.setProperty("x", event.x);
-    obj.setProperty("y", event.y);
-    obj.setProperty("delta", event.delta);
-    obj.setProperty("orientation", event.orientation);
-    obj.setProperty("isLeftButton", event.isLeftButton);
-    obj.setProperty("isRightButton", event.isRightButton);
-    obj.setProperty("isMiddleButton", event.isMiddleButton);
-    obj.setProperty("isShifted", event.isShifted);
-    obj.setProperty("isMeta", event.isMeta);
-    obj.setProperty("isControl", event.isControl);
-    obj.setProperty("isAlt", event.isAlt);
-    return obj;
-}
-
-void WheelEvent::fromScriptValue(const QScriptValue& object, WheelEvent& event) {
-    // nothing for now...
-}

@@ -17,7 +17,6 @@
 #include <glm/gtx/quaternion.hpp>
 #include <map>
 #include <set>
-#include <QScriptValue>
 #include <QVariantMap>
 #include <StreamUtils.h>
 #include <GLMHelpers.h>
@@ -229,13 +228,9 @@ public:
         }
     }
 
-    // Answer a Plain Old Javascript Object (for the given engine) all of our values set as properties.
-    QScriptValue animVariantMapToScriptValue(QScriptEngine* engine, const QStringList& names, bool useNames) const;
-    // The same two, with plain values (what the WebAssembly script engine passes a handler and reads back)
+    // The map a handler gets, all of our values set as properties by name, and the one it gives back
     QVariantMap animVariantMapToVariantMap(const QStringList& names, bool useNames) const;
     void animVariantMapFromVariantMap(const QVariantMap& source);
-    // Side-effect us with the value of object's own properties. (No inherited properties.)
-    void animVariantMapFromScriptValue(const QScriptValue& object);
     void copyVariantsFrom(const AnimVariantMap& other);
 
     // For stat debugging.
@@ -278,8 +273,6 @@ protected:
     glm::quat _rigToGeometryRot;
 };
 
-typedef std::function<void(QScriptValue)> AnimVariantResultHandler;
-Q_DECLARE_METATYPE(AnimVariantResultHandler);
 Q_DECLARE_METATYPE(AnimVariantMap)
 
 #endif // hifi_AnimVariant_h

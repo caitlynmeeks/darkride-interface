@@ -3,8 +3,7 @@
 //  tests-manual/wasm-scripting
 //
 //  The entity edit filter of server-check.sh: an edit that names an entity "forbidden" is refused, and an entity is
-//  kept below y = 5 (near enough for the editing client to be sent the result). The entity server runs it on QtScript, or on the WebAssembly engine with
-//  DARKRIDE_RUN_JS_ON_WASM=1.
+//  kept below y = 5 (near enough for the editing client to be sent the result). The entity server runs it.
 //
 //  Distributed under the Apache License, Version 2.0.
 //

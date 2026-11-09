@@ -2,6 +2,11 @@
 //  EntityPropertiesConversionTests.cpp
 //  tests/script-values/src
 //
+//  The entity-property conversions for plain values (what a script, a world file and avatar-entity data get):
+//  every type written every way, read back from everything a script or a file may hold, and compared with the
+//  recordings under tests/script-values/golden/ (Golden.h: what the conversions produced when they were proven
+//  equal to the QtScript engine's, on every build until QtScript was removed).
+//
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
@@ -15,76 +20,22 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
-#include <QtScript/QScriptValueIterator>
 
 #include <EntityItemProperties.h>
 #include <EntityTypes.h>
 #include <Gzip.h>
 #include <PlainScriptValue.h>
 #include <SharedUtil.h>
-#include <VariantMapToScriptValue.h>
 
+#include "Golden.h"
 #include "SameVariant.h"
 
 QTEST_GUILESS_MAIN(EntityPropertiesConversionTests)
 
 namespace {
 
-// The names of an object's own properties in the order QtScript lists them
-QStringList scriptNames(const QScriptValue& value) {
-    QStringList names;
-    QScriptValueIterator it(value);
-    while (it.hasNext()) {
-        it.next();
-        names.append(it.name());
-    }
-    return names;
-}
-
-// Whether the two values have the same properties in the same order, nested values included (an array's
-// elements by index; the values themselves are compared through their variants)
-bool sameShape(const QScriptValue& script, const PlainScriptValue& plain, QString& where) {
-    if (script.isArray()) {
-        if (!plain.isArray()) {
-            where = "an array on QtScript only";
-            return false;
-        }
-        const int length = script.property("length").toInt32();
-        if (plain.property("length").toInt32() != length) {
-            where = QString("array length %1 vs %2").arg(length).arg(plain.property("length").toInt32());
-            return false;
-        }
-        for (int i = 0; i < length; ++i) {
-            if (!sameShape(script.property(i), plain.property(i), where)) {
-                where = QString("[%1] ").arg(i) + where;
-                return false;
-            }
-        }
-        return true;
-    }
-    if (script.isObject()) {
-        if (!plain.isObject() || plain.isArray()) {
-            where = "an object on QtScript only";
-            return false;
-        }
-        const QStringList a = scriptNames(script);
-        const QStringList b = plain.propertyNames();
-        if (a != b) {
-            where = "order " + a.join(",") + " vs " + b.join(",");
-            return false;
-        }
-        for (const QString& name : a) {
-            if (!sameShape(script.property(name), plain.property(name), where)) {
-                where = name + ": " + where;
-                return false;
-            }
-        }
-        return true;
-    }
-    return true;
-}
+// a fixed creation time: the recordings must not depend on the clock
+const quint64 SAMPLE_CREATED = 1700000000000000ULL;
 
 // age and ageAsText come from the clock at the moment of the conversion, not from the properties
 void stripClock(QVariantMap& map) {
@@ -92,37 +43,60 @@ void stripClock(QVariantMap& map) {
     map.remove("ageAsText");
 }
 
-// The properties written both ways: the same variant (type and value) and the same shape (order)
-bool sameWriting(const EntityItemProperties& properties, bool skipDefaults, bool allowUnknownCreateTime, bool strictSemantics,
-                 EntityPsuedoPropertyFlags flags, QString& where) {
-    QScriptEngine engine;
-    PlainScriptEngine plainEngine;
-    const QScriptValue script = properties.copyToScriptValue(&engine, skipDefaults, allowUnknownCreateTime, strictSemantics, flags);
-    const PlainScriptValue plain = properties.copyToScriptValue(&plainEngine, skipDefaults, allowUnknownCreateTime, strictSemantics, flags);
-    QVariantMap a = script.toVariant().toMap();
-    QVariantMap b = plain.toVariant().toMap();
-    if (a.contains("age") != b.contains("age") || a.contains("ageAsText") != b.contains("ageAsText")) {
-        where = "age present on one side only";
-        return false;
-    }
-    stripClock(a);
-    stripClock(b);
-    if (!sameVariant(a, b, where)) {
-        where = "value: " + where;
-        return false;
-    }
-    if (!sameShape(script, plain, where)) {
-        where = "shape: " + where;
-        return false;
-    }
-    if (a.isEmpty()) {
-        where = "nothing written";
-        return false;
+// Whether every value in `part` is in `whole` with the same value, group by group (a writing without defaults carries
+// only a group's changed members, so a group is compared member by member)
+bool subsetOf(const QVariantMap& part, const QVariantMap& whole, QString& where) {
+    for (auto it = part.cbegin(); it != part.cend(); ++it) {
+        if (!whole.contains(it.key())) {
+            where = it.key() + " not in the full writing";
+            return false;
+        }
+        const QVariant& other = whole.value(it.key());
+        if (it.value().userType() == QMetaType::QVariantMap && other.userType() == QMetaType::QVariantMap) {
+            if (!subsetOf(it.value().toMap(), other.toMap(), where)) {
+                where = it.key() + ": " + where;
+                return false;
+            }
+        } else if (!sameVariant(other, it.value(), where)) {
+            where = it.key() + ": " + where;
+            return false;
+        }
     }
     return true;
 }
 
-bool sameWritingEveryWay(const EntityItemProperties& properties, QString& where) {
+// The properties written, as a variant map (sorted keys), the clock's members taken out
+QVariantMap written(const EntityItemProperties& properties, bool skipDefaults, bool allowUnknownCreateTime = true,
+                    bool strictSemantics = false, EntityPsuedoPropertyFlags flags = EntityPsuedoPropertyFlags()) {
+    PlainScriptEngine engine;
+    QVariantMap map = properties.copyToScriptValue(&engine, skipDefaults, allowUnknownCreateTime, strictSemantics, flags).toVariant().toMap();
+    stripClock(map);
+    return map;
+}
+
+// The properties written, as the script value itself (the members in the order a script sees them), the clock's
+// members taken out
+PlainScriptValue writtenValue(const EntityItemProperties& properties, bool skipDefaults) {
+    PlainScriptEngine engine;
+    PlainScriptValue value = properties.copyToScriptValue(&engine, skipDefaults, true);
+    value.setProperty("age", PlainScriptValue());
+    value.setProperty("ageAsText", PlainScriptValue());
+    return value;
+}
+
+// An entity's text in the entity server's world file: JSON.stringify(properties, null, '    ') of what the
+// conversion writes, as RecurseOctreeToJSONOperator writes it
+QString worldFileText(const EntityItemProperties& properties, bool skipDefaults) {
+    return writtenValue(properties, skipDefaults).toJson("    ");
+}
+
+const QString& testWorldPath() {
+    static const QString path = QFileInfo(__FILE__).dir().filePath("../../../tests-manual/wasm-scripting/world.json");
+    return path;
+}
+
+// Every way the properties are written writes something, and the desired-properties way only those
+bool writesEveryWay(const EntityItemProperties& properties, QString& where) {
     EntityPsuedoPropertyFlags pseudo;
     pseudo.set(EntityPsuedoPropertyFlag::FlagsActive);
     pseudo.set(EntityPsuedoPropertyFlag::ID);
@@ -152,91 +126,84 @@ bool sameWritingEveryWay(const EntityItemProperties& properties, QString& where)
         { "pseudo-properties", properties, false, false, pseudo },
         { "desired with pseudo-properties", desired, false, false, pseudo },
     };
+    QVariantMap everything;
     for (const Way& way : ways) {
-        if (!sameWriting(way.properties, way.skipDefaults, true, way.strictSemantics, way.flags, where)) {
-            where = QString(way.name) + ": " + where;
+        const QVariantMap map = written(way.properties, way.skipDefaults, true, way.strictSemantics, way.flags);
+        if (map.isEmpty()) {
+            where = QString(way.name) + ": nothing written";
             return false;
         }
+        if (QString(way.name) == "everything") {
+            everything = map;
+        } else if (QString(way.name) == "non-defaults" || QString(way.name) == "strict") {
+            // a subset of everything, with the same values
+            if (!subsetOf(map, everything, where)) {
+                where = QString(way.name) + ": " + where + " (differs from the full writing)";
+                return false;
+            }
+        }
+    }
+    const QVariantMap onlyDesired = written(desired, false);
+    if (!onlyDesired.contains("position") || !onlyDesired.contains("name") || onlyDesired.contains("dimensions")) {
+        where = "desired: " + QStringList(onlyDesired.keys()).join(",");
+        return false;
     }
     return true;
 }
 
-// The same input read both ways, compared as QtScript writes the properties read
-bool sameReading(const QString& json, bool honorReadOnly, QString& where) {
-    QScriptEngine engine;
-    const QScriptValue scriptInput = engine.evaluate("(" + json + ")");
-    if (engine.hasUncaughtException()) {
-        where = "the input does not evaluate: " + engine.uncaughtException().toString();
+// What is read from the input, written, read again from that and written again: the same. A reading that lost
+// or changed a value shows on the second pass. `first` gets the first writing.
+bool readsStably(const PlainScriptValue& input, bool honorReadOnly, QString& where, QVariantMap* first = nullptr) {
+    EntityItemProperties once;
+    once.copyFromScriptValue(input, honorReadOnly);
+    const QVariantMap a = written(once, false);
+    EntityItemProperties twice;
+    twice.copyFromScriptValue(PlainScriptValue::fromVariant(a), honorReadOnly);
+    twice.setLastEdited(once.getLastEdited());  // the clock, not the conversion
+    const QVariantMap b = written(twice, false);
+    if (first) {
+        *first = a;
+    }
+    if (!sameVariant(a, b, where)) {
+        where = "the second reading differs: " + where;
         return false;
     }
+    if (a.isEmpty()) {
+        where = "nothing read";
+        return false;
+    }
+    return true;
+}
+
+// A script's object, from its JSON
+PlainScriptValue scriptObject(const QString& json, QString& where) {
     QJsonParseError error;
     const QJsonDocument document = QJsonDocument::fromJson(json.toUtf8(), &error);
     if (error.error != QJsonParseError::NoError) {
         where = "the input is not JSON: " + error.errorString();
-        return false;
+        return PlainScriptValue();
     }
-    const PlainScriptValue plainInput = PlainScriptValue::fromCbor(QCborValue::fromJsonValue(document.object()));
+    return PlainScriptValue::fromCbor(QCborValue::fromJsonValue(document.object()));
+}
 
-    EntityItemProperties fromScript;
-    EntityItemProperties fromPlain;
-    fromScript.copyFromScriptValue(scriptInput, honorReadOnly);
-    fromPlain.copyFromScriptValue(plainInput, honorReadOnly);
-    fromPlain.setLastEdited(fromScript.getLastEdited());  // the clock, not the conversion
-
-    QVariantMap a = fromScript.copyToScriptValue(&engine, false, true).toVariant().toMap();
-    QVariantMap b = fromPlain.copyToScriptValue(&engine, false, true).toVariant().toMap();
-    stripClock(a);
-    stripClock(b);
-    if (!sameVariant(a, b, where)) {
+bool readsStably(const QString& json, bool honorReadOnly, QString& where, QVariantMap* first = nullptr) {
+    const PlainScriptValue input = scriptObject(json, where);
+    if (!input.isValid()) {
         return false;
     }
-    // and the plain reading agrees with itself through the plain writing
-    PlainScriptEngine plainEngine;
-    QVariantMap c = fromPlain.copyToScriptValue(&plainEngine, false, true).toVariant().toMap();
-    stripClock(c);
-    if (!sameVariant(a, c, where)) {
-        where = "plain writing of the plain reading: " + where;
-        return false;
-    }
-    return true;
+    return readsStably(input, honorReadOnly, where, first);
 }
 
 // A map read as the callers outside scripting read one (a world file's entity, avatar-entity data, an avatar
-// bookmark, an overlay's properties): through variantMapToScriptValue on QtScript and fromVariant on the plain
-// path, compared as sameReading compares
-bool sameVariantReading(const QVariantMap& map, bool honorReadOnly, QString& where) {
-    QScriptEngine engine;
-    QVariantMap input = map;
-    const QScriptValue scriptInput = variantMapToScriptValue(input, engine);
-    const PlainScriptValue plainInput = PlainScriptValue::fromVariant(map);
-
-    EntityItemProperties fromScript;
-    EntityItemProperties fromPlain;
-    fromScript.copyFromScriptValue(scriptInput, honorReadOnly);
-    fromPlain.copyFromScriptValue(plainInput, honorReadOnly);
-    fromPlain.setLastEdited(fromScript.getLastEdited());
-
-    QVariantMap a = fromScript.copyToScriptValue(&engine, false, true).toVariant().toMap();
-    QVariantMap b = fromPlain.copyToScriptValue(&engine, false, true).toVariant().toMap();
-    stripClock(a);
-    stripClock(b);
-    if (!sameVariant(a, b, where)) {
-        return false;
-    }
-    PlainScriptEngine plainEngine;
-    QVariantMap c = fromPlain.copyToScriptValue(&plainEngine, false, true).toVariant().toMap();
-    stripClock(c);
-    if (!sameVariant(a, c, where)) {
-        where = "plain writing of the plain reading: " + where;
-        return false;
-    }
-    return true;
+// bookmark, an overlay's properties): through fromVariant
+bool readsVariantStably(const QVariantMap& map, bool honorReadOnly, QString& where) {
+    return readsStably(PlainScriptValue::fromVariant(map), honorReadOnly, where);
 }
 
 EntityItemProperties sampleProperties(EntityTypes::EntityType type) {
     EntityItemProperties properties;
     properties.setType(type);
-    properties.setCreated(usecTimestampNow() - USECS_PER_SECOND);
+    properties.setCreated(SAMPLE_CREATED);
     properties.setPosition(glm::vec3(1.5f, -2.0f, 3.25f));
     properties.setRotation(glm::quat(0.5f, 0.5f, 0.5f, 0.5f));
     properties.setDimensions(glm::vec3(0.5f, 1.0f, 2.0f));
@@ -264,6 +231,22 @@ EntityItemProperties sampleProperties(EntityTypes::EntityType type) {
     return properties;
 }
 
+QString typeName(int type) {
+    return EntityTypes::getEntityTypeName(static_cast<EntityTypes::EntityType>(type));
+}
+
+// Every type's sample, written one way, as one recording: an object with a member per type
+QString samplesText(bool skipDefaults) {
+    PlainScriptValue all = PlainScriptValue::newObject();
+    for (int type = EntityTypes::Box; type < EntityTypes::NUM_TYPES; ++type) {
+        if (type == EntityTypes::RemovedPolyVox) {
+            continue;
+        }
+        all.setProperty(typeName(type), writtenValue(sampleProperties(static_cast<EntityTypes::EntityType>(type)), skipDefaults));
+    }
+    return all.toJson("    ") + "\n";
+}
+
 }  // namespace
 
 void EntityPropertiesConversionTests::testEveryTypeWritten() {
@@ -273,36 +256,38 @@ void EntityPropertiesConversionTests::testEveryTypeWritten() {
         }
         EntityItemProperties properties;
         properties.setType(static_cast<EntityTypes::EntityType>(type));
-        properties.setCreated(usecTimestampNow());
+        properties.setCreated(SAMPLE_CREATED);
         QString where;
-        QVERIFY2(sameWritingEveryWay(properties, where),
-                 qPrintable(EntityTypes::getEntityTypeName(static_cast<EntityTypes::EntityType>(type)) + ": " + where));
+        QVERIFY2(writesEveryWay(properties, where), qPrintable(typeName(type) + ": " + where));
+        QCOMPARE(written(properties, false).value("type").toString(), typeName(type));
         // with no creation time, nothing is written unless allowed
         EntityItemProperties fresh;
         fresh.setType(static_cast<EntityTypes::EntityType>(type));
-        QScriptEngine engine;
-        PlainScriptEngine plainEngine;
+        PlainScriptEngine engine;
         QVERIFY(fresh.copyToScriptValue(&engine, false).toVariant().toMap().isEmpty());
-        QVERIFY(fresh.copyToScriptValue(&plainEngine, false).toVariant().toMap().isEmpty());
+        QVERIFY(!fresh.copyToScriptValue(&engine, false, true).toVariant().toMap().isEmpty());
     }
 }
 
 void EntityPropertiesConversionTests::testValuesWritten() {
-    for (EntityTypes::EntityType type : { EntityTypes::Model, EntityTypes::Image, EntityTypes::Zone, EntityTypes::Grid, EntityTypes::Text,
-                                          EntityTypes::Web, EntityTypes::ParticleEffect, EntityTypes::PolyLine, EntityTypes::Light,
-                                          EntityTypes::Material, EntityTypes::Shape, EntityTypes::Gizmo, EntityTypes::Terrain,
-                                          EntityTypes::Track }) {
+    for (int type = EntityTypes::Box; type < EntityTypes::NUM_TYPES; ++type) {
+        if (type == EntityTypes::RemovedPolyVox) {
+            continue;
+        }
         QString where;
-        QVERIFY2(sameWritingEveryWay(sampleProperties(type), where), qPrintable(EntityTypes::getEntityTypeName(type) + ": " + where));
+        QVERIFY2(writesEveryWay(sampleProperties(static_cast<EntityTypes::EntityType>(type)), where), qPrintable(typeName(type) + ": " + where));
     }
-    // what a module sees: the keys in QtScript's order, not sorted
-    PlainScriptEngine plainEngine;
-    const QStringList names = sampleProperties(EntityTypes::Model).copyToScriptValue(&plainEngine, false).propertyNames();
+    // what a script sees: the keys in the order the properties are declared, not sorted
+    const QStringList names = writtenValue(sampleProperties(EntityTypes::Model), false).propertyNames();
     QVERIFY(names.indexOf("id") < names.indexOf("type") && names.indexOf("type") < names.indexOf("name"));
     QVERIFY(names.indexOf("name") < names.indexOf("position") && names.indexOf("position") < names.indexOf("modelURL"));
     QStringList sorted = names;
     sorted.sort();
     QVERIFY(names != sorted);
+    // every type's sample, every property and the non-defaults only, as recorded
+    QString where;
+    QVERIFY2(checkGolden("samples-everything.json", samplesText(false), where), qPrintable(where));
+    QVERIFY2(checkGolden("samples-nondefaults.json", samplesText(true), where), qPrintable(where));
 }
 
 void EntityPropertiesConversionTests::testReadingEdgeCases() {
@@ -357,23 +342,34 @@ void EntityPropertiesConversionTests::testReadingEdgeCases() {
         "{\"type\": \"ParticleEffect\", \"emitRate\": 10, \"emitOrientation\": {\"x\": 0, \"y\": 0, \"z\": 0, \"w\": 1}, \"particleRadius\": \"0.5\"}",
         "{}"
     };
+    // each input read (read-only honoured and not): stable, and what is read as recorded (the properties that
+    // are not at their defaults, which is what the input set)
+    QStringList lines;
     for (const QString& input : inputs) {
         QString where;
-        QVERIFY2(sameReading(input, true, where), qPrintable(input + ": " + where));
-        QVERIFY2(sameReading(input, false, where), qPrintable(input + " (read-only ignored): " + where));
+        QVariantMap first;
+        QVERIFY2(readsStably(input, true, where, &first), qPrintable(input + ": " + where));
+        QVERIFY2(readsStably(input, false, where), qPrintable(input + " (read-only ignored): " + where));
+        EntityItemProperties properties;
+        properties.copyFromScriptValue(scriptObject(input, where), true);
+        properties.setCreated(SAMPLE_CREATED);
+        QVariantMap nonDefaults = written(properties, true);
+        nonDefaults.remove("lastEdited");   // the clock
+        lines << input + " -> " + QString::fromUtf8(QJsonDocument::fromVariant(nonDefaults).toJson(QJsonDocument::Compact));
     }
+    QString where;
+    QVERIFY2(checkGolden("reading-edge-cases.txt", lines.join("\n") + "\n", where), qPrintable(where));
 }
 
 void EntityPropertiesConversionTests::testReadingWorldEntities() {
-    const QString path = QFileInfo(__FILE__).dir().filePath("../../../tests-manual/wasm-scripting/world.json");
-    QFile file(path);
-    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable("no test world at " + path));
+    QFile file(testWorldPath());
+    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable("no test world at " + testWorldPath()));
     const QJsonArray entities = QJsonDocument::fromJson(file.readAll()).object().value("Entities").toArray();
     QVERIFY(!entities.isEmpty());
     for (const QJsonValue& entity : entities) {
         const QString json = QString::fromUtf8(QJsonDocument(entity.toObject()).toJson(QJsonDocument::Compact));
         QString where;
-        QVERIFY2(sameReading(json, true, where), qPrintable(json.left(80) + ": " + where));
+        QVERIFY2(readsStably(json, true, where), qPrintable(json.left(80) + ": " + where));
     }
 }
 
@@ -381,12 +377,13 @@ void EntityPropertiesConversionTests::testReadingVariantMaps() {
     // what an avatar bookmark stores and reads back, and what the overlay conversion starts from: a full
     // property map as toVariant() gives it, for every entity type
     for (int type = EntityTypes::Box; type < EntityTypes::NUM_TYPES; ++type) {
-        QScriptEngine engine;
-        const QVariantMap written = sampleProperties((EntityTypes::EntityType)type).copyToScriptValue(&engine, false).toVariant().toMap();
-        const QString name = EntityTypes::getEntityTypeName((EntityTypes::EntityType)type);
+        if (type == EntityTypes::RemovedPolyVox) {
+            continue;
+        }
+        const QVariantMap map = written(sampleProperties(static_cast<EntityTypes::EntityType>(type)), false);
         QString where;
-        QVERIFY2(sameVariantReading(written, false, where), qPrintable(name + ": " + where));
-        QVERIFY2(sameVariantReading(written, true, where), qPrintable(name + " (read-only honoured): " + where));
+        QVERIFY2(readsVariantStably(map, false, where), qPrintable(typeName(type) + ": " + where));
+        QVERIFY2(readsVariantStably(map, true, where), qPrintable(typeName(type) + " (read-only honoured): " + where));
     }
 
     // an overlay's properties as the Overlays API gets them from a script: ints and doubles, maps for the vectors
@@ -413,90 +410,70 @@ void EntityPropertiesConversionTests::testReadingVariantMaps() {
     overlay["userData"] = QVariant();
     overlay["url"] = QUrl("https://example.invalid/model.glb");
     QString where;
-    QVERIFY2(sameVariantReading(overlay, true, where), qPrintable("overlay: " + where));
+    QVERIFY2(readsVariantStably(overlay, true, where), qPrintable("overlay: " + where));
+    EntityItemProperties shape;
+    shape.copyFromScriptValue(PlainScriptValue::fromVariant(overlay), true);
+    QCOMPARE(shape.getName(), QString("an overlay"));
+    QCOMPARE(shape.getPosition(), glm::vec3(1.0f, 2.5f, -3.0f));
+    QCOMPARE(shape.getColor(), glm::u8vec3(255, 128, 0));
+    QCOMPARE(shape.getParentJointIndex(), (quint16)65535);
     overlay["type"] = "PolyLine";
-    QVERIFY2(sameVariantReading(overlay, true, where), qPrintable("polyline overlay: " + where));
+    QVERIFY2(readsVariantStably(overlay, true, where), qPrintable("polyline overlay: " + where));
+    EntityItemProperties line;
+    line.copyFromScriptValue(PlainScriptValue::fromVariant(overlay), true);
+    QCOMPARE(line.getLinePoints().size(), 2);
+    QCOMPARE(line.getStrokeWidths(), QVector<float>({ 0.1f, 0.2f }));
 
     // the world file's entities as EntityTree::readFromMap gets them: QJsonDocument's variants, every number a double
-    const QString path = QFileInfo(__FILE__).dir().filePath("../../../tests-manual/wasm-scripting/world.json");
-    QFile file(path);
-    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable("no test world at " + path));
+    QFile file(testWorldPath());
+    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable("no test world at " + testWorldPath()));
     const QVariantList entities = QJsonDocument::fromJson(file.readAll()).toVariant().toMap().value("Entities").toList();
     QVERIFY(!entities.isEmpty());
     for (const QVariant& entity : entities) {
         const QVariantMap map = entity.toMap();
-        QVERIFY2(sameVariantReading(map, true, where), qPrintable(map.value("id").toString() + ": " + where));
-        QVERIFY2(sameVariantReading(map, false, where), qPrintable(map.value("id").toString() + " (read-only ignored): " + where));
+        QVERIFY2(readsVariantStably(map, true, where), qPrintable(map.value("id").toString() + ": " + where));
+        QVERIFY2(readsVariantStably(map, false, where), qPrintable(map.value("id").toString() + " (read-only ignored): " + where));
     }
 }
-
-namespace {
-
-// An entity's text in the entity server's world file: JSON.stringify(properties, null, '    ') of what
-// copyToScriptValue writes, which RecurseOctreeToJSONOperator had QtScript's own JSON.stringify produce; age
-// and ageAsText come from the clock and are taken out on both sides
-bool sameWorldFileText(const EntityItemProperties& properties, bool skipDefaults, QString& where) {
-    QScriptEngine engine;
-    PlainScriptEngine plainEngine;
-    QScriptValue script = properties.copyToScriptValue(&engine, skipDefaults);
-    PlainScriptValue plain = properties.copyToScriptValue(&plainEngine, skipDefaults);
-    for (const QString& name : { QString("age"), QString("ageAsText") }) {
-        script.setProperty(name, QScriptValue());
-        plain.setProperty(name, PlainScriptValue());
-    }
-    QScriptValue json = engine.globalObject().property("JSON");
-    const QString expected = json.property("stringify").call(json, QScriptValueList() << script << QScriptValue(QScriptValue::NullValue) << QScriptValue("    ")).toString();
-    const QString actual = plain.toJson("    ");
-    if (actual != expected) {
-        int at = 0;
-        while (at < actual.size() && at < expected.size() && actual.at(at) == expected.at(at)) {
-            ++at;
-        }
-        where = QString("differs at %1: ...%2... vs ...%3...").arg(at).arg(actual.mid(qMax(0, at - 40), 80)).arg(expected.mid(qMax(0, at - 40), 80));
-        return false;
-    }
-    if (expected.size() < 100) {
-        where = "too short to be an entity: " + expected;
-        return false;
-    }
-    return true;
-}
-
-}  // namespace
 
 void EntityPropertiesConversionTests::testWorldFileText() {
-    for (int type = EntityTypes::Box; type < EntityTypes::NUM_TYPES; ++type) {
-        const QString name = EntityTypes::getEntityTypeName((EntityTypes::EntityType)type);
-        QString where;
-        QVERIFY2(sameWorldFileText(sampleProperties((EntityTypes::EntityType)type), true, where), qPrintable(name + ": " + where));
-        QVERIFY2(sameWorldFileText(sampleProperties((EntityTypes::EntityType)type), false, where), qPrintable(name + " (defaults too): " + where));
-    }
-    // the test world's entities, as read for a load and written again as a live entity's are (one has a
-    // creation time; properties without one write nothing)
-    const QString path = QFileInfo(__FILE__).dir().filePath("../../../tests-manual/wasm-scripting/world.json");
-    QFile file(path);
-    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable("no test world at " + path));
+    // the test world's entities, as read for a load and written again as the world file writes a live entity's
+    // (without defaults), one recording
+    QFile file(testWorldPath());
+    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable("no test world at " + testWorldPath()));
     const QVariantList entities = QJsonDocument::fromJson(file.readAll()).toVariant().toMap().value("Entities").toList();
     QVERIFY(!entities.isEmpty());
+    PlainScriptValue all = PlainScriptValue::newArray();
+    int index = 0;
     for (const QVariant& entity : entities) {
         EntityItemProperties properties;
         properties.copyFromScriptValue(PlainScriptValue::fromVariant(entity.toMap()), false);
-        properties.setCreated(usecTimestampNow() - USECS_PER_SECOND);
-        QString where;
-        QVERIFY2(sameWorldFileText(properties, true, where), qPrintable(entity.toMap().value("id").toString() + ": " + where));
-        QVERIFY2(sameWorldFileText(properties, false, where), qPrintable(entity.toMap().value("id").toString() + " (defaults too): " + where));
+        properties.setCreated(SAMPLE_CREATED);
+        properties.setLastEdited(SAMPLE_CREATED);
+        const QString text = worldFileText(properties, true);
+        QVERIFY2(text.size() >= 100, qPrintable(entity.toMap().value("id").toString() + ": too short to be an entity: " + text));
+        all.setProperty(index++, writtenValue(properties, true));
     }
+    QString where;
+    QVERIFY2(checkGolden("world-file.json", all.toJson("    ") + "\n", where), qPrintable(where));
+    // the text is the writing's JSON, indented as the file is
+    const QString text = worldFileText(sampleProperties(EntityTypes::Box), true);
+    QVERIFY(text.startsWith("{\n    \"") && text.endsWith("\n}"));
+    QVERIFY(text.contains("\"name\": \"sample\""));
 }
 
 void EntityPropertiesConversionTests::testAvatarEntityBlobs() {
-    // propertiesToBlob and blobToProperties as they were, with a QScriptEngine, against the plain functions
+    // propertiesToBlob: the writing, as JSON, the avatar's own id replaced; blobToProperties reads it back
     const QUuid myAvatarID("{aaaaaaaa-0000-0000-0000-00000000000a}");
     for (int type = EntityTypes::Box; type < EntityTypes::NUM_TYPES; ++type) {
-        const QString name = EntityTypes::getEntityTypeName((EntityTypes::EntityType)type);
-        EntityItemProperties properties = sampleProperties((EntityTypes::EntityType)type);
+        if (type == EntityTypes::RemovedPolyVox) {
+            continue;
+        }
+        const QString name = typeName(type);
+        EntityItemProperties properties = sampleProperties(static_cast<EntityTypes::EntityType>(type));
         properties.setParentID(myAvatarID);
         for (bool allProperties : { false, true }) {
-            QScriptEngine engine;
+            PlainScriptEngine engine;
             QVariant variantProperties = properties.copyToScriptValue(&engine, !allProperties).toVariant();
             QJsonObject jsonObject = QJsonDocument::fromVariant(variantProperties).object();
             if (jsonObject.contains("parentID") && QUuid(jsonObject["parentID"].toString()) == myAvatarID) {
@@ -508,29 +485,25 @@ void EntityPropertiesConversionTests::testAvatarEntityBlobs() {
 
             QByteArray blob;
             EntityItemProperties::propertiesToBlob(myAvatarID, properties, blob, allProperties);
-            QJsonObject written = QJsonDocument::fromJson(blob).object();
-            written.remove("age");
-            written.remove("ageAsText");
-            const QByteArray actual = QJsonDocument(written).toJson(QJsonDocument::Compact);
+            QJsonObject blobObject = QJsonDocument::fromJson(blob).object();
+            blobObject.remove("age");
+            blobObject.remove("ageAsText");
+            const QByteArray actual = QJsonDocument(blobObject).toJson(QJsonDocument::Compact);
             QVERIFY2(actual == expected, qPrintable(name + ": " + actual.left(200) + " vs " + expected.left(200)));
-            QVERIFY2(written["parentID"].toString() == AVATAR_SELF_ID.toString(), qPrintable(name + ": the avatar's own id is not replaced"));
+            QVERIFY2(blobObject["parentID"].toString() == AVATAR_SELF_ID.toString(), qPrintable(name + ": the avatar's own id is not replaced"));
 
-            // and read back both ways
-            EntityItemProperties fromScript;
-            QVariantMap map = QJsonDocument::fromJson(blob).toVariant().toMap();
-            fromScript.copyFromScriptValue(variantMapToScriptValue(map, engine), false);
-            EntityItemProperties fromPlain;
-            QVERIFY2(EntityItemProperties::blobToProperties(blob, fromPlain), qPrintable(name + ": the blob does not read"));
-            QVariantMap a = fromScript.copyToScriptValue(&engine, false, true).toVariant().toMap();
-            QVariantMap b = fromPlain.copyToScriptValue(&engine, false, true).toVariant().toMap();
-            stripClock(a);
-            stripClock(b);
-            // lastEdited is the clock at the end of each reading (and setLastEdited clamps to the creation time,
-            // which both paths read through a float, as variantToScriptValue reads a 64-bit integer: a known quirk)
-            a.remove("lastEdited");
+            // and read back: what blobToProperties gives is what reading the blob's map gives
+            EntityItemProperties fromMap;
+            fromMap.copyFromScriptValue(PlainScriptValue::fromVariant(QJsonDocument::fromJson(blob).toVariant().toMap()), false);
+            EntityItemProperties fromBlob;
+            QVERIFY2(EntityItemProperties::blobToProperties(blob, fromBlob), qPrintable(name + ": the blob does not read"));
+            QVariantMap a = written(fromMap, false);
+            QVariantMap b = written(fromBlob, false);
+            a.remove("lastEdited");   // the clock at the end of each reading
             b.remove("lastEdited");
             QString where;
             QVERIFY2(sameVariant(a, b, where), qPrintable(name + ": " + where));
+            QCOMPARE(fromBlob.getName(), QString("sample"));
         }
     }
     EntityItemProperties none;
@@ -540,33 +513,31 @@ void EntityPropertiesConversionTests::testAvatarEntityBlobs() {
 }
 
 void EntityPropertiesConversionTests::testRoundTrip() {
-    // what QtScript writes for an entity with values, read back both ways, as a script's full property map is
+    // what is written for an entity with values, read back as a script's full property map is
     for (EntityTypes::EntityType type : { EntityTypes::Model, EntityTypes::Image, EntityTypes::Zone, EntityTypes::Text, EntityTypes::Shape }) {
-        QScriptEngine engine;
-        const QScriptValue written = sampleProperties(type).copyToScriptValue(&engine, false);
-        const QString json = QString::fromUtf8(QJsonDocument::fromVariant(written.toVariant()).toJson(QJsonDocument::Compact));
+        const QVariantMap map = written(sampleProperties(type), false);
+        const QString json = QString::fromUtf8(QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact));
         QString where;
-        QVERIFY2(sameReading(json, true, where), qPrintable(EntityTypes::getEntityTypeName(type) + ": " + where));
-        QVERIFY2(sameReading(json, false, where), qPrintable(EntityTypes::getEntityTypeName(type) + " (read-only ignored): " + where));
+        QVariantMap first;
+        QVERIFY2(readsStably(json, true, where, &first), qPrintable(EntityTypes::getEntityTypeName(type) + ": " + where));
+        QVERIFY2(readsStably(json, false, where), qPrintable(EntityTypes::getEntityTypeName(type) + " (read-only ignored): " + where));
+        QCOMPARE(first.value("name").toString(), QString("sample"));
+        QCOMPARE(first.value("position").toMap().value("y").toDouble(), -2.0);
     }
-    // what a module writes, read the plain way, is what QtScript reads from the same object
-    PlainScriptEngine plainEngine;
-    const PlainScriptValue plain = sampleProperties(EntityTypes::Model).copyToScriptValue(&plainEngine, false);
+    // what a script writes, crossed as CBOR and read back, is what reading the value directly gives
+    const PlainScriptValue plain = writtenValue(sampleProperties(EntityTypes::Model), false);
     const PlainScriptValue back = PlainScriptValue::fromCbor(plain.toCbor());
-    EntityItemProperties fromPlain;
-    fromPlain.copyFromScriptValue(back, true);
-    QScriptEngine engine;
-    EntityItemProperties fromScript;
-    fromScript.copyFromScriptValue(engine.toScriptValue(plain.toVariant()), true);
-    fromPlain.setLastEdited(fromScript.getLastEdited());
-    QVariantMap a = fromScript.copyToScriptValue(&engine, false, true).toVariant().toMap();
-    QVariantMap b = fromPlain.copyToScriptValue(&engine, false, true).toVariant().toMap();
-    stripClock(a);
-    stripClock(b);
+    EntityItemProperties fromCbor;
+    fromCbor.copyFromScriptValue(back, true);
+    EntityItemProperties direct;
+    direct.copyFromScriptValue(plain, true);
+    fromCbor.setLastEdited(direct.getLastEdited());
+    const QVariantMap a = written(direct, false);
+    const QVariantMap b = written(fromCbor, false);
     QString where;
     QVERIFY2(sameVariant(a, b, where), qPrintable(where));
     QVERIFY(a.value("name").toString() == "sample" && a.value("modelURL").toString() == "https://example.invalid/model.glb");
-    // scripts off (not the default) comes through both ways
+    // scripts off (not the default) comes through
     QVERIFY(a.contains("scriptsEnabled") && !a.value("scriptsEnabled").toBool() && !b.value("scriptsEnabled").toBool());
 }
 
@@ -624,16 +595,18 @@ bool sameValues(const QVariantMap& expected, const QVariantMap& actual, const QS
 }  // namespace
 
 void EntityPropertiesConversionTests::testVehiclesAndTracks() {
-    // what physics asked for (10-18): a round trip through copyToScriptValue and copyFromScriptValue, QtScript and
-    // plain, identical, for an entity with every vehicle property set and a Track with its train properties
+    // what physics asked for (10-18): a round trip through copyToScriptValue and copyFromScriptValue for an entity
+    // with every vehicle property set and a Track with its train properties, every value back, and the writing as
+    // recorded (physics' train properties over the wire are checked by the correction trace; this is their text)
     struct Sample {
         const char* name;
+        const char* recording;
         const char* json;
         QStringList properties;  // each set to a value that is not its default, each to come back
     };
     const Sample samples[] = {
-        { "a car on a track", VEHICLE_ON_A_TRACK, { "trackID", "trackOffset", "vehicle" } },
-        { "a track with a train", TRACK_WITH_A_TRAIN,
+        { "a car on a track", "vehicle-on-a-track.json", VEHICLE_ON_A_TRACK, { "trackID", "trackOffset", "vehicle" } },
+        { "a track with a train", "track-with-a-train.json", TRACK_WITH_A_TRAIN,
           { "trackPoints", "trackBank", "trackDwell", "trackClosed", "trackSpeed", "trackAcceleration", "trainDistance",
             "trainSpeed", "trainReversed", "trainDwell", "trainStation", "trainTime", "trackProfile", "trackWidth",
             "trackHeight", "trackClearance", "trackPylonSpacing", "trackPylonFloor" } },
@@ -642,16 +615,16 @@ void EntityPropertiesConversionTests::testVehiclesAndTracks() {
     QVERIFY(vehicleProperties > 0);
     for (const Sample& sample : samples) {
         const QString name(sample.name);
-        QScriptEngine engine;
-        PlainScriptEngine plainEngine;
-        const QScriptValue input = engine.evaluate(QString("(") + sample.json + ")");
-        QVERIFY2(!engine.hasUncaughtException(), qPrintable(name + ": " + engine.uncaughtException().toString()));
+        QString where;
+        const PlainScriptValue input = scriptObject(sample.json, where);
+        QVERIFY2(input.isValid(), qPrintable(name + ": " + where));
         EntityItemProperties properties;
         properties.copyFromScriptValue(input, false);
-        properties.setCreated(usecTimestampNow() - USECS_PER_SECOND);
+        properties.setCreated(SAMPLE_CREATED);
+        properties.setLastEdited(SAMPLE_CREATED);
 
         // every property set: the writing without defaults carries each one, and all of the vehicle's
-        const QVariantMap nonDefaults = properties.copyToScriptValue(&engine, true).toVariant().toMap();
+        const QVariantMap nonDefaults = written(properties, true);
         for (const QString& property : sample.properties) {
             QVERIFY2(nonDefaults.contains(property), qPrintable(name + ": " + property + " is at its default"));
         }
@@ -660,46 +633,41 @@ void EntityPropertiesConversionTests::testVehiclesAndTracks() {
             QVERIFY2(vehicle.size() == vehicleProperties,
                      qPrintable(name + QString(": %1 of the %2 vehicle properties set").arg(vehicle.size()).arg(vehicleProperties)));
         }
+        QVERIFY2(writesEveryWay(properties, where), qPrintable(name + ": " + where));
 
-        // written both ways, every way: the same
-        QString where;
-        QVERIFY2(sameWritingEveryWay(properties, where), qPrintable(name + ": " + where));
-
-        // the round trip on each path: written and read back by QtScript, written and read back as plain values;
-        // the same properties come back on both, and they are the values set
-        const QScriptValue scriptWritten = properties.copyToScriptValue(&engine, false);
-        const PlainScriptValue plainWritten = properties.copyToScriptValue(&plainEngine, false);
+        // the round trip: written and read back, the same properties come back, and they are the values set
+        const PlainScriptValue plainWritten = writtenValue(properties, false);
         for (bool honorReadOnly : { false, true }) {
-            EntityItemProperties viaScript;
-            EntityItemProperties viaPlain;
-            viaScript.copyFromScriptValue(scriptWritten, honorReadOnly);
-            viaPlain.copyFromScriptValue(plainWritten, honorReadOnly);
-            viaPlain.setLastEdited(viaScript.getLastEdited());
-            QVariantMap a = viaScript.copyToScriptValue(&engine, false, true).toVariant().toMap();
-            QVariantMap b = viaPlain.copyToScriptValue(&engine, false, true).toVariant().toMap();
-            stripClock(a);
-            stripClock(b);
+            EntityItemProperties back;
+            back.copyFromScriptValue(plainWritten, honorReadOnly);
+            back.setLastEdited(SAMPLE_CREATED);
+            const QVariantMap again = written(back, false);
             const QString way = name + (honorReadOnly ? " (read-only honoured)" : "");
-            QVERIFY2(sameVariant(a, b, where), qPrintable(way + ": " + where));
-            QVERIFY2(sameValues(nonDefaults, a, sample.properties, where), qPrintable(way + ", the values back: " + where));
+            QVERIFY2(sameValues(nonDefaults, again, sample.properties, where), qPrintable(way + ", the values back: " + where));
+            QVariantMap before = written(properties, false);
+            QVariantMap after = again;
+            for (const char* clock : { "created", "lastEdited" }) {   // the times cross as numbers, read back as the clock sets them
+                before.remove(clock);
+                after.remove(clock);
+            }
+            QVERIFY2(sameVariant(before, after, where), qPrintable(way + ", everything back: " + where));
         }
 
-        // the readers outside scripting (a world file's entity, avatar-entity data, a bookmark), a script's object
-        // as text, and the world file's text
-        const QVariantMap written = scriptWritten.toVariant().toMap();
-        QVERIFY2(sameVariantReading(written, false, where), qPrintable(name + ", read as a world file reads it: " + where));
-        QVERIFY2(sameVariantReading(written, true, where), qPrintable(name + ", read as a bookmark reads it: " + where));
-        const QString json = QString::fromUtf8(QJsonDocument::fromVariant(written).toJson(QJsonDocument::Compact));
-        QVERIFY2(sameReading(json, true, where), qPrintable(name + ", read as a script's object: " + where));
-        QVERIFY2(sameWorldFileText(properties, true, where), qPrintable(name + ", the world file's text: " + where));
-        QVERIFY2(sameWorldFileText(properties, false, where), qPrintable(name + ", the world file's text, defaults too: " + where));
+        // the readers outside scripting (a world file's entity, avatar-entity data, a bookmark) and a script's object as text
+        const QVariantMap map = written(properties, false);
+        QVERIFY2(readsVariantStably(map, false, where), qPrintable(name + ", read as a world file reads it: " + where));
+        QVERIFY2(readsVariantStably(map, true, where), qPrintable(name + ", read as a bookmark reads it: " + where));
+        const QString json = QString::fromUtf8(QJsonDocument::fromVariant(map).toJson(QJsonDocument::Compact));
+        QVERIFY2(readsStably(json, true, where), qPrintable(name + ", read as a script's object: " + where));
+        // the writing's text, as recorded
+        QVERIFY2(checkGolden(sample.recording, worldFileText(properties, true) + "\n", where), qPrintable(where));
     }
 }
 
 void EntityPropertiesConversionTests::testWorldFiles() {
     // whole worlds as an entity server keeps them (models.json.gz, or the JSON), named in SCRIPT_VALUES_TEST_WORLDS
     // (paths separated by ':'): every entity read as EntityTree::readFromMap reads one, and written as the world
-    // file and an export write one, on QtScript and on the plain path, compared; skipped when the variable names none
+    // file and an export write one; skipped when the variable names none
     const QStringList paths = QString::fromLocal8Bit(qgetenv("SCRIPT_VALUES_TEST_WORLDS")).split(':', Qt::SkipEmptyParts);
     if (paths.isEmpty()) {
         QSKIP("SCRIPT_VALUES_TEST_WORLDS names no world files");
@@ -720,45 +688,38 @@ void EntityPropertiesConversionTests::testWorldFiles() {
             const QVariantMap map = entity.toMap();
             const QString at = path + " " + map.value("id").toString() + ": ";
             QString where;
-            // the load: read-only properties read too, as EntityItemPropertiesFromScriptValueIgnoreReadOnly does
-            QVERIFY2(sameVariantReading(map, false, where), qPrintable(at + where));
+            // the load: read-only properties read too, as the world file's reader does
+            QVERIFY2(readsVariantStably(map, false, where), qPrintable(at + where));
             // the save: the properties read, written as the world file (without defaults) and as an export
-            // (without defaults, or every property) write them
+            // (without defaults, or every property)
             EntityItemProperties properties;
             properties.copyFromScriptValue(PlainScriptValue::fromVariant(map), false);
             if (properties.getCreated() == UNKNOWN_CREATED_TIME) {
-                properties.setCreated(usecTimestampNow() - USECS_PER_SECOND);
+                properties.setCreated(SAMPLE_CREATED);
             }
-            QVERIFY2(sameWorldFileText(properties, true, where), qPrintable(at + "the world file's text: " + where));
-            QVERIFY2(sameWriting(properties, true, false, false, EntityPsuedoPropertyFlags(), where), qPrintable(at + "an export: " + where));
-            QVERIFY2(sameWriting(properties, false, false, false, EntityPsuedoPropertyFlags(), where), qPrintable(at + "an export of every property: " + where));
+            QVERIFY2(worldFileText(properties, true).size() >= 100, qPrintable(at + "the world file's text is too short"));
+            QVERIFY2(!written(properties, true).isEmpty(), qPrintable(at + "an export writes nothing"));
+            QVERIFY2(!written(properties, false).isEmpty(), qPrintable(at + "an export of every property writes nothing"));
             types[map.value("type").toString()]++;
         }
         QStringList counts;
         for (auto it = types.cbegin(); it != types.cend(); ++it) {
             counts << QString("%1 %2").arg(it.value()).arg(it.key());
         }
-        qInfo().noquote() << path << "-" << entities.size() << "entities, the same on both paths:" << counts.join(", ");
+        qInfo().noquote() << path << "-" << entities.size() << "entities read and written:" << counts.join(", ");
     }
 }
 
 void EntityPropertiesConversionTests::benchmarkOverlayConversions_data() {
     QTest::addColumn<bool>("edit");
-    QTest::addColumn<int>("way");
-    QTest::newRow("an overlay edit, QtScript, an engine made per call") << true << 0;
-    QTest::newRow("an overlay edit, QtScript, one engine kept") << true << 1;
-    QTest::newRow("an overlay edit, plain values") << true << 2;
-    QTest::newRow("an overlay read, QtScript, an engine made per call") << false << 0;
-    QTest::newRow("an overlay read, QtScript, one engine kept") << false << 1;
-    QTest::newRow("an overlay read, plain values") << false << 2;
+    QTest::newRow("an overlay edit") << true;
+    QTest::newRow("an overlay read") << false;
 }
 
 void EntityPropertiesConversionTests::benchmarkOverlayConversions() {
     // the cost of what Overlays does for every addOverlay and editOverlay (an overlay's properties to an entity's)
-    // and every getProperty (an entity's to an overlay's), in each of the three ways it has had: a QScriptEngine
-    // made for each call, one kept per thread, and plain values with no engine
+    // and every getProperty (an entity's to an overlay's)
     QFETCH(bool, edit);
-    QFETCH(int, way);
     QVariantMap overlay;
     overlay["type"] = "Shape";
     overlay["shape"] = "Cube";
@@ -771,31 +732,15 @@ void EntityPropertiesConversionTests::benchmarkOverlayConversions() {
     overlay["ignorePickIntersection"] = true;
     overlay["parentID"] = "{1a2b3c4d-0000-0000-0000-000000000001}";
     const EntityItemProperties entity = sampleProperties(EntityTypes::Shape);
-    QScriptEngine kept;
     int written = 0;
     QBENCHMARK {
         if (edit) {
             EntityItemProperties properties;
-            if (way == 2) {
-                properties.copyFromScriptValue(PlainScriptValue::fromVariant(overlay), true);
-            } else {
-                QScriptEngine perCall;
-                QScriptEngine& engine = way == 1 ? kept : perCall;
-                QVariantMap input = overlay;
-                EntityItemPropertiesFromScriptValueHonorReadOnly(variantMapToScriptValue(input, engine), properties);
-            }
+            properties.copyFromScriptValue(PlainScriptValue::fromVariant(overlay), true);
             written += properties.getVisible() ? 1 : 0;
         } else {
-            QVariantMap map;
-            if (way == 2) {
-                PlainScriptEngine plainEngine;
-                map = entity.copyToScriptValue(&plainEngine, false).toVariant().toMap();
-            } else {
-                QScriptEngine perCall;
-                QScriptEngine& engine = way == 1 ? kept : perCall;
-                map = EntityItemPropertiesToScriptValue(&engine, entity).toVariant().toMap();
-            }
-            written += map.size();
+            PlainScriptEngine plainEngine;
+            written += entity.copyToScriptValue(&plainEngine, false).toVariant().toMap().size();
         }
     }
     QVERIFY(written > 0);

@@ -35,13 +35,19 @@ macro(PACKAGE_LIBRARIES_FOR_DEPLOYMENT)
       message(FATAL_ERROR "Could not find windeployqt at ${QT_DIR}/bin. windeployqt is required.")
     endif ()
 
+    # Qt 6 has no ANGLE, and its windeployqt refuses the option
+    set(WINDEPLOYQT_NO_ANGLE "--no-angle")
+    if (QT_VERSION_MAJOR GREATER_EQUAL 6)
+      set(WINDEPLOYQT_NO_ANGLE "")
+    endif()
+
     # add a post-build command to call windeployqt to copy Qt plugins
     add_custom_command(
       TARGET ${TARGET_NAME}
       POST_BUILD
       COMMAND CMD /C "SET PATH=${QT_DIR}/bin;%PATH% && ${WINDEPLOYQT_COMMAND}\
        ${EXTRA_DEPLOY_OPTIONS} $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>>:--release>\
-       --no-compiler-runtime --no-opengl-sw --no-angle -no-system-d3d-compiler \"$<TARGET_FILE:${TARGET_NAME}>\""
+       --no-compiler-runtime --no-opengl-sw ${WINDEPLOYQT_NO_ANGLE} -no-system-d3d-compiler \"$<TARGET_FILE:${TARGET_NAME}>\""
     )
 
     set(QTAUDIO_PATH "$<TARGET_FILE_DIR:${TARGET_NAME}>/audio")

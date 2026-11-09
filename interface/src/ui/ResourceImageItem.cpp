@@ -13,6 +13,9 @@
 #include <gl/Config.h>
 #include <gl/GLHelpers.h>
 #include <QOpenGLFramebufferObjectFormat>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtQuick/QQuickOpenGLUtils>
+#endif
 #include <QOpenGLShaderProgram>
 
 #include <plugins/DisplayPlugin.h>
@@ -162,5 +165,9 @@ void ResourceImageItemRenderer::render() {
         _fboMutex.unlock();
     }
     glFlush();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QQuickOpenGLUtils::resetOpenGLState();   // QQuickWindow's is gone in Qt 6
+#else
     _window->resetOpenGLState();
+#endif
 }

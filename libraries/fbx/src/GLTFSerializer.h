@@ -807,7 +807,7 @@ public:
     MediaType getMediaType() const override;
     std::unique_ptr<hfm::Serializer::Factory> getFactory() const override;
 
-    HFMModel::Pointer read(const hifi::ByteArray& data, const hifi::VariantHash& mapping, const hifi::URL& url = hifi::URL()) override;
+    HFMModel::Pointer read(const hifi::ByteArray& data, const hifi::VariantMultiHash& mapping, const hifi::URL& url = hifi::URL()) override;
 private:
     GLTFFile _file;
     hifi::URL _url;
@@ -817,7 +817,7 @@ private:
     void getSkinInverseBindMatrices(std::vector<std::vector<float>>& inverseBindMatrixValues);
     void generateTargetData(int index, float weight, QVector<glm::vec3>& returnVector);
 
-    bool buildGeometry(HFMModel& hfmModel, const hifi::VariantHash& mapping, const hifi::URL& url);
+    bool buildGeometry(HFMModel& hfmModel, const hifi::VariantMultiHash& mapping, const hifi::URL& url);
     bool parseGLTF(const hifi::ByteArray& data);
     
     bool getStringVal(const QJsonObject& object, const QString& fieldname, 

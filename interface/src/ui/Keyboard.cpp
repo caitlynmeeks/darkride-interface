@@ -324,7 +324,8 @@ void Keyboard::setRaised(bool raised) {
 
 void Keyboard::addIncludeItemsToMallets() {
     if (_layerIndex >= 0 && _layerIndex < (int)_keyboardLayers.size()) {
-        QVector<QUuid> includeItems = _keyboardLayers[_layerIndex].keys().toVector();
+        const auto keys = _keyboardLayers[_layerIndex].keys();
+        QVector<QUuid> includeItems(keys.begin(), keys.end());   // QList::toVector is gone in Qt 6
         auto pointerManager = DependencyManager::get<PointerManager>();
         pointerManager->setIncludeItems(_leftHandStylus, includeItems);
         pointerManager->setIncludeItems(_rightHandStylus, includeItems);
@@ -815,7 +816,8 @@ void Keyboard::loadKeyboardFile(const QString& keyboardFile) {
             const QJsonValue& keyboardLayer = keyboardLayers[keyboardLayerIndex].toArray();
 
             QHash<QUuid, Key> keyboardLayerKeys;
-            foreach (const QJsonValue& keyboardKeyValue, keyboardLayer.toArray()) {
+            const QJsonArray layerKeys = keyboardLayer.toArray();
+            for (const QJsonValue& keyboardKeyValue : layerKeys) {
 
                 QVariantMap textureMap;
                 if (!keyboardKeyValue["texture"].isNull()) {

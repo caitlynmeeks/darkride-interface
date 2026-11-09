@@ -13,7 +13,6 @@
 
 #include <stdint.h>
 
-#include <QtScript/QScriptEngine>
 
 #include <PulseMode.h>
 

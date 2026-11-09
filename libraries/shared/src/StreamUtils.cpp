@@ -68,32 +68,32 @@ QDataStream& operator>>(QDataStream& in, glm::quat& quaternion) {
 #ifndef QT_NO_DEBUG_STREAM
 #include <QDebug>
 
-QDebug& operator<<(QDebug& dbg, const glm::vec2& v) {
+QDebug& glm::operator<<(QDebug& dbg, const glm::vec2& v) {
     dbg.nospace() << '(' << v.x << ", " << v.y << ')';
     return dbg;
 }
 
-QDebug& operator<<(QDebug& dbg, const glm::vec3& v) {
+QDebug& glm::operator<<(QDebug& dbg, const glm::vec3& v) {
     dbg.nospace() << '(' << v.x << ", " << v.y << ", " << v.z << ')';
     return dbg;
 }
 
-QDebug& operator<<(QDebug& dbg, const glm::u8vec3& v) {
+QDebug& glm::operator<<(QDebug& dbg, const glm::u8vec3& v) {
     dbg.nospace() << '(' << v.x << ", " << v.y << ", " << v.z << ')';
     return dbg;
 }
 
-QDebug& operator<<(QDebug& dbg, const glm::vec4& v) {
+QDebug& glm::operator<<(QDebug& dbg, const glm::vec4& v) {
     dbg.nospace() << '(' << v.x << ", " << v.y << ", " << v.z << ", " << v.w << ')';
     return dbg;
 }
 
-QDebug& operator<<(QDebug& dbg, const glm::quat& q) {
+QDebug& glm::operator<<(QDebug& dbg, const glm::quat& q) {
     dbg.nospace() << '(' << q.x << ", " << q.y << ", " << q.z << ", " << q.w << ')';
     return dbg;
 }
 
-QDebug& operator<<(QDebug& dbg, const glm::mat4& m) {
+QDebug& glm::operator<<(QDebug& dbg, const glm::mat4& m) {
     dbg.nospace() << '[';
     for (int j = 0; j < 4; ++j) {
         dbg << ' ' << m[0][j] << ' ' << m[1][j] << ' ' << m[2][j] << ' ' << m[3][j] << ';';

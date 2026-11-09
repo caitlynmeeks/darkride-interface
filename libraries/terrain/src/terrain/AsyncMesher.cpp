@@ -69,11 +69,15 @@ int AsyncMesher::submit(VoxelGrid& grid) {
             continue;
         }
         std::shared_ptr<Shared> shared = _shared;
+        std::shared_ptr<const Finisher> finisher = _finisher;
         const uint32_t generation = _generation;
-        _pool->start([shared, samples, generation] {
+        _pool->start([shared, samples, generation, finisher] {
             Result result;
             result.key = samples->getKey();
             result.mesh = meshChunk(*samples);
+            if (finisher && !result.mesh.isEmpty()) {
+                result.attachment = (*finisher)(result.mesh);
+            }
             std::lock_guard<std::mutex> lock(shared->mutex);
             if (shared->generation == generation) {
                 shared->results.push_back(std::move(result));
@@ -83,19 +87,30 @@ int AsyncMesher::submit(VoxelGrid& grid) {
     return started;
 }
 
-void AsyncMesher::submitSamples(std::shared_ptr<const ChunkSamples> samples, uint64_t tag, int priority) {
+void AsyncMesher::submitSampler(const ChunkKey& key, std::function<bool(ChunkSamples&)> sampler, uint64_t tag, int priority) {
     std::shared_ptr<Shared> shared = _shared;
+    std::shared_ptr<const Finisher> finisher = _finisher;
     const uint32_t generation = _generation;
-    _pool->start([shared, samples, generation, tag] {
+    _pool->start([shared, key, sampler = std::move(sampler), generation, tag, finisher] {
         Result result;
-        result.key = samples->getKey();
+        result.key = key;
         result.tag = tag;
-        result.mesh = meshChunk(*samples);
+        ChunkSamples samples;
+        if (sampler(samples) && !samples.isOneSided()) {
+            result.mesh = meshChunk(samples);
+            if (finisher && !result.mesh.isEmpty()) {
+                result.attachment = (*finisher)(result.mesh);
+            }
+        }
         std::lock_guard<std::mutex> lock(shared->mutex);
         if (shared->generation == generation) {
             shared->results.push_back(std::move(result));
         }
     }, priority);
+}
+
+void AsyncMesher::setFinisher(const Finisher& finisher) {
+    _finisher = finisher ? std::make_shared<const Finisher>(finisher) : nullptr;
 }
 
 std::vector<AsyncMesher::Result> AsyncMesher::collect() {

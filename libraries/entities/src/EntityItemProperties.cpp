@@ -420,7 +420,7 @@ QString getCollisionGroupAsString(uint16_t group) {
     return "";
 }
 
-uint16_t getCollisionGroupAsBitMask(const QStringRef& name) {
+uint16_t getCollisionGroupAsBitMask(QStringView name) {   // QStringRef is gone in Qt 6; a view works on both
     if (0 == name.compare(QString("dynamic"))) {
         return USER_COLLISION_GROUP_DYNAMIC;
     } else if (0 == name.compare(QString("static"))) {
@@ -448,7 +448,7 @@ QString EntityItemProperties::getCollisionMaskAsString() const {
 }
 
 void EntityItemProperties::setCollisionMaskFromString(const QString& maskString) {
-    QVector<QStringRef> groups = maskString.splitRef(',');
+    const auto groups = QStringView(maskString).split(',');
     uint16_t mask = 0x0000;
     for (auto groupName : groups) {
         mask |= getCollisionGroupAsBitMask(groupName);
@@ -2136,11 +2136,6 @@ Value EntityItemProperties::copyToScriptValueOf(Engine* engine, bool skipDefault
     return properties;
 }
 
-QScriptValue EntityItemProperties::copyToScriptValue(QScriptEngine* engine, bool skipDefaults, bool allowUnknownCreateTime,
-    bool strictSemantics, EntityPsuedoPropertyFlags psueudoPropertyFlags) const {
-    return copyToScriptValueOf<QScriptValue>(engine, skipDefaults, allowUnknownCreateTime, strictSemantics, psueudoPropertyFlags);
-}
-
 PlainScriptValue EntityItemProperties::copyToScriptValue(PlainScriptEngine* engine, bool skipDefaults, bool allowUnknownCreateTime,
     bool strictSemantics, EntityPsuedoPropertyFlags psueudoPropertyFlags) const {
     return copyToScriptValueOf<PlainScriptValue>(engine, skipDefaults, allowUnknownCreateTime, strictSemantics, psueudoPropertyFlags);
@@ -2462,10 +2457,6 @@ void EntityItemProperties::copyFromScriptValueOf(const Value& object, bool honor
     _lastEdited = usecTimestampNow();
 }
 
-void EntityItemProperties::copyFromScriptValue(const QScriptValue& object, bool honorReadOnly) {
-    copyFromScriptValueOf(object, honorReadOnly);
-}
-
 void EntityItemProperties::copyFromScriptValue(const PlainScriptValue& object, bool honorReadOnly) {
     copyFromScriptValueOf(object, honorReadOnly);
 }
@@ -2725,62 +2716,9 @@ void EntityItemProperties::merge(const EntityItemProperties& other) {
     _lastEdited = usecTimestampNow();
 }
 
-QScriptValue EntityItemPropertiesToScriptValue(QScriptEngine* engine, const EntityItemProperties& properties) {
-    return properties.copyToScriptValue(engine, false);
-}
-
-QScriptValue EntityItemNonDefaultPropertiesToScriptValue(QScriptEngine* engine, const EntityItemProperties& properties) {
-    return properties.copyToScriptValue(engine, true);
-}
-
-void EntityItemPropertiesFromScriptValueIgnoreReadOnly(const QScriptValue &object, EntityItemProperties& properties) {
-    properties.copyFromScriptValue(object, false);
-}
-
-void EntityItemPropertiesFromScriptValueHonorReadOnly(const QScriptValue &object, EntityItemProperties& properties) {
-    properties.copyFromScriptValue(object, true);
-}
-
-QScriptValue EntityPropertyFlagsToScriptValue(QScriptEngine* engine, const EntityPropertyFlags& flags) {
-    return EntityItemProperties::entityPropertyFlagsToScriptValue(engine, flags);
-}
-
-void EntityPropertyFlagsFromScriptValue(const QScriptValue& object, EntityPropertyFlags& flags) {
-    EntityItemProperties::entityPropertyFlagsFromScriptValue(object, flags);
-}
-
-
-QScriptValue EntityItemProperties::entityPropertyFlagsToScriptValue(QScriptEngine* engine, const EntityPropertyFlags& flags) {
-    QScriptValue result = engine->newObject();
-    return result;
-}
 
 // A property's name ("position", "grab.grabbable") names one flag; a group's name alone ("grab", "vehicle") names every
 // property of the group, so a script can ask Entities.getEntityProperties(id, ["vehicle"]) for the whole group.
-static void addPropertyFlagsByName(const QString& name, EntityPropertyFlags& flags) {
-    EntityPropertyInfo propertyInfo;
-    if (EntityItemProperties::getPropertyInfo(name, propertyInfo)) {
-        flags << propertyInfo.propertyEnum;
-        return;
-    }
-    if (!name.contains('.')) {
-        for (EntityPropertyList property : EntityItemProperties::getPropertiesOfGroup(name)) {
-            flags << property;
-        }
-    }
-}
-
-void EntityItemProperties::entityPropertyFlagsFromScriptValue(const QScriptValue& object, EntityPropertyFlags& flags) {
-    if (object.isString()) {
-        addPropertyFlagsByName(object.toString(), flags);
-    }
-    else if (object.isArray()) {
-        quint32 length = object.property("length").toInt32();
-        for (quint32 i = 0; i < length; i++) {
-            addPropertyFlagsByName(object.property(i).toString(), flags);
-        }
-    }
-}
 
 static QHash<QString, EntityPropertyInfo> _propertyInfos;
 static QHash<EntityPropertyList, QString> _enumsToPropertyStrings;
@@ -3259,19 +3197,6 @@ QList<EntityPropertyList> EntityItemProperties::getPropertiesOfGroup(const QStri
  * @property {string} minimum - The minimum numerical value the property may have, if available, otherwise <code>""</code>.
  * @property {string} maximum - The maximum numerical value the property may have, if available, otherwise <code>""</code>.
  */
-QScriptValue EntityPropertyInfoToScriptValue(QScriptEngine* engine, const EntityPropertyInfo& propertyInfo) {
-    QScriptValue obj = engine->newObject();
-    obj.setProperty("propertyEnum", propertyInfo.propertyEnum);
-    obj.setProperty("minimum", propertyInfo.minimum.toString());
-    obj.setProperty("maximum", propertyInfo.maximum.toString());
-    return obj;
-}
-
-void EntityPropertyInfoFromScriptValue(const QScriptValue& object, EntityPropertyInfo& propertyInfo) {
-    propertyInfo.propertyEnum = (EntityPropertyList)object.property("propertyEnum").toVariant().toUInt();
-    propertyInfo.minimum = object.property("minimum").toVariant();
-    propertyInfo.maximum = object.property("maximum").toVariant();
-}
 
 // TODO: Implement support for edit packets that can span an MTU sized buffer. We need to implement a mechanism for the
 //       encodeEntityEditPacket() method to communicate the the caller which properties couldn't fit in the buffer. Similar
@@ -3769,7 +3694,7 @@ OctreeElement::AppendState EntityItemProperties::encodeEntityEditPacket(PacketTy
         int finalizedSize = packetData->getFinalizedSize();
 
         if (finalizedSize <= buffer.size()) {
-            buffer.replace(0, finalizedSize, finalizedData, finalizedSize);
+            memcpy(buffer.data(), finalizedData, finalizedSize);   // the first finalizedSize bytes overwritten (Qt 6's replace overloads are ambiguous here)
             buffer.resize(finalizedSize);
         } else {
             qCDebug(entities) << "ERROR - encoded edit message doesn't fit in output buffer.";

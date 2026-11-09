@@ -1,0 +1,21 @@
+//
+//  WebView.qml
+//
+//  Created by Bradley Austin Davis on 12 Jan 2016
+//  Copyright 2016 High Fidelity, Inc.
+//
+//  Distributed under the Apache License, Version 2.0.
+//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+//
+
+import QtQuick 2.5
+import "qrc:///qml/controlsUit"   // Qt 6: this +qt6 twin of the Qt 5 file beside it is what Qt 6 loads; its sibling types, by an absolute address
+
+BaseWebView {
+    onNewWindowRequested: function (request) {   // Qt 6: newViewRequested became newWindowRequested
+        // Load dialog via OffscreenUi so that JavaScript EventBridge is available.
+        var browser = OffscreenUi.load("Browser.qml");
+        request.openIn(browser.webView);
+        browser.webView.forceActiveFocus();
+    }
+}

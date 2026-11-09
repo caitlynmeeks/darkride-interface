@@ -18,6 +18,7 @@
 #include <udt/PacketHeaders.h>
 #include <SharedUtil.h>
 #include <UUID.h>
+#include <shared/WireStream.h>
 
 #include "AbstractAudioInterface.h"
 #include "AudioInjectorManager.h"
@@ -208,6 +209,60 @@ qint64 writeStringToStream(const QString& string, QDataStream& stream) {
     return length + sizeof(uint32_t);
 }
 
+AudioInjector::InjectAudioHeader AudioInjector::writeInjectAudioHeader(QIODevice* device, const QUuid& streamID,
+                                                                       const AudioInjectorOptions& options,
+                                                                       uchar loopbackFlag) {
+    InjectAudioHeader header;
+    QDataStream audioPacketStream(device);
+    hifi::stream::pin(audioPacketStream);
+
+    // pack some placeholder sequence number for now
+    audioPacketStream << (quint16) 0;
+
+    // current injectors don't use codecs, so pack in the unknown codec name
+    QString noCodecForInjectors("");
+    writeStringToStream(noCodecForInjectors, audioPacketStream);
+
+    // pack stream identifier (a generated UUID)
+    audioPacketStream << streamID;
+
+    // pack the stereo/mono type of the stream
+    audioPacketStream << options.stereo;
+
+    // pack the flag for loopback, if requested
+    header.loopbackOffset = device->pos();
+    audioPacketStream << loopbackFlag;
+
+    // pack the position for injected audio
+    header.positionOffset = device->pos();
+    audioPacketStream.writeRawData(reinterpret_cast<const char*>(&options.position),
+                                   sizeof(options.position));
+
+    // pack our orientation for injected audio
+    audioPacketStream.writeRawData(reinterpret_cast<const char*>(&options.orientation),
+                                   sizeof(options.orientation));
+
+    audioPacketStream.writeRawData(reinterpret_cast<const char*>(&options.position),
+                                   sizeof(options.position));
+
+    glm::vec3 boxCorner = glm::vec3(0);
+    audioPacketStream.writeRawData(reinterpret_cast<const char*>(&boxCorner),
+        sizeof(glm::vec3));
+
+    // pack zero for radius
+    float radius = 0;
+    audioPacketStream << radius;
+
+    // pack 255 for attenuation byte
+    header.volumeOffset = device->pos();
+    quint8 volume = MAX_INJECTOR_VOLUME;
+    audioPacketStream << volume;
+    audioPacketStream << options.ignorePenumbra;
+
+    header.audioOffset = device->pos();
+    return header;
+}
+
 int64_t AudioInjector::injectNextFrame() {
     if (stateHas(AudioInjectorState::NetworkInjectionFinished)) {
         return NEXT_FRAME_DELTA_ERROR_OR_FINISHED;
@@ -243,53 +298,12 @@ int64_t AudioInjector::injectNextFrame() {
             _currentPacket = NLPacket::create(PacketType::InjectAudio);
 
             // setup the packet for injected audio
-            QDataStream audioPacketStream(_currentPacket.get());
-
-            // pack some placeholder sequence number for now
-            audioPacketStream << (quint16) 0;
-
-            // current injectors don't use codecs, so pack in the unknown codec name
-            QString noCodecForInjectors("");
-            writeStringToStream(noCodecForInjectors, audioPacketStream);
-
-            // pack stream identifier (a generated UUID)
-            audioPacketStream << _streamID;
-
-            // pack the stereo/mono type of the stream
-            audioPacketStream << options.stereo;
-
-            // pack the flag for loopback, if requested
-            loopbackOptionOffset = _currentPacket->pos();
             uchar loopbackFlag = (_localAudioInterface && _localAudioInterface->shouldLoopbackInjectors());
-            audioPacketStream << loopbackFlag;
-
-            // pack the position for injected audio
-            positionOptionOffset = _currentPacket->pos();
-            audioPacketStream.writeRawData(reinterpret_cast<const char*>(&options.position),
-                                           sizeof(options.position));
-
-            // pack our orientation for injected audio
-            audioPacketStream.writeRawData(reinterpret_cast<const char*>(&options.orientation),
-                                           sizeof(options.orientation));
-
-            audioPacketStream.writeRawData(reinterpret_cast<const char*>(&options.position),
-                                           sizeof(options.position));
-
-            glm::vec3 boxCorner = glm::vec3(0);
-            audioPacketStream.writeRawData(reinterpret_cast<const char*>(&boxCorner),
-                sizeof(glm::vec3));
-
-            // pack zero for radius
-            float radius = 0;
-            audioPacketStream << radius;
-
-            // pack 255 for attenuation byte
-            volumeOptionOffset = _currentPacket->pos();
-            quint8 volume = MAX_INJECTOR_VOLUME;
-            audioPacketStream << volume;
-            audioPacketStream << options.ignorePenumbra;
-
-            audioDataOffset = _currentPacket->pos();
+            InjectAudioHeader header = writeInjectAudioHeader(_currentPacket.get(), _streamID, options, loopbackFlag);
+            loopbackOptionOffset = header.loopbackOffset;
+            positionOptionOffset = header.positionOffset;
+            volumeOptionOffset = header.volumeOffset;
+            audioDataOffset = header.audioOffset;
 
         } else {
             // no samples to inject, return immediately

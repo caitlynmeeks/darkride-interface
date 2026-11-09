@@ -58,6 +58,10 @@ public:
         Delete
     };
     EntityTree(bool shouldReaverage = false);
+
+    // How many adds and edits the entity server has measured against the stream's room (processEditPacketData: only
+    // those of streamCheckSize() or more), for TIVOLI_STREAM_DIAG
+    static uint64_t streamChecksRun() { return _streamChecksRun; }
     virtual ~EntityTree();
 
     void createRootElement();
@@ -321,9 +325,14 @@ signals:
     void clearingEntities();
 
 protected:
+    static std::atomic<uint64_t> _streamChecksRun;
 
     void recursivelyFilterAndCollectForDelete(const EntityItemPointer& entity, std::vector<EntityItemPointer>& entitiesToDelete, bool force) const;
-    void sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused);
+    void sendBackRefusedEdit(const EntityItemPointer& entity, const EntityItemProperties& refused,
+                             const SharedNodePointer& senderNode);
+    void sendBackRefusedTooBigEdit(const EntityItemPointer& entity, const EntityItemProperties& refused);
+    void warnTooBigToStream(const EntityItem& probe, const EntityPropertyFlags& tooBig, const EntityItemID& entityID,
+                            bool isAdd, const SharedNodePointer& senderNode);
     void processRemovedEntities(const DeleteEntityOperator& theOperator);
     bool updateEntity(EntityItemPointer entity, const EntityItemProperties& properties,
             const SharedNodePointer& senderNode = SharedNodePointer(nullptr), bool isPhysics = false);
@@ -414,6 +423,16 @@ private:
 
     bool _serverlessDomain { false };
     std::atomic<bool> _refusesContentFromThisComputer { false };
+public:
+    // for TIVOLI_STREAM_DIAG: edits that came stamped ahead of this server's clock (and taken as now), the largest
+    // such lead, and refused edits not sent back because their sender was over its budget
+    static uint64_t editsStampedAhead() { return _editsStampedAhead; }
+    static uint64_t largestStampLeadUsec() { return _largestStampLeadUsec; }
+    static uint64_t sendBacksSkipped() { return _sendBacksSkipped; }
+private:
+    static std::atomic<uint64_t> _editsStampedAhead;
+    static std::atomic<uint64_t> _largestStampLeadUsec;
+    static std::atomic<uint64_t> _sendBacksSkipped;
     std::atomic<int> _refusedAddressesCount { 0 };
     QMutex _refusedAddressesWarnedLock;
     QSet<QString> _refusedAddressesWarned;   // "<entity id>/<property>"

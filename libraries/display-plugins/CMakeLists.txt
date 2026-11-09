@@ -1,5 +1,10 @@
 set(TARGET_NAME display-plugins)
-setup_hifi_library(Gui)
+# Qt 6 moved QOpenGLFramebufferObject from QtGui to the QtOpenGL module
+set(DISPLAY_PLUGINS_QT_MODULES Gui)
+if (QT_VERSION_MAJOR EQUAL 6)
+  list(APPEND DISPLAY_PLUGINS_QT_MODULES OpenGL)
+endif()
+setup_hifi_library(${DISPLAY_PLUGINS_QT_MODULES})
 link_hifi_libraries(shared shaders plugins ui-plugins gl ui render-utils ${PLATFORM_GL_BACKEND})
 include_hifi_library_headers(gpu)
 include_hifi_library_headers(material-networking)

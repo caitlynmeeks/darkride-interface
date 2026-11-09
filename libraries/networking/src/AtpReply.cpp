@@ -78,7 +78,11 @@ void AtpReply::handleRequestFinish() {
     setHeader(QNetworkRequest::ContentLengthHeader, QVariant(_content.size()));
 
     if (error() != NoError) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+        emit errorOccurred(error());
+#else
         emit error(error());
+#endif
     }
 
     setFinished(true);

@@ -7,6 +7,9 @@
 //  the request goes to the metaverse this client signs in to, signed when an account is signed in. QML panels only:
 //  scripts never see the object, so no script can send a request in the account's name or read its token.
 //
+//  One object per QML engine (each offscreen surface has its own engine): the answer is made in the engine whose
+//  panel asked, as a callback can't take a value made in another engine (Qt 6 refuses the call; the panel never hears).
+//
 //  Copyright 2026 Darkride.
 //
 //  Distributed under the MIT License.
@@ -16,21 +19,23 @@
 #define hifi_MetaverseRequests_h
 
 #include <QtCore/QObject>
+#include <QtCore/QPointer>
 #include <QtCore/QString>
 #include <QtCore/QVariant>
 #include <QtQml/QJSEngine>
 #include <QtQml/QJSValue>
 
-#include <DependencyManager.h>
-
-class MetaverseRequests : public QObject, public Dependency {
+class MetaverseRequests : public QObject {
     Q_OBJECT
-    SINGLETON_DEPENDENCY
 
 public:
+    /// engine: the QML engine of the panels that see this object (their context's engine); parent: that context
+    MetaverseRequests(QJSEngine* engine, QObject* parent);
+
     /// method "GET", "POST", "PUT" or "DELETE"; path under "/api/"; body sent as JSON with a POST or a PUT;
     /// callback(error, status, data):
-    /// error null on a 2xx answer, otherwise a short description; data the answer parsed as JSON (null if it is not)
+    /// error null on a 2xx answer, otherwise a short description; data the answer parsed as JSON (null if it is not),
+    /// its lists real JavaScript arrays (Array.isArray is true on Qt 5 and Qt 6)
     Q_INVOKABLE void send(const QString& method, const QString& path, const QVariant& body, QJSValue callback);
 
     /// the metaverse's address, for links a panel shows or opens (a user's settings page, a nametag picture)
@@ -42,7 +47,7 @@ public:
     Q_INVOKABLE QString termsUrl() const;
 
 private:
-    MetaverseRequests() = default;
+    QPointer<QJSEngine> _engine;
 };
 
 #endif // hifi_MetaverseRequests_h

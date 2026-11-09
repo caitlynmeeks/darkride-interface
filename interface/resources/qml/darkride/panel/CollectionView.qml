@@ -5,7 +5,9 @@
 //  Things a SearchBar arranged, in the view it chose (Caity, 10-24): Cards, a big picture over each, one a row;
 //  Tiles, three a row (two when narrow); List, one card of rows, each with a small picture. An item:
 //  { key, title, subtitle, picture, checked, badge, dim }; a click on one says activated(item). A page with more to
-//  show on each passes its own card, tile and row components: each is loaded with the item as `entry`.
+//  show on each passes its own card, tile and row components: each is loaded with the item as `entry`. Rows after
+//  the things (actions: "Show All 256", "Older files · 181 ›") sit in the list's card and say actionChosen(key). An item
+//  with a `favorite` flag gets a Star in every view, which says starToggled(item).
 //
 //  Copyright 2026 Darkride.
 //
@@ -29,13 +31,37 @@ ColumnLayout {
     property Component row: defaultRow
     property int columns: width < 480 * Theme.unit ? 2 : 3
 
+    // [{ key, label, value }]: an action row in blue, or with a value, a row that opens more (its value and › at the right)
+    property var actions: []
+    // long names wrap and long details are cut, so a card's or row's tick and star stay at its right (the Avatar panel)
+    property bool wrapLabels: false
+
     signal activated(var item)
+    signal actionChosen(string key)
+    signal starToggled(var item)
 
     Layout.fillWidth: true
     spacing: 0
 
     function plain(text) {
         return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // one of `actions`, loaded with it as `more`
+    Component {
+        id: actionRow
+        ListRow {
+            label: more.label || ""
+            action: !more.value
+            clickable: true
+            onClicked: collection.actionChosen(more.key)
+            Text {
+                text: (more.value || "") + "  ›"   // ›
+                textFormat: Text.PlainText
+                color: Theme.secondaryText
+                font.pixelSize: Theme.bodySize
+            }
+        }
     }
 
     Component {
@@ -49,7 +75,7 @@ ColumnLayout {
                     roundBottom: false
                     placeholder: entry.title || ""
                     source: entry.picture || ""
-                    opacity: entry.dim ? 0.45 : 1
+                    opacity: entry.dim ? Theme.dimmed : 1
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -57,6 +83,7 @@ ColumnLayout {
                 }
             }
             ListRow {
+                wrapLabel: collection.wrapLabels
                 label: entry.title || ""
                 detail: entry.subtitle || ""
                 clickable: true
@@ -68,12 +95,13 @@ ColumnLayout {
                     color: Theme.secondaryText
                     font.pixelSize: Theme.detailSize
                 }
-                Text {
-                    text: "✓"
-                    color: Theme.tint
-                    font.pixelSize: Theme.bodySize
-                    font.bold: true
-                    opacity: entry.checked ? 1 : 0
+                Checkmark {
+                    checked: !!entry.checked
+                }
+                Star {
+                    visible: entry.favorite !== undefined
+                    on: !!entry.favorite
+                    onToggled: collection.starToggled(entry)
                 }
             }
         }
@@ -88,6 +116,11 @@ ColumnLayout {
             checked: !!entry.checked
             badge: entry.badge || ""
             onClicked: collection.activated(entry)
+            Star {
+                visible: entry.favorite !== undefined
+                on: !!entry.favorite
+                onToggled: collection.starToggled(entry)
+            }
         }
     }
     Component {
@@ -96,8 +129,8 @@ ColumnLayout {
             label: entry.title || ""
             detail: entry.subtitle || ""
             icon: entry.picture || ""
-            iconSize: 40 * Theme.unit
-            iconRadius: 8 * Theme.unit
+            iconSize: Theme.rowIconSize
+            iconRadius: Theme.rowIconRadius
             iconPlaceholder: entry.title || "?"
             clickable: true
             onClicked: collection.activated(entry)
@@ -108,12 +141,8 @@ ColumnLayout {
                 color: Theme.secondaryText
                 font.pixelSize: Theme.detailSize
             }
-            Text {
-                text: "✓"
-                color: Theme.tint
-                font.pixelSize: Theme.bodySize
-                font.bold: true
-                opacity: entry.checked ? 1 : 0
+            Checkmark {
+                checked: !!entry.checked
             }
         }
     }
@@ -182,6 +211,31 @@ ColumnLayout {
                 width: parent ? parent.width : 0
                 sourceComponent: collection.row
                 onLoaded: if (item.hasOwnProperty("cardItem")) item.cardItem = rowLoader
+            }
+        }
+        Repeater {
+            model: collection.view === "list" ? collection.actions : []
+            delegate: Loader {
+                id: actionLoader
+                property var more: modelData
+                width: parent ? parent.width : 0
+                sourceComponent: actionRow
+                onLoaded: item.cardItem = actionLoader
+            }
+        }
+    }
+
+    // Cards and Tiles: the action rows in a card of their own under them
+    Section {
+        visible: collection.view !== "list" && collection.actions.length > 0
+        Repeater {
+            model: collection.view !== "list" ? collection.actions : []
+            delegate: Loader {
+                id: moreLoader
+                property var more: modelData
+                width: parent ? parent.width : 0
+                sourceComponent: actionRow
+                onLoaded: item.cardItem = moreLoader
             }
         }
     }

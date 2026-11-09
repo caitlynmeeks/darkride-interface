@@ -119,4 +119,13 @@ private:
     DecodeFallback _decodeFallback;
 };
 
+/// A variant of the registered type `typeId` holding a copy of `copy` (the type's default value when `copy` is null)
+inline QVariant variantOfType(int typeId, const void* copy) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return QVariant(QMetaType(typeId), copy);
+#else
+    return QVariant(typeId, copy);
+#endif
+}
+
 #endif // hifi_ValueCodec_h

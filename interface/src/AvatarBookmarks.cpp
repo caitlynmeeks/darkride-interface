@@ -29,6 +29,7 @@
 #include <PhysicalEntitySimulation.h>
 #include <EntityEditPacketSender.h>
 #include <PlainScriptValue.h>
+#include <ScriptCaller.h>
 
 #include "MainWindow.h"
 #include "InterfaceLogging.h"
@@ -124,6 +125,36 @@ void AvatarBookmarks::addBookmark(const QString& bookmarkName) {
     insert(bookmarkName, bookmark);
 
     emit bookmarkAdded(bookmarkName);
+}
+
+// The Avatar panel's star on an avatar that isn't worn (Darkride, 2026-11-08): its link alone, at scale 1, with no
+// wearables, so wearing it later keeps the wearables worn then (the panel wears such a favourite by its link, not
+// through loadBookmark, which replaces them). Never over another favourite of the same name. A world's script gets a
+// stand-in for this object (ScriptApiPolicy); the check here is read before any hop to another thread, which would
+// lose the caller's mark (ScriptCaller).
+bool AvatarBookmarks::addBookmarkForLink(const QString& bookmarkName, const QString& avatarUrl) {
+    if (ScriptCaller::isWorld()) {
+        qCDebug(interfaceapp) << "AvatarBookmarks.addBookmarkForLink refused: a world's script";
+        return false;
+    }
+    if (QThread::currentThread() != thread()) {
+        bool added = false;
+        BLOCKING_INVOKE_METHOD(this, "addBookmarkForLink", Q_RETURN_ARG(bool, added), Q_ARG(QString, bookmarkName),
+                               Q_ARG(QString, avatarUrl));
+        return added;
+    }
+    const QString url = avatarUrl.trimmed();
+    if (bookmarkName.trimmed().isEmpty() || url.isEmpty() || contains(bookmarkName)) {
+        return false;
+    }
+    QVariantMap bookmark;
+    bookmark.insert(ENTRY_VERSION, AVATAR_BOOKMARK_VERSION);
+    bookmark.insert(ENTRY_AVATAR_URL, url);
+    bookmark.insert(ENTRY_AVATAR_SCALE, 1.0f);
+    insert(bookmarkName, bookmark);
+
+    emit bookmarkAdded(bookmarkName);
+    return contains(bookmarkName);
 }
 
 void AvatarBookmarks::saveBookmark(const QString& bookmarkName) {
@@ -243,7 +274,7 @@ void AvatarBookmarks::loadBookmark(const QString& bookmarkName) {
 
 void AvatarBookmarks::readFromFile() {
     // migrate old avatarbookmarks.json, used to be in 'local' folder on windows
-    QString oldConfigPath = QStandardPaths::writableLocation(QStandardPaths::DataLocation) + "/" + AVATARBOOKMARKS_FILENAME;
+    QString oldConfigPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/" + AVATARBOOKMARKS_FILENAME;
     QFile oldConfig(oldConfigPath);
 
     // I imagine that in a year from now, this code for migrating (as well as the two lines above)

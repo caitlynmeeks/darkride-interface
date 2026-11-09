@@ -1008,15 +1008,21 @@ void NetworkTexture::handleFinishedInitialLoad() {
             return;
         }
 
+        // the header's bytes must all be there before any field is read; then its identifier, formats, dimensions,
+        // faces and mip count must be ones a texture can have (isValid logs what is wrong and never throws)
+        if (static_cast<size_t>(ktxHeaderData.size()) < ktx::KTX_HEADER_SIZE) {
+            NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
+            return;
+        }
         auto header = reinterpret_cast<const ktx::Header*>(ktxHeaderData.data());
 
-        if (!ktx::checkIdentifier(header->identifier)) {
+        if (!header->isValid()) {
             NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         }
 
-        auto kvSize = header->bytesOfKeyValueData;
-        if (kvSize > (ktxHeaderData.size() - ktx::KTX_HEADER_SIZE)) {
+        size_t kvSize = header->bytesOfKeyValueData;
+        if (kvSize > (static_cast<size_t>(ktxHeaderData.size()) - ktx::KTX_HEADER_SIZE)) {
             NetworkTexture::handBackImage(static_cast<NetworkTexture*>(resource.data()), nullptr, 0, 0);
             return;
         }
@@ -1102,7 +1108,8 @@ void NetworkTexture::handleFinishedInitialLoad() {
             // TODO Move image offset calculation to ktx ImageDescriptor
             for (int level = static_cast<int>(images.size()) - 1; level >= 0; --level) {
                 auto& image = images[level];
-                if (image._imageSize > imageSizeRemaining) {
+                // each stored level is its size field plus its bytes: both must be inside what remains
+                if (image._imageSize + ktx::IMAGE_SIZE_WIDTH > imageSizeRemaining) {
                     break;
                 }
                 ktxData -= image._imageSize;
@@ -1146,32 +1153,42 @@ void NetworkTexture::loadMetaContent(const QByteArray& content) {
         return;
     }
 
+    // An ambient map needs its irradiance (the spherical harmonics the diffuse lighting reads). A baked KTX carries it
+    // only when it was baked as an ambient map; a sky baked as a skybox has none, and a zone borrowing that sky as its
+    // ambient map lit the world with the built-in sphere instead: pale and flat (Darkside on Windows, 2026-11-08, whose
+    // GPU took the BPTC variant of the built-in aurora sky; the Mac, with no BPTC, took the original and computed the
+    // irradiance). So an ambient map is made from the original image whenever the meta names one, on every platform,
+    // and the irradiance is computed on load. A refinement for later: take a baked variant when it carries the key.
+    const bool ambientFromOriginal = _type == image::TextureUsage::AMBIENT_TEXTURE && !meta.original.isEmpty();
+
     auto& backend = DependencyManager::get<TextureCache>()->getGPUContext()->getBackend();
-    for (auto pair : meta.availableTextureTypes) {
-        gpu::Element elFormat;
+    if (!ambientFromOriginal) {
+        for (auto pair : meta.availableTextureTypes) {
+            gpu::Element elFormat;
 
-        if (gpu::Texture::getCompressedFormat(pair.first, elFormat)) {
-            if (backend->supportedTextureFormat(elFormat)) {
-                auto url = pair.second;
-                if (url.fileName().endsWith(TEXTURE_META_EXTENSION)) {
-                    continue;
-                }
+            if (gpu::Texture::getCompressedFormat(pair.first, elFormat)) {
+                if (backend->supportedTextureFormat(elFormat)) {
+                    auto url = pair.second;
+                    if (url.fileName().endsWith(TEXTURE_META_EXTENSION)) {
+                        continue;
+                    }
 
-                _currentlyLoadingResourceType = ResourceType::KTX;
-                _activeUrl = _activeUrl.resolved(url);
-                auto textureCache = DependencyManager::get<TextureCache>();
-                auto self = _self.lock();
-                if (!self) {
+                    _currentlyLoadingResourceType = ResourceType::KTX;
+                    _activeUrl = _activeUrl.resolved(url);
+                    auto textureCache = DependencyManager::get<TextureCache>();
+                    auto self = _self.lock();
+                    if (!self) {
+                        return;
+                    }
+                    QMetaObject::invokeMethod(this, "attemptRequest", Qt::QueuedConnection);
                     return;
                 }
-                QMetaObject::invokeMethod(this, "attemptRequest", Qt::QueuedConnection);
-                return;
             }
         }
     }
 
 #ifndef Q_OS_ANDROID
-    if (!meta.uncompressed.isEmpty()) {
+    if (!ambientFromOriginal && !meta.uncompressed.isEmpty()) {
         _currentlyLoadingResourceType = ResourceType::KTX;
         _activeUrl = _activeUrl.resolved(meta.uncompressed);
 

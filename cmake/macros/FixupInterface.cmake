@@ -40,7 +40,7 @@ macro(fixup_interface)
 
         # https://bugreports.qt.io/browse/QTBUG-86759
         # will be fixed in qt 5.15.2
-        if (${Qt5_VERSION} VERSION_EQUAL 5.15.1)
+        if ("${Qt${QT_VERSION_MAJOR}_VERSION}" VERSION_EQUAL 5.15.1)
             set(QT_WEBENGINECORE_COPY_FROM "${QT_CMAKE_PREFIX_PATH}/../../lib/QtWebEngineCore.framework/Versions/5/Helpers")
             set(QT_WEBENGINECORE_COPY_TO "$<TARGET_FILE_DIR:${TARGET_NAME}>/../Frameworks/QtWebEngineCore.framework/Versions/5/Helpers")
 

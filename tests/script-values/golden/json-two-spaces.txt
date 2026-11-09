@@ -1,0 +1,51 @@
+{
+  "id": "{1a2b3c4d-0000-0000-0000-000000000001}",
+  "type": "Box",
+  "lastEdited": 1792340679910596,
+  "name": "quotes \" and backslash \\ and slash / and tab \t newline \n cr \r bs \b ff \f bell \u0007 esc \u001b del ",
+  "accents": "café   🌴 €",
+  "empty": "",
+  "position": {
+    "x": -2.9272141456604004,
+    "y": 0.20000000298023224,
+    "z": -0.0000152587890625
+  },
+  "numbers": [
+    0,
+    0,
+    1,
+    -1,
+    1.5,
+    100,
+    2147483648,
+    1e+21,
+    1e-7,
+    0.000001,
+    1e+100,
+    5e-324,
+    null,
+    null,
+    null
+  ],
+  "mixed": [
+    true,
+    null,
+    null,
+    null,
+    "after a hole",
+    {},
+    []
+  ],
+  "nullProperty": null,
+  "false": false,
+  "emptyObject": {},
+  "emptyArray": [],
+  "nested": {
+    "list": [
+      {
+        "k": "v"
+      }
+    ]
+  },
+  "key with \"quotes\"": 1
+}

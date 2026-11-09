@@ -15,7 +15,7 @@
 #include <QRunnable>
 #include <QtCore/QObject>
 #include <QtNetwork/QNetworkReply>
-#include <QtScript/qscriptengine.h>
+#include <QtCore/QMetaType>
 
 #include <ResourceCache.h>
 
@@ -164,7 +164,5 @@ private:
 };
 
 Q_DECLARE_METATYPE(SharedSoundPointer)
-QScriptValue soundSharedPointerToScriptValue(QScriptEngine* engine, const SharedSoundPointer& in);
-void soundSharedPointerFromScriptValue(const QScriptValue& object, SharedSoundPointer& out);
 
 #endif // hifi_Sound_h

@@ -15,6 +15,7 @@
 #include <ktx/KTX.h>
 #include <gpu/Texture.h>
 #include <image/Image.h>
+#include <image/TextureProcessing.h>
 
 
 QTEST_GUILESS_MAIN(KtxTests)
@@ -76,9 +77,12 @@ void KtxTests::testKtxEvalFunctions() {
 void KtxTests::testKtxSerialization() {
     const QString TEST_IMAGE = getRootPath() + "/scripts/developer/tests/cube_texture.png";
     QImage image(TEST_IMAGE);
+    if (image.isNull()) {
+        QSKIP("the test picture is not beside the sources (the test's root is the working directory)");
+    }
     std::atomic<bool> abortSignal;
     gpu::TexturePointer testTexture =
-        image::TextureUsage::process2DTextureColorFromImage(std::move(image), TEST_IMAGE.toStdString(), true, abortSignal);
+        image::TextureUsage::process2DTextureColorFromImage(std::move(image), TEST_IMAGE.toStdString(), true, gpu::BackendTarget::GL41, false, abortSignal);   // the test's call brought up to the function's arguments
     auto ktxMemory = gpu::Texture::serialize(*testTexture);
     QVERIFY(ktxMemory.get());
 
@@ -196,3 +200,65 @@ int mainTemp(int, char**) {
     return 0;
 }
 #endif
+
+// A KTX whose header or key-value bytes are not what they claim is refused, never read past its bytes
+void KtxTests::testHostileBuffers() {
+    using namespace ktx;
+    // a header needs all of its bytes
+    std::vector<Byte> tiny(10, 0);
+    QVERIFY(!KTX::checkHeaderFromStorage(tiny.size(), tiny.data()));
+    std::vector<Byte> zeros(KTX_HEADER_SIZE, 0);
+    QVERIFY(!KTX::checkHeaderFromStorage(zeros.size(), zeros.data()));
+
+    // a 4 x 4 RGBA8 texture, one level, no metadata: valid
+    Header good;
+    good.glTypeSize = 1;
+    good.pixelWidth = 4;
+    good.pixelHeight = 4;
+    good.numberOfMipmapLevels = 1;
+    QVERIFY(good.isValid());
+    QVERIFY(KTX::checkHeaderFromStorage(sizeof(Header), reinterpret_cast<const Byte*>(&good)));
+
+    // the header's claims a texture cannot have
+    Header mips = good;
+    mips.numberOfMipmapLevels = 0xFFFFFFFF;
+    QVERIFY(!mips.isValid());
+    QVERIFY(!KTX::checkHeaderFromStorage(sizeof(Header), reinterpret_cast<const Byte*>(&mips)));
+    Header wide = good;
+    wide.pixelWidth = 1 << 20;
+    QVERIFY(!wide.isValid());
+    Header faces = good;
+    faces.numberOfFaces = 3;
+    QVERIFY(!faces.isValid());
+    Header slices = good;
+    slices.numberOfArrayElements = 1 << 20;
+    QVERIFY(!slices.isValid());
+    Header metadata = good;
+    metadata.bytesOfKeyValueData = 0xFFFFFFF0;
+    QVERIFY(!KTX::checkHeaderFromStorage(sizeof(Header), reinterpret_cast<const Byte*>(&metadata)));
+    Header levels = good;
+    levels.numberOfMipmapLevels = 3;   // 4 x 4 has three levels: valid
+    QVERIFY(levels.isValid());
+    levels.numberOfMipmapLevels = 4;
+    QVERIFY(!levels.isValid());
+
+    // key-value bytes: a size field needs 4 bytes, a pair fits its bytes, a key ends inside them
+    std::vector<Byte> three(3, 0x41);
+    QVERIFY(KTX::parseKeyValues(three.size(), three.data()).empty());
+    std::vector<Byte> huge { 0xFF, 0xFF, 0xFF, 0xFF, 0x41, 0x00, 0x42, 0x43 };
+    QVERIFY(KTX::parseKeyValues(huge.size(), huge.data()).empty());
+    QVERIFY_EXCEPTION_THROWN(KeyValue::parseSerializedKeyAndValue((uint32_t)huge.size(), huge.data()), std::exception);
+    std::vector<Byte> noEnd { 0x08, 0x00, 0x00, 0x00, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48 };
+    QVERIFY(KTX::parseKeyValues(noEnd.size(), noEnd.data()).empty());
+    QVERIFY_EXCEPTION_THROWN(KeyValue::parseSerializedKeyAndValue((uint32_t)noEnd.size(), noEnd.data()), std::exception);
+    std::vector<Byte> empty { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    QVERIFY(KTX::parseKeyValues(empty.size(), empty.data()).empty());
+    QVERIFY_EXCEPTION_THROWN(KeyValue::parseSerializedKeyAndValue((uint32_t)empty.size(), empty.data()), std::exception);
+    // "ab" = "cde": size 6, the key, its end, the value, two bytes of padding
+    std::vector<Byte> fine { 0x06, 0x00, 0x00, 0x00, 'a', 'b', 0x00, 'c', 'd', 'e', 0x00, 0x00 };
+    auto parsed = KTX::parseKeyValues(fine.size(), fine.data());
+    QCOMPARE(parsed.size(), (size_t)1);
+    QCOMPARE(parsed.front()._key, std::string("ab"));
+    QCOMPARE(parsed.front()._value.size(), (size_t)3);
+    QCOMPARE(parsed.front()._value[0], (Byte)'c');
+}

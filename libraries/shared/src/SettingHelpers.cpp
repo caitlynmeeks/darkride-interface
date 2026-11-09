@@ -12,6 +12,7 @@
 #include "SettingHelpers.h"
 
 #include <QDataStream>
+#include <QIODevice>
 #include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>

@@ -23,6 +23,12 @@
 class OctreeEditPacketSender :  public PacketSender {
     Q_OBJECT
 public:
+    // The most one edit message can take: an edit packet's payload less the sequence number and sent time this sender
+    // writes at its start (initializePacket). A longer message wouldn't fit even an empty packet.
+    static int maxEditMessageSize(PacketType type) {
+        return NLPacket::maxPayloadSize(type) - (int)(sizeof(quint16) + sizeof(quint64));
+    }
+
     OctreeEditPacketSender();
     ~OctreeEditPacketSender();
 
@@ -93,7 +99,11 @@ protected:
     int _maxPendingMessages;
     bool _releaseQueuedMessagesPending;
     QMutex _pendingPacketsLock;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QRecursiveMutex _packetsQueueLock; // don't let different threads release the queue while another thread is writing to it
+#else
     QMutex _packetsQueueLock{ QMutex::Recursive }; // don't let different threads release the queue while another thread is writing to it
+#endif
     std::list<EditMessagePair> _preServerEdits; // these will get packed into other larger packets
     std::list<std::unique_ptr<NLPacket>> _preServerSingleMessagePackets; // these will go out as is
 

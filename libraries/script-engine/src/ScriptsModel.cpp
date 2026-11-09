@@ -10,6 +10,7 @@
 
 #include "ScriptsModel.h"
 
+#include <QRegularExpression>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QXmlStreamReader>
@@ -190,7 +191,7 @@ void ScriptsModel::requestDefaultFiles(QString marker) {
 
             QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
             QNetworkRequest request(url);
-            request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+            request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
             request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
             QNetworkReply* reply = networkAccessManager.get(request);
             connect(reply, SIGNAL(finished()), SLOT(downloadFinished()));
@@ -226,7 +227,7 @@ bool ScriptsModel::parseXML(QByteArray xmlFile) {
     beginResetModel();
 
     QXmlStreamReader xml(xmlFile);
-    QRegExp jsRegex(".*\\.(js|wasm)");
+    const QRegularExpression jsRegex(QRegularExpression::anchoredPattern(".*\\.(js|wasm)"));
     bool truncated = false;
     QString lastKey;
 
@@ -245,7 +246,7 @@ bool ScriptsModel::parseXML(QByteArray xmlFile) {
                 if (xml.tokenType() == QXmlStreamReader::StartElement && xml.name() == KEY_NAME) {
                     xml.readNext();
                     lastKey = xml.text().toString();
-                    if (jsRegex.exactMatch(xml.text().toString())) {
+                    if (jsRegex.match(xml.text().toString()).hasMatch()) {
                         QString localPath = lastKey.split("/").mid(1).join("/");
                         QUrl fullPath = PathUtils::defaultScriptsLocation();
                         fullPath.setPath(fullPath.path() + lastKey);

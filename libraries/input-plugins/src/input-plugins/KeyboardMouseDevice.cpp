@@ -233,7 +233,11 @@ void KeyboardMouseDevice::touchGestureEvent(const QGestureEvent* event) {
 
 void KeyboardMouseDevice::touchBeginEvent(const QTouchEvent* event) {
     if (_enableTouch) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        _isTouching = event->touchPointStates().testFlag(QEventPoint::State::Pressed);
+#else
         _isTouching = event->touchPointStates().testFlag(Qt::TouchPointPressed);
+#endif
         _lastTouch = evalAverageTouchPoints(event->touchPoints());
         _lastTouchTime = _clock.now();
     }

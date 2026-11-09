@@ -338,7 +338,7 @@ void VRMReaderTests::testClashingRename() {
                                                       { "max", QJsonArray{ 1, 1, 0 } } } });
 
     AssimpSerializer serializer;
-    HFMModel::Pointer model = serializer.read(makeGlb(gltf, bin), hifi::VariantHash(), hifi::URL("file:///clash-test.vrm"));
+    HFMModel::Pointer model = serializer.read(makeGlb(gltf, bin), hifi::VariantMultiHash(), hifi::URL("file:///clash-test.vrm"));
     QVERIFY(model);
     int spine2 = -1, renamed = -1, hips = -1;
     for (int i = 0; i < (int)model->joints.size(); i++) {

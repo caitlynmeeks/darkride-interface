@@ -139,6 +139,13 @@ void TrackSimulation::adoptState(Train& train, const TrackEntityItem& track, con
                                  const glm::vec3& trackPosition, const glm::quat& toTrack, quint64 stepTime, uint32_t step) {
     float shown;
     if (train.running) {
+        // The follower is brought to this substep first (the frame's own one or two, which drive() would run next), so
+        // what this client shows is read at the same time the server's state is caught up to: the residual is then
+        // the two timelines' true offset, never the frame's own travel. Booked as a residual, that travel held the
+        // car one substep at every adoption and closed at CLOSE_RATE after (entry 25).
+        if (step > train.lastStep) {
+            advance(train, glm::min(step - train.lastStep, (uint32_t)MAX_CATCHUP_STEPS), false);
+        }
         shown = train.follower.state().s + train.residual;
     } else {
         glm::vec3 carOnTrack = toTrack * (car->getWorldPosition() - trackPosition);
@@ -161,12 +168,23 @@ void TrackSimulation::adoptState(Train& train, const TrackEntityItem& track, con
 
     quint64 stateTime = received.time;
     int steps = 0;
+    float remainder = 0.0f;
     if (stepTime > stateTime) {
         quint64 behind = stepTime - stateTime;
-        steps = (int)glm::min((quint64)MAX_CATCHUP_STEPS, (behind + SUBSTEP_USECS / 2) / SUBSTEP_USECS);
+        steps = (int)glm::min((quint64)MAX_CATCHUP_STEPS, behind / SUBSTEP_USECS);
+        // The state's time sits anywhere between this client's substeps: the whole substeps first, then the part of
+        // one left over, so the state lands at this substep's time itself, not up to half a substep either side of
+        // it (rounded, that half read as a residual of one substep at some adoptions; entry 25, part 2). A state
+        // older than the cap is run the cap's substeps and no further, as before.
+        if (steps < MAX_CATCHUP_STEPS) {
+            remainder = (float)(behind - (quint64)steps * SUBSTEP_USECS) / (float)USECS_PER_SECOND;
+        }
     }
     for (int i = 0; i < steps; ++i) {
         train.follower.advance(train.curve, train.schedule, PHYSICS_ENGINE_FIXED_SUBSTEP);
+    }
+    if (remainder > 0.0f) {
+        train.follower.advance(train.curve, train.schedule, remainder);
     }
 
     float residual = wrap(train, shown - train.follower.state().s);

@@ -148,7 +148,8 @@ void HTTPResourceRequest::sendNow() {
     QNetworkRequest networkRequest(_requestUrl);
     // with the player's login, no redirect is followed: Qt would send the login on to wherever it led (a private file
     // is passed through by the files host, never redirected)
-    networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, !_withAccessToken && !_ruled);
+    networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, !_withAccessToken && !_ruled
+        ? QNetworkRequest::NoLessSafeRedirectPolicy : QNetworkRequest::ManualRedirectPolicy);
     if (_ruled && !_withAccessToken) {
         // to the address the rule checked and no other; a redirect comes back to onRequestFinished
         networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
@@ -367,9 +368,12 @@ void HTTPResourceRequest::onRequestFinished() {
 
     // our files host refuses a private file (403) to a request without the player's login: the URL that refused it
     // (where the request ended, after a remembered target or Qt's redirects) is asked once more with it, in this same
-    // request, so the login goes only to our files host, and only for private files
+    // request, so the login goes only to our files host, and only for private files. Never for a script's own download
+    // (ruled, setNetworkRule), whatever world the script is from: the file's text would go to that world's scripts
+    // (security finding #82, with scripting). Only the client's own downloads carry the login, as protected settings
+    // are the client's own.
     const QUrl refusedUrl = _reply->url();
-    if (statusCode == 403 && !_withAccessToken && isMetaverseFilesHost(refusedUrl) &&
+    if (statusCode == 403 && !_withAccessToken && !_ruled && isMetaverseFilesHost(refusedUrl) &&
         !accessTokenHeaderValue().isEmpty()) {
         _reply->disconnect(this);
         _reply->deleteLater();

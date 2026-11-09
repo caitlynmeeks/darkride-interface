@@ -115,6 +115,16 @@ QDockWidget#EditorHierarchy::title, QDockWidget#EditorInspector::title {
 #EditorInspector QDoubleSpinBox:focus, #EditorInspector QLineEdit:focus, #EditorInspector QPlainTextEdit:focus {
     border-color: #2c5d87;
 }
+/* the number fields (ScrubSpinBox) keep Qt's up/down buttons, 0 px wide and without arrows: on Qt 6.11 a styled spin
+   box with no buttons gets a 1 px text field (blank numbers, qa 11-08); Qt 5 lays the field out the same either way */
+ScrubSpinBox::up-button, ScrubSpinBox::down-button {
+    width: 0px;
+    border: none;
+}
+ScrubSpinBox::up-arrow, ScrubSpinBox::down-arrow {
+    image: none;
+    width: 0px;
+}
 #EditorInspector QComboBox::drop-down {
     border: none;
     border-left: 1px solid #1f1f1f;
@@ -140,6 +150,32 @@ QDockWidget#EditorHierarchy::title, QDockWidget#EditorInspector::title {
 #EditorInspector QToolButton#EditorUserDataAdd::menu-indicator, #EditorInspector QToolButton#EditorTerrainLayerAdd::menu-indicator {
     image: none;
     width: 0;
+}
+/* the Inspector's push buttons (a script's Edit and Reload, an impostor's Bake and Remove): the Build toolbar's button,
+   as the Code and Make panels' (qml/darkride/editor/BuildButton.qml; mary's MAKE-POLISH.png, 11-08): a #505050 fill, a
+   1 px #232323 edge, 3 px corners, no bevel; 23 px tall, at least 64 px wide */
+#EditorInspector QPushButton {
+    background: #505050;
+    color: #d2d2d2;
+    font-size: 12px;
+    border: 1px solid #232323;
+    border-radius: 3px;
+    padding: 3px 9px;
+    min-width: 44px;
+}
+#EditorInspector QPushButton:hover {
+    background: #5a5a5a;
+}
+#EditorInspector QPushButton:pressed {
+    background: #2c5d87;
+}
+#EditorInspector QPushButton:focus {
+    border-color: #2c5d87;
+}
+#EditorInspector QPushButton:disabled {
+    background: #424242;
+    border-color: #2b2b2b;
+    color: #6a6a6a;
 }
 #EditorInspector QCheckBox {
     spacing: 6px;
@@ -267,6 +303,13 @@ QToolBar#EditorToolBar::separator, QToolBar#EditorTerrainBar::separator {
     width: 1px;
     background: #232323;
     margin: 4px 6px;
+}
+/* Qt's overflow button, at the end of a strip too narrow for its tools. Our own picture: drawing the system's stops Qt 6 on
+   macOS here. No padding or border: it's a small button */
+QToolBar#EditorToolBar QToolButton#qt_toolbar_ext_button, QToolBar#EditorTerrainBar QToolButton#qt_toolbar_ext_button {
+    qproperty-icon: url(:/styles/toolbar-overflow.svg);
+    border: none;
+    padding: 0;
 }
 
 /* the splitters between the panels and the viewport */

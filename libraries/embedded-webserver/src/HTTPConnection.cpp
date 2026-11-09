@@ -125,7 +125,11 @@ HTTPConnection::HTTPConnection(QTcpSocket* socket, HTTPManager* parentManager) :
 
     // connect initial slots
     connect(socket, SIGNAL(readyRead()), SLOT(readRequest()));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+    connect(socket, SIGNAL(errorOccurred(QAbstractSocket::SocketError)), SLOT(deleteLater()));
+#else
     connect(socket, SIGNAL(error(QAbstractSocket::SocketError)), SLOT(deleteLater()));
+#endif
     connect(socket, SIGNAL(disconnected()), SLOT(deleteLater()));
 }
 

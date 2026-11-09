@@ -33,6 +33,9 @@
 #include "RenderHifi.h"
 #include "render-utils/ShaderConstants.h"
 #include "RenderCommonTask.h"
+#include "GeometryCache.h"
+
+extern void initZPassPipelines(render::ShapePlumber& plumber, gpu::StatePointer state, const render::ShapePipeline::BatchSetter& batchSetter, const render::ShapePipeline::ItemSetter& itemSetter);
 #include "LightingModel.h"
 #include "StencilMaskPass.h"
 #include "DebugDeferredBuffer.h"
@@ -107,6 +110,19 @@ void RenderDeferredTask::build(JobModel& task, const render::Varying& input, ren
     // Prepare the ShapePipelines
     ShapePlumberPointer shapePlumber = std::make_shared<ShapePlumber>();
     initDeferredPipelines(*shapePlumber, fadeEffect->getBatchSetter(), fadeEffect->getItemUniformSetter());
+    task.addJob<WarmPipelines>("WarmDeferredPipelines", shapePlumber);   // entry 29 step 2a: compiled while loading
+    // The sun shadow pass's programs too (2026-11-07, after entry 31's ride): its own plumber (RenderShadowTask::build,
+    // initZPassPipelines) and the geometry cache's simple pipelines a shape's shadow draws with are outside the walk
+    // above, so they compiled at the first shadow drawn in the world, 17 ms in one frame of a ride. A fresh plumber
+    // here carries the same program objects (gpu::Shader::createProgram keeps one per program id), so binding its
+    // pipelines compiles the shadow task's own; the shadow task's pipelines are never touched. The shadow pass runs
+    // before this task sets the frame's render method, so a shape's shadow binds the non-forward simple pipelines.
+    ShapePlumberPointer shadowPlumber = std::make_shared<ShapePlumber>();
+    initZPassPipelines(*shadowPlumber, std::make_shared<gpu::State>(), fadeEffect->getBatchSetter(), fadeEffect->getItemUniformSetter());
+    task.addJob<WarmPipelines>("WarmShadowPipelines", shadowPlumber, std::vector<gpu::PipelinePointer>{
+        GeometryCache::getSimplePipeline(false, false, false),   // an opaque shape's shadow
+        GeometryCache::getSimplePipeline(false, true, false),    // a translucent one's (they cast too)
+        GeometryCache::getSimplePipeline(false, false, true) }); // an unlit one's
 
     const auto& inputs = input.get<Input>();
     

@@ -133,6 +133,9 @@ private:
     void requestThumbnails();
     QIcon typeIcon(const UserFile& file) const;
     QIcon pictureIcon(const QPixmap& picture, bool isPrivate) const;
+    // a double-click or Open in Code: a script in the Code panel, anything else in the browser
+    void openFile(const UserFile& file);
+    bool opensInCode(const UserFile& file) const;
     void fillItem(QStandardItem* item, const UserFile& file) const;
     void onListed();
     void onDropped(const QMimeData* data, const QString& folderPath);

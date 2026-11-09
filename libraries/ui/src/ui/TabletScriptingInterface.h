@@ -18,10 +18,6 @@
 #include <QtCore/QAbstractListModel>
 #include <QSortFilterProxyModel>
 
-#include <QtScript/QScriptValue>
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValueIterator>
-
 #include <QtQuick/QQuickItem>
 
 #include <glm/glm.hpp>
@@ -122,9 +118,9 @@ public:
      */
     Q_INVOKABLE void playSound(TabletAudioEvents aEvent);
 
-    void setToolbarMode(bool toolbarMode);
+    Q_INVOKABLE void setToolbarMode(bool toolbarMode);
 
-    void setQmlTabletRoot(QString tabletId, OffscreenQmlSurface* offscreenQmlSurface);
+    Q_INVOKABLE void setQmlTabletRoot(QString tabletId, OffscreenQmlSurface* offscreenQmlSurface);
 
     void processEvent(const QKeyEvent* event);
 
@@ -244,12 +240,14 @@ public:
     TabletProxy(QObject* parent, const QString& name);
     ~TabletProxy();
 
-    void setQmlTabletRoot(OffscreenQmlSurface* offscreenQmlSurface);
+    Q_INVOKABLE void setQmlTabletRoot(OffscreenQmlSurface* offscreenQmlSurface);
 
     const QString getName() const { return _name; }
     bool getToolbarMode() const { return _toolbarMode; }
-    void setToolbarMode(bool toolbarMode);
-    void unfocus();
+    // these three hand themselves to the tablet's thread by name (QMetaObject::invokeMethod), so they must be
+    // invokable, or a call from another thread (a script writing toolbarMode) is dropped with "No such method"
+    Q_INVOKABLE void setToolbarMode(bool toolbarMode);
+    Q_INVOKABLE void unfocus();
 
     /**jsdoc
      * Displays the tablet menu. The tablet is opened if it isn't already open.
@@ -308,7 +306,8 @@ public:
      * @deprecated This function is deprecated and will be removed.
      */
     // Internal function, do not call from scripts.
-    Q_INVOKABLE void loadHTMLSourceOnTopImpl(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase, bool localSafeContext);
+    Q_INVOKABLE void loadHTMLSourceOnTopImpl(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase, bool localSafeContext,
+                                             bool worldPage = false);   // worldPage: a world's script's (security finding #54)
 
     /**jsdoc
      * @function TabletProxy#returnToPreviousAppImpl
@@ -575,6 +574,7 @@ protected:
     State _state { State::Uninitialized };
     std::pair<QVariant, State> _initialPath { "", State::Uninitialized };
     std::pair<QVariant, bool> _initialWebPathParams;
+    bool _initialWorldPage { false };   // the first page's kind, with _initialWebPathParams
     bool _landscape { false };
     bool _showRunningScripts { false };
 

@@ -30,13 +30,13 @@ public:
     // acknowledgement later than that (a busy receiver, a public address reached through the router) retransmitted
     // every packet in flight, which made every later acknowledgement a duplicate and Karn's rule left the round-trip
     // estimate empty, for ever: the congestion window sat at two, every packet went out six to twenty-seven times
-    static const int MIN_RTO_USECS = 200000;
+    static constexpr int MIN_RTO_USECS = 200000;
     // round trips under a millisecond are scheduling noise, not queueing: Vegas's comparison of the round trip with
     // its base is made with both floored to this
-    static const int VEGAS_RTT_FLOOR_USECS = 1000;
+    static constexpr int VEGAS_RTT_FLOOR_USECS = 1000;
     // the base round trip is the least seen over a sliding window (two buckets of this length), as BBR's min_rtt
     // is, not the least ever: a receiver that answers slower than it once did is not a queue
-    static const int BASE_RTT_BUCKET_USECS = 5000000;
+    static constexpr int BASE_RTT_BUCKET_USECS = 5000000;
 
     TCPVegasCC();
 

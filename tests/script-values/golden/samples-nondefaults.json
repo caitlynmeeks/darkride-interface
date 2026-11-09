@@ -1,0 +1,772 @@
+{
+    "Box": {
+        "type": "Box",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "shapeType": "Box",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "pulse": {
+            "min": 0.25
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Sphere": {
+        "type": "Sphere",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "shapeType": "Sphere",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "pulse": {
+            "min": 0.25
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Shape": {
+        "type": "Shape",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "pulse": {
+            "min": 0.25
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Model": {
+        "type": "Model",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "shapeType": "box",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "modelURL": "https://example.invalid/model.glb",
+        "animation": {
+            "url": "https://example.invalid/animation.fbx",
+            "fps": 24
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Text": {
+        "type": "Text",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "pulse": {
+            "min": 0.25
+        },
+        "billboardMode": "yaw",
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Image": {
+        "type": "Image",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "pulse": {
+            "min": 0.25
+        },
+        "billboardMode": "yaw",
+        "imageURL": "https://example.invalid/image.png",
+        "textures": {
+            "tex.picture": "https://example.invalid/image.png"
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Web": {
+        "type": "Web",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "pulse": {
+            "min": 0.25
+        },
+        "billboardMode": "yaw",
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "ParticleEffect": {
+        "type": "ParticleEffect",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "shapeType": "box",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "pulse": {
+            "min": 0.25
+        },
+        "radiusStart": null,
+        "radiusFinish": null,
+        "colorStart": {
+            "red": null,
+            "green": null,
+            "blue": null
+        },
+        "colorFinish": {
+            "red": null,
+            "green": null,
+            "blue": null
+        },
+        "alphaStart": null,
+        "alphaFinish": null,
+        "spinStart": null,
+        "spinFinish": null,
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Line": {
+        "type": "Line",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "PolyLine": {
+        "type": "PolyLine",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "isFacingAvatar": false
+    },
+    "Grid": {
+        "type": "Grid",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "pulse": {
+            "min": 0.25
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Gizmo": {
+        "type": "Gizmo",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Light": {
+        "type": "Light",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Zone": {
+        "type": "Zone",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "shapeType": "box",
+        "keyLight": {
+            "color": {
+                "red": 10,
+                "green": 20,
+                "blue": 30
+            },
+            "intensity": 0.75
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Material": {
+        "type": "Material",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Terrain": {
+        "type": "Terrain",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Track": {
+        "type": "Track",
+        "lastEdited": 0,
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "name": "sample",
+        "userData": "{\"grabbable\": true}",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "created": 1700000000000000,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "script": "https://example.invalid/script.js",
+        "scriptsEnabled": false,
+        "limitedRun": 7,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    }
+}

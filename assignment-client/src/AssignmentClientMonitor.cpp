@@ -284,7 +284,7 @@ void AssignmentClientMonitor::spawnChildClient() {
 
 void AssignmentClientMonitor::checkSpares() {
     auto nodeList = DependencyManager::get<NodeList>();
-    QUuid aSpareId = "";
+    QUuid aSpareId;
     unsigned int spareCount = 0;
     unsigned int totalCount = 0;
 

@@ -133,6 +133,9 @@ public:
     static ContextMetricSize texturePendingGPUTransferMemSize;
     static ContextMetricSize textureResourcePopulatedGPUMemSize;
     static ContextMetricSize textureResourceIdealGPUMemSize;
+    // 1 while the texture transfer engine has something left to allocate, upload or demote this frame, else 0 (the
+    // arrival gate reads it through the render stats; entry 33, Amendment 2)
+    static ContextMetricSize textureTransferEngineBusy;
 
     virtual bool isStereo() const {
         return _stereo.isStereo();
@@ -275,6 +278,7 @@ public:
 
     static Size getTextureResourcePopulatedGPUMemSize();
     static Size getTextureResourceIdealGPUMemSize();
+    static Size getTextureTransferEngineBusy();
 
     struct ProgramsToSync {
         ProgramsToSync(const std::vector<gpu::ShaderPointer>& programs, std::function<void()> callback, size_t rate) :

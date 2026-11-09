@@ -13,7 +13,6 @@
 #define hifi_KeyEvent_h
 
 #include <QKeyEvent>
-#include <QScriptValue>
 
 class KeyEvent {
 public:
@@ -22,8 +21,6 @@ public:
     bool operator==(const KeyEvent& other) const;
     operator QKeySequence() const;
     
-    static QScriptValue toScriptValue(QScriptEngine* engine, const KeyEvent& event);
-    static void fromScriptValue(const QScriptValue& object, KeyEvent& event);
     /// The key a script names in a key event's text ("F1", "UP", "SPACE", "a"...); isKeypad is set for the arrows.
     static int keyFromText(const QString& text, bool& isKeypad);
     

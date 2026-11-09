@@ -17,7 +17,7 @@
 
 #include <QObject>
 #include <QAbstractListModel>
-#include <QAudioDeviceInfo>
+#include <AudioQtCompat.h>
 
 #include <HifiAudioDeviceInfo.h>
 

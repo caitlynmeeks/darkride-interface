@@ -11,8 +11,6 @@
 
 #include "HMDScriptingInterface.h"
 
-#include <QtScript/QScriptContext>
-
 #include <shared/QtHelpers.h>
 #include <avatar/AvatarManager.h>
 #include <display-plugins/DisplayPlugin.h>
@@ -139,25 +137,6 @@ bool HMDScriptingInterface::getAwayStateWhenFocusLostInVREnabled() {
     return qApp->getAwayStateWhenFocusLostInVREnabled();
 }
 
-
-QScriptValue HMDScriptingInterface::getHUDLookAtPosition2D(QScriptContext* context, QScriptEngine* engine) {
-    glm::vec3 hudIntersection;
-    auto instance = DependencyManager::get<HMDScriptingInterface>();
-    if (instance->getHUDLookAtPosition3D(hudIntersection)) {
-        glm::vec2 overlayPos = qApp->getApplicationCompositor().overlayFromSphereSurface(hudIntersection);
-        return qScriptValueFromValue<glm::vec2>(engine, overlayPos);
-    }
-    return QScriptValue::NullValue;
-}
-
-QScriptValue HMDScriptingInterface::getHUDLookAtPosition3D(QScriptContext* context, QScriptEngine* engine) {
-    glm::vec3 result;
-    auto instance = DependencyManager::get<HMDScriptingInterface>();
-    if (instance->getHUDLookAtPosition3D(result)) {
-        return qScriptValueFromValue<glm::vec3>(engine, result);
-    }
-    return QScriptValue::NullValue;
-}
 
 QVariant HMDScriptingInterface::getHUDLookAtPosition2DValue() const {
     glm::vec3 hudIntersection;

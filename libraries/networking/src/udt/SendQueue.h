@@ -50,6 +50,11 @@ public:
         Stopped
     };
     
+    /// How many send queues this process has given up for want of a handshake answer (security #60), and how many of
+    /// those had reliable packets waiting: for tests (the warning itself is logged once a minute).
+    static quint64 handshakesGivenUp();
+    static quint64 handshakesGivenUpWithPacketsWaiting();
+
     static std::unique_ptr<SendQueue> create(Socket* socket, HifiSockAddr destination,
                                              SequenceNumber currentSequenceNumber, MessageNumber currentMessageNumber,
                                              bool hasReceivedHandshakeACK);

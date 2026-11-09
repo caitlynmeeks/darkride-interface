@@ -6,6 +6,8 @@
 //  don't fit side by side, the control goes under the label. A row with a number can be scrubbed: dragging its label
 //  sideways changes the number, as the build tools' labels do (editor/ui/PropertyEditors.cpp ScrubLabel: one step per
 //  pixel, Shift ten, Alt a tenth). An action row is a whole-row button: its label in blue, or red when it deletes.
+//  A large row is a card's headline (the avatar worn): its picture and title bigger (Theme.largeIconSize,
+//  Theme.headlineSize), the title wrapping rather than cut.
 //
 //  Copyright 2026 Darkride.
 //
@@ -23,12 +25,18 @@ Item {
     property string detail: ""
     property int detailFormat: Text.PlainText   // Text.StyledText for a detail with a link (Explore's "by <author>")
     signal linkActivated(string link)
+    property bool large: false
+    // the label wraps and the detail is cut to fit beside the controls, rather than the controls going under it
+    // (a large row always does; a list of things with long names does too)
+    property bool wrapLabel: large
     property url icon: ""          // a small picture left of the label (an avatar menu's control)
-    property real iconSize: 26 * Theme.unit
-    property real iconRadius: 0    // rounded (a thing's picture in a collection's list), or square as it comes
+    property real iconSize: large ? Theme.largeIconSize : 26 * Theme.unit
+    property real iconRadius: large ? Theme.cardRadius : 0   // rounded (a collection's picture), or square as it comes
     property string iconPlaceholder: ""
     // the control fills the room beside the label (a slider, a text field) rather than sitting at the right
     property bool fill: false
+    // how far past the card's text the row starts, its separator with it (a picker's open choice: Theme.choiceIndent)
+    property real indent: 0
     // a fixed width for the label, so the controls of neighbouring rows line up (0: the words' own width)
     property real labelWidth: 0
     default property alias content: contentRow.data
@@ -80,21 +88,51 @@ Item {
         }
         return true;
     }
-    readonly property bool stacked: !action && width > 0 && contentRow.visibleChildrenWidth > 0
-        && Math.max(labelWidth, labelColumn.implicitWidth) + Theme.gap + contentRow.visibleChildrenWidth
-           > width - 2 * Theme.cardPadding
-
-    readonly property bool lastShown: {
+    // where the separator above starts: inset to the text, or the whole width under an open picker, which closes its
+    // indented choices off from the rows that follow (the item above says so with fullWidthSeparatorBelow)
+    readonly property real separatorX: {
         var column = cardItem ? cardItem.parent : null;
+        if (column) {
+            var above = null;
+            for (var i = 0; i < column.children.length && column.children[i] !== cardItem; i++) {
+                if (shown(column.children[i])) {
+                    above = column.children[i];
+                }
+            }
+            if (above && above.fullWidthSeparatorBelow === true) {
+                return 0;
+            }
+        }
+        return Theme.cardPadding + indent;
+    }
+    readonly property bool stacked: !action && !wrapLabel && width > 0 && contentRow.visibleChildrenWidth > 0
+        && Math.max(labelWidth, labelColumn.implicitWidth) + Theme.gap + contentRow.visibleChildrenWidth
+           > width - 2 * Theme.cardPadding - indent
+
+    // the last shown item of its column
+    function lastOf(item) {
+        var column = item ? item.parent : null;
         if (!column) {
             return true;
         }
         for (var i = column.children.length - 1; i >= 0; i--) {
             if (shown(column.children[i])) {
-                return column.children[i] === cardItem;
+                return column.children[i] === item;
             }
         }
         return true;
+    }
+    // the card's last row, so its pressed shade rounds the card's bottom corners: a picker's own row is not while its
+    // choices show under it, and a picker's choice (its column has fullWidthSeparatorBelow) only when the picker is last
+    readonly property bool lastShown: {
+        if (!lastOf(cardItem)) {
+            return false;
+        }
+        if (cardItem !== row && cardItem.fullWidthSeparatorBelow === true) {
+            return false;
+        }
+        var column = cardItem ? cardItem.parent : null;
+        return !column || column.fullWidthSeparatorBelow === undefined || lastOf(column);
     }
 
     // pressed: the row darkens, rounded where it meets the card's corners
@@ -114,7 +152,7 @@ Item {
 
     Rectangle {
         visible: !row.firstShown
-        x: Theme.cardPadding
+        x: row.separatorX
         width: parent.width - x
         height: 1
         color: Theme.separator
@@ -134,7 +172,7 @@ Item {
         id: grid
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: Theme.cardPadding
+        anchors.leftMargin: Theme.cardPadding + row.indent
         anchors.rightMargin: Theme.cardPadding
         anchors.verticalCenter: parent.verticalCenter
         columns: row.stacked ? 1 : 2
@@ -144,7 +182,9 @@ Item {
         Row {
             id: labelColumn
             Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
-            Layout.preferredWidth: row.labelWidth > 0 && !row.stacked ? row.labelWidth : implicitWidth
+            // a large row's title takes the room the controls leave, and wraps in it
+            Layout.fillWidth: row.wrapLabel
+            Layout.preferredWidth: row.wrapLabel ? 1 : row.labelWidth > 0 && !row.stacked ? row.labelWidth : implicitWidth
             visible: row.label !== ""
             spacing: 10 * Theme.unit
 
@@ -160,15 +200,22 @@ Item {
             }
 
             Column {
+                id: labelTexts
                 anchors.verticalCenter: parent.verticalCenter
+                width: row.wrapLabel ? Math.max(0, labelColumn.width - (pictureShown ? row.iconSize + labelColumn.spacing : 0))
+                                 : implicitWidth
+                readonly property bool pictureShown: row.icon.toString() !== "" || row.iconPlaceholder !== ""
 
                 Text {
                     id: labelText
+                    width: row.wrapLabel ? labelTexts.width : implicitWidth
                     text: row.label
                     textFormat: Text.PlainText
                     color: row.action ? (row.destructive ? Theme.destructive : Theme.tint) : Theme.text
                     opacity: row.enabled ? 1 : 0.4
-                    font.pixelSize: Theme.bodySize
+                    font.pixelSize: row.large ? Theme.headlineSize : Theme.bodySize
+                    font.bold: row.large
+                    wrapMode: row.wrapLabel ? Text.Wrap : Text.NoWrap
 
                     MouseArea {
                         id: scrubArea
@@ -214,6 +261,8 @@ Item {
 
                 Text {
                     visible: row.detail !== ""
+                    width: row.wrapLabel ? labelTexts.width : implicitWidth
+                    elide: row.wrapLabel ? Text.ElideRight : Text.ElideNone
                     text: row.detail
                     textFormat: row.detailFormat
                     color: Theme.secondaryText
@@ -232,7 +281,7 @@ Item {
 
         RowLayout {
             id: contentRow
-            Layout.fillWidth: true
+            Layout.fillWidth: !row.wrapLabel
             Layout.alignment: Qt.AlignVCenter
             spacing: 8 * Theme.unit
             visible: !row.action

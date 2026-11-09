@@ -25,20 +25,24 @@ HazeStage::Index HazeStage::findHaze(const HazePointer& haze) const {
     }
 }
 
-HazeStage::Index HazeStage::addHaze(const HazePointer& haze) {
+HazeStage::Index HazeStage::addHaze(const HazePointer& haze, bool shouldSetAsDefault) {
+    Index hazeId;
     auto found = _hazeMap.find(haze);
     if (found == _hazeMap.end()) {
-        auto hazeId = _hazes.newElement(haze);
+        hazeId = _hazes.newElement(haze);
         // Avoid failing to allocate a haze, just pass
         if (hazeId != INVALID_INDEX) {
 
             // Insert the haze and its index in the reverse map
             _hazeMap.insert(HazeMap::value_type(haze, hazeId));
         }
-        return hazeId;
     } else {
-        return (*found).second;
+        hazeId = (*found).second;
     }
+    if (shouldSetAsDefault && hazeId != INVALID_INDEX) {
+        _defaultHazeId = hazeId;
+    }
+    return hazeId;
 }
 
 HazeStage::HazePointer HazeStage::removeHaze(Index index) {
@@ -46,6 +50,9 @@ HazeStage::HazePointer HazeStage::removeHaze(Index index) {
     
     if (removed) {
         _hazeMap.erase(removed);
+        if (index == _defaultHazeId) {
+            _defaultHazeId = INVALID_INDEX;
+        }
     }
     return removed;
 }

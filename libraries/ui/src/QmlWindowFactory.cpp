@@ -8,8 +8,6 @@
 
 #include "QmlWindowFactory.h"
 
-#include <FunctionTwins.h>
-
 #include "QmlWebWindowClass.h"
 #include "QmlWindowClass.h"
 
@@ -28,16 +26,3 @@ void QmlWindowFactory::dispose(QObject* window) {
         window->deleteLater();
     }
 }
-
-// The twins of the four constructors the application registers, registered when this library loads.
-static const bool twinsRegistered = [] {
-    FunctionTwins::add(reinterpret_cast<const void*>(&QmlWindowClass::constructor),
-                       [] { return new QmlWindowFactory(QmlWindowFactory::Window, false); });
-    FunctionTwins::add(reinterpret_cast<const void*>(&QmlWindowClass::restricted_constructor),
-                       [] { return new QmlWindowFactory(QmlWindowFactory::Window, true); });
-    FunctionTwins::add(reinterpret_cast<const void*>(&QmlWebWindowClass::constructor),
-                       [] { return new QmlWindowFactory(QmlWindowFactory::WebWindow, false); });
-    FunctionTwins::add(reinterpret_cast<const void*>(&QmlWebWindowClass::restricted_constructor),
-                       [] { return new QmlWindowFactory(QmlWindowFactory::WebWindow, true); });
-    return true;
-}();

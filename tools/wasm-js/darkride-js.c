@@ -1215,3 +1215,48 @@ int64_t call_callback(int32_t callback, uint8_t* payload, int32_t length) {
     run_pending_jobs();
     return packed;
 }
+
+/* A line typed into the scripting console (Developer > Console): its source, one CBOR text the host placed through
+   alloc (the module's to free), evaluated as a script in this module's global scope, so what it declares with var or
+   function stays for the next line. Returned packed (the host frees it): a map { "text": the result as the console
+   shows it, String(result); "error": true when it threw, with the exception as String(exception), "Error: ..." }. */
+int64_t console_eval(uint8_t* payload, int32_t length) DARKRIDE_EXPORT("console_eval");
+int64_t console_eval(uint8_t* payload, int32_t length) {
+    if (!ctx) {
+        free(payload);
+        return 0;
+    }
+    JS_UpdateStackTop(rt);
+    JSValue source = JS_UNDEFINED;
+    if (payload && length > 0) {
+        cbor_reader r = cr_from_memory(payload, (size_t)length);
+        source = decode_next(&r);
+    }
+    free(payload);
+    size_t sourceLength = 0;
+    const char* text = JS_IsString(source) ? JS_ToCStringLen(ctx, &sourceLength, source) : NULL;
+    JS_FreeValue(ctx, source);
+    bool threw = true;
+    JSValue shown;
+    if (!text) {
+        shown = JS_NewString(ctx, "the console's line didn't arrive as text");
+    } else {
+        JSValue result = JS_Eval(ctx, text, sourceLength, "about:console", JS_EVAL_TYPE_GLOBAL);
+        JS_FreeCString(ctx, text);
+        threw = JS_IsException(result);
+        JSValue value = threw ? JS_GetException(ctx) : result;
+        shown = JS_ToString(ctx, value);
+        JS_FreeValue(ctx, value);
+        if (JS_IsException(shown)) {
+            JS_FreeValue(ctx, JS_GetException(ctx));
+            shown = JS_NewString(ctx, threw ? "an exception that can't be shown" : "a value that can't be shown");
+        }
+    }
+    JSValue reply = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, reply, "text", shown);
+    JS_SetPropertyStr(ctx, reply, "error", JS_NewBool(ctx, threw));
+    int64_t packed = pack_result(reply);
+    JS_FreeValue(ctx, reply);
+    run_pending_jobs();
+    return packed;
+}

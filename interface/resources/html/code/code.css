@@ -1,0 +1,98 @@
+/*
+  code.css
+  html/code
+
+  The Code panel's page: the editor fills the panel, with the error line and the status strip under it, in Darkride's
+  colours (CODE-EDITOR-PLAN.md, "Look").
+
+  Copyright 2026 Darkride.
+
+  Distributed under the MIT License.
+  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
+*/
+
+:root {
+    /* Build mode's greys (interface/resources/styles/editor.qss) */
+    --background: #2a2a2a;
+    --strip: #383838;
+    --edge: #232323;
+    --text: #d2d2d2;
+    --secondary: #8f8f8f;
+    --error: #ff6b6b;
+    --changed: #d8a657;
+    --mono: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--background);
+    color: var(--text);
+    font: 12px -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+#editor, #diff {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+#error {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    color: var(--error);
+    font-family: var(--mono);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-top: 1px solid var(--edge);
+}
+
+#status {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    height: 21px;
+    padding: 0 10px;
+    background: var(--strip);
+    border-top: 1px solid var(--edge);
+    color: var(--secondary);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+#status #saved {
+    margin-left: auto;
+}
+
+#status span:empty {
+    display: none;
+}
+
+#status #readonly {
+    color: #d8a657;
+}
+
+#status #saved.changed {
+    color: var(--changed);
+}
+
+#status #saved.problem {
+    color: var(--error);
+}
+
+#status #saved {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

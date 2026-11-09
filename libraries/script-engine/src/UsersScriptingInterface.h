@@ -14,6 +14,8 @@
 #ifndef hifi_UsersScriptingInterface_h
 #define hifi_UsersScriptingInterface_h
 
+#include <QtCore/QObject>
+
 #include <DependencyManager.h>
 #include <shared/ReadWriteLockable.h>
 

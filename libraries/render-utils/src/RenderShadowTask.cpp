@@ -420,22 +420,24 @@ void RenderShadowSetup::configure(const Config& config) {
 }
 
 void RenderShadowSetup::calculateBiases(float biasInput) {
-    const std::array<float, SHADOW_CASCADE_MAX_COUNT> CONSTANT_CASCADE_SCALE = {{ 0.01f, 0.01f, 0.015f, 0.02f }};
-    const float SLOPE_BIAS_SCALE = 0.005f;
-
+    // The bias in METRES along the light, from the map's texel (2026-11-07): a texel of fixed bias and 2.1 texels per
+    // unit of tan(angle) of slope bias (the 3 x 3 tent's farthest tap is 1.5 x sqrt 2 texels from the pixel), times
+    // the keylight's shadowBias / 0.5 (0.5 = this default, the builder's knob). LightStage divides them by each
+    // cascade map's depth range (setKeylightCascadeBias, setCascadeFrustum). Until 2026-11-07 the bias was a fraction
+    // of that range sized by the cascade's VIEW depth, and the range reaches along the light as far as the view does
+    // (computeFarDistance), so at a low sun it ate metres of shadow from the contact up, more when the camera looked
+    // along the sun (Caity: "the shadow disappears partially"; entry 31).
+    const float FIXED_BIAS_TEXELS = 1.0f;
+    const float SLOPE_BIAS_TEXELS = 2.1f;
+    const float DEFAULT_SHADOW_BIAS = 0.5f;
+    const float scale = biasInput / DEFAULT_SHADOW_BIAS;
     for (int i = 0; i < SHADOW_CASCADE_MAX_COUNT; i++) {
         auto& cascade = _globalShadowObject->getCascade(i);
-
-        // Constant bias is dependent on the depth precision
-        float cascadeDepth = cascade.getMaxDistance() - cascade.getMinDistance();
-        float constantBias = CONSTANT_CASCADE_SCALE[i] * biasInput / cascadeDepth;
-        setConstantBias(i, constantBias);
-
-        // Slope bias is dependent on the texel size
         float cascadeWidth = cascade.getFrustum()->getWidth();
         float cascadeHeight = cascade.getFrustum()->getHeight();
-        float cascadeTexelMaxDim = glm::max(cascadeWidth, cascadeHeight) / LightStage::Shadow::MAP_SIZE; // TODO: variable cascade resolution
-        setSlopeBias(i, cascadeTexelMaxDim * constantBias / SLOPE_BIAS_SCALE);
+        float texel = glm::max(cascadeWidth, cascadeHeight) / LightStage::Shadow::MAP_SIZE; // TODO: variable cascade resolution
+        setConstantBias(i, FIXED_BIAS_TEXELS * texel * scale);
+        setSlopeBias(i, SLOPE_BIAS_TEXELS * texel * scale);
     }
 }
 

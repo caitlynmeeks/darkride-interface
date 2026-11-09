@@ -17,7 +17,6 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QLoggingCategory>
-#include <QtScript/QScriptEngine>
 
 #include <DependencyManager.h>
 #include <shared/ScriptInitializerMixin.h>
@@ -39,9 +38,9 @@ public:
             qCWarning(logger) << "No script initializers in this host: scripts get no Midi object";
             return;
         }
-        initializers->registerScriptInitializer([this](QScriptEngine* engine) {
-            auto value = engine->newQObject(&_midi, QScriptEngine::QtOwnership, QScriptEngine::ExcludeDeleteLater);
-            engine->globalObject().setProperty("Midi", value);
+        // through each engine's own registerGlobalObject: both engines, and a world's scripts get the policy's stand-in
+        initializers->registerScriptInitializer([this](const ScriptGlobalObjectAdder& addGlobalObject) {
+            addGlobalObject("Midi", &_midi);
         });
     }
 

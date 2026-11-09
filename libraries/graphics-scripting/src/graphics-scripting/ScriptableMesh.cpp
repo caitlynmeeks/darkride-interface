@@ -7,13 +7,11 @@
 
 #include "ScriptableMesh.h"
 
-#include <QtScript/QScriptValue>
 
 #include <glm/glm.hpp>
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/transform.hpp>
 
-#include <BaseScriptEngine.h>
 #include <graphics/BufferViewHelpers.h>
 #include <graphics/GpuHelpers.h>
 #include <graphics/Geometry.h>
@@ -27,7 +25,7 @@
 // #define SCRIPTABLE_MESH_DEBUG 1
 
 scriptable::ScriptableMesh::ScriptableMesh(const ScriptableMeshBase& other)
-    : ScriptableMeshBase(other), QScriptable() {
+    : ScriptableMeshBase(other) {
     auto mesh = getMeshPointer();
     QString name = mesh ? QString::fromStdString(mesh->modelName) : "";
     if (name.isEmpty()) {
@@ -159,7 +157,7 @@ bool scriptable::ScriptableMesh::removeAttribute(const QString& attributeName) {
         return false;
     }
     if (slot == gpu::Stream::POSITION) {
-        context()->throwError("cannot remove .position attribute");
+        scriptable::reportError("cannot remove .position attribute");
         return false;
     }
     if (buffer_helpers::mesh::getBufferView(getMeshPointer(), slot).getNumElements()) {
@@ -264,33 +262,6 @@ bool scriptable::ScriptableMesh::setVertexProperty(glm::uint32 vertexIndex, cons
  * @param {number} index - The vertex index.
  * @param {object} properties - The properties of the mesh, per {@link GraphicsMesh}.
  */
-glm::uint32 scriptable::ScriptableMesh::forEachVertex(QScriptValue _callback) {
-    auto mesh = getMeshPointer();
-    if (!mesh) {
-        return 0;
-    }
-    auto scopedHandler = jsBindCallback(_callback);
-
-    // destructure so we can still invoke callback scoped, but with a custom signature (obj, i, jsMesh)
-    auto scope = scopedHandler.property("scope");
-    auto callback = scopedHandler.property("callback");
-    auto js = engine() ? engine() : scopedHandler.engine(); // cache value to avoid resolving each iteration
-    if (!js) {
-        return 0;
-    }
-    auto meshPart = js ? js->toScriptValue(getSelf()) : QScriptValue::NullValue;
-    int numProcessed = 0;
-    buffer_helpers::mesh::forEachVertex(mesh, [&](glm::uint32 index, const QVariantMap& values) {
-        auto result = callback.call(scope, { js->toScriptValue(values), index, meshPart });
-        if (js->hasUncaughtException()) {
-            js->currentContext()->throwValue(js->uncaughtException());
-            return false;
-        }
-        numProcessed++;
-        return true;
-    });
-    return numProcessed;
-}
 
 /**jsdoc
  * Called for each vertex when {@link GraphicsMesh.updateVertexAttributes} is called. The value returned by the script function 
@@ -302,49 +273,6 @@ glm::uint32 scriptable::ScriptableMesh::forEachVertex(QScriptValue _callback) {
  * @returns {Object<Graphics.BufferTypeName, Graphics.BufferType>|boolean} The attribute values to update the vertex with, or 
  *     <code>false</code> to not update the vertex.
  */
-glm::uint32 scriptable::ScriptableMesh::updateVertexAttributes(QScriptValue _callback) {
-    auto mesh = getMeshPointer();
-    if (!mesh) {
-        return 0;
-    }
-    auto scopedHandler = jsBindCallback(_callback);
-
-    // destructure so we can still invoke callback scoped, but with a custom signature (obj, i, jsMesh)
-    auto scope = scopedHandler.property("scope");
-    auto callback = scopedHandler.property("callback");
-    auto js = engine() ? engine() : scopedHandler.engine(); // cache value to avoid resolving each iteration
-    if (!js) {
-        return 0;
-    }
-    auto meshPart = js ? js->toScriptValue(getSelf()) : QScriptValue::NullValue;
-    int numProcessed = 0;
-    auto attributeViews = buffer_helpers::mesh::getAllBufferViews(mesh);
-    buffer_helpers::mesh::forEachVertex(mesh, [&](glm::uint32 index, const QVariantMap& values) {
-        auto obj = js->toScriptValue(values);
-        auto result = callback.call(scope, { obj, index, meshPart });
-        if (js->hasUncaughtException()) {
-            js->currentContext()->throwValue(js->uncaughtException());
-            return false;
-        }
-        if (result.isBool() && !result.toBool()) {
-            // bail without modifying data if user explicitly returns false
-            return true;
-        }
-        if (result.isObject() && !result.strictlyEquals(obj)) {
-            // user returned a new object (ie: instead of modifying input properties)
-            obj = result;
-        }
-        for (const auto& a : attributeViews) {
-            const auto& attribute = obj.property(a.first);
-            if (attribute.isValid()) {
-                buffer_helpers::setValue(a.second, index, attribute.toVariant());
-            }
-        }
-        numProcessed++;
-        return true;
-    });
-    return numProcessed;
-}
 
 // protect against user scripts sending bogus values
 bool scriptable::ScriptableMesh::isValidIndex(glm::uint32 vertexIndex, const QString& attributeName) const {
@@ -353,24 +281,18 @@ bool scriptable::ScriptableMesh::isValidIndex(glm::uint32 vertexIndex, const QSt
     }
     const auto last = getNumVertices() - 1;
     if (vertexIndex > last) {
-        if (context()) {
-            context()->throwError(QString("vertexIndex=%1 out of range (firstVertexIndex=%2, lastVertexIndex=%3)").arg(vertexIndex).arg(0).arg(last));
-        }
+                    scriptable::reportError(QString("vertexIndex=%1 out of range (firstVertexIndex=%2, lastVertexIndex=%3)").arg(vertexIndex).arg(0).arg(last));
         return false;
     }
     if (!attributeName.isEmpty()) {
         auto slotNum = getSlotNumber(attributeName);
         if (slotNum < 0) {
-            if (context()) {
-                context()->throwError(QString("invalid attributeName=%1").arg(attributeName));
-            }
+                            scriptable::reportError(QString("invalid attributeName=%1").arg(attributeName));
             return false;
         }
         auto view = buffer_helpers::mesh::getBufferView(getMeshPointer(), static_cast<gpu::Stream::Slot>(slotNum));
         if (vertexIndex >= (glm::uint32)view.getNumElements()) {
-            if (context()) {
-                context()->throwError(QString("vertexIndex=%1 out of range (attribute=%2, numElements=%3)").arg(vertexIndex).arg(attributeName).arg(view.getNumElements()));
-            }
+                            scriptable::reportError(QString("vertexIndex=%1 out of range (attribute=%2, numElements=%3)").arg(vertexIndex).arg(attributeName).arg(view.getNumElements()));
             return false;
         }
     }

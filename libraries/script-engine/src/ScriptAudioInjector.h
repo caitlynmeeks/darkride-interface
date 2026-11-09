@@ -138,13 +138,8 @@ signals:
 
 private:
     QWeakPointer<AudioInjector> _injector;
-
-    friend QScriptValue injectorToScriptValue(QScriptEngine* engine, ScriptAudioInjector* const& in);
 };
 
 Q_DECLARE_METATYPE(ScriptAudioInjector*)
-
-QScriptValue injectorToScriptValue(QScriptEngine* engine, ScriptAudioInjector* const& in);
-void injectorFromScriptValue(const QScriptValue& object, ScriptAudioInjector*& out);
 
 #endif // hifi_ScriptAudioInjector_h
