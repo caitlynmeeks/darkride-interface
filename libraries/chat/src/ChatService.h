@@ -14,6 +14,8 @@
 #ifndef hifi_ChatService_h
 #define hifi_ChatService_h
 
+#include <atomic>
+
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
@@ -41,10 +43,12 @@ public:
     ChatService();
     ~ChatService();
 
-    // follows the Darkride account from now on: signed in to chat while it is, signed out when it signs out
-    void start();
+    // follows the Darkride account from now on: signed in to chat while it is, signed out when it signs out.
+    // remembered: the "keep me signed in" setting; when it is off, whatever chat kept on this computer is left over
+    // from someone who chose not to be remembered, and it goes before chat runs
+    void start(bool remembered);
     // at quit, before the networking goes; forget: sign out of chat too (the account isn't remembered on this
-    // computer), waiting a moment for the homeserver to hear it
+    // computer), waiting a moment for the homeserver to hear it, then delete what chat kept here
     void stop(bool forget);
 
     State state() const { return _state; }
@@ -116,11 +120,18 @@ private:
     void requestChatToken();
     void createLibrary(const QString& homeserver);
     void freeLibrary();
+    void signOut();
+    void afterSignOut();
+    bool forgetChatData();
     void settle();
     void setState(State state, const QString& text = QString());
     void countUnread();
 
     DarkrideChat* _chat { nullptr };
+    // which library an event came from: one posted by a library since freed is dropped, not taken for the next one's
+    std::atomic<int> _generation { 0 };
+    // a sign-out sent to the library: its data goes once it has signed out, or once _signOutTimer gives up waiting
+    bool _signingOut { false };
     QString _homeserver;
     bool _started { false };
     bool _tokenRequested { false };
@@ -137,6 +148,8 @@ private:
     QString _tokenDisplayName;
     // sign-ins tried since the last one that worked, so a refusal doesn't loop
     int _signInAttempts { 0 };
+    // kept sessions of another account signed out since the last sign-in that worked, so one that won't go doesn't loop
+    int _keptSessionSignOuts { 0 };
     QString _lastSignInError;
 
     State _state { State::SignedOut };
@@ -149,6 +162,10 @@ private:
     QString _profileName;
     QString _profileAvatar;
     QTimer _retryTimer;
+    QTimer _signOutTimer;
+    // chat's data still locked after the library went (another program reading a file): tried again a few times
+    QTimer _forgetTimer;
+    int _forgetTries { 0 };
 };
 
 #endif // hifi_ChatService_h

@@ -16,6 +16,7 @@
 
 #include <AccountManager.h>
 #include <PathUtils.h>
+#include <SettingHandle.h>
 
 #include <darkride_chat.h>
 
@@ -31,6 +32,18 @@ static const int RETRY_AFTER_NETWORK_ERROR_MS = 30 * 1000;
 static const int RETRY_WHILE_CHAT_IS_OFF_MS = 5 * 60 * 1000;
 // at quit, how long a sign-out may take to reach the homeserver
 static const unsigned int SIGN_OUT_AT_QUIT_MS = 3000;
+// in the app, how long a sign-out may wait for the homeserver (offline, or slow) before chat's data goes anyway
+static const int SIGN_OUT_WAIT_MS = 3000;
+// chat's data still locked after the library went (another program reading a file in it): tried again this often
+static const int FORGET_RETRY_MS = 1000;
+static const int FORGET_TRIES = 10;
+// chat's data that couldn't be deleted: it goes at the next start, before chat runs
+static Setting::Handle<bool> chatForgetPending("private/chat/forgetPending", false);
+
+// everything chat keeps on this computer: a folder per chat server (createLibrary)
+static QString chatDataRoot() {
+    return QDir(PathUtils::getAppDataPath()).filePath("chat");
+}
 
 ChatService::ChatService() {
     _retryTimer.setSingleShot(true);
@@ -39,17 +52,33 @@ ChatService::ChatService() {
             requestChatToken();
         }
     });
+    _signOutTimer.setSingleShot(true);
+    _signOutTimer.setInterval(SIGN_OUT_WAIT_MS);
+    connect(&_signOutTimer, &QTimer::timeout, this, [this] {
+        qCDebug(chat_service) << "the chat sign-out didn't finish in" << SIGN_OUT_WAIT_MS << "ms; chat's data goes anyway";
+        afterSignOut();
+    });
+    _forgetTimer.setSingleShot(true);
+    _forgetTimer.setInterval(FORGET_RETRY_MS);
+    connect(&_forgetTimer, &QTimer::timeout, this, [this] {
+        if (!_chat) {
+            forgetChatData();
+        }
+    });
 }
 
 ChatService::~ChatService() {
     freeLibrary();
 }
 
-void ChatService::start() {
+void ChatService::start(bool remembered) {
     if (_started) {
         return;
     }
     _started = true;
+    if (!remembered || chatForgetPending.get()) {
+        forgetChatData();
+    }
     auto accountManager = DependencyManager::get<AccountManager>();
     connect(accountManager.data(), &AccountManager::loginComplete, this, &ChatService::onAccountLoggedIn);
     connect(accountManager.data(), &AccountManager::logoutComplete, this, &ChatService::onAccountLoggedOut);
@@ -63,17 +92,25 @@ void ChatService::start() {
 void ChatService::stop(bool forget) {
     _started = false;
     _retryTimer.stop();
+    _signOutTimer.stop();
+    _forgetTimer.stop();
     if (_chat && forget && _libraryState == "ready") {
         qCDebug(chat_service) << "signing out of chat at quit: the account isn't remembered on this computer";
         command({ { "op", "logout" } });
         darkride_chat_wait_idle(_chat, SIGN_OUT_AT_QUIT_MS);
     }
-    freeLibrary();
+    if (forget) {
+        // whatever chat was doing (signing in, or a sign-out the homeserver didn't answer in time), nothing of it stays
+        forgetChatData();
+    } else {
+        freeLibrary();
+    }
 }
 
 void ChatService::onAccountLoggedIn() {
     // a new sign-in, perhaps as someone else: the token says which chat account is wanted, and settle() compares
     _signInAttempts = 0;
+    _keptSessionSignOuts = 0;
     requestChatToken();
 }
 
@@ -84,6 +121,8 @@ void ChatService::onAccountLoggedOut() {
     _tokenDisplayName.clear();
     settle();
     if (!_chat) {
+        // no chat this run (or it has gone already): anything kept from an earlier one goes with the sign-out too
+        forgetChatData();
         setState(State::SignedOut, "Sign in to Darkride to use chat.");
     }
 }
@@ -168,6 +207,13 @@ void ChatService::createLibrary(const QString& homeserver) {
         { "device_name", "Darkride viewer (" + systemName() + ")" },
     };
     QByteArray json = QJsonDocument(config).toJson(QJsonDocument::Compact);
+    // the folder is the new library's now: a delete still being tried would pull it from under it (the library clears
+    // what an earlier sign-in left, and never lets a leftover stop its own)
+    _forgetTimer.stop();
+    _forgetTries = 0;
+    if (chatForgetPending.get()) {
+        chatForgetPending.set(false);
+    }
     _libraryState.clear();
     _libraryUser.clear();
     _chat = darkride_chat_new(json.constData(), &ChatService::receiveEvent, this);
@@ -185,6 +231,7 @@ void ChatService::freeLibrary() {
         // no event comes after this returns; those already posted are dropped with their target if it goes too
         darkride_chat_free(_chat);
         _chat = nullptr;
+        _generation++;
     }
     _libraryState.clear();
     _libraryUser.clear();
@@ -200,7 +247,13 @@ void ChatService::receiveEvent(const char* event, void* userData) {
     // on one of the library's threads, and the text lasts only for this call
     auto self = static_cast<ChatService*>(userData);
     QByteArray json(event);
-    QMetaObject::invokeMethod(self, [self, json] { self->handleEvent(json); }, Qt::QueuedConnection);
+    // the library posting this is the current one (freeLibrary changes the number only after it has stopped)
+    int generation = self->_generation;
+    QMetaObject::invokeMethod(self, [self, json, generation] {
+        if (generation == self->_generation) {
+            self->handleEvent(json);
+        }
+    }, Qt::QueuedConnection);
 }
 
 void ChatService::handleEvent(const QByteArray& json) {
@@ -227,6 +280,10 @@ void ChatService::handleEvent(const QByteArray& json) {
             emit timelineChanged(event.value("room").toString(), event.value("items").toArray());
         }
     } else if (kind == "profile") {
+        if (_state != State::Ready) {
+            // a kept session's, from another account, on its way out (settle): never named as this one
+            return;
+        }
         _profileName = event.value("name").toString();
         _profileAvatar = event.value("avatar").toString();
         // a chat account the app made has no name yet (only the web chat named one at its first sign-in): the one
@@ -248,6 +305,11 @@ void ChatService::handleEvent(const QByteArray& json) {
     } else if (kind == "error") {
         QString op = event.value("op").toString();
         QString message = event.value("message").toString();
+        if (op == "logout" && _signingOut) {
+            // Windows keeps the store's files open while the library runs: they go once it has (afterSignOut)
+            qCDebug(chat_service) << "chat:" << op << message;
+            return;
+        }
         qCWarning(chat_service) << "chat:" << op << message;
         if (op == "login_jwt") {
             _lastSignInError = message;
@@ -261,29 +323,42 @@ void ChatService::settle() {
         // waiting for a token (which starts the library), or for the library to say where it stands
         return;
     }
+    if (_signingOut) {
+        if (_libraryState == "signed_out") {
+            afterSignOut();
+        }
+        return;
+    }
     bool wanted = _started && DependencyManager::get<AccountManager>()->isLoggedIn();
     if (!wanted) {
-        if (_libraryState == "ready") {
-            // out of Darkride, out of chat: the library forgets the session and its keys too
-            command({ { "op", "logout" } });
-        }
+        // out of Darkride, out of chat: the session ends on the homeserver, and nothing of it stays on this computer
         _userId.clear();
         setState(State::SignedOut, "Sign in to Darkride to use chat.");
+        if (_libraryState == "ready") {
+            signOut();
+        } else {
+            forgetChatData();
+        }
         return;
     }
     if (_libraryState == "ready") {
         if (_expectedUser.isEmpty() || _libraryUser == _expectedUser) {
             _token.clear();
             _signInAttempts = 0;
+            _keptSessionSignOuts = 0;
             _userId = _libraryUser;
             setState(State::Ready);
             emit roomsChanged(_rooms);
         } else {
-            // a session kept from another account: out of it first; signed out, the token signs in this one
+            // a session kept from another account: out of it, and its data gone, first; then the token signs in this one
             qCDebug(chat_service) << "the kept chat session is" << _libraryUser << "and the account is" << _expectedUser;
             _userId.clear();
-            command({ { "op", "logout" } });
+            if (++_keptSessionSignOuts > MAX_SIGN_IN_ATTEMPTS) {
+                setState(State::Unavailable, "Chat couldn't sign out the last account on this computer.");
+                return;
+            }
             setState(State::SigningIn, "Signing in to chat…");
+            signOut();
         }
         return;
     }
@@ -306,6 +381,59 @@ void ChatService::settle() {
     } else {
         requestChatToken();
     }
+}
+
+void ChatService::signOut() {
+    _signingOut = true;
+    command({ { "op", "logout" } });
+    _signOutTimer.start();
+}
+
+// The library has signed out, or the homeserver didn't answer in time: the library goes (so its files close), then
+// what it kept; a sign-in still wanted starts a new library, which finds nothing of the last account.
+void ChatService::afterSignOut() {
+    _signingOut = false;
+    _signOutTimer.stop();
+    QString homeserver = _homeserver;
+    forgetChatData();
+    if (!_started || !DependencyManager::get<AccountManager>()->isLoggedIn()) {
+        setState(State::SignedOut, "Sign in to Darkride to use chat.");
+    } else if (!_token.isEmpty() && !homeserver.isEmpty()) {
+        createLibrary(homeserver);
+    } else {
+        requestChatToken();
+    }
+}
+
+// Deletes everything chat keeps on this computer (each chat server's session, keys, stored messages and fetched
+// files), the library gone first: while it runs, Windows keeps its database files locked.
+bool ChatService::forgetChatData() {
+    QElapsedTimer timer;
+    timer.start();
+    bool hadLibrary = _chat != nullptr;
+    freeLibrary();
+    qint64 freedMs = timer.restart();
+    QDir root(chatDataRoot());
+    bool existed = root.exists();
+    bool gone = !existed || root.removeRecursively();
+    if (hadLibrary || existed) {
+        // on the main thread: performance reads these (a free waits for the library's threads, at most 2 s)
+        qCDebug(chat_service) << "chat: library freed in" << freedMs << "ms, data removed in" << timer.elapsed() << "ms";
+    }
+    if (chatForgetPending.get() != !gone) {
+        chatForgetPending.set(!gone);
+    }
+    if (gone) {
+        _forgetTimer.stop();
+        _forgetTries = 0;
+    } else if (_started && ++_forgetTries < FORGET_TRIES) {
+        qCWarning(chat_service) << "chat's data stays in" << root.path() << "for now; trying again";
+        _forgetTimer.start();
+    } else {
+        qCWarning(chat_service) << "chat's data stays in" << root.path() << "until the next start";
+        _forgetTries = 0;
+    }
+    return gone;
 }
 
 void ChatService::setState(State state, const QString& text) {
