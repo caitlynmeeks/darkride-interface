@@ -256,6 +256,9 @@ void DomainSession::resetPhysicsReadyInformation() {
     _gpuTextureMemSizeStabilityCount = 0;
     _gpuTextureMemSizeAtLastCheck = 0;
     _gpuTextureMemSizeStableFor.invalidate();
+    _textureEngineIdleWait.invalidate();
+    _textureEngineIdleWaitStarts = 0;
+    _textureGateOpenedBy.clear();
     _arrivalTraceTimer.invalidate();
     _arrivalTraceTail.invalidate();
     const bool wasEnabled = _physicsEnabled;
@@ -663,6 +666,13 @@ static bool arrivalTrace() {
     return trace;
 }
 
+// test-only (TIVOLI_ARRIVAL_GATE_BUSY): the gate reads the texture engine as always busy, so a walled arrival proves
+// the ceiling of the idle wait (entry 33, Amendment 2). With the flag off the cost is one static bool read.
+static bool arrivalGateTestBusy() {
+    static const bool busy = !qgetenv("TIVOLI_ARRIVAL_GATE_BUSY").isEmpty();
+    return busy;
+}
+
 void DomainSession::traceArrivalGate() {
     if (!arrivalTrace()) {
         return;
@@ -692,8 +702,12 @@ void DomainSession::traceArrivalGate() {
         << " resourceMB=" << QString::number(renderStats->textureResourceGPUMemSize / MB, 'f', 1)
         << " populatedMB=" << QString::number(renderStats->textureResourcePopulatedGPUMemSize / MB, 'f', 1)
         << " pendingMB=" << QString::number(renderStats->texturePendingGPUTransferSize / MB, 'f', 1)
+        << " idealMB=" << QString::number(renderStats->textureResourceIdealGPUMemSize / MB, 'f', 1)
+        << " busy=" << renderStats->textureTransferEngineBusy
         << " stable=" << _gpuTextureMemSizeStabilityCount
         << " settleMs=" << (_gpuTextureMemSizeStableFor.isValid() ? _gpuTextureMemSizeStableFor.elapsed() : (qint64)-1)
+        << " idleWaitMs=" << (_textureEngineIdleWait.isValid() ? _textureEngineIdleWait.elapsed() : (qint64)-1)
+        << " restarts=" << std::max(0, _textureEngineIdleWaitStarts - 1)
         << " landing=" << (_octreeProcessor.safeLandingIsActive() ? "tracking" : "idle")
         << " received=" << progress.received << " waiting=" << progress.waiting << " serverDone=" << progress.serverDone
         << " arrivalWait=" << _arrivalWaitsForNearby.load() << " worldLoading=" << _worldLoading.active
@@ -721,9 +735,34 @@ bool DomainSession::gpuTextureMemSizeStable() {
     }
     _gpuTextureMemSizeAtLastCheck = textureResourceGPUMemSize;
 
-    if (_gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount &&
-        _gpuTextureMemSizeStableFor.hasExpired(_gpuTextureMemSettleMs)) {
-        return (textureResourceGPUMemSize == texturePopulatedGPUMemSize) && (textureTransferSize == 0);
+    const bool sizesSettled = _gpuTextureMemSizeStabilityCount >= _minimumGPUTextureMemSizeStabilityCount &&
+        _gpuTextureMemSizeStableFor.hasExpired(_gpuTextureMemSettleMs) &&
+        (textureResourceGPUMemSize == texturePopulatedGPUMemSize) && (textureTransferSize == 0);
+    if (!sizesSettled) {
+        _textureEngineIdleWait.invalidate();   // the wait below starts over when the sizes settle again
+        return false;
+    }
+
+    // Entry 33, Amendment 2. The sizes above are of the textures the engine has allocated: with the loading boost's
+    // order they settled on a small set that was fully uploaded while most textures were not yet allocated, and the
+    // world was presented with 8 of 180 MB in (the old order hid it: nothing uploads until everything is allocated).
+    // So the gate also waits for the engine to report nothing left to allocate, upload or demote (a per-frame copy
+    // from the render stats, like the sizes), for at most a ceiling from the moment the sizes settled, then opens
+    // anyway and says so: an engine that never reads idle must not hold the loading screen (editor-ui, physics).
+    static const qint64 TEXTURE_ENGINE_IDLE_CEILING_MS = 5000;
+    if (!_textureEngineIdleWait.isValid()) {
+        _textureEngineIdleWait.start();
+        ++_textureEngineIdleWaitStarts;
+    }
+    const bool engineBusy = renderStats->textureTransferEngineBusy != 0 || arrivalGateTestBusy();
+    if (!engineBusy) {
+        _textureGateOpenedBy = "texture engine idle";
+        return true;
+    }
+    if (_textureEngineIdleWait.hasExpired(TEXTURE_ENGINE_IDLE_CEILING_MS)) {
+        _textureGateOpenedBy = QString("texture engine still busy after %1 s")
+            .arg(TEXTURE_ENGINE_IDLE_CEILING_MS / MSECS_PER_SECOND);
+        return true;
     }
     return false;
 }
@@ -849,7 +888,9 @@ void DomainSession::tryToEnablePhysics(bool skipTextureCheck) {
             qDebug() << "Physics enabled" << "(ghosting" << DependencyManager::get<EntityTreeRenderer>()->getGhostingAllowed()
                 << "arrival waits for nearby" << _arrivalWaitsForNearby << "interstitial"
                 << DependencyManager::get<NodeList>()->getDomainHandler().getInterstitialModeEnabled()
-                << "safe landing complete" << safeLandingComplete << "full scenes" << _fullSceneReceivedCounter << ")";
+                << "safe landing complete" << safeLandingComplete << "full scenes" << _fullSceneReceivedCounter
+                << "texture gate"
+                << ((skipTextureCheck || !enableInterstitial) ? QString("skipped") : _textureGateOpenedBy) << ")";
             DependencyManager::get<EntityTreeRenderer>()->setSceneIsReady(true);
             // the renderer rechecks zone culling now that the scene is ready. Until 2026-10-19 this was
             // requeryOctree, whose new connection id made the entity server resend the whole view it had just sent

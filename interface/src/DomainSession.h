@@ -197,6 +197,12 @@ private:
     QElapsedTimer _gpuTextureMemSizeStableFor;        // since the size last changed (a monotonic clock); invalid = no check yet
     qint64 _gpuTextureMemSettleMs{ 500 };             // 500 ms = 30 checks at 60 presents a second, the old gate in front
     int _minimumGPUTextureMemSizeStabilityCount{ 5 };  // at least this many checks (a few slow presents cannot pass on two readings)
+    // entry 33, Amendment 2: once the size test holds, the gate also waits for the texture engine to report nothing
+    // left to allocate or upload, for at most a ceiling (then it opens anyway and says so). The wait runs from the
+    // moment the size test holds and starts over whenever it stops holding (editor-ui's and physics' conditions).
+    QElapsedTimer _textureEngineIdleWait;
+    int _textureEngineIdleWaitStarts{ 0 };    // how often the wait was started this arrival (restarts = starts - 1)
+    QString _textureGateOpenedBy;             // for the "Physics enabled" line: idle, or still busy at the ceiling
     // the arrival trace (TIVOLI_ARRIVAL_TRACE): one gate line a second while physics is off
     QElapsedTimer _arrivalTraceTimer;
     // the arrival trace's loading tail: started when physics turns on, the gate line goes on for 30 s more
