@@ -10,5 +10,4 @@ macro (setup_testcase_dependencies)
   package_libraries_for_deployment()
 endmacro ()
 
-# EditFilterTests runs the same edit filters over the same edits on the QtScript engine and on the WebAssembly one
-setup_hifi_testcase(Script Network)
+setup_hifi_testcase(Network)

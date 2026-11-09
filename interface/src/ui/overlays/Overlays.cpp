@@ -1077,16 +1077,6 @@ QVariantMap Overlays::getOverlaysProperties(const QVariant& propertiesById) {
     return result;
 }
 
-RayToOverlayIntersectionResult Overlays::findRayIntersection(const PickRay& ray, bool precisionPicking,
-                                                             const QScriptValue& overlayIDsToInclude,
-                                                             const QScriptValue& overlayIDsToDiscard,
-                                                             bool visibleOnly, bool collidableOnly) {
-    const QVector<EntityItemID> include = qVectorEntityItemIDFromScriptValue(overlayIDsToInclude);
-    const QVector<EntityItemID> discard = qVectorEntityItemIDFromScriptValue(overlayIDsToDiscard);
-
-    return findRayIntersectionVector(ray, precisionPicking, include, discard, visibleOnly, collidableOnly);
-}
-
 RayToOverlayIntersectionResult Overlays::findRayIntersectionVector(const PickRay& ray, bool precisionPicking,
                                                                    const QVector<EntityItemID>& include,
                                                                    const QVector<EntityItemID>& discard,
@@ -1145,40 +1135,6 @@ ParabolaToOverlayIntersectionResult Overlays::findParabolaIntersectionVector(con
     overlayResult.face = result.face;
     overlayResult.extraInfo = result.extraInfo;
     return overlayResult;
-}
-
-QScriptValue RayToOverlayIntersectionResultToScriptValue(QScriptEngine* engine, const RayToOverlayIntersectionResult& value) {
-    QScriptValue obj = engine->newObject();
-    obj.setProperty("intersects", value.intersects);
-    QScriptValue overlayIDValue = quuidToScriptValue(engine, value.overlayID);
-    obj.setProperty("overlayID", overlayIDValue);
-    obj.setProperty("distance", value.distance);
-    obj.setProperty("face", boxFaceToString(value.face));
-
-    QScriptValue intersection = vec3ToScriptValue(engine, value.intersection);
-    obj.setProperty("intersection", intersection);
-    QScriptValue surfaceNormal = vec3ToScriptValue(engine, value.surfaceNormal);
-    obj.setProperty("surfaceNormal", surfaceNormal);
-    obj.setProperty("extraInfo", engine->toScriptValue(value.extraInfo));
-    return obj;
-}
-
-void RayToOverlayIntersectionResultFromScriptValue(const QScriptValue& object, RayToOverlayIntersectionResult& value) {
-    value.intersects = object.property("intersects").toVariant().toBool();
-    QScriptValue overlayIDValue = object.property("overlayID");
-    quuidFromScriptValue(overlayIDValue, value.overlayID);
-    value.distance = object.property("distance").toVariant().toFloat();
-    value.face = boxFaceFromString(object.property("face").toVariant().toString());
-
-    QScriptValue intersection = object.property("intersection");
-    if (intersection.isValid()) {
-        vec3FromScriptValue(intersection, value.intersection);
-    }
-    QScriptValue surfaceNormal = object.property("surfaceNormal");
-    if (surfaceNormal.isValid()) {
-        vec3FromScriptValue(surfaceNormal, value.surfaceNormal);
-    }
-    value.extraInfo = object.property("extraInfo").toVariant().toMap();
 }
 
 bool Overlays::isLoaded(const QUuid& id) {

@@ -26,7 +26,11 @@ public:
     static void clearCache();
 
 protected:
+#if SHARED_WEB_PROFILES
+    TivoliWebEngineProfile(const QString& storageName, bool restricted);
+#else
     TivoliWebEngineProfile(QQmlContext* parent);
+#endif
     virtual ~TivoliWebEngineProfile();
 
     class RequestInterceptor : public Parent::RequestInterceptor {

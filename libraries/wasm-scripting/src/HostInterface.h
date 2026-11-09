@@ -51,6 +51,11 @@
 //      interrupted_entity() -> i64        the entity script that was running when the host last interrupted a
 //                                         call (the time limit), as a packed text, taken once; 0 for none
 //
+//    the scripting console (optional; the JavaScript guest from revision 6):
+//      console_eval(ptr, len) -> i64      a CBOR text, the line typed, placed through alloc (the module's to free),
+//                                         evaluated in the script's global scope; {"text": shown, "error": bool}
+//                                         packed (the host frees it through free)
+//
 //  A method is named by its name ("getEntityProperties"; the overloads are tried in order, the first whose
 //  arguments convert wins), its signature ("add(int,int)") or its index from the description ("#12").
 //
@@ -84,7 +89,7 @@ class ValueCodec;
 
 class HostInterface {
 public:
-    static const int32_t ABI_VERSION = 1;
+    static constexpr int32_t ABI_VERSION = 1;   // inline (C++17): usable by reference without a definition in a .cpp
     static const QString MODULE_NAME;  // "darkride"
     static const QString ERROR_KEY;    // "@error"
 

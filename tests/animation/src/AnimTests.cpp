@@ -53,7 +53,7 @@ void AnimTests::testClipInternalState() {
     bool loopFlag = true;
     bool mirrorFlag = false;
 
-    AnimClip clip(id, url, startFrame, endFrame, timeScale, loopFlag, mirrorFlag);
+    AnimClip clip(id, url, startFrame, endFrame, timeScale, loopFlag, mirrorFlag, AnimBlendType_Normal, QString(), 0.0f);
 
     QVERIFY(clip.getID() == id);
     QVERIFY(clip.getType() == AnimNode::Type::Clip);
@@ -84,7 +84,7 @@ void AnimTests::testClipEvaulate() {
     auto vars = AnimVariantMap();
     vars.set("FalseVar", false);
 
-    AnimClip clip(id, url, startFrame, endFrame, timeScale, loopFlag, mirrorFlag);
+    AnimClip clip(id, url, startFrame, endFrame, timeScale, loopFlag, mirrorFlag, AnimBlendType_Normal, QString(), 0.0f);
 
     AnimVariantMap triggers;
     clip.evaluate(vars, context, framesToSec(10.0f), triggers);
@@ -129,7 +129,7 @@ void AnimTests::testClipEvaulateWithVars() {
     vars.set("timeScale2", timeScale2);
     vars.set("loopFlag2", loopFlag2);
 
-    AnimClip clip(id, url, startFrame, endFrame, timeScale, loopFlag, mirrorFlag);
+    AnimClip clip(id, url, startFrame, endFrame, timeScale, loopFlag, mirrorFlag, AnimBlendType_Normal, QString(), 0.0f);
     clip.setStartFrameVar("startFrame2");
     clip.setEndFrameVar("endFrame2");
     clip.setTimeScaleVar("timeScale2");

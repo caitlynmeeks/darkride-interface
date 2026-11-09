@@ -10,6 +10,7 @@
 
 #include "VrMenu.h"
 
+#include <QtCore/QHash>
 #include <QtQml>
 #include <QMenuBar>
 #include <QDebug>
@@ -17,25 +18,33 @@
 #include "OffscreenUi.h"
 #include "ui/Logging.h"
 
-static unsigned int USER_DATA_ID = 0;
+class MenuUserData;
+// The binding of each action and of each QML item, by the object (QObject's user data, which held it, is gone in
+// Qt 6). An entry goes with its action; main thread only
+static QHash<const QObject*, MenuUserData*>& menuUserData() {
+    static QHash<const QObject*, MenuUserData*> map;
+    return map;
+}
 
 // Binds together a Qt Action or Menu with the QML Menu or MenuItem
 //
 // TODO On reflection, it may be pointless to use the UUID.  Perhaps
 // simply creating the bidirectional link pointing to both the widget
 // and qml object and inject the pointer into both objects
-class MenuUserData : public QObjectUserData {
+class MenuUserData {
 public:
     MenuUserData(QAction* action, QObject* qmlObject, QObject* qmlParent) {
-        if (!USER_DATA_ID) {
-            USER_DATA_ID = DependencyManager::get<OffscreenUi>()->getMenuUserDataId();
-        }
         _action = action;
         _qml = qmlObject;
         _qmlParent = qmlParent;
 
-        action->setUserData(USER_DATA_ID, this);
-        qmlObject->setUserData(USER_DATA_ID, this);
+        menuUserData()[action] = this;
+        menuUserData()[qmlObject] = this;
+        _actionGoneConnection = QObject::connect(action, &QObject::destroyed, [this] { delete this; });
+        _qmlGoneConnection = QObject::connect(qmlObject, &QObject::destroyed, [this] {
+            menuUserData().remove(_qml);
+            _qml = nullptr;
+        });
         qmlObject->setObjectName(uuid.toString());
         // Make sure we can find it again in the future
         updateQmlItemFromAction();
@@ -85,8 +94,12 @@ public:
     ~MenuUserData() {
         QObject::disconnect(_changedConnection);
         QObject::disconnect(_shutdownConnection);
-        _action->setUserData(USER_DATA_ID, nullptr);
-        _qml->setUserData(USER_DATA_ID, nullptr);
+        QObject::disconnect(_actionGoneConnection);
+        QObject::disconnect(_qmlGoneConnection);
+        menuUserData().remove(_action);
+        if (_qml) {
+            menuUserData().remove(_qml);
+        }
     }
 
     void updateQmlItemFromAction() {
@@ -107,8 +120,8 @@ public:
         _qml->setProperty("checked", 0);
         _qml->setProperty("visible", 0);
 
-        _action->setUserData(USER_DATA_ID, nullptr);
-        _qml->setUserData(USER_DATA_ID, nullptr);
+        menuUserData().remove(_action);
+        menuUserData().remove(_qml);
     }
 
 
@@ -119,7 +132,7 @@ public:
             qWarning() << "Attempted to fetch MenuUserData for null object";
             return false;
         }
-        return (nullptr != static_cast<MenuUserData*>(object->userData(USER_DATA_ID)));
+        return menuUserData().contains(object);
     }
 
     static MenuUserData* forObject(QAction* object) {
@@ -127,7 +140,7 @@ public:
             qWarning() << "Attempted to fetch MenuUserData for null object";
             return nullptr;
         }
-        auto result = static_cast<MenuUserData*>(object->userData(USER_DATA_ID));
+        auto result = menuUserData().value(object, nullptr);
         if (!result) {
             qWarning() << "Unable to find MenuUserData for object " << object;
             if (auto action = dynamic_cast<QAction*>(object)) {
@@ -145,6 +158,8 @@ private:
 
     QMetaObject::Connection _shutdownConnection;
     QMetaObject::Connection _changedConnection;
+    QMetaObject::Connection _actionGoneConnection;
+    QMetaObject::Connection _qmlGoneConnection;
     QAction* _action { nullptr };
     QObject* _qml { nullptr };
     QObject* _qmlParent{ nullptr };
@@ -211,8 +226,6 @@ void bindActionToQmlAction(QObject* qmlAction, QAction* action, QObject* qmlPare
     QObject::connect(qmlAction, SIGNAL(triggered()), action, SLOT(trigger()));
 }
 
-class QQuickMenuItem1;
-
 void VrMenu::addAction(QMenu* menu, QAction* action) {
     Q_ASSERT(!MenuUserData::hasData(action));
 
@@ -223,15 +236,21 @@ void VrMenu::addAction(QMenu* menu, QAction* action) {
     }
     QObject* menuQml = findMenuObject(userData->uuid.toString());
     Q_ASSERT(menuQml);
-    QQuickMenuItem1* returnedValue { nullptr };
+    // the menu is a QML VrMenuEntry (qml/desktop): its addItem is a QML function, which returns a QVariant
+    QVariant returnedValue;
     bool invokeResult = QMetaObject::invokeMethod(menuQml, "addItem", Qt::DirectConnection,
-        Q_RETURN_ARG(QQuickMenuItem1*, returnedValue),
-        Q_ARG(QString, action->text()));
+        Q_RETURN_ARG(QVariant, returnedValue),
+        Q_ARG(QVariant, QVariant::fromValue(action->text())));
 
     Q_ASSERT(invokeResult);
     Q_UNUSED(invokeResult); // FIXME - apparently we haven't upgraded the Qt on our unix Jenkins environments to 5.5.x
-    QObject* result = reinterpret_cast<QObject*>(returnedValue); // returnedValue.value<QObject*>();
+    QObject* result = returnedValue.value<QObject*>();
     Q_ASSERT(result);
+    if (!result) {
+        // (a menu that isn't a VrMenuEntry, or the call failed: the VR menu goes without this item, the app goes on)
+        qWarning() << "Unable to create QML menu item for action: " << action->text();
+        return;
+    }
     // Bind the QML and Widget together
     bindActionToQmlAction(result, action, _rootMenu);
 }
@@ -261,13 +280,13 @@ void VrMenu::insertAction(QAction* before, QAction* action) {
         beforeQml = findMenuObject(beforeUserData->uuid.toString());
     }
     QObject* menu = beforeQml->parent();
-    QQuickMenuItem1* returnedValue { nullptr };
+    QVariant returnedValue;
     // FIXME this needs to find the index of the beforeQml item and call insertItem(int, object)
     bool invokeResult = QMetaObject::invokeMethod(menu, "addItem", Qt::DirectConnection,
-        Q_RETURN_ARG(QQuickMenuItem1*, returnedValue),
-        Q_ARG(QString, action->text()));
+        Q_RETURN_ARG(QVariant, returnedValue),
+        Q_ARG(QVariant, QVariant::fromValue(action->text())));
     Q_ASSERT(invokeResult);
-    QObject* result = reinterpret_cast<QObject*>(returnedValue); // returnedValue.value<QObject*>();
+    QObject* result = returnedValue.value<QObject*>();
     Q_ASSERT(result);
     if ( result ) {
         bindActionToQmlAction(result, action, _rootMenu);
@@ -275,9 +294,6 @@ void VrMenu::insertAction(QAction* before, QAction* action) {
         qWarning() << "Failed to find addItem() method in object " << menu << ". Not inserting action " << action;
     }
 }
-
-class QQuickMenuBase;
-class QQuickMenu1;
 
 void VrMenu::removeAction(QAction* action) {
     if (!action) {

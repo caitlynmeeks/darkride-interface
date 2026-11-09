@@ -3,11 +3,16 @@
 //  qml/darkride
 //
 //  Darkride's Avatar panel, in the panels' iOS look (darkride/panel), with three tabs (Caity, 10-23):
-//  Avatar: the avatar worn (its picture and name); Favorites; the avatars in My Files as a collection (Caity, 10-24:
+//  Avatars (mary's redo, Caity's yes 11-08: AVATAR-REDO.png): changing avatar on top; the avatar worn (Keep in My
+//    Avatars for a web link, Favorite otherwise, its scale); the five worn last; My Avatars, one list of My Files,
+//    favorites and the recently worn (darkride/AvatarLibrary.qml, avatars'), favorites first, ten then Show All.
+//    Before the redo: the avatar worn (its picture and name); Favorites; the avatars in My Files as a collection (Caity, 10-24:
 //    she has 100+), under the panels' search bar (search, Cards / Tiles / List, Name / Newest / Folder), each with its
 //    picture when there is one beside it (<name>.preview.jpg or .png, or preview.jpg/.png in its folder: the
-//    picture an .fst's `preview` field names); wearing one from a link (Wear from Link…: an .fst as it is, a .glb
-//    imported first), the default, its scale, its collisions with the world, and putting it in My Files; for an avatar in your own My Files, a picture: taken of you wearing it
+//    picture an .fst's `preview` field names); wearing one from a link (Paste an Avatar Link…: an .fst as it is, a .glb
+//    imported first) or the default, in a card of their own above the avatar worn (mary's Apple pass, 11-08); saving
+//    an avatar on this computer in My Files (Save in My Files, under it); its scale and its collisions with the world
+//    (Body); for an avatar in your own My Files, a picture: taken of you wearing it
 //    or chosen from this computer (AvatarThumbnails), saved beside its .fst as <name>.preview.jpg, private when the
 //    avatar is (Caity, 10-24); the pictures load through the engine's loader (image://resource/), which asks the files
 //    host again with your login for a private one;
@@ -36,7 +41,7 @@ Page {
     // the tablet's loader sizes the page; a desktop window parents it to its content area
     anchors.fill: parent
     title: "Avatar"
-    tabs: ["Avatar", "Menu", "Nametag"]
+    tabs: ["Avatars", "Menu", "Nametag"]
 
     readonly property string tabSetting: "io.darkride.avatarPanel.tab"
 
@@ -45,7 +50,9 @@ Page {
             id: avatarBar
             visible: root.currentTab === 0
             settingsKey: "io.darkride.avatarPanel.files"
-            placeholder: "Search your avatars"
+            // a fresh panel lists them, ten a screen with where each lives (mary 11-08); a choice made is remembered
+            view: "list"
+            placeholder: "Search My Avatars"
             sorts: [
                 { text: "Name", value: "name", by: function (a, b) { return a.title.toLowerCase().localeCompare(b.title.toLowerCase()); } },
                 { text: "Newest", value: "newest", by: function (a, b) { return b.updated - a.updated; } },
@@ -61,8 +68,10 @@ Page {
         if (visible) {
             avatar.refresh();
             menu.reload();
-            myFiles.load();
+            library.refresh();
             nametag.load();
+        } else {
+            list.forget();
         }
     }
 
@@ -88,14 +97,14 @@ Page {
         property string url: ""
         property string name: ""
         property string pictureUrl: ""
-        property var favorites: []           // the favourites' names, sorted
         property string favoriteName: ""     // the favourite worn, when the avatar came from one
         property bool collisions: true
         property real scale: 1
-        property bool adding: false
-        property bool linking: false         // Wear from Link…'s box is open
+        property bool linking: false         // Paste an Avatar Link…'s box is open
+        // the avatar worn is a file on this computer: others see the default until it is saved in My Files
+        // (AvatarImporter::putInMyFiles takes only a local file)
+        readonly property bool onThisComputer: /^file:/i.test(url)
         property string linkGiven: ""        // a link being worn (after its license or the importer's questions)
-        property string removing: ""         // the favourite whose Remove waits for a second press
 
         // the Avatar page's own setting, kept so a favourite worn there is still named here
         readonly property string favoriteNameSetting: "com.tivolicloud.defaultScripts.avatarBookmarkName"
@@ -104,9 +113,6 @@ Page {
             url = String(MyAvatar.getFullAvatarURLFromPreferences());
             name = MyAvatar.getFullAvatarModelName();
             pictureUrl = webUrl(String(MyAvatar.getAvatarPreviewImageURL()).trim());
-            favorites = Object.keys(AvatarBookmarks.getBookmarks() || {}).sort(function (a, b) {
-                return a.toLowerCase() < b.toLowerCase() ? -1 : 1;
-            });
             favoriteName = Settings.getValue(favoriteNameSetting, "");
             collisions = MyAvatar.collisionsEnabled;
             scale = MyAvatar.scale;
@@ -188,104 +194,161 @@ Page {
                 Settings.setValue(favoriteNameSetting, "");
             }
         }
-        function addFavorite(favorite) {
-            favorite = favorite.trim();
-            if (favorite === "") {
-                return;
+        // a row of My Avatars: a favorite with a saved look (its scale and wearables) through the favorite, which
+        // replaces the wearables worn; anything else by its link, as a My Files avatar is worn (avatars, 11-08)
+        function wearEntry(entry) {
+            if (entry.source === "default") {
+                wearDefault();
+            } else if (entry.savedLook && entry.favoriteName) {
+                wearFavorite(entry.favoriteName);
+            } else {
+                wear(entry.url, entry.title);
             }
-            AvatarBookmarks.addBookmark(favorite);
-            Settings.setValue(favoriteNameSetting, favorite);
-            adding = false;
-            refresh();
-        }
-        function removeFavorite(favorite) {
-            AvatarBookmarks.removeBookmark(favorite);
-            if (favoriteName === favorite) {
-                Settings.setValue(favoriteNameSetting, "");
-            }
-            removing = "";
-            refresh();
         }
 
         Component.onCompleted: refresh()
     }
 
-    // the avatars (.fst files) in My Files; a tea-only (private) one is fetched with your login (the client asks again
-    // with it when the files host refuses: main 3c9b0d3468, and the metaverse's private files, 10-24)
+    // the avatars: My Files, favorites and the recently worn in one list (avatars' AvatarLibrary); it fetches My Files
+    // once an opening (refresh), and leaves its lists as they are when nothing changed
+    AvatarLibrary {
+        id: library
+    }
+
+    // what My Avatars shows, and what it holds only until the panel closes or the search changes
     QtObject {
-        id: myFiles
+        id: list
 
-        property var avatars: []     // [{ key, title, subtitle, picture, url, updated, isPrivate, badge }]
-        property int privateCount: 0
-        property bool busy: false
-        property string status: ""
+        property bool showAll: false
+        property bool showOlder: false
+        property var ghosts: ({})        // key -> entry: a star just taken off; the row keeps its place, dimmed
+        property string justKept: ""     // the avatar just kept: first in the list
+        readonly property bool searching: avatarBar.search !== ""
+        readonly property string wornKey: library.keyOf(avatar.url)
+        readonly property var worn: library.entryFor(avatar.url)
+        // My Avatars: My Files and favorites (the recently worn show only while searching)
+        readonly property int total: library.items.filter(function (entry) { return entry.inMyFiles || entry.favorite; }).length
 
-        // as the search bar arranges them, the one worn ticked
-        readonly property var shown: avatarBar.arrange(avatars).map(function (entry) {
-            return Object.assign({}, entry, { checked: entry.url === avatar.webUrl(avatar.url) });
-        })
-        // the avatar worn, when it is one of these
-        readonly property var worn: avatars.filter(function (entry) { return entry.url === avatar.webUrl(avatar.url); })[0] || null
-
-        // the picture beside an .fst: <name>.preview.jpg/.png (also as an upload names it: "Auxi Day" is stored as
-        // Auxi_Day), then preview.jpg/.png in its folder
-        function pictureFor(keys, folder, name) {
-            var safe = name.replace(/[^A-Za-z0-9._-]/g, "_");
-            var candidates = [name + ".preview.jpg", name + ".preview.jpeg", name + ".preview.png", safe + ".preview.jpg",
-                              "preview.jpg", "preview.jpeg", "preview.png"];
-            for (var i = 0; i < candidates.length; i++) {
-                var found = keys[(folder + candidates[i]).toLowerCase()];
-                if (found) {
-                    return found;
+        // favorites first (one just kept before them, a star just taken off where it was), then as the bar sorts
+        readonly property var ordered: {
+            var held = ghosts;
+            var all = library.items.filter(function (entry) {
+                return searching || entry.inMyFiles || entry.favorite || held[entry.key] !== undefined;
+            });
+            var present = {};
+            all.forEach(function (entry) { present[entry.key] = true; });
+            Object.keys(held).forEach(function (key) {
+                if (!present[key]) {
+                    all.push(held[key]);
                 }
-            }
-            return "";
+            });
+            var group = function (entry) {
+                return entry.key === justKept ? 0 : entry.favorite || held[entry.key] !== undefined ? 1 : 2;
+            };
+            return avatarBar.arrange(all).map(function (entry, index) { return { entry: entry, index: index }; })
+                .sort(function (a, b) { return group(a.entry) - group(b.entry) || a.index - b.index; })
+                .map(function (pair) { return pair.entry; });
         }
+        readonly property var current: ordered.filter(function (entry) { return !entry.legacy; })
+        readonly property var older: ordered.filter(function (entry) { return entry.legacy; })
+        readonly property bool folded: !searching && !showAll && current.length > 10
+        readonly property var shown: (searching ? ordered : folded ? current.slice(0, 10)
+                                      : current.concat(showOlder ? older : [])).map(decorate)
+        readonly property var actions: searching ? []
+            : folded ? [{ key: "all", label: "Show All " + ordered.length }]
+            : older.length > 0 && !showOlder ? [{ key: "older", label: "Older files", value: String(older.length) }]
+            : []
+        // the five worn last, each once (by its link)
+        readonly property var recent: {
+            var seen = {};
+            return library.recent.filter(function (entry) {
+                var first = !seen[entry.key];
+                seen[entry.key] = true;
+                return first;
+            }).slice(0, 5);
+        }
+        readonly property bool keepsLinks: library.items.some(function (entry) { return entry.favorite && entry.source === "web"; })
 
-        function load() {
-            if (!AccountServices.loggedIn || busy) {
-                return;
-            }
-            busy = true;
-            MetaverseRequests.send("GET", "/api/user/files", null, function (error, code, data) {
-                busy = false;
-                if (error || !data) {
-                    console.log("Avatar: My Files failed: " + code + " " + error);
-                    status = "Couldn't list My Files. Try again in a moment.";
-                    return;
-                }
-                var found = [];
-                var privates = 0;
-                var keys = {};
-                var updated = {};
-                (data.files || []).forEach(function (file) {
-                    var key = file.key.charAt(0) === "/" ? file.key : "/" + file.key;
-                    keys[key.toLowerCase()] = key;
-                    updated[key] = Date.parse(file.updated) || 0;
-                });
-                (data.files || []).forEach(function (file) {
-                    if (!/\.fst$/i.test(file.key)) {
-                        return;
-                    }
-                    var key = file.key.charAt(0) === "/" ? file.key : "/" + file.key;
-                    var folder = key.substring(0, key.lastIndexOf("/") + 1);
-                    var name = key.split("/").pop().replace(/\.fst$/i, "");
-                    var picture = pictureFor(keys, folder, name);
-                    privates += file.tea ? 1 : 0;
-                    found.push({ key: key, title: name, subtitle: folder.replace(/^\/|\/$/g, "") || "My Files",
-                                 // the picture's date in its address, so a new picture isn't the old one cached
-                                 keywords: key, picture: picture !== "" ? avatar.pictureSource(data.url + picture + "?" + updated[picture]) : "",
-                                 url: data.url + key, updated: Date.parse(file.updated) || 0, isPrivate: !!file.tea,
-                                 badge: file.tea ? "private" : "" });
-                });
-                found.sort(function (a, b) { return a.key.toLowerCase() < b.key.toLowerCase() ? -1 : 1; });
-                avatars = found;
-                privateCount = privates;
-                status = "";
+        // a row's entry with the view's own state: worn, dimmed (a star just taken off), the grey line in words
+        function decorate(entry) {
+            var ghost = ghosts[entry.key] !== undefined;
+            return Object.assign({}, entry, {
+                subtitle: words(entry, true),
+                badge: "",
+                checked: entry.key === wornKey,
+                dim: ghost,
+                favorite: entry.favorite && !ghost
             });
         }
+        // where an avatar lives, in words (mary's draft): My Files (yours everywhere), a web link (someone's site), or
+        // this computer (only you see it)
+        function words(entry, withLink) {
+            if (entry.source === "myFiles") {
+                return "My Files · " + (entry.legacy ? "older files" : entry.subtitle) + (entry.isPrivate ? " · private" : "");
+            }
+            if (entry.source === "local") {
+                return "This computer · only you see it";
+            }
+            return "Web link · " + entry.host + (withLink && entry.fileName ? "/…/" + entry.fileName : "");
+        }
+        function toggleStar(entry) {
+            var held = Object.assign({}, ghosts);
+            if (entry.favorite) {
+                // kept in place, dimmed, until the panel closes or the search changes: one more click undoes it
+                held[entry.key] = Object.assign({}, library.items.filter(function (e) { return e.key === entry.key; })[0] || entry,
+                                                { favorite: false });
+                ghosts = held;
+                library.unstar(entry.key);
+            } else {
+                delete held[entry.key];
+                ghosts = held;
+                library.star(entry.key, entry.url, entry.title);
+            }
+        }
+        function forget() {
+            ghosts = ({});
+            justKept = "";
+            showAll = false;
+            showOlder = false;
+        }
+    }
+    Connections {
+        target: avatarBar
+        function onSearchChanged() {
+            list.ghosts = ({});
+            list.justKept = "";
+        }
+    }
 
-        Component.onCompleted: load()
+    // the avatar worn, as the Wearing card shows it
+    QtObject {
+        id: wearing
+
+        readonly property var entry: list.worn
+        readonly property bool isDefault: avatar.url === "" || /^qrc:/i.test(avatar.url)
+            || avatar.url === String(MyAvatar.getDefaultFullAvatarURL())
+        // someone's website (or someone else's files): kept by its link, not saved
+        readonly property bool isWeb: !isDefault && !avatar.onThisComputer && !(entry && entry.inMyFiles)
+        readonly property bool kept: !!(entry && entry.favorite)
+        readonly property string title: entry ? entry.title
+            : avatar.name !== "" ? avatar.name.replace(/-/g, " ") : "Your avatar"
+        readonly property string words: isDefault ? "Darkride's default avatar"
+            : entry ? list.words(entry, false)
+            : avatar.onThisComputer ? "This computer · only you see it"
+            : "Web link · " + avatar.url.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "")
+        readonly property url picture: entry && entry.picture !== "" ? entry.picture : avatar.pictureSource(avatar.pictureUrl)
+
+        // Keep in My Avatars / Favorite: kept, it's first in the list and brought into view
+        function keep() {
+            library.keep();
+            list.justKept = list.wornKey;
+            Qt.callLater(function () { root.reveal(myAvatars); });
+        }
+        function unkeep() {
+            if (entry) {
+                library.unstar(entry.key);
+            }
+        }
     }
 
     // the worn avatar's picture, when it is in your own My Files: taken or chosen, looked at, then saved beside it
@@ -316,7 +379,7 @@ Page {
         }
         function choose() {
             choosing = true;
-            Window.browseAsync("A picture for " + (avatar.name || "this avatar"), "", "Images (*.png *.jpg *.jpeg)");
+            WindowScriptingInterface.browseAsync("A picture for " + (avatar.name || "this avatar"), "", "Images (*.png *.jpg *.jpeg)");
         }
         function chosen(path) {
             choosing = false;
@@ -325,7 +388,7 @@ Page {
             }
             AvatarThumbnails.fromFile(path, function (error, url) {
                 if (error) {
-                    status = "Couldn't use that picture: " + error + ".";
+                    status = "Couldn't use that image: " + error + ".";
                     return;
                 }
                 pending = url;
@@ -336,7 +399,7 @@ Page {
         function save() {
             busy = true;
             status = "Saving the picture…";
-            var wantPrivate = !!(myFiles.worn && myFiles.worn.isPrivate);
+            var wantPrivate = !!(list.worn && list.worn.isPrivate);
             var key = AvatarThumbnails.pictureKey(avatar.url);
             AvatarThumbnails.upload(pending, avatar.url, function (error, url) {
                 if (error) {
@@ -350,7 +413,7 @@ Page {
                     pending = "";
                     status = problem !== "" ? problem
                         : wantPrivate ? "Saved beside the avatar, private as the avatar is." : "Saved beside the avatar in My Files.";
-                    myFiles.load();
+                    library.refresh();
                 };
                 MetaverseRequests.send("GET", "/api/user/files", null, function (listError, code, data) {
                     var file = listError || !data ? null : (data.files || []).filter(function (f) {
@@ -373,7 +436,7 @@ Page {
         }
     }
     Connections {
-        target: Window
+        target: WindowScriptingInterface
         function onBrowseChanged(filename) {
             if (thumb.choosing) {
                 thumb.chosen(filename);
@@ -381,84 +444,48 @@ Page {
         }
     }
 
+    // a row of My Avatars: its picture, name and where it lives; the tick on the one worn; its star
+    Component {
+        id: avatarRow
+        ListRow {
+            wrapLabel: true
+            label: entry.title || ""
+            detail: entry.subtitle || ""
+            icon: entry.picture || ""
+            iconSize: Theme.rowIconSize
+            iconRadius: Theme.rowIconRadius
+            iconPlaceholder: entry.title || "?"
+            opacity: entry.dim ? Theme.dimmed : 1
+            clickable: true
+            onClicked: avatar.wearEntry(entry)
+            Checkmark {
+                checked: !!entry.checked
+            }
+            Star {
+                on: !!entry.favorite
+                onToggled: list.toggleStar(entry)
+            }
+        }
+    }
+
     Tab {
         visible: root.currentTab === 0
 
+        // changing avatar: its own card above the avatar worn (mary's Apple pass, 11-08; Caity's bug batch 10-29 first
+        // brought these up from below My Files)
         Section {
-            title: "Wearing"
-            footer: thumb.status !== "" ? thumb.status
-                : avatar.linking ? "A link to an avatar's .fst, .glb or .vrm file. A .glb or .vrm is set up for Darkride first, then you test it or keep it."
+            visible: !list.searching
+            footer: avatar.linking ? "A link to an avatar's .fst, .glb or .vrm file. A .glb or .vrm is set up for Darkride first, then you test it or keep it."
                 : ""
-            Item {
-                width: parent ? parent.width : 0
-                height: wornRow.implicitHeight + 2 * Theme.rowPadding + 4 * Theme.unit
 
-                RowLayout {
-                    id: wornRow
-                    x: Theme.cardPadding
-                    width: parent.width - 2 * Theme.cardPadding
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 12 * Theme.unit
-
-                    RoundedImage {
-                        Layout.preferredWidth: 56 * Theme.unit
-                        Layout.preferredHeight: 56 * Theme.unit
-                        radius: 10 * Theme.unit
-                        placeholder: avatar.name !== "" ? avatar.name : "?"
-                        source: myFiles.worn && myFiles.worn.picture !== "" ? myFiles.worn.picture
-                            : avatar.pictureSource(avatar.pictureUrl)
-                    }
-                    Column {
-                        Layout.fillWidth: true
-                        spacing: 2 * Theme.unit
-                        Text {
-                            width: parent.width
-                            text: avatar.favoriteName !== "" ? avatar.favoriteName : (avatar.name !== "" ? avatar.name : "Your avatar")
-                            textFormat: Text.PlainText
-                            color: Theme.text
-                            font.pixelSize: 16 * Theme.unit
-                            font.bold: true
-                            elide: Text.ElideMiddle
-                        }
-                        Text {
-                            width: parent.width
-                            text: avatar.url
-                            textFormat: Text.PlainText
-                            color: Theme.tertiaryText
-                            font.pixelSize: Theme.detailSize
-                            elide: Text.ElideMiddle
-                        }
-                    }
-                }
-            }
-            ListRow {
-                visible: thumb.possible && thumb.pending === ""
-                action: true
-                label: "Take Its Picture"
-                enabled: !thumb.busy
-                onClicked: thumb.take()
-            }
-            ListRow {
-                visible: thumb.possible && thumb.pending === ""
-                action: true
-                label: "Choose a Picture…"
-                enabled: !thumb.busy
-                onClicked: thumb.choose()
-            }
-            // here, not below My Files, where hundreds of avatars hid it (Caity's bug batch, 10-29)
-            ListRow {
-                action: true
-                label: "Use the Default Avatar"
-                onClicked: avatar.wearDefault()
-            }
-            // here too: a player who wore avatars by their link didn't find the box below My Files (Caity, 10-29)
             ListRow {
                 visible: !avatar.linking
                 action: true
-                label: "Wear from Link…"
+                label: "Paste an Avatar Link…"
                 onClicked: {
-                    // the link worn, selected: a paste replaces it, and it can be copied
-                    linkField.text = avatar.url;
+                    // the link worn, selected: a paste replaces it, and it can be copied; a file on this computer is no
+                    // link anyone can use, so then the box opens empty (mary, 11-08)
+                    linkField.text = avatar.onThisComputer ? "" : avatar.url;
                     avatar.linking = true;
                     linkField.forceActiveFocus();
                     linkField.selectAll();
@@ -491,11 +518,90 @@ Page {
                 enabled: linkField.text.trim() !== "" && linkField.text.trim() !== avatar.url
                 onClicked: avatar.wearLink(linkField.text)
             }
+            // the open link box is one task: the card holds only it until Wear or Cancel (mary, 11-08)
+            ListRow {
+                visible: !avatar.linking
+                action: true
+                label: "Wear the Default Avatar"
+                onClicked: avatar.wearDefault()
+            }
+        }
+
+        // everything about the avatar worn, above the list (mary's redo: nothing buried under 250 avatars)
+        Section {
+            visible: !list.searching
+            title: "Wearing"
+            footer: thumb.status
+            // the upload's rights line, with the row that uploads
+            rightsLine: avatar.onThisComputer
+
+            ListRow {
+                large: true
+                label: wearing.title
+                detail: wearing.words
+                icon: wearing.picture
+                iconPlaceholder: wearing.title
+            }
+            // under the avatar it saves, and only when it would do something (mary's Apple pass, 11-08)
+            ListRow {
+                visible: avatar.onThisComputer
+                action: true
+                label: "Save in My Files"
+                detail: "Others see the default avatar until it's saved."
+                onClicked: MenuInterface.triggerOption("Put Avatar in My Files")
+            }
+            // a web avatar is kept by its link; any other is a favorite; either way it comes first in My Avatars
+            ListRow {
+                visible: !wearing.isDefault
+                label: wearing.isWeb ? "Keep in My Avatars" : "Favorite"
+                // the line explains the setting and never narrates the switch: the switch and the row's star show it's
+                // kept (Caity's hand test, 11-08: "verbose and un-apple")
+                detail: wearing.isWeb ? "It stays on the web, at its link." : "Favorites come first in My Avatars."
+                Toggle {
+                    checked: wearing.kept
+                    onToggled: checked ? wearing.keep() : wearing.unkeep()
+                }
+            }
+            ListRow {
+                label: "Scale"
+                fill: true
+                labelWidth: 80 * Theme.unit
+                scrubbable: true
+                scrubValue: avatar.scale
+                scrubFrom: 0.1
+                scrubTo: 4
+                scrubStep: 0.01
+                onScrubbed: { MyAvatar.scale = Math.round(value * 100) / 100; avatar.refresh(); }
+
+                ValueSlider {
+                    from: 0.25; to: 3; stepSize: 0.05; decimals: 2; units: "×"
+                    value: avatar.scale
+                    onMoved: { MyAvatar.scale = value; avatar.refresh(); }
+                }
+                ResetButton {
+                    needed: Math.abs(avatar.scale - 1) > 0.005
+                    onClicked: { MyAvatar.scale = 1; avatar.refresh(); }
+                }
+            }
+            ListRow {
+                visible: thumb.possible && thumb.pending === ""
+                action: true
+                label: "Take Its Picture"
+                enabled: !thumb.busy
+                onClicked: thumb.take()
+            }
+            ListRow {
+                visible: thumb.possible && thumb.pending === ""
+                action: true
+                label: "Choose a Picture…"
+                enabled: !thumb.busy
+                onClicked: thumb.choose()
+            }
         }
 
         // a picture taken or chosen, to look at before it is saved
         Section {
-            visible: thumb.pending !== ""
+            visible: thumb.pending !== "" && !list.searching
             title: "New picture"
             rightsLine: thumb.fromFile
             Item {
@@ -526,134 +632,71 @@ Page {
             }
         }
 
+        // the five worn last, a click away (the search finds the ten kept)
         Section {
-            title: "Favorites"
-            footer: avatar.favorites.length === 0 && !avatar.adding ? "Add the avatar you wear to keep it a click away." : ""
+            visible: !list.searching && list.recent.length > 0
+            title: "Recent"
 
-            Repeater {
-                model: avatar.favorites.filter(function (name) { return avatarBar.matches({ title: name }); })
-                delegate: ListRow {
-                    label: modelData
-                    clickable: true
-                    onClicked: avatar.wearFavorite(modelData)
-                    Text {
-                        text: "✓"
-                        color: Theme.tint
-                        font.pixelSize: Theme.bodySize
-                        font.bold: true
-                        visible: modelData === avatar.favoriteName
-                    }
-                    // a first press asks, a second removes
-                    Text {
-                        text: avatar.removing === modelData ? "Remove" : "−"   // −
-                        color: avatar.removing === modelData ? Theme.destructive : Theme.tertiaryText
-                        font.pixelSize: Theme.bodySize
-                        font.bold: avatar.removing === modelData
-                        MouseArea {
-                            anchors.fill: parent
-                            anchors.margins: -8 * Theme.unit
-                            onClicked: {
-                                if (avatar.removing === modelData) {
-                                    avatar.removeFavorite(modelData);
-                                } else {
-                                    avatar.removing = modelData;
-                                }
-                            }
+            Item {
+                width: parent ? parent.width : 0
+                height: recentRow.implicitHeight + 2 * Theme.rowPadding
+
+                RowLayout {
+                    id: recentRow
+                    x: Theme.cardPadding
+                    width: parent.width - 2 * Theme.cardPadding
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.gap
+
+                    Repeater {
+                        model: list.recent
+                        delegate: CollectionTile {
+                            small: true
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            Layout.alignment: Qt.AlignTop
+                            title: modelData.title
+                            picture: modelData.picture
+                            pictureRatio: 1
+                            checked: modelData.key === list.wornKey || (modelData.source === "default" && wearing.isDefault)
+                            onClicked: avatar.wearEntry(modelData)
                         }
                     }
-                }
-            }
-            ListRow {
-                visible: avatar.adding
-                label: "Name"
-                fill: true
-                Field {
-                    id: favoriteField
-                    Layout.fillWidth: true
-                    horizontalAlignment: TextInput.AlignLeft
-                    onAccepted: avatar.addFavorite(text)
-                }
-            }
-            ListRow {
-                visible: avatar.adding
-                action: true
-                label: "Cancel"
-                onClicked: avatar.adding = false
-            }
-            ListRow {
-                visible: avatar.adding
-                action: true
-                label: "Save"
-                enabled: favoriteField.text.trim() !== ""
-                onClicked: avatar.addFavorite(favoriteField.text)
-            }
-            ListRow {
-                visible: !avatar.adding
-                action: true
-                label: "Add This Avatar…"
-                onClicked: {
-                    favoriteField.text = avatar.name;
-                    avatar.adding = true;
-                    favoriteField.forceActiveFocus();
-                    favoriteField.selectAll();
+                    // fewer than five keep a fifth's width each
+                    Repeater {
+                        model: Math.max(0, 5 - list.recent.length)
+                        delegate: Item {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                        }
+                    }
                 }
             }
         }
 
         CollectionView {
+            id: myAvatars
             objectName: "avatarFiles"   // a test fills it
-            visible: AccountServices.loggedIn
-            title: "My Files" + (myFiles.avatars.length > 0 ? " · " + (avatarBar.search !== ""
-                ? myFiles.shown.length + " of " + myFiles.avatars.length : myFiles.avatars.length) : "")
-            items: myFiles.shown
+            title: "My Avatars · " + (list.searching ? list.shown.length + " of " + list.total : list.total)
+            items: list.shown
             view: avatarBar.view
-            empty: myFiles.status !== "" ? myFiles.status : myFiles.busy ? "…"
-                : avatarBar.search !== "" ? "No avatar in My Files matches “" + avatarBar.search + "”."
-                : "Avatars you put in My Files show here."
-            footer: myFiles.privateCount > 0
-                ? "Private: other players see it when they're on Darkride 1.2 or newer; it can't be downloaded from a browser."
-                : ""
-            onActivated: avatar.wear(item.url, item.title)
-        }
-
-        Section {
-            title: "Body"
-            footer: "Put This Avatar in My Files uploads an avatar that is on this computer, private: people see it on you in Darkride, but it has no public link."
-            rightsLine: true
-
-            ListRow {
-                label: "Scale"
-                fill: true
-                labelWidth: 80 * Theme.unit
-                scrubbable: true
-                scrubValue: avatar.scale
-                scrubFrom: 0.1
-                scrubTo: 4
-                scrubStep: 0.01
-                onScrubbed: { MyAvatar.scale = Math.round(value * 100) / 100; avatar.refresh(); }
-
-                ValueSlider {
-                    from: 0.25; to: 3; stepSize: 0.05; decimals: 2; units: "×"
-                    value: avatar.scale
-                    onMoved: { MyAvatar.scale = value; avatar.refresh(); }
+            row: avatarRow
+            wrapLabels: true
+            actions: list.actions
+            empty: library.status !== "" ? library.status : library.busy ? "…"
+                : list.searching ? "No avatar in My Avatars matches “" + avatarBar.search + "”."
+                : "Avatars you keep and put in My Files show here."
+            footer: [library.privateCount > 0 ? "Private avatars are seen on you in Darkride 1.1 or newer, and have no public link." : "",
+                     list.keepsLinks ? "Web links you keep are stored on this computer." : ""]
+                .filter(function (line) { return line !== ""; }).join(" ")
+            onActivated: avatar.wearEntry(item)
+            onStarToggled: list.toggleStar(item)
+            onActionChosen: {
+                if (key === "all") {
+                    list.showAll = true;
+                } else {
+                    list.showOlder = true;
                 }
-                ResetButton {
-                    needed: Math.abs(avatar.scale - 1) > 0.005
-                    onClicked: { MyAvatar.scale = 1; avatar.refresh(); }
-                }
-            }
-            ListRow {
-                label: "Collide with the world"
-                detail: "Off: walk through walls (noclip)"
-                Toggle {
-                    checked: avatar.collisions
-                    onToggled: { MyAvatar.collisionsEnabled = checked; avatar.refresh(); }
-                }
-            }
-            ListRow {
-                action: true
-                label: "Put This Avatar in My Files"
-                onClicked: MenuInterface.triggerOption("Put Avatar in My Files")
             }
         }
     }

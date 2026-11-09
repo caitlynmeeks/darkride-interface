@@ -21,6 +21,7 @@
 #include <ObjectConstraintBallSocket.h>
 #include <ObjectConstraintConeTwist.h>
 #include <LogHandler.h>
+#include <shared/WireStream.h>
 
 EntityDynamicPointer interfaceDynamicFactory(EntityDynamicType type, const QUuid& id, EntityItemPointer ownerEntity) {
     switch (type) {
@@ -73,6 +74,7 @@ EntityDynamicPointer InterfaceDynamicFactory::factory(EntityDynamicType type,
 
 EntityDynamicPointer InterfaceDynamicFactory::factoryBA(EntityItemPointer ownerEntity, QByteArray data) {
     QDataStream serializedArgumentStream(data);
+    hifi::stream::pin(serializedArgumentStream);
     EntityDynamicType type;
     QUuid id;
 

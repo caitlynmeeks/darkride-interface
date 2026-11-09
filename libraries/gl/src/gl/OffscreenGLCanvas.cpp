@@ -21,7 +21,7 @@
 #include <QtCore/QPointer>
 #include <QtGui/QOffscreenSurface>
 #include <QtGui/QOpenGLContext>
-#include <QtGui/QOpenGLDebugLogger>
+#include <QOpenGLDebugLogger>   // QtGui on Qt 5, the QtOpenGL module on Qt 6
 
 #include <DependencyManager.h>
 

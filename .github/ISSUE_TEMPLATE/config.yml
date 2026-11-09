@@ -1,0 +1,10 @@
+# Copyright 2026 Tivoli Cloud VR, Inc.
+# Distributed under the MIT License. See the accompanying file LICENSE or https://opensource.org/licenses/MIT
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security hole privately
+    url: https://github.com/caitlynmeeks/darkride-interface/security/advisories/new
+    about: For a way to break into accounts, worlds, servers or someone else's computer. Only the team sees it.
+  - name: Builder documentation
+    url: https://darkride.ai/docs/
+    about: How to build worlds, avatars and scripts in Darkride.

@@ -32,6 +32,13 @@ public:
     QOpenGLContext* getContext() {
         return _context;
     }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // The canvas's own offscreen surface, made on the thread that made the canvas (the main thread): what the QML
+    // surface's render interface falls back to, instead of one of Qt's own made on the render thread
+    QOffscreenSurface* getOffscreenSurface() {
+        return _offscreenSurface;
+    }
+#endif
     QObject* getContextObject();
     
     void setThreadContext();

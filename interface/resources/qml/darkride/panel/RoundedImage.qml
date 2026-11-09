@@ -12,6 +12,7 @@
 //
 
 import QtQuick 2.15
+import QtQuick.Window 2.15
 import QtGraphicalEffects 1.12
 import "."
 
@@ -59,7 +60,10 @@ Item {
             anchors.fill: parent
             fillMode: picture.fillMode
             asynchronous: true
-            source: picture.source
+            // decoded at the size it's drawn (a hundred avatars' pictures at full size cost hundreds of MB; avatars,
+            // 11-08), and only once it has a size: a size of 0 means the picture's own
+            sourceSize: Qt.size(Math.ceil(width * Screen.devicePixelRatio), Math.ceil(height * Screen.devicePixelRatio))
+            source: width > 0 && height > 0 ? picture.source : ""
         }
     }
 }

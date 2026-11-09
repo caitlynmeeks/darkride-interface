@@ -20,8 +20,6 @@
 #include <QtCore/QUuid>
 #include <QtCore/QVariant>
 #include <QtCore/QVector>
-#include <QtScript/QScriptValue>
-#include <QtScript/QScriptable>
 
 #include "GraphicsScriptingUtil.h"
 
@@ -65,7 +63,7 @@ namespace scriptable {
      * @borrows GraphicsMesh.getVertextAttributes as getVertextAttributes
      * @borrows GraphicsMesh.setVertextAttributes as setVertextAttributes
      */
-    class ScriptableMesh : public ScriptableMeshBase, QScriptable {
+    class ScriptableMesh : public ScriptableMeshBase {
         Q_OBJECT
     public:
         Q_PROPERTY(glm::uint32 numParts READ getNumParts)
@@ -83,11 +81,11 @@ namespace scriptable {
         operator const ScriptableMeshBase*() const { return (qobject_cast<const scriptable::ScriptableMeshBase*>(this)); }
 
         ScriptableMesh(WeakModelProviderPointer provider, ScriptableModelBasePointer model, MeshPointer mesh, QObject* parent)
-            : ScriptableMeshBase(provider, model, mesh, parent), QScriptable() { strongMesh = mesh; }
+            : ScriptableMeshBase(provider, model, mesh, parent) { strongMesh = mesh; }
         ScriptableMesh(MeshPointer mesh, QObject* parent)
-            : ScriptableMeshBase(WeakModelProviderPointer(), nullptr, mesh, parent), QScriptable() { strongMesh = mesh; }
+            : ScriptableMeshBase(WeakModelProviderPointer(), nullptr, mesh, parent) { strongMesh = mesh; }
         ScriptableMesh(const ScriptableMeshBase& other);
-        ScriptableMesh(const ScriptableMesh& other) : ScriptableMeshBase(other), QScriptable() {};
+        ScriptableMesh(const ScriptableMesh& other) : ScriptableMeshBase(other) {};
         virtual ~ScriptableMesh();
 
         const scriptable::MeshPointer getOwnedMeshPointer() const { return strongMesh; }
@@ -226,22 +224,7 @@ namespace scriptable {
 
         // QScriptEngine-specific wrappers
 
-        /**jsdoc
-         * Updates vertex attributes by calling a function for each vertex. The function can return modified attributes to 
-         * update the vertex with.
-         * @function GraphicsMesh.updateVertexAttributes
-         * @param {GraphicsMesh~updateVertexAttributesCallback} callback - The function to call for each vertex.
-         * @returns {number} The number of vertices the callback was called for.
-         */
-        glm::uint32 updateVertexAttributes(QScriptValue callback);
 
-        /**jsdoc
-         * Calls a function for each vertex.
-         * @function GraphicsMesh.forEachVertex
-         * @param {GraphicsMesh~forEachVertexCallback} callback - The function to call for each vertex.
-         * @returns {number} The number of vertices the callback was called for.
-         */
-        glm::uint32 forEachVertex(QScriptValue callback);
 
         /**jsdoc
          * Checks if an index is valid and, optionally, that vertex has a particular attribute.
@@ -258,5 +241,8 @@ namespace scriptable {
 
 }
 
+// Qt 5 declares a QPointer's metatype after its class (Qt 6 declares these in Forward.h, before any use)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 Q_DECLARE_METATYPE(scriptable::ScriptableMeshPointer)
 Q_DECLARE_METATYPE(QVector<scriptable::ScriptableMeshPointer>)
+#endif

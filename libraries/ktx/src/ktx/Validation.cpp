@@ -248,7 +248,32 @@ bool Header::isValid() const {
         return false;
     }
 
-    // FIXME validate numberOfMipmapLevels based on the dimensions?
+    // The bounds a texture can have at all: a side past the largest texture the engine makes, a base image past
+    // what could be held, more array elements than make sense, or more mip levels than the dimensions allow, is
+    // not a texture, and each would be an allocation or a loop sized by the header
+    static const uint32_t MAX_DIMENSION { 8192 };
+    static const uint32_t MAX_ARRAY_ELEMENTS { 2048 };
+    static const size_t MAX_BASE_IMAGE_BYTES { size_t(2) * 1024 * 1024 * 1024 };
+    if (pixelWidth > MAX_DIMENSION || pixelHeight > MAX_DIMENSION || pixelDepth > MAX_DIMENSION) {
+        qDebug() << "Dimensions past the limit " << pixelWidth << "x" << pixelHeight << "x" << pixelDepth;
+        return false;
+    }
+    if (numberOfArrayElements > MAX_ARRAY_ELEMENTS) {
+        qDebug() << "Invalid number of array elements " << numberOfArrayElements;
+        return false;
+    }
+    uint32_t maxLevels = 1;
+    for (uint32_t dimension = evalMaxDimension(); dimension > 1; dimension >>= 1) {
+        ++maxLevels;
+    }
+    if (numberOfMipmapLevels > maxLevels) {
+        qDebug() << "Invalid number of mip levels " << numberOfMipmapLevels << " for " << evalMaxDimension();
+        return false;
+    }
+    if (evalImageSize(0) == 0 || evalImageSize(0) > MAX_BASE_IMAGE_BYTES) {
+        qDebug() << "Invalid base image size " << evalImageSize(0);
+        return false;
+    }
 
     if ((bytesOfKeyValueData % 4) != 0) {
         qDebug() << "Invalid keyvalue data size " << bytesOfKeyValueData;

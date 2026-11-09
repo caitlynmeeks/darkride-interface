@@ -1,7 +1,7 @@
 # Declare dependencies
 macro (setup_testcase_dependencies)
   # link in the shared libraries
-  link_hifi_libraries(shared test-utils ktx gpu gl ${PLATFORM_GL_BACKEND})
+  link_hifi_libraries(shared test-utils ktx gpu gl shaders ${PLATFORM_GL_BACKEND})
   package_libraries_for_deployment()
   target_opengl()
   target_zlib()

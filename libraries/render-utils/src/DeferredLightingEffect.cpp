@@ -10,6 +10,8 @@
 //
 
 #include "DeferredLightingEffect.h"
+
+#include "RenderUtilsLogging.h"
 #include <QtCore/QFileSelector>
 
 #include <GLMHelpers.h>
@@ -780,7 +782,7 @@ void DefaultLightingSetup::run(const RenderContextPointer& renderContext) {
             _defaultBackground = background;
 
             // Add the global light to the light stage (for later shadow rendering)
-            _defaultBackgroundID = backgroundStage->addBackground(_defaultBackground);
+            _defaultBackgroundID = backgroundStage->addBackground(_defaultBackground, true);
         }
     }
 
@@ -790,7 +792,10 @@ void DefaultLightingSetup::run(const RenderContextPointer& renderContext) {
             auto haze = std::make_shared<graphics::Haze>();
 
             _defaultHaze = haze;
-            _defaultHazeID = hazeStage->addHaze(_defaultHaze);
+            _defaultHazeID = hazeStage->addHaze(_defaultHaze, true);
+            // once per session: the index a frame without a zone sky shows (a zone's own background can hold index 0)
+            qCDebug(renderutils) << "DefaultLightingSetup: default background index" << _defaultBackgroundID
+                                 << ", default haze index" << _defaultHazeID << ", default light index" << _defaultLightID;
         }
     }
 }

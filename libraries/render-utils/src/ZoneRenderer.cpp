@@ -82,11 +82,19 @@ void SetupZones::run(const RenderContextPointer& context, const Input& input) {
         FrameDiag::ambientLights() = (int)lightStage->_currentFrame._ambientLights.size();
     }
 
-    // Finally add the default lights and background:
+    // Finally add the default lights, background and haze, each by the index its stage recorded for its default.
+    // Until 2026-11-07 the background and the haze pushed index 0, which is the default only when the default was
+    // allocated before any zone's own: the default waits for its sky texture, and a zone drawn first under the
+    // loading screen took index 0, so its sky stood in for the default for the whole session. No default yet:
+    // nothing is pushed (the draws skip an empty frame).
     lightStage->_currentFrame.pushSunLight(lightStage->getDefaultLight());
     lightStage->_currentFrame.pushAmbientLight(lightStage->getDefaultLight());
-    backgroundStage->_currentFrame.pushBackground(0);
-    hazeStage->_currentFrame.pushHaze(0);
+    if (!BackgroundStage::isIndexInvalid(backgroundStage->getDefaultBackground())) {
+        backgroundStage->_currentFrame.pushBackground(backgroundStage->getDefaultBackground());
+    }
+    if (!HazeStage::isIndexInvalid(hazeStage->getDefaultHaze())) {
+        hazeStage->_currentFrame.pushHaze(hazeStage->getDefaultHaze());
+    }
     bloomStage->_currentFrame.pushBloom(INVALID_INDEX);
 }
 

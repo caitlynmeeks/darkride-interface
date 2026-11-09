@@ -1,0 +1,25 @@
+;;
+;;  box.sb
+;;  libraries/make-link/resources/blender
+;;
+;;  The sandbox Make's Blender runs in (MakeBlender, through sandbox-exec): everything is denied but Blender's own app,
+;;  our fixed scripts (read only), one fresh scratch folder (read and write) and the GPU, which Blender looks for as it
+;;  starts. No network, no home folder, no clipboard or other program's services, no other program started (no fork,
+;;  so nothing outlives Blender). Params: BLENDER_APP, FIXED, WORK (real paths, no symbolic links).
+;;
+;;  Copyright 2026 Darkride.
+;;
+;;  Distributed under the MIT License.
+;;
+(version 1)
+(deny default)
+;; macOS's own base for a plain program: its libraries, preferences, logging, certificate checks
+(import "bsd.sb")
+(allow process-exec (subpath (param "BLENDER_APP")))
+(allow file-read* file-map-executable (subpath (param "BLENDER_APP")))
+(allow file-read* (subpath (param "FIXED")))
+(allow file-read* file-write* (subpath (param "WORK")))
+;; sizes and times of files (macOS's base allows this, to follow links)
+(allow file-read-metadata)
+(allow sysctl-read)
+(allow iokit-open-user-client (iokit-user-client-class "IOSurfaceRootUserClient" "AGXDeviceUserClient"))

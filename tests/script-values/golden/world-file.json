@@ -1,0 +1,64 @@
+[
+    {
+        "type": "Box",
+        "lastEdited": 1700000000000000,
+        "name": "Ground",
+        "locked": true,
+        "position": {
+            "x": 0,
+            "y": -0.05000000074505806,
+            "z": 0
+        },
+        "dimensions": {
+            "x": 200,
+            "y": 0.10000000149011612,
+            "z": 200
+        },
+        "created": 1700000000000000,
+        "shapeType": "Box",
+        "color": {
+            "red": 100,
+            "green": 100,
+            "blue": 110
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": false,
+        "isFacingAvatar": false
+    },
+    {
+        "type": "Zone",
+        "lastEdited": 1700000000000000,
+        "name": "Sky",
+        "locked": true,
+        "dimensions": {
+            "x": 400,
+            "y": 400,
+            "z": 400
+        },
+        "created": 1700000000000000,
+        "keyLight": {
+            "direction": {
+                "x": -0.5,
+                "y": -1,
+                "z": -0.5
+            }
+        },
+        "skybox": {
+            "color": {
+                "red": 60,
+                "green": 80,
+                "blue": 120
+            }
+        },
+        "keyLightMode": "enabled",
+        "ambientLightMode": "enabled",
+        "skyboxMode": "enabled",
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": false,
+        "isFacingAvatar": false
+    }
+]

@@ -9,8 +9,7 @@
 //
 
 import QtQuick 2.5
-import QtQuick.Controls 1.4
-import QtQuick.Dialogs 1.2 as OriginalDialogs
+import "../../js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1)
 import Qt.labs.settings 1.0
 
 import stylesUit 1.0
@@ -298,27 +297,6 @@ Windows.ScrollingWindow {
                             }
                         }
 
-                        RobotoMedium {
-                            id: engineLabel
-                            // the script's engine (Developer Menu on); a click moves a .js script to the other one; a row being released has no model
-                            property bool canSwitch: canEdit && !!model && /\.js$/i.test(model.url)
-                            visible: developerMenuEnabled && !!model && model.engine !== undefined && model.engine !== ""
-                            text: !!model && model.engine === "WebAssembly" ? "WebAssembly" : "QtScript"
-                            size: hifi.fontSizes.tableHeading
-                            color: engineLabelArea.pressed ? hifi.colors.white : parent.color
-                            anchors {
-                                right: reloadButton.left
-                                rightMargin: hifi.dimensions.tablePadding
-                                verticalCenter: reloadButton.verticalCenter
-                            }
-                            MouseArea {
-                                id: engineLabelArea
-                                anchors { fill: parent; margins: -2 }
-                                enabled: engineLabel.canSwitch
-                                onClicked: scripts.setRunOnWebAssembly(model.url, model.engine !== "WebAssembly")
-                            }
-                        }
-
                     }
 
                     RobotoMedium {
@@ -337,7 +315,7 @@ Windows.ScrollingWindow {
                     }
                 }
 
-                TableViewColumn {
+                HifiControls.TableViewColumn {
                     role: "name"
                 }
             }
@@ -395,7 +373,7 @@ Windows.ScrollingWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
 
-                TableViewColumn {
+                HifiControls.TableViewColumn {
                     role: "display";
                 }
 

@@ -24,14 +24,14 @@ if (ANDROID)
   add_custom_command(
     OUTPUT ${RESOURCES_RCC}
     DEPENDS ${RESOURCES_QRC} ${GENERATE_QRC_DEPENDS}
-    COMMAND "${QT_DIR}/bin/rcc"
+    COMMAND Qt${QT_VERSION_MAJOR}::rcc
     ARGS ${RESOURCES_QRC} -no-compress -binary -o ${RESOURCES_RCC}
   )
 else ()
   add_custom_command(
     OUTPUT ${RESOURCES_RCC}
     DEPENDS ${RESOURCES_QRC} ${GENERATE_QRC_DEPENDS}
-    COMMAND "${QT_DIR}/bin/rcc"
+    COMMAND Qt${QT_VERSION_MAJOR}::rcc
     ARGS ${RESOURCES_QRC} -binary -o ${RESOURCES_RCC}
   )
 endif()
@@ -53,7 +53,7 @@ foreach(EXTERNAL ${OPTIONAL_EXTERNALS})
   endif ()
 endforeach()
 
-find_package(Qt5LinguistTools REQUIRED)
+find_package(Qt${QT_VERSION_MAJOR}LinguistTools REQUIRED)
 find_package(Qt5LinguistToolsMacros)
 
 if (WIN32)
@@ -74,8 +74,8 @@ if (APPLE)
 endif ()
 
 find_package(
-  Qt5 COMPONENTS
-  Gui Widgets Multimedia Network Qml Quick QuickWidgets Script Svg
+  Qt${QT_VERSION_MAJOR} COMPONENTS
+  Gui Widgets Multimedia Network Qml Quick QuickWidgets Svg
   ${PLATFORM_QT_COMPONENTS}
   WebChannel WebSockets
 )
@@ -83,8 +83,8 @@ find_package(
 # grab the ui files in resources/ui
 file (GLOB_RECURSE QT_UI_FILES ui/*.ui)
 source_group("UI Files" FILES ${QT_UI_FILES})
-# have qt5 wrap them and generate the appropriate header files
-qt5_wrap_ui(QT_UI_HEADERS "${QT_UI_FILES}")
+# have qt wrap them and generate the appropriate header files
+qt_wrap_ui(QT_UI_HEADERS "${QT_UI_FILES}")
 
 # add them to the interface source files
 set(INTERFACE_SRCS ${INTERFACE_SRCS} "${QT_UI_HEADERS}" "${QT_RESOURCES}")
@@ -162,6 +162,11 @@ endif ()
 # create the executable, make it a bundle on OS X
 if (APPLE)
   add_executable(${TARGET_NAME} MACOSX_BUNDLE ${INTERFACE_SRCS} ${QM})
+  if (QT_VERSION_MAJOR EQUAL 6)
+    # Qt 6 starts the Mac camera only after its own permission check, which needs this static plugin in the app;
+    # qt_add_executable links it, plain add_executable doesn't (avatars, 11-04: face tracking stays off silently)
+    qt_import_plugins(${TARGET_NAME} INCLUDE Qt6::QDarwinCameraPermissionPlugin)
+  endif()
 
   # the bundle and the program are named for Darkride (Darkride.app, Contents/MacOS/Darkride); the CMake target
   # stays "interface"
@@ -211,6 +216,26 @@ endif()
 
 add_dependencies(${TARGET_NAME} resources)
 
+# Make's helper for the builder's Claude Code (tools/darkride-mcp), beside the program: Contents/MacOS/darkride-mcp in
+# the signed app, the one place Make's MCP line names (security A5)
+if (NOT ANDROID)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/tools/darkride-mcp" "${CMAKE_BINARY_DIR}/tools/darkride-mcp")
+  add_dependencies(${TARGET_NAME} darkride-mcp)
+  add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:darkride-mcp>" "$<TARGET_FILE_DIR:${TARGET_NAME}>/")
+endif ()
+# and the parent of Make's Blender (tools/darkride-make-watch), beside it: it ends Blender when the app is gone
+if (UNIX)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/tools/darkride-make-watch" "${CMAKE_BINARY_DIR}/tools/darkride-make-watch")
+  add_dependencies(${TARGET_NAME} darkride-make-watch)
+  add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:darkride-make-watch>" "$<TARGET_FILE_DIR:${TARGET_NAME}>/")
+endif ()
+
+# the resource bundle reaches the app only through the POST_BUILD copy below, which runs when the target relinks: relink
+# when the bundle changes, so a QML-only change reaches the app in an incremental build too (editor-ui, 11-04)
+set_property(TARGET ${TARGET_NAME} APPEND PROPERTY LINK_DEPENDS ${RESOURCES_RCC})
+
 if (WIN32)
   # These are external plugins, but we need to do the 'add dependency' here so that their
   # binary directories get added to the fixup path
@@ -231,7 +256,7 @@ link_hifi_libraries(
   model-networking model-baker entities avatars
   audio audio-client animation script-engine wasm-scripting physics vehicles
   render-utils entities-renderer avatars-renderer ui qml terrain
-  controllers plugins image platform auto-rigging unity-import chat
+  controllers plugins image platform auto-rigging unity-import chat make-link
   ui-plugins display-plugins input-plugins
   # Platform specific GL libraries
   ${PLATFORM_GL_BACKEND}
@@ -298,9 +323,9 @@ endif ()
 
 target_link_libraries(
   ${TARGET_NAME}
-  Qt5::Gui Qt5::Network Qt5::Multimedia Qt5::Widgets
-  Qt5::Qml Qt5::Quick Qt5::QuickWidgets Qt5::Script Qt5::Svg
-  Qt5::WebChannel
+  Qt::Gui Qt::Network Qt::Multimedia Qt::Widgets
+  Qt::Qml Qt::Quick Qt::QuickWidgets Qt::Svg
+  Qt::WebChannel
   ${PLATFORM_QT_LIBRARIES}
 )
 
@@ -308,6 +333,12 @@ if (UNIX AND NOT ANDROID)
     if (CMAKE_SYSTEM_NAME MATCHES "Linux")
         # Linux
         target_link_libraries(${TARGET_NAME} pthread atomic)
+        if (QT_VERSION_MAJOR EQUAL 6)
+            # Qt 6 declares X11's display type as Display at global scope on Linux, the name of the app's own class:
+            # every C++ file takes Qt's header first with the X11 name changed (src/LinuxQtX11Display.h)
+            target_compile_options(${TARGET_NAME} PRIVATE
+                "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/LinuxQtX11Display.h>")
+        endif ()
     else ()
         # OSX
         target_link_libraries(${TARGET_NAME} pthread)

@@ -9,10 +9,13 @@
 
 #include "WorldChat.h"
 
+#include <algorithm>
+
 #include <QtCore/QDateTime>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QPointer>
+#include <QtCore/QRegularExpression>
 #include <QtNetwork/QNetworkReply>
 
 #include <AccountManager.h>
@@ -24,6 +27,8 @@
 #include <NodeList.h>
 #include <PathUtils.h>
 
+#include "Application.h"
+#include "DomainSession.h"
 #include "avatar/AvatarManager.h"
 #include "avatar/MyAvatar.h"
 #include "scripting/ChatScriptingInterface.h"
@@ -33,11 +38,16 @@ namespace {
     const int ITEMS_MAX = 200;
     // after arriving in a world, the people already there come in over a few seconds: no "joined" for them
     const int SETTLE_MS = 3000;
+    // comings and goings within this are one change of who's here
+    const int PEOPLE_CHANGE_MS = 250;
     // a newcomer's account not known by then: no line for them
     const qint64 JOIN_NAME_WAIT_MS = 5000;
     const qint64 PROFILE_MAX_AGE_MS = 10 * 60 * 1000;
-    // as quiet as the old in-world chat's, alternating
-    const float SOUND_VOLUME = 0.05f;
+    // alternating, loud enough to hear over a world (the files peak at -19 and -23 dBFS; the old in-world chat's 0.05
+    // put them near -45, unheard)
+    const float SOUND_VOLUME = 0.5f;
+    // a burst of lines (a bot, a fast typist) is one note: no world can make a visitor's client chime on and on
+    const qint64 SOUND_GAP_MS = 3000;
 
     QPointer<WorldChat> theWorldChat;
 
@@ -74,23 +84,30 @@ WorldChat::WorldChat() {
                 usernameReceived(session, username);
             });
     connect(nodeList.data(), &NodeList::uuidChanged, this, &WorldChat::moving);
+    connect(&qApp->getDomainSession(), &DomainSession::physicsEnabledChanged, this, &WorldChat::arrivedChanged);
     connect(DependencyManager::get<AddressManager>().data(), &AddressManager::hostChanged, this, &WorldChat::moving);
     auto avatars = DependencyManager::get<AvatarManager>();
     connect(avatars.data(), &AvatarManager::avatarAddedEvent, this, &WorldChat::avatarAdded);
     connect(avatars.data(), &AvatarManager::avatarRemovedEvent, this, &WorldChat::avatarRemoved);
     _settle.setSingleShot(true);
     _settle.setInterval(SETTLE_MS);
-    connect(&_settle, &QTimer::timeout, this, [this] { _moving = false; });
+    connect(&_settle, &QTimer::timeout, this, [this] {
+        _moving = false;
+        _peopleChange.start();   // the world's name, looked up after arriving, is known by now
+    });
+    _peopleChange.setSingleShot(true);
+    _peopleChange.setInterval(PEOPLE_CHANGE_MS);
+    connect(&_peopleChange, &QTimer::timeout, this, &WorldChat::peopleChanged);
 
     auto sounds = DependencyManager::get<SoundCache>();
     _sounds[0] = sounds->getSound(PathUtils::resourcesUrl() + "sounds/chat1.wav");
     _sounds[1] = sounds->getSound(PathUtils::resourcesUrl() + "sounds/chat2.wav");
 
     // the two commands the old in-world chat had (/help, /me, /tts are the scripting API's own)
-    auto clearCommand = qvariant_cast<ChatCommand*>(chat->addCommand("clear", "clears this world's chat for yourself"));
+    auto clearCommand = qvariant_cast<ChatCommand*>(chat->addCommand("clear", "clears Local Chat for yourself"));
     connect(clearCommand, &ChatCommand::running, this, [this] {
         clear();
-        DependencyManager::get<ChatScriptingInterface>()->showMessage("You cleared this world's chat for yourself.");
+        DependencyManager::get<ChatScriptingInterface>()->showMessage("You cleared Local Chat for yourself.");
     });
     auto tpCommand = qvariant_cast<ChatCommand*>(chat->addCommand("tp", "goes to someone in this world"));
     connect(tpCommand, &ChatCommand::running, this, &WorldChat::teleportTo);
@@ -103,12 +120,21 @@ void WorldChat::markRead() {
     }
 }
 
+bool WorldChat::arrived() const {
+    return qApp->isPhysicsEnabled();
+}
+
 void WorldChat::send(const QString& text) {
     QString line = text.trimmed();
     if (line.isEmpty()) {
         return;
     }
     auto chat = DependencyManager::get<ChatScriptingInterface>();
+    // (the desk's box waits disabled; this is for the VR tablet's page, whose box doesn't know)
+    if (!arrived()) {
+        chat->showMessage("You can chat once you've arrived.");
+        return;
+    }
     if (line.startsWith('/')) {
         QString name = line.mid(1).section(' ', 0, 0).toLower();
         QString params = line.section(' ', 1).trimmed();
@@ -140,13 +166,59 @@ void WorldChat::messageReceived(const QVariantMap& data, const QUuid& sender) {
     item.insert("kind", data.value("me").toBool() ? "emote" : "text");
     item.insert("session", sender.toString());
     bool own = sender == DependencyManager::get<NodeList>()->getSessionUUID();
+    bool counted = !own && counts(sender, body);
     item.insert("own", own);
+    item.insert("counts", counted);
     add(item);
-    if (!own) {
+    if (counted) {
         _unread++;
+        // chat marks it read here when Local Chat is in front of you: then no sound, as a conversation you're reading
         emit unreadChanged(_unread);
-        playSound();
+        if (_unread > 0) {
+            playSound();
+        }
     }
+}
+
+bool WorldChat::counts(const QUuid& session, const QString& body) {
+    // a person's line always; an AI resident's or a bot's (its profile's mark) only with your name in it. One whose
+    // profile isn't in yet counts, as a person's (profiles are asked for as people arrive)
+    if (_marks.value(usernameOf(session)).isEmpty()) {
+        return true;
+    }
+    QStringList names { DependencyManager::get<AccountManager>()->getAccountInfo().getUsername() };
+    if (auto myAvatar = DependencyManager::get<AvatarManager>()->getMyAvatar()) {
+        names << myAvatar->getDisplayName() << myAvatar->getSessionDisplayName();
+    }
+    for (const QString& name : names) {
+        QString trimmed = name.trimmed();
+        if (trimmed.size() < 2) {
+            continue;
+        }
+        // the whole name, any case: "Caity" in "hi caity!", not in "Caitys"
+        QRegularExpression whole("(?<![\\w])" + QRegularExpression::escape(trimmed) + "(?![\\w])",
+                                 QRegularExpression::CaseInsensitiveOption | QRegularExpression::UseUnicodePropertiesOption);
+        if (whole.match(body).hasMatch()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int WorldChat::peopleHere() const {
+    // the avatars this world sends, and yours (AvatarManager keeps it among them)
+    return std::max(1, (int)DependencyManager::get<AvatarManager>()->getAvatarIdentifiers().size());
+}
+
+QString WorldChat::hereLine() const {
+    // until you've arrived, who's here isn't known: no count (mary 11-09)
+    if (!arrived()) {
+        return DependencyManager::get<AddressManager>()->getDomainLabel().trimmed();
+    }
+    int people = peopleHere();
+    QString here = people <= 1 ? QString("Only you") : QString("%1 here").arg(people);
+    QString world = DependencyManager::get<AddressManager>()->getDomainLabel().trimmed();
+    return world.isEmpty() ? here : world + QString::fromUtf8(" · ") + here;
 }
 
 void WorldChat::add(QJsonObject item) {
@@ -257,6 +329,9 @@ void WorldChat::fetchProfile(const QString& username) {
 }
 
 void WorldChat::avatarAdded(const QUuid& session) {
+    if (!_peopleChange.isActive()) {
+        _peopleChange.start();
+    }
     if (_moving) {
         usernameOf(session);   // its name ready for its first line
         return;
@@ -270,6 +345,9 @@ void WorldChat::avatarAdded(const QUuid& session) {
 }
 
 void WorldChat::avatarRemoved(const QUuid& session) {
+    if (!_peopleChange.isActive()) {
+        _peopleChange.start();
+    }
     _joining.remove(session);
     QString username = _usernames.value(session);
     if (!_moving && !username.isEmpty()) {
@@ -285,6 +363,7 @@ void WorldChat::moving() {
     _usernames.clear();
     _asked.clear();
     _joining.clear();
+    _peopleChange.start();
 }
 
 void WorldChat::clear() {
@@ -294,6 +373,10 @@ void WorldChat::clear() {
 }
 
 void WorldChat::playSound() {
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - _soundAt < SOUND_GAP_MS) {
+        return;
+    }
     SharedSoundPointer sound = _sounds[_nextSound];
     _nextSound = 1 - _nextSound;
     if (!sound || !sound->isReady()) {
@@ -301,8 +384,11 @@ void WorldChat::playSound() {
     }
     AudioInjectorOptions options;
     options.localOnly = true;
-    options.position = DependencyManager::get<AvatarManager>()->getMyAvatar()->getWorldPosition();
+    // one of Darkride's own sounds, not placed in the world: Settings' Interface volume turns it down (AudioClient's
+    // system sounds)
+    options.positionSet = false;
     options.volume = SOUND_VOLUME;
+    _soundAt = now;
     DependencyManager::get<AudioInjectorManager>()->playSound(sound, options, true);
 }
 

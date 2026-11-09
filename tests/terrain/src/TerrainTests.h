@@ -62,6 +62,7 @@ private slots:
     void brushMaskShapesTheBrushAndItsOutline();
     void topSurfaceIsTheGroundTheSkySees();
     void paintVoxelsPaintsTheStrengthsShareOfTheVoxels();
+    void snapshotKeepsReadingTheGridAsItWasWhenTaken();
 };
 
 #endif // hifi_TerrainTests_h

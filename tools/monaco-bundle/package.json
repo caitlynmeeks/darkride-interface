@@ -1,0 +1,12 @@
+{
+  "name": "darkride-monaco-bundle",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Builds the Code panel's copy of Monaco into interface/resources/html/code/monaco/ (see README.md)",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "esbuild": "0.24.2",
+    "monaco-editor": "0.52.2"
+  }
+}

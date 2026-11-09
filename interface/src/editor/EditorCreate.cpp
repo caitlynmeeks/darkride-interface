@@ -406,7 +406,7 @@ bool EditorUpload::send(QIODevice* body, const QString& fileName, const QString&
                         QString& error) {
     auto accountManager = DependencyManager::get<AccountManager>();
     if (!accountManager->isLoggedIn()) {
-        error = "you are not logged in";
+        error = "you're signed out";   // mary 11-08: one wording for it across the app
         delete body;
         return false;
     }

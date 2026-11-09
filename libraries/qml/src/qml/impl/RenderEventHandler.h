@@ -55,6 +55,15 @@ private:
 
     uint32_t _fbo{ 0 };
     uint32_t _depthStencil{ 0 };
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Shape (B) of the Qt 6 render target (QT6-STAGE1-RENDERING.md R2, entry 21): one fixed texture per surface size
+    // that Qt draws into, blitted into the cache texture each frame; shape (A) gives Qt the cache texture itself.
+    // TIVOLI_QML_TARGET=fixed picks (B), read once; the lab's kit times both on one binary, the loser goes.
+    static bool fixedTargetShape();
+    uint32_t _fixedTarget{ 0 };
+    uint32_t _blitReadFbo{ 0 };
+    uint32_t _blitDrawFbo{ 0 };
+#endif
 
     bool _initialized { false };
 };

@@ -62,6 +62,13 @@
     // long, so a quick arrival never shows them (Caity, 10-22: "a cancel loading button to go back and abort a load")
     var BUTTONS_AFTER = 3000;
     var AVATAR_GRACE = 10;        // s after physics: an avatar that has not loaded by then no longer holds the screen
+    // A refusal the viewer gets past by itself: the world couldn't check the sign-in's key (Window.domainConnectionRefused's
+    // LoginError, "Error decrypting username signature"; often another of the visitor's computers made a newer key). The
+    // viewer makes a new key after 3 such refusals (DomainHandler) and is in a second or two later, with no window to show
+    // (notifications.js keeps quiet about it too). The screen stays for it, so the arrival still waits for what is near the
+    // avatar: lifted at the refusal, Caity's 11-09 ride arrived in a bare world. Still not in this long after: it lifts.
+    var LOGIN_ERROR_REASON_CODE = 2;   // DomainHandler::ConnectionRefusedReason::LoginError
+    var LOGIN_RETRY_LIMIT = 15;        // s
     var LAUNCH_RELEASE_DELAY = 600;   // ms: the desktop screen's fade-in, after which it covers the launch screen
     var TICK = 50;                // ms
     // Cancel with nowhere to go back to (the first world after sign-in didn't come, or isn't there): an empty world the
@@ -141,6 +148,7 @@
             lostOld: kind !== "hop",        // and has seen the old world's physics or connection drop (physics is
                                             // sometimes switched on again in the very frame of a domain change)
             physicsOnAt: 0,
+            retryingSince: 0,               // when the world couldn't check the sign-in's key (LOGIN_RETRY_LIMIT)
             launchReleased: false,
             progress: -1,                   // the whole-world bar, 0 to 1; negative while it glides
             mostWaiting: 0,                 // the most entities the landing waited for once the world was all in
@@ -154,7 +162,14 @@
         tick();
     }
 
-    function end() {
+    // why: said in the log when the arrival's wait ends before physics is on, i.e. before the world near the avatar and
+    // its textures are in (DomainSession only waits for them while the wait is held), so a bare arrival names its cause
+    // in one line (Caity's 11-09 ride: a refusal had ended it unexplained)
+    function end(why) {
+        if (Window.isPhysicsEnabled && !Window.isPhysicsEnabled()) {
+            print("World loading: the arrival's wait ends before physics is on (" + (why || "no reason given") +
+                "): the world shows as it streams in");
+        }
         way = null;
         if (timer) {
             Script.clearInterval(timer);
@@ -210,7 +225,7 @@
         var now = Date.now();
         if (way.failed) {
             if (now - way.failed.at >= FAILED_SHOWN) {
-                end();
+                end("the new instance couldn't start");
                 Messages.sendLocalMessage(EXPLORE_CHANNEL, "open");
             } else {
                 send(true, way.failed.text, -1, false, false);
@@ -222,12 +237,20 @@
         }
         if (way.starting && now - way.started > STARTING_LIMIT * 1000) {
             print("World loading: no server after " + STARTING_LIMIT + " s, the screen lifts");
-            end();
+            end("no server after " + STARTING_LIMIT + " s");
             return;
         }
         var loading = loadingState();
         var physics = Window.isPhysicsEnabled();
         var connected = location.isConnected;
+        if (way.retryingSince && connected) {
+            way.retryingSince = 0;
+        } else if (way.retryingSince && now - way.retryingSince > LOGIN_RETRY_LIMIT * 1000) {
+            print("World loading: still not in " + LOGIN_RETRY_LIMIT + " s after the world couldn't check the sign-in's key, " +
+                "the screen lifts");
+            end("still not in " + LOGIN_RETRY_LIMIT + " s after the sign-in's key was refused");
+            return;
+        }
         if (way.left && (!physics || !connected)) {
             way.lostOld = true;
         }
@@ -243,7 +266,7 @@
         var arrived = !loading.active && landed && (avatarLoaded() || now - way.physicsOnAt > AVATAR_GRACE * 1000);
         if ((arrived && now - way.started >= MIN_SHOWN && (!way.notice || now - way.notice.at >= NOTICE_SHOWN)) ||
                 (!loading.active && !way.starting && now - way.waitFrom > TIME_LIMIT * 1000)) {
-            end();
+            end(arrived ? "arrived" : "the " + TIME_LIMIT + " s limit");
             return;
         }
 
@@ -481,7 +504,7 @@
                 way.failed = { text: String(data.reason), at: Date.now() };
                 tick();
             } else {
-                end();
+                end("the hop was called off");
             }
         }
     }
@@ -514,7 +537,7 @@
         } else if (button === "cancel" && canCancel()) {
             if (!canGoBack()) {
                 print("World loading: Cancel pressed, going to an empty place and opening Explore");
-                end();
+                end("Cancel");
                 location.handleLookupString(EMPTY_PLACE);
                 Messages.sendLocalMessage(EXPLORE_CHANNEL, "open");
                 return;
@@ -524,7 +547,7 @@
                 "going back to \"" + (from ? from.world : "") + "\""));
             if (way.kind === "hop" && !way.left) {
                 Messages.sendLocalMessage(CHANNEL, JSON.stringify({ type: "cancel" }));
-                end();
+                end("Cancel");
                 return;
             }
             var keepLaunch = way.launchReleased;
@@ -562,17 +585,28 @@
         }
     }
 
-    function onDomainConnectionRefused() {
-        if (way) {
-            end();
+    // a refusal lifts the screen, so its window shows; one the viewer gets past by itself keeps it (LOGIN_RETRY_LIMIT)
+    function onDomainConnectionRefused(reason, reasonCode) {
+        if (!way) {
+            return;
         }
+        if (Number(reasonCode) === LOGIN_ERROR_REASON_CODE && Account.isLoggedIn()) {
+            if (!way.retryingSince) {
+                way.retryingSince = Date.now();
+                print("World loading: the world couldn't check the sign-in's key; the viewer tries again with a new one, " +
+                    "the screen stays (up to " + LOGIN_RETRY_LIMIT + " s)");
+            }
+            return;
+        }
+        // a world chooses this text: quoted and cut, so its newlines can't make lines that read as the app's (security)
+        end("the world refused the connection: " + JSON.stringify(String(reason).slice(0, 200)));
     }
 
     // the world doesn't answer: the viewer gives up on it for now and opens its connection failure window, which the
     // screen would hide until its time limit (avatar-ai, 10-22: "Can't reach" hidden for 80 s), so the screen lifts
     function onDomainConnectionTimedOut() {
         if (way) {
-            end();
+            end("the world didn't answer");
         }
     }
 
@@ -593,7 +627,7 @@
     // a hop to a place that doesn't exist or is offline goes nowhere: the old world stays, so the screen lifts at once
     function onLookupFailed() {
         if (way && way.kind === "hop" && !way.left && !way.starting) {
-            end();
+            end("the place wasn't found or is offline");
         }
     }
 
@@ -631,6 +665,10 @@
     }
 
     Script.scriptEnding.connect(function () {
+        if (way && Window.isPhysicsEnabled && !Window.isPhysicsEnabled()) {
+            print("World loading: the arrival's wait ends before physics is on (the loading script stopped): the world " +
+                "shows as it streams in");
+        }
         if (timer) {
             Script.clearInterval(timer);
             timer = null;

@@ -56,7 +56,7 @@ jobs:
       QT_CMAKE_PREFIX_PATH: /opt/local/libexec/qt5/lib/cmake
       QT_PORTS: >-
         qt5-qtbase qt5-qtdeclarative qt5-qtquickcontrols qt5-qtquickcontrols2 qt5-qtgraphicaleffects qt5-qtsvg
-        qt5-qtscript qt5-qtmultimedia qt5-qtwebsockets qt5-qtwebchannel qt5-qtwebengine qt5-qtxmlpatterns
+        qt5-qtmultimedia qt5-qtwebsockets qt5-qtwebchannel qt5-qtwebengine qt5-qtxmlpatterns
         qt5-qtimageformats qt5-qtmacextras qt5-qtlocation qt5-qttools
       CCACHE_MAXSIZE: 1500M
       CACHE_SAVE: ${{ github.event_name == 'push' }}

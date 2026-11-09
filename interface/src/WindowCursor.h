@@ -33,7 +33,7 @@ public:
     void apply(QWidget* window, QWidget* glWidget);
 
 private:
-    mutable QMutex _lock{ QMutex::Recursive };
+    mutable QRecursiveMutex _lock;
     Qt::CursorShape _desiredShape{ Qt::BlankCursor };
     bool _needsChange{ false };
 };

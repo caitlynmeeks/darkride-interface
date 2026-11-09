@@ -16,7 +16,6 @@
 
 #include <QUuid>
 #include <QObject>
-#include <QtScript/QScriptable>
 
 /**jsdoc
  * The <code>Uuid</code> API provides facilities for working with UUIDs.
@@ -34,7 +33,7 @@
  */
 
 /// Scriptable interface for a UUID helper class object. Used exclusively in the JavaScript API
-class ScriptUUID : public QObject, protected QScriptable {
+class ScriptUUID : public QObject {
     Q_OBJECT
 #ifdef Q_MOC_RUN
     // moc expands the NULL macro as the compiler would (to __null or 0), which named this property __null and left
@@ -42,6 +41,10 @@ class ScriptUUID : public QObject, protected QScriptable {
 #undef NULL
 #endif
     Q_PROPERTY(QString NULL READ NULL_UUID CONSTANT) // String for use in scripts.
+
+public:
+    /// Made by its script engine as a child (what print writes through), or for a QML context with no parent.
+    explicit ScriptUUID(QObject* parent = nullptr) : QObject(parent) {}
 
 public slots:
     /**jsdoc

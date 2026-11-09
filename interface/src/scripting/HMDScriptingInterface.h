@@ -14,9 +14,6 @@
 
 #include <atomic>
 
-#include <QtScript/QScriptValue>
-class QScriptContext;
-class QScriptEngine;
 
 #include <GLMHelpers.h>
 #include <DependencyManager.h>
@@ -424,17 +421,15 @@ public:
      * @function HMD.getHUDLookAtPosition2D
      * @returns {Vec2} The position on the HUD overlay that your HMD is looking at, in pixels.
      */
-    static QScriptValue getHUDLookAtPosition2D(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Gets the position on the HUD overlay that your HMD is looking at, in world coordinates.
      * @function HMD.getHUDLookAtPosition3D
      * @returns {Vec3} The position on the HUD overlay the your HMD is looking at, in world coordinates.
      */
-    static QScriptValue getHUDLookAtPosition3D(QScriptContext* context, QScriptEngine* engine);
 
-    // The plain-value forms of the two above, for the WebAssembly script engine (whose JavaScript guest gives them
-    // to scripts under the names above): the position, or null when the HMD is not looking at the HUD overlay.
+    // What the two functions documented above reach (the JavaScript guest gives them to scripts under those names):
+    // the position, or null when the HMD is not looking at the HUD overlay.
     Q_INVOKABLE QVariant getHUDLookAtPosition2DValue() const;
     Q_INVOKABLE QVariant getHUDLookAtPosition3DValue() const;
 

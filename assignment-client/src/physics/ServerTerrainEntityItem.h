@@ -53,6 +53,8 @@ private:
     bool _built { false };
     quint64 _retryTime { 0 };   // a fetch that failed is tried again from this time (the file's server may be late)
     ResourceRequest* _request { nullptr };
+    bool _building { false };
+    uint64_t _fetchSerial { 0 };   // counts the fetches; a finished handler acts only for the fetch it was made for   // the fetched file is being read and built: no new fetch for the same URL and version
     QString _requestURL;
     uint32_t _requestVersion { 0 };
 

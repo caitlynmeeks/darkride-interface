@@ -15,8 +15,7 @@
 
 
 #include <QObject>
-#include <QAudioDeviceInfo>
-#include <QAudio>
+#include "AudioQtCompat.h"
 #include <QString>
 
 class HifiAudioDeviceInfo : public QObject {
@@ -35,31 +34,31 @@ public:
         _mode = deviceInfo.getMode();
         _isDefault = deviceInfo.isDefault();
         _deviceType = deviceInfo.getDeviceType();
-        _debugName = deviceInfo.getDevice().deviceName();
+        _debugName = hifi::audio::deviceName(deviceInfo.getDevice());
     }
 
-    HifiAudioDeviceInfo(QAudioDeviceInfo deviceInfo, bool isDefault, QAudio::Mode mode, DeviceType devType=both) :
+    HifiAudioDeviceInfo(hifi::audio::Device deviceInfo, bool isDefault, QAudio::Mode mode, DeviceType devType=both) :
         _audioDeviceInfo(deviceInfo),
         _isDefault(isDefault),
         _mode(mode),
         _deviceType(devType),
-        _debugName(deviceInfo.deviceName()) {
+        _debugName(hifi::audio::deviceName(deviceInfo)) {
     }
     
     void setMode(QAudio::Mode mode) { _mode = mode; }
     void setIsDefault() { _isDefault = true; }
-    void setDevice(QAudioDeviceInfo devInfo);
+    void setDevice(hifi::audio::Device devInfo);
     QString deviceName() const {
 #if defined(Q_OS_ANDROID)
-        return _audioDeviceInfo.deviceName();
+        return hifi::audio::deviceName(_audioDeviceInfo);
 #endif
         if (_isDefault) {
             return DEFAULT_DEVICE_NAME;
         } else {
-            return _audioDeviceInfo.deviceName();
+            return hifi::audio::deviceName(_audioDeviceInfo);
         }
     }
-    QAudioDeviceInfo getDevice() const { return _audioDeviceInfo; }
+    hifi::audio::Device getDevice() const { return _audioDeviceInfo; }
     bool isDefault() const { return _isDefault; }
     QAudio::Mode getMode() const { return _mode; }
     DeviceType getDeviceType() const { return _deviceType; }
@@ -68,7 +67,7 @@ public:
     bool operator!=(const HifiAudioDeviceInfo& rhs) const;
 
 private:
-    QAudioDeviceInfo _audioDeviceInfo;
+    hifi::audio::Device _audioDeviceInfo;
     bool _isDefault { false };
     QAudio::Mode _mode { QAudio::AudioInput };
     DeviceType _deviceType{ both };

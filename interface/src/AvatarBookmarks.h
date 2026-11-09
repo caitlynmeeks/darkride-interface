@@ -57,6 +57,17 @@ public slots:
     void addBookmark(const QString& bookmarkName);
 
     /**jsdoc
+     * Adds a new avatar bookmark for an avatar given by its link, not the one you're wearing: the avatar model's URL at scale
+     * 1, with no avatar entities. An existing bookmark is never replaced.
+     * @function AvatarBookmarks.addBookmarkForLink
+     * @param {string} bookmarkName - The name of the new avatar bookmark (case sensitive).
+     * @param {string} avatarUrl - The URL of the avatar model (an .fst or a model file).
+     * @returns {boolean} <code>true</code> if the bookmark was added, <code>false</code> if the name or URL is empty or the
+     *     name is in use already.
+     */
+    bool addBookmarkForLink(const QString& bookmarkName, const QString& avatarUrl);
+
+    /**jsdoc
      * Updates an existing bookmark with your current avatar model, scale, and wearables. No action is taken if the bookmark 
      * doesn't exist.
      * @function AvatarBookmarks.saveBookmark

@@ -25,7 +25,11 @@
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+QRecursiveMutex LogHandler::_mutex;
+#else
 QMutex LogHandler::_mutex(QMutex::Recursive);
+#endif
 
 LogHandler& LogHandler::getInstance() {
     static LogHandler staticInstance;

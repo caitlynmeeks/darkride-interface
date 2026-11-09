@@ -1,5 +1,5 @@
 import QtQuick 2.12
-import QtQuick.Dialogs 1.2 as OriginalDialogs
+import "js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1)
 
 import "dialogs"
 

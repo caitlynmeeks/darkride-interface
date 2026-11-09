@@ -220,16 +220,6 @@ QByteArray SoundProcessor::downSample(const QByteArray& rawAudioByteArray,
     return data;
 }
 
-QScriptValue soundSharedPointerToScriptValue(QScriptEngine* engine, const SharedSoundPointer& in) {
-    return engine->newQObject(new SoundScriptingInterface(in), QScriptEngine::ScriptOwnership);
-}
-
-void soundSharedPointerFromScriptValue(const QScriptValue& object, SharedSoundPointer& out) {
-    if (auto soundInterface = qobject_cast<SoundScriptingInterface*>(object.toQObject())) {
-        out = soundInterface->getSound();
-    }
-}
-
 SoundScriptingInterface::SoundScriptingInterface(const SharedSoundPointer& sound) : _sound(sound) {
     // During shutdown we can sometimes get an empty sound pointer back
     if (_sound) {

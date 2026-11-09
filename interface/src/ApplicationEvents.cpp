@@ -39,6 +39,9 @@
 #include <controllers/InputRecorder.h>
 #include <MainWindow.h>
 #include <OffscreenUi.h>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include "InterfaceLogging.h"   // the WinIdChange line below
+#endif
 #include <plugins/PluginManager.h>
 #include <ScriptEngines.h>
 #include <display-plugins/CompositorHelper.h>
@@ -50,6 +53,7 @@
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
 #endif
 #include "ui/LoginDialog.h"
+#include "ui/QuitCheck.h"
 #include "ui/StandAloneJSConsole.h"
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>
@@ -88,6 +92,21 @@ bool Application::notify(QObject * object, QEvent * event) {
         // The main window's layout passes, its moves and resizes, and the drags of its panel splitters move or resize
         // the GL view: no frame is drawn to it meanwhile, nor just after (see gl::ViewChangeGuard). Build mode's
         // panels showing and hiding crashed in Apple's GL driver.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        if (object == _window && event->type() == QEvent::WinIdChange) {
+            // Qt made the main window's native window again (on macOS when a QQuickWidget dock joined it; whether the
+            // Windows plugin does the same is what the line below answers): the offscreen UI's proxy window is the new
+            // one (its render control let the old one go as it died)
+            qCDebug(interfaceapp) << "main window's native window made again (WinIdChange)";
+            bool handled = QApplication::notify(object, event);
+            if (_window->windowHandle()) {
+                if (auto offscreenUi = getOffscreenUI()) {
+                    offscreenUi->setProxyWindow(_window->windowHandle());
+                }
+            }
+            return handled;
+        }
+#endif
         if (object == _window) {
             bool changesView = false;
             switch (event->type()) {
@@ -218,6 +237,17 @@ bool Application::event(QEvent* event) {
             if (handleFileOpenEvent(static_cast<QFileOpenEvent*>(event))) {
                 return true;
             }
+            break;
+
+        // a quit from outside the app (the Dock's Quit, another app asking; on Qt 6 macOS every quit arrives as this
+        // event): what isn't saved is asked about first (ui/QuitCheck.h), before Qt closes any window; Cancel
+        // ignores the event, which cancels the quit. Not in the frame: it comes once, at a quit.
+        case QEvent::Quit:
+            if (quitcheck::isOutsideRequest() && !quitcheck::mayQuit()) {
+                event->ignore();
+                return true;
+            }
+            quitcheck::goingAhead();
             break;
 
         default:
@@ -362,7 +392,11 @@ void Application::keyPressEvent(QKeyEvent* event) {
         synthesizeKeyReleasEvents();
     }
     if (!event->isAutoRepeat() && !signInShown) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        _keysPressed.insert(event->key(), { event->key(), event->text() });
+#else
         _keysPressed.insert(event->key(), *event);
+#endif
     }
 
     // Build mode's keys too (its shortcuts and fly camera) wait while a sign-in page is shown
@@ -596,12 +630,21 @@ void Application::synthesizeKeyReleasEvents() {
     // synthesize events for keys currently pressed, since we may not get their release events
     // Because our key event handlers may manipulate _keysPressed, lets swap the keys pressed into a local copy,
     // clearing the existing list.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QHash<int, PressedKey> keysPressed;
+    std::swap(keysPressed, _keysPressed);
+    for (auto& ev : keysPressed) {
+        QKeyEvent synthesizedEvent { QKeyEvent::KeyRelease, ev.key, Qt::NoModifier, ev.text };
+        keyReleaseEvent(&synthesizedEvent);
+    }
+#else
     QHash<int, QKeyEvent> keysPressed;
     std::swap(keysPressed, _keysPressed);
     for (auto& ev : keysPressed) {
         QKeyEvent synthesizedEvent { QKeyEvent::KeyRelease, ev.key(), Qt::NoModifier, ev.text() };
         keyReleaseEvent(&synthesizedEvent);
     }
+#endif
 }
 
 void Application::maybeToggleMenuVisible(QMouseEvent* event) const {

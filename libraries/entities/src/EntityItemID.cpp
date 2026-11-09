@@ -17,8 +17,6 @@
 #include <udt/PacketHeaders.h>
 #include <UUID.h>
 
-#include "RegisteredMetaTypes.h"
-
 int entityItemIDTypeID = qRegisterMetaType<EntityItemID>();
 
 EntityItemID::EntityItemID() : QUuid()
@@ -40,33 +38,6 @@ EntityItemID EntityItemID::readEntityItemIDFromBuffer(const unsigned char* data,
         BufferParser(data, bytesLeftToRead).readUuid(result);
     }
     return result;
-}
-
-QScriptValue EntityItemID::toScriptValue(QScriptEngine* engine) const { 
-    return EntityItemIDtoScriptValue(engine, *this); 
-}
-
-QScriptValue EntityItemIDtoScriptValue(QScriptEngine* engine, const EntityItemID& id) {
-    return quuidToScriptValue(engine, id);
-}
-
-void EntityItemIDfromScriptValue(const QScriptValue &object, EntityItemID& id) {
-    quuidFromScriptValue(object, id);
-}
-
-QVector<EntityItemID> qVectorEntityItemIDFromScriptValue(const QScriptValue& array) {
-    if (!array.isArray()) {
-        return QVector<EntityItemID>();
-    }
-    QVector<EntityItemID> newVector;
-    int length = array.property("length").toInteger();
-    newVector.reserve(length);
-    for (int i = 0; i < length; i++) {
-        QString uuidAsString = array.property(i).toString();
-        EntityItemID fromString(uuidAsString);
-        newVector << fromString;
-    }
-    return newVector;
 }
 
 size_t std::hash<EntityItemID>::operator()(const EntityItemID& id) const { return qHash(id); }

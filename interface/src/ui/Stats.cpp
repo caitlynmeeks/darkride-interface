@@ -119,6 +119,19 @@ extern std::atomic<size_t> RECTIFIED_TEXTURE_COUNT;
 
 // FROZEN (vehicle path): see the note at the top of this file.
 void Stats::updateStats(bool force) {
+    // entry 32 Amendment A: before both early returns, so "hidden" is written every frame. Shown = Show Statistics, or
+    // a forced update (the kits read the counts with Statistics hidden, forced every 250 ms) in the last second; never
+    // on the loading screen. The render thread reads it (setRenderDetails): a lone forced read after a quiet spell
+    // gets the counts of the last shown frame, current from the next frame on
+    const quint64 now = usecTimestampNow();
+    if (force) {
+        _lastForcedUpdate = now;
+    }
+    const quint64 FORCED_SHOWN_USECS = USECS_PER_SECOND;
+    _renderDetailsShown.store(!qApp->isInterstitialMode() &&
+                              (force || now - _lastForcedUpdate < FORCED_SHOWN_USECS ||
+                               Menu::getInstance()->isOptionChecked(MenuOption::Stats)),
+                              std::memory_order_relaxed);
 
     if (qApp->isInterstitialMode()) {
         return;
@@ -335,7 +348,7 @@ void Stats::updateStats(bool force) {
         // If the urls have changed, update the list
         if (shouldUpdateUrls) {
             _downloadUrls.clear();
-            foreach (const auto& resource, loadingRequests) {
+            for (const auto& resource : loadingRequests) {
                 _downloadUrls << resource->getURL().toString();
             }
             emit downloadUrlsChanged();
@@ -512,7 +525,7 @@ void Stats::updateStats(bool force) {
         // First iterate all the records, and for the ones that should be included, insert them into
         // a new Map sorted by average time...
         bool onlyDisplayTopTen = Menu::getInstance()->isOptionChecked(MenuOption::OnlyDisplayTopTen);
-        QMap<float, QString> sortedRecords;
+        QMultiMap<float, QString> sortedRecords;   // several records can share a time
         auto allRecords = PerformanceTimer::getAllTimerRecords();
         QMapIterator<QString, PerformanceTimerRecord> i(allRecords);
 
@@ -520,16 +533,14 @@ void Stats::updateStats(bool force) {
             i.next();
             if (includeTimingRecord(i.key())) {
                 float averageTime = (float)i.value().getMovingAverage() / (float)USECS_PER_MSEC;
-                sortedRecords.insertMulti(averageTime, i.key());
+                sortedRecords.insert(averageTime, i.key());
             }
         }
 
         int linesDisplayed = 0;
-        QMapIterator<float, QString> j(sortedRecords);
-        j.toBack();
         QString perfLines;
-        while (j.hasPrevious()) {
-            j.previous();
+        for (auto j = sortedRecords.constEnd(); j != sortedRecords.constBegin();) {   // slowest first
+            --j;
             static const QChar noBreakingSpace = QChar::Nbsp;
             QString functionName = j.value();
             const PerformanceTimerRecord& record = allRecords.value(functionName);
@@ -602,7 +613,12 @@ void Stats::updateStats(bool force) {
     }
 }
 
+// on the render thread, every frame: nothing while no one reads the counts (updateStats, entry 32 Amendment A), so
+// the hidden Statistics overlay isn't changed and redrawn every frame; no Menu or QObject call from here
 void Stats::setRenderDetails(const render::RenderDetails& details) {
+    if (!_renderDetailsShown.load(std::memory_order_relaxed)) {
+        return;
+    }
     STAT_UPDATE(triangles, details._trianglesRendered);
     STAT_UPDATE(instances, details._instancesDrawn);
     STAT_UPDATE(materialSwitches, details._materialSwitches);

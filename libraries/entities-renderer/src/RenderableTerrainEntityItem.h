@@ -29,6 +29,9 @@
 #define hifi_RenderableTerrainEntityItem_h
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <set>
@@ -53,6 +56,33 @@ namespace render { namespace entities {
 class TerrainEntityRenderer;
 } }
 
+// A mesh's vertex buffer as the drawing wants it (TerrainChunkPayload: de-indexed, the packed TerrainVertex), made
+// on the mesher's thread right after the mesh (the mesh finisher, terrain::AsyncMesher::setFinisher) and kept with
+// it, so the editing thread hands a ready buffer to a chunk item and builds nothing there (entry 24 step 3a). Before
+// a cut's meshes are drawn the buffers are given to the backend over frames (TerrainUploadPayload, step 3b): once a
+// batch has referenced one, the backend has it and it is resident, and a new cut is shown only when every buffer of
+// it is, so its first draw uploads nothing.
+struct TerrainMeshBuffer {
+    using Pointer = std::shared_ptr<TerrainMeshBuffer>;
+    gpu::BufferPointer buffer;
+    uint32_t vertexCount { 0 };
+    uint64_t uploadSerial { 0 };   // its place in the upload queue (the editing thread's), 0 until it is in it
+    // Entry 24 step 3d: only a buffer something waits for is sent. wanted: the serial of the terrain's last update
+    // whose readiness pass (a pending cut's nodes) or drawn set (an item still waiting) found it not resident; it
+    // counts only while it equals the terrain's current serial, so the marks of an abandoned cut expire with the next
+    // update (the editing thread's). posted: the upload post carrying it, 0 until one does.
+    uint64_t wanted { 0 };
+    uint64_t posted { 0 };
+    bool resident { false };       // a batch has referenced it (the editing thread's view of it)
+    static Pointer make(const terrain::ChunkMesh& mesh);   // the buffer, on whichever thread
+};
+// The buffers made on the pool, as they come, for the editing thread to queue (shared with the finisher, which may
+// outlive the terrain while a job finishes).
+struct TerrainMadeBuffers {
+    std::mutex mutex;
+    std::vector<TerrainMeshBuffer::Pointer> made;
+};
+
 class RenderableTerrainEntityItem : public TerrainEntityItem {
     friend class render::entities::TerrainEntityRenderer;
 public:
@@ -61,6 +91,7 @@ public:
 
     struct ChunkMeshEntry {
         terrain::ChunkMesh mesh;
+        TerrainMeshBuffer::Pointer buffer;   // made with the mesh on the pool (the mesh finisher)
         uint64_t version { 0 };   // the mesh version the mesh was built at
     };
     using ChunkMeshes = std::map<terrain::ChunkKey, ChunkMeshEntry>;
@@ -135,11 +166,28 @@ public:
         terrain::ChunkKey key;                       // the chunk or coarser node whose voxels the mesh is in
         const terrain::ChunkMesh* mesh { nullptr };
         uint64_t version { 0 };                      // changes whenever the mesh does
+        TerrainMeshBuffer::Pointer buffer;           // its vertex buffer, ready; null only for a mesh made without one
     };
     // What to draw now: a mesh each for the nodes chosen that have a surface and their mesh already.
     void getDrawnChunks(std::vector<DrawnChunk>& drawn) const;
     // Changes whenever getDrawnChunks() may give something else.
     uint64_t getDrawnVersion() const { return _levelOfDetail.getDrawnVersion() + _meshVersion; }
+    // The vertex buffers made beside the meshes on the pool, queued in the order they came (entry 24 steps 3b and
+    // 3d). Only a buffer something waits for is sent (wantBuffer, in updateLevelOfDetail: the pending cut's readiness
+    // checks and the drawn set's items still waiting mark them, and the marks expire with the next update, so an
+    // abandoned cut sends nothing): getUploadsDue gives the wanted ones in queue order, the backlog whole up to a share of
+    // bytes (the first always), as one post for the renderer to reference from a batch; the same post again until it
+    // says the post has gone through (uploadsFed, with the post's serial), which
+    // marks those resident, lets a cut waiting on them show, and changes the drawn version. A buffer nobody waits for
+    // stays in the queue, live and unsent, until a cut wants it or its mesh is gone (the level of detail evicted the
+    // entry or replaced its mesh, or the grid's chunk was meshed again: the queue's reference is the last, and the
+    // buffer leaves), so the queue is bounded by the mesh cache, never by the ride's length.
+    void wantBuffer(const TerrainMeshBuffer::Pointer& buffer);
+    void getUploadsDue(size_t maxShare, std::vector<TerrainMeshBuffer::Pointer>& due, uint64_t& serial);
+    void uploadsFed(uint64_t serial);
+    size_t getUploadsPending() const { return _uploads.size(); }
+    size_t getUploadsWanted() const { return _uploadsWanted; }
+    size_t getUploadsWantedBytes() const { return _uploadsWantedBytes; }
     // What is drawn, for the log: nodes by level, how many have meshes, and those without one with their state.
     QString describeDrawn() const;
     // How far out every terrain on this client draws full detail: a part of the ground is drawn finer while the
@@ -203,10 +251,28 @@ private:
     terrain::AsyncMesher _mesher;
     ChunkMeshes _chunkMeshes;
     terrain::LevelOfDetail _levelOfDetail;
+    // the vertex buffers from the pool (TerrainMeshBuffer, the mesh finisher of both meshers), queued for the backend
+    std::shared_ptr<TerrainMadeBuffers> _madeBuffers;
+    std::deque<TerrainMeshBuffer::Pointer> _uploads;
+    size_t _uploadsWanted { 0 };        // of the queue: wanted and not yet resident, as of the last getUploadsDue
+    size_t _uploadsWantedBytes { 0 };
+    uint64_t _nextUploadSerial { 0 };
+    uint64_t _nextPostSerial { 0 };
+    uint64_t _postOut { 0 };            // the post referenced by the upload item and not yet fed; 0 when none
+    uint64_t _wantSerial { 1 };         // one per level-of-detail update: the mark a wanted buffer carries (0 = none)
+    void takeMadeBuffers();
+    void pruneUploads();                // the resident and the dead leave the queue
     uint64_t _meshVersion { 0 };
     uint64_t _structureVersion { 0 };   // the grid's, when the meshes were last checked against its chunks
     bool _staleMeshes { false };        // meshes of chunks that are gone wait for their replacements' meshes
     uint64_t _stallEventsLogged { 0 };  // the level of detail's stall events already in the log
+    // The frames this renderer is given, to size the level of detail's sampling budget as a share of one
+    // (updateLevelOfDetail): the last periods between updates, in ms, and the update before
+    std::array<float, 16> _framePeriodsMs {};
+    uint64_t _framePeriodCount { 0 };
+    std::chrono::steady_clock::time_point _lastLodUpdate;
+    uint64_t _cutShownLogged { 0 };     // the level of detail's cut-shown serial already in the log
+    uint64_t _reChoiceLogged { 0 };     // and its re-choice serial
     ShapeInfo _shapeInfo;
     bool _shapeReady { false };
     bool _shapeStale { false };
@@ -336,7 +402,8 @@ public:
     using Pointer = std::shared_ptr<TerrainChunkPayload>;
 
     // The mesh without indices, three vertices to a triangle, each carrying the triangle's three materials and
-    // its own corner, so the shader can blend materials across the triangle (terrain.slv).
+    // its own corner, so the shader can blend materials across the triangle (terrain.slv). On whichever thread: as a
+    // rule the mesher's, through TerrainMeshBuffer::make.
     static gpu::BufferPointer makeVertexBuffer(const terrain::ChunkMesh& mesh);
     static uint32_t getVertexCount(const terrain::ChunkMesh& mesh) { return (uint32_t)mesh.indices.size(); }
 
@@ -373,6 +440,29 @@ private:
     gpu::BufferPointer _chunkParams;
     terrain::ChunkKey _debugKey;   // for the log, with TIVOLI_TERRAIN_DEBUG set
     bool _debugDrawn { false };    // its first draw since its buffers or placement changed is in the log
+};
+
+// The item that gives a cut's vertex buffers to the backend before its meshes are drawn (entry 24 step 3b): each
+// frame it references the buffers due (the first of the terrain's upload queue, within a share of bytes) from its
+// batch and draws nothing; the backend uploads every buffer a batch references as the batch executes, so the
+// uploads land over frames instead of in the one execute that first draws a new cut. It records the serial its
+// batch reached, for the editing thread. Its bound is the terrain's, so it is culled with it (and the uploads wait).
+class TerrainUploadPayload {
+public:
+    using Pointer = std::shared_ptr<TerrainUploadPayload>;
+    explicit TerrainUploadPayload(const std::shared_ptr<std::atomic<uint64_t>>& fed) : _fed(fed) {}
+    void setBuffers(std::vector<gpu::BufferPointer> buffers, uint64_t serial) { _buffers = std::move(buffers); _serial = serial; }
+    void setBound(const Item::Bound& bound) { _bound = bound; }
+    void setKey(const ItemKey& key) { _key = key; }
+    const ItemKey& getKey() const { return _key; }
+    const Item::Bound& getBound() const { return _bound; }
+    void render(RenderArgs* args);
+private:
+    std::vector<gpu::BufferPointer> _buffers;
+    uint64_t _serial { 0 };                        // the post's serial
+    std::shared_ptr<std::atomic<uint64_t>> _fed;   // the serial a batch has referenced up to (read on the editing thread)
+    Item::Bound _bound;
+    ItemKey _key;
 };
 
 class TerrainEntityRenderer : public TypedEntityRenderer<RenderableTerrainEntityItem> {
@@ -412,6 +502,12 @@ private:
         uint64_t meshVersion { 0 };
     };
     std::map<terrain::ChunkKey, ChunkItem> _chunkItems;
+    // the upload item (TerrainUploadPayload) and what it was last given
+    ItemID _uploadItem { Item::INVALID_ITEM_ID };
+    std::shared_ptr<std::atomic<uint64_t>> _uploadsFed { std::make_shared<std::atomic<uint64_t>>(0) };
+    uint64_t _uploadsPosted { 0 };
+    std::chrono::steady_clock::time_point _firstDrawn;   // when the first chunk item was made; unset until then
+    void postUploads(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity);
     // The chunk items as the render thread asks for them (metaFetchMetaSubItems, for selection outlines): the main
     // thread changes _chunkItems as it likes, and a new item's ID means nothing to the scene until the transaction
     // that resets it has gone through, so the list is handed over with that transaction (the asynchronous update).
@@ -437,6 +533,7 @@ private:
     std::map<glm::ivec2, gpu::TexturePointer, terrain::IVec2Less> _topTiles;
 
     ResourceRequest* _request { nullptr };
+    uint64_t _fetchSerial { 0 };   // counts the fetches; a finished handler acts only for the fetch it was made for
     QString _requestURL;
     uint32_t _requestVersion { 0 };
     int _fetchFailures { 0 };   // of the file asked for now, in a row
@@ -449,6 +546,10 @@ template <> const ItemKey payloadGetKey(const entities::TerrainChunkPayload::Poi
 template <> const Item::Bound payloadGetBound(const entities::TerrainChunkPayload::Pointer& payload);
 template <> const ShapeKey shapeGetShapeKey(const entities::TerrainChunkPayload::Pointer& payload);
 template <> void payloadRender(const entities::TerrainChunkPayload::Pointer& payload, RenderArgs* args);
+template <> const ItemKey payloadGetKey(const entities::TerrainUploadPayload::Pointer& payload);
+template <> const Item::Bound payloadGetBound(const entities::TerrainUploadPayload::Pointer& payload);
+template <> const ShapeKey shapeGetShapeKey(const entities::TerrainUploadPayload::Pointer& payload);
+template <> void payloadRender(const entities::TerrainUploadPayload::Pointer& payload, RenderArgs* args);
 }
 
 #endif // hifi_RenderableTerrainEntityItem_h

@@ -254,7 +254,6 @@ public:
     static ModalDialogListener* getTextAsync(const Icon icon, const QString & title, const QString & label, const QString & text = QString());
     static ModalDialogListener* getItemAsync(const Icon icon, const QString & title, const QString & label, const QStringList & items, int current = 0, bool editable = true);
 
-    unsigned int getMenuUserDataId() const;
     QList<QObject *> &getModalDialogListeners();
 
 signals:

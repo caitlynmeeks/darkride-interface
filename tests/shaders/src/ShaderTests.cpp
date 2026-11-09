@@ -31,7 +31,11 @@
 #include <gpu/gl/GLShader.h>
 #include <gl/QOpenGLContextWrapper.h>
 
-#define RUNTIME_SHADER_COMPILE_TEST 1
+// The SPIR-V round trip (glslang, spirv-tools, spirv-cross) is a developer's check that needs the Vulkan SDK:
+// off unless the build sets it, so the test builds everywhere the engine does.
+#ifndef RUNTIME_SHADER_COMPILE_TEST
+#define RUNTIME_SHADER_COMPILE_TEST 0
+#endif
 
 #if RUNTIME_SHADER_COMPILE_TEST
 #include <spirv_cross.hpp>
@@ -39,7 +43,6 @@
 #include <SPIRV/GlslangToSpv.h>
 #include <spirv-tools/libspirv.hpp>
 #include <spirv-tools/optimizer.hpp>
-#include <vulkan/vulkan.hpp>
 
 #ifdef DEBUG
 #define VCPKG_LIB_DIR "D:/hifi/vcpkg/hifi/installed/x64-windows/debug/lib/"
@@ -58,7 +61,9 @@ QTEST_MAIN(ShaderTests)
 
 void ShaderTests::initTestCase() {
     _context = new ::gl::OffscreenContext();
-    getDefaultOpenGLSurfaceFormat();
+    // The offscreen context's window takes the default surface format: set it to the engine's (GL 4.1 core on the
+    // Mac) as the client does at start, else the window is a legacy GL 2.1 context and the backend faults
+    QSurfaceFormat::setDefaultFormat(getDefaultOpenGLSurfaceFormat());
     _context->create();
     if (!_context->makeCurrent()) {
         qFatal("Unable to make test GL context current");
@@ -187,7 +192,7 @@ static void verifyInterface(const gpu::Shader::Source& vertexSource,
 
     const auto& vout = vertexReflection.outputs;
     auto vrev = invertMap(vout);
-    for (const auto entry : fragIn) {
+    for (const auto& entry : fragIn) {
         const auto& name = entry.first;
         if (0 == vout.count(name)) {
             throw std::runtime_error("Vertex outputs missing");
@@ -490,7 +495,8 @@ void ShaderTests::testShaderLoad() {
             }
         }
 
-        // Traverse all programs again to do program level tests
+        // Traverse all programs again to do program level tests; every program is tried, so one run lists them all
+        std::vector<std::string> failedPrograms;
         for (const auto& programId : programIds) {
             auto vertexId = shader::getVertexId(programId);
             const auto& vertexSource = shader::Source::get(vertexId);
@@ -505,8 +511,16 @@ void ShaderTests::testShaderLoad() {
             if (!glshader) {
                 qWarning() << "Failed to compile or link vertex " << vertexSource.name.c_str() << " fragment "
                            << fragmentSource.name.c_str();
-                QFAIL("Program link error");
+                failedPrograms.push_back(vertexSource.name + " + " + fragmentSource.name);
             }
+        }
+        if (!failedPrograms.empty()) {
+            std::string message = std::to_string(failedPrograms.size()) + " of " + std::to_string(programIds.size()) +
+                                  " programs failed to compile or link:";
+            for (const auto& name : failedPrograms) {
+                message += "\n    " + name;
+            }
+            QFAIL(message.c_str());
         }
     } catch (const std::runtime_error& error) {
         QFAIL(error.what());

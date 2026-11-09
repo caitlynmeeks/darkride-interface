@@ -14,7 +14,12 @@
 
 #include <controllers/InputDevice.h>
 #include "InputPlugin.h"
+#include <QtCore/QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QInputDevice>  // Qt 6: QTouchDevice became QInputDevice / QPointingDevice
+#else
 #include <QtGui/qtouchdevice.h>
+#endif
 
 class QTouchEvent;
 class QGestureEvent;

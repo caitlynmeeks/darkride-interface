@@ -132,7 +132,10 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
         "parseMapping", "loadMapping" } },
     { "ControllerScriptingInterface", {
         "captureKeyEvents", "releaseKeyEvents", "captureJoystick", "releaseJoystick", "captureEntityClickEvents",
-        "releaseEntityClickEvents" } }
+        "releaseEntityClickEvents" } },
+    // Script: a world's script starts no script of its own (Script.load); what it needs comes in through
+    // Script.include, into the same engine under the same rules
+    { "ScriptEngine", { "load" } }
 };
 
 // Properties a world's script may write on an allow-listed class (every other write on such a class is refused).
@@ -172,7 +175,13 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_SIGNALS {
     // visitor's snapshots
     { "WindowScriptingInterface", {
         "browseChanged", "browseDirChanged", "saveFileChanged", "assetsDirChanged", "promptTextChanged",
-        "stillSnapshotTaken", "snapshot360Taken", "snapshotShared", "processingGifStarted", "processingGifCompleted" } }
+        "stillSnapshotTaken", "snapshot360Taken", "snapshotShared", "processingGifStarted", "processingGifCompleted" } },
+    // what the tablet's pages send their scripts and which page the visitor opens: the tablet shows the visitor's
+    // apps. Refused outright, not checked per delivery: a delivery is checked when it arrives on the world's script's
+    // thread, so a page's event sent before a world's own page opened could arrive after it. A world's page in the
+    // tablet stays (gotoWebScreen); a page that talks to a world's script is a Web entity, whose events reach only
+    // its own world (CHECKED_DELIVERIES)
+    { "TabletProxy", { "webEventReceived", "fromQml", "screenChanged" } }
 };
 
 // Signals that carry an entity's id, and which of their arguments are ids: a world's script hears such a signal only

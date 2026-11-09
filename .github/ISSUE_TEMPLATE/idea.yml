@@ -1,0 +1,28 @@
+# Copyright 2026 Tivoli Cloud VR, Inc.
+# Distributed under the MIT License. See the accompanying file LICENSE or https://opensource.org/licenses/MIT
+name: Idea
+description: Something you'd like Darkride to do.
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. We read every one and sort them each week. A 👍 on an idea you'd like too counts as a vote.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What it would let you do
+      description: The problem it solves, or what you'd make with it.
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Sketches, pictures, or another app that does it well.

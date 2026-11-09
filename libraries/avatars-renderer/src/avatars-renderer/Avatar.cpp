@@ -28,7 +28,6 @@
 #include <Rig.h>
 #include <SharedUtil.h>
 #include <TextRenderer3D.h>
-#include <VariantMapToScriptValue.h>
 #include <DebugDraw.h>
 #include <shared/Camera.h>
 #include <SoftAttachmentModel.h>

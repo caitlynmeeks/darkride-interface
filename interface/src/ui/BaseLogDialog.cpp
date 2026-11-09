@@ -10,6 +10,7 @@
 //
 
 #include "BaseLogDialog.h"
+#include <QtCore/QRegularExpression>
 
 #include <QDir>
 #include <QLineEdit>
@@ -187,21 +188,18 @@ Highlighter::Highlighter(QTextDocument* parent) : QSyntaxHighlighter(parent) {
 }
 
 void Highlighter::highlightBlock(const QString& text) {
-    QRegExp expression(BOLD_PATTERN);
-
-    int index = text.indexOf(expression, 0);
-
-    while (index >= 0) {
-        int length = expression.matchedLength();
-        setFormat(index, length, boldFormat);
-        index = text.indexOf(expression, index + length);
+    const QRegularExpression expression(BOLD_PATTERN);
+    QRegularExpressionMatchIterator matches = expression.globalMatch(text);
+    while (matches.hasNext()) {
+        const QRegularExpressionMatch match = matches.next();
+        setFormat(match.capturedStart(), match.capturedLength(), boldFormat);
     }
 
     if (keyword.isNull() || keyword.isEmpty()) {
         return;
     }
 
-    index = text.indexOf(keyword, 0, Qt::CaseInsensitive);
+    int index = text.indexOf(keyword, 0, Qt::CaseInsensitive);
     int length = keyword.length();
 
     while (index >= 0) {

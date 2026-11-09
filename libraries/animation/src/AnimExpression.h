@@ -50,7 +50,7 @@ protected:
             Error
         };
         explicit Token(Type type) : type {type} {}
-        explicit Token(const QStringRef& strRef) : type {Type::Identifier}, strVal {strRef.toString()} {}
+        explicit Token(const QString& str) : type {Type::Identifier}, strVal {str} {}
         explicit Token(int val) : type {Type::Int}, intVal {val} {}
         explicit Token(bool val) : type {Type::Bool}, intVal {val} {}
         explicit Token(float val) : type {Type::Float}, floatVal {val} {}
@@ -83,7 +83,6 @@ protected:
             UnaryMinus
         };
         explicit OpCode(Type type) : type {type} {}
-        explicit OpCode(const QStringRef& strRef) : type {Type::Identifier}, strVal {strRef.toString()} {}
         explicit OpCode(const QString& str) : type {Type::Identifier}, strVal {str} {}
         explicit OpCode(int val) : type {Type::Int}, intVal {val} {}
         explicit OpCode(bool val) : type {Type::Bool}, intVal {(int)val} {}

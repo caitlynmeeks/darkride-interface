@@ -29,6 +29,7 @@
 #define hifi_terrain_LevelOfDetail_h
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <map>
@@ -53,7 +54,8 @@ struct LodSettings {
     // A node drawn as its children stays so until the camera is this fraction further away again, so a camera
     // moving to and fro across the line does not switch it at every step.
     float hysteresis { 0.25f };
-    // Time a frame may spend sampling nodes for meshing on the editing thread (the meshing itself runs on a pool).
+    // Time a frame may spend on the editing thread handing nodes to the pool, where they are sampled and meshed:
+    // a ceiling on the hand-over (its cost is microseconds a node).
     float sampleBudgetMs { 4.0f };
     // A new cut is shown only once every node of it has its mesh (LevelOfDetail). A node that has had none for the
     // nudge time is asked for again, in case its mesh was lost; one that still has none at the force time no longer
@@ -94,12 +96,13 @@ private:
 // The point at which a node's context reads the place on the given side of it (NodeContext's index): just outside
 // the node on the axes where the place is below or above it, halfway along the others; in finest units, clamped
 // into the grid.
-glm::ivec3 contextProbe(const VoxelGrid& grid, const ChunkKey& key, int index);
+glm::ivec3 contextProbe(const GridView& grid, const ChunkKey& key, int index);
 // The levels of the grid's own chunks around one of them: the context its samples from VoxelGrid::sampleChunk() see.
-NodeContext gridContext(const VoxelGrid& grid, const ChunkKey& key);
+NodeContext gridContext(const GridView& grid, const ChunkKey& key);
 // The samples a node is meshed from, with the levels around it given by the context: as VoxelGrid::sampleChunk()
 // gives a chunk's for meshing, to the bit where the node is one of the grid's chunks and the context the grid's.
-void sampleNode(const VoxelGrid& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples);
+// Reads the grid only: on the editing thread, or on any thread from a snapshot (VoxelGrid::snapshot).
+void sampleNode(const GridView& grid, const ChunkKey& key, const NodeContext& context, ChunkSamples& samples);
 
 // The nodes to draw for a camera: a cut through the octree of the grid's chunks extended upward with coarser levels.
 class LodCut {
@@ -118,8 +121,9 @@ public:
     };
 
     // Chooses the nodes for a camera at a point of the grid's voxel space, a voxel being voxelMetres along each axis;
-    // the nodes split last time stay split within the hysteresis.
-    void update(const VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings);
+    // the nodes split last time stay split within the hysteresis. Reads the grid only: on the editing thread, or on
+    // any thread from a snapshot (VoxelGrid::snapshot), which is how LevelOfDetail runs it, on the pool.
+    void update(const GridView& grid, const glm::vec3& camera, const glm::vec3& voxelMetres, const LodSettings& settings);
     void clear();
 
     // In key order.
@@ -140,7 +144,7 @@ private:
     void balance(KeySet& nodes, KeySet& split) const;
 
     // what update() works with
-    const VoxelGrid* _grid { nullptr };
+    const GridView* _grid { nullptr };
     glm::vec3 _camera { 0.0f };
     glm::vec3 _voxelMetres { 1.0f };
     LodSettings _settings;
@@ -153,8 +157,11 @@ private:
 };
 
 // The meshes a terrain draws: the grid's own chunks' near the camera, meshes of coarser nodes made here further
-// away, kept up to date as the camera moves and the grid is edited. Lives on the editing thread; only the meshing
-// runs on the pool. A new cut is shown only once every node of it has its mesh, so the ground never shows a crack
+// away, kept up to date as the camera moves and the grid is edited. Lives on the editing thread; the choice of the
+// cut, and the sampling and the meshing of a node, run on the pool from a snapshot of the grid taken that frame (the
+// cut is adopted when its job is back, a frame or two later; a node's samples are the grid as it was when it was
+// sent, and an edit after that marks the node stale and it is sent again, as before). A new
+// cut is shown only once every node of it has its mesh, so the ground never shows a crack
 // or a hole while the camera moves (meshes of nodes edited meanwhile are swapped in one by one, as the grid's own
 // chunks' are). The first cut, and the first after the grid is cleared, is shown node by node as the meshes come.
 class LevelOfDetail {
@@ -164,6 +171,7 @@ public:
         bool isGridChunk { false };          // draw the grid's own mesh of the chunk at the key (the terrain keeps those)
         const ChunkMesh* mesh { nullptr };   // otherwise this one: null while the node has none yet, or no surface
         uint64_t version { 0 };              // changes whenever the mesh does
+        std::shared_ptr<void> attachment;    // what the mesh finisher made with the mesh (AsyncMesher::Finisher), if any
     };
 
     explicit LevelOfDetail(QThreadPool* pool = nullptr);
@@ -172,13 +180,22 @@ public:
     const LodSettings& getSettings() const { return _settings; }
 
     // Once a frame on the editing thread, after the grid's own chunks' meshes have been brought up to date: takes
-    // the grid's changes, chooses the cut for the camera (a point of the grid's voxel space, voxels of voxelMetres),
+    // the grid's changes, has the cut chosen for the camera (a point of the grid's voxel space, voxels of voxelMetres;
+    // a job on the pool, adopted here when it is back),
     // collects the meshes the pool has finished, sends out the nodes whose meshes are missing or out of date
-    // (nearest first, within the settings' time budget) and shows the cut wanted once it is ready.
+    // (nearest first, within the settings' time budget, each sampled and meshed on the pool from one snapshot of
+    // the grid) and shows the cut wanted once it is ready.
     // gridChunkReady(key) says whether the terrain's own mesh of the grid's chunk at the key is there to draw (or
     // known to be empty). Returns whether what is drawn changed.
+    // nodeReady(attachment), when given, says whether a node of the level of detail's own that has its mesh is
+    // ready to be drawn (its finisher's attachment usable: a vertex buffer uploaded, say); a node without one, or
+    // with an empty mesh, is ready as before. A node not ready holds a new cut back as a missing mesh does.
     bool update(VoxelGrid& grid, const glm::vec3& camera, const glm::vec3& voxelMetres,
-                const std::function<bool(const ChunkKey&)>& gridChunkReady);
+                const std::function<bool(const ChunkKey&)>& gridChunkReady,
+                const std::function<bool(const std::shared_ptr<void>&)>& nodeReady = nullptr);
+    // Run on the pool with every mesh made here, its result kept with the mesh (Entry, Drawn::attachment): see
+    // AsyncMesher::setFinisher. Set before the first update.
+    void setMeshFinisher(const AsyncMesher::Finisher& finisher) { _mesher.setFinisher(finisher); }
 
     // What to draw, a node of the cut shown each, in key order.
     const std::vector<Drawn>& getDrawn() const { return _drawn; }
@@ -199,6 +216,52 @@ public:
         uint64_t events { 0 };
     };
     const Stall& getStall() const { return _stall; }
+    // The time this frame may spend handing nodes to the pool, when less than the settings' sampleBudgetMs: the
+    // caller sets it every frame from the frames it is given (a share of the display's interval), so a cut's
+    // hand-over spreads over frames instead of landing in one. 0, or more than the settings' value, means the
+    // settings' value.
+    void setFrameBudgetMs(float ms) { _frameBudgetMs = ms; }
+    float getFrameBudgetMs() const;   // the budget in force: the smaller of the two
+    // The cut last shown, for a caller that logs it: which (a serial), how long after its choice it came (ms and
+    // frames), and the meshes it brings to the drawing that the last drawn set did not have (new, or made again).
+    struct CutShown {
+        uint64_t serial { 0 };
+        float msSinceChosen { 0.0f };
+        uint64_t framesSinceChosen { 0 };
+        size_t nodes { 0 };          // nodes of the cut
+        size_t newMeshes { 0 };
+        size_t newVertices { 0 };
+        size_t newIndices { 0 };
+    };
+    const CutShown& getCutShown() const { return _cutShown; }
+    // Whether a cut shown counts its nodes and new meshes (a map of the drawn set and a lookup per node): off, only
+    // the serial, ms and frames are kept, so the count is paid only by a caller that reads it.
+    void setCutShownCounting(bool counting) { _cutShownCounting = counting; }
+    // What one frame's update cost on the calling thread, by part, in ms: the meshes collected from the pool, the
+    // cut's choice, the requests pass over the cut's nodes, the sends, and the shown set's upkeep (the compare,
+    // the eviction, the drawn list). Kept only while cuts shown are counted (a clock read per part).
+    struct FrameCost {
+        uint64_t frame { 0 };
+        bool chose { false };        // the cut was chosen again this frame
+        float collectMs { 0.0f };
+        float choiceMs { 0.0f };
+        float requestsMs { 0.0f };
+        float sendsMs { 0.0f };
+        float drawnMs { 0.0f };
+        int results { 0 };           // meshes collected
+        int requests { 0 };          // nodes wanting a mesh after the pass
+        int sent { 0 };              // nodes sent to the pool
+        float totalMs() const { return collectMs + choiceMs + requestsMs + sendsMs + drawnMs; }
+    };
+    // A re-choice of the cut, for a caller that logs it once the next one has come: the re-choice frame's own cost
+    // and the costliest frame from it to the next re-choice (the frame its meshes came back in, as a rule).
+    struct ReChoice {
+        uint64_t serial { 0 };
+        size_t nodes { 0 };          // nodes of the cut chosen
+        FrameCost own;
+        FrameCost worst;
+    };
+    const ReChoice& getReChoiceDone() const { return _reChoiceDone; }
 
     // The grid was replaced: every mesh here is out of date. What is drawn stays until the new cut's meshes are in.
     void gridReplaced();
@@ -220,6 +283,7 @@ private:
     struct Entry {
         NodeContext context;
         ChunkMesh mesh;
+        std::shared_ptr<void> attachment;   // the finisher's, with the mesh
         bool hasMesh { false };    // a mesh has come back (it may be empty: no surface)
         bool stale { false };      // the grid changed under it since it was sampled
         bool inFlight { false };
@@ -230,9 +294,16 @@ private:
     };
 
     Entry& entryFor(const LodCut::Node& node);
-    // Samples the node and sends it to the pool, or settles it at once when no surface can cross it.
-    void send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid);
+    // Sends the node to the pool, to be sampled and meshed there from the snapshot of the grid (taken from the grid
+    // on the first send of a frame, shared by every node sent that frame). A node no surface can cross comes back
+    // with an empty mesh, as one whose samples hold none does.
+    void send(const EntryKey& entryKey, Entry& entry, const VoxelGrid& grid, std::shared_ptr<const GridView>& view);
     void rebuildDrawn();
+    // The cut wanted is about to be shown in place of the cut shown: counts what it brings (CutShown).
+    void noteCutShown(const std::vector<LodCut::Node>& wanted);
+    // A frame's cost is in: a re-choice frame opens a new record and closes the last; any other frame may be the
+    // open record's costliest.
+    void noteFrameCost(const FrameCost& cost);
     void evict();
     // The wanted cut's node without a mesh (first in key order), while the cut shown is held back by it; returns
     // whether the cut may be shown anyway (no node is stalled, or the stall has reached the force time).
@@ -240,6 +311,19 @@ private:
 
     LodSettings _settings;
     LodCut _cut;
+    // The cut's choice as a job on the pool: what it works from, the cut it chose, and whether it is back. One job at
+    // a time; a re-choice asked while one is out runs at its return, with the camera then.
+    struct ChoiceJob {
+        std::shared_ptr<const GridView> view;
+        glm::vec3 camera { 0.0f };
+        glm::vec3 voxelMetres { 1.0f };
+        LodSettings settings;
+        std::unique_ptr<LodCut> cut;
+        std::atomic<bool> done { false };
+    };
+    std::shared_ptr<ChoiceJob> _choiceJob;
+    bool _choiceQueued { false };
+    QThreadPool* _pool { nullptr };
     std::vector<LodCut::Node> _shown;
     std::vector<Drawn> _drawn;
     uint64_t _drawnVersion { 0 };
@@ -258,6 +342,14 @@ private:
     std::vector<std::pair<glm::ivec3, glm::ivec3>> _changes;
     Stall _stall;
     std::chrono::steady_clock::time_point _stallSince;
+    float _frameBudgetMs { 0.0f };
+    std::map<int, float> _nodeCostMs;   // what sending a node of a level last took, smoothed: the estimate before a send
+    std::chrono::steady_clock::time_point _cutChosenAt;   // when the cut wanted was last chosen
+    uint64_t _cutChosenFrame { 0 };
+    CutShown _cutShown;
+    ReChoice _reChoice;              // the re-choice in progress
+    ReChoice _reChoiceDone;          // the last one closed
+    bool _cutShownCounting { false };
 };
 
 } // namespace terrain

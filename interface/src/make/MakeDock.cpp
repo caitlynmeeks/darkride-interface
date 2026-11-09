@@ -1,0 +1,1404 @@
+//
+//  MakeDock.cpp
+//  interface/src/make
+//
+//  The Make dock's one object: see MakeDock.h and team/editor-ui/MAKE-DOCK-CONTRACT.md.
+//
+//  Copyright 2026 Darkride.
+//
+//  Distributed under the MIT License.
+//  See the accompanying file LICENSE-MIT or https://opensource.org/licenses/MIT
+//
+
+#include "MakeDock.h"
+#include "MakeBadge.h"
+
+#include <string>
+
+#include <QtCore/QCryptographicHash>
+#include <QtCore/QDateTime>
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtCore/QMimeData>
+#include <QtCore/QMutex>
+#include <QtCore/QMutexLocker>
+#include <QtCore/QRandomGenerator>
+#include <QtCore/QRegularExpression>
+#include <QtCore/QRunnable>
+#include <QtCore/QThreadPool>
+#include <QtCore/QUuid>
+#include <QtGui/QClipboard>
+#include <QtGui/QDesktopServices>
+#include <QtGui/QDropEvent>
+#include <QtGui/QGuiApplication>
+#include <QtGui/QMouseEvent>
+#include <QtGui/QImageReader>
+#include <QtGui/QImageWriter>
+#include <QtQml/QQmlEngine>
+#include <QtQuick/QQuickImageProvider>
+#include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMenu>
+
+#include <NodeList.h>
+
+#include <MainWindow.h>
+#include <MakeBlender.h>
+#include <MakeClaude.h>
+#include <MakeKey.h>
+#include <MakePeer.h>
+#include <MakeText.h>
+#include <AccountManager.h>
+#include <SettingHandle.h>
+
+#include "Application.h"
+#include "InterfaceLogging.h"
+#include "MakeLink.h"
+#include "editor/Editor.h"
+#include "ui/CodeEditor.h"
+#include "ui/Panels.h"
+
+namespace {
+    const int FOUND_REREAD_MS = 2000;        // the Connect view's rows read again on show or activation, no more often
+    const int REAL_INPUT_MS = 500;           // a real-input call must follow the person's own click or key this closely
+    const int MAX_SHEET_BYTES = 8 * 1024 * 1024;   // a model's sheet of views (1024 px square), as MakeLink gives it
+    const int TERMINAL_QUIET_MS = 45000;     // the Terminal route: a request is over after this long with no activity
+    // ... or this long after Claude's reply with nothing after it (the chat: a reply is Claude's turn's end as a rule;
+    // a tool call after it waits TERMINAL_QUIET_MS again; mary + pm after Caity's try 11-07)
+    const int TERMINAL_REPLY_QUIET_MS = 5000;
+    // the more menu's item that opens the Make folder: each system's own name for its file browser, Title Case as the
+    // app's menus (mary 03:41 11-08)
+#if defined(Q_OS_MACOS)
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder in Finder";
+#elif defined(Q_OS_WIN)
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder in File Explorer";
+#else
+    const char SHOW_FOLDER_WORDS[] = "Show Make Folder";
+#endif
+    const qint64 ASK_TIMEOUT_MS = 100000;    // MakeLink refuses a question after 100 s
+    const qint64 PICTURE_MAX_BYTES = 20 * 1024 * 1024;
+    const int PICTURE_MAX_SIDE = 8192;       // checked before decoding
+    const int PICTURE_KEEP_SIDE = 2048;      // the clean copy's longest side at most
+    const int PICTURES_PER_ADD = 6;
+    const QString PROVIDER = QStringLiteral("make");
+    const QRegularExpression PICTURE_ID(QStringLiteral("^[0-9a-f]{16}$"));
+    const QRegularExpression MODEL_ID(QStringLiteral("^[A-Za-z0-9_-]{1,64}$"));
+
+    // under private/: a world script's Settings can neither read nor write them (ScriptSettingsInterface's protected
+    // prefixes; security R1, 11-07). The keys before that, under Make/, are dropped once, never read.
+    // the Claude plan in Terminal unless the person chose the key: the first row, the default (Caity 19:19 11-07,
+    // mary 19:24)
+    Setting::Handle<QString> routeSetting { QStringList { "private", "Make", "route" }, QString("terminal") };
+    Setting::Handle<QString> allowedSetupSetting { QStringList { "private", "Make", "allowedSetup" }, QString() };
+    // the Claude-plan route's chat in the panel (true, the "in Darkride" choice) or typing in Terminal (false, the
+    // default: Caity 19:19 11-07, "happy with the Terminal route as it is"; chat is offered beside it); private as the
+    // rest
+    Setting::Handle<bool> chatSetting { QStringList { "private", "Make", "chat" }, false };
+    // whether the connect screen offers "in Darkride" (chat) at all: on since Caity's Channels try worked (pm 21:10
+    // 11-07) with the link's start-line allow-list in (make-link-1 81eecca527, security's MUST, cleared 21:48); a kit
+    // turns chat on for its own run only (Test.makeDockConnect("chat"))
+    const bool CHAT_OFFERED = true;
+    const int NOT_GOT_IT_MS = 30000;   // the first message of a Connect not taken up by Claude this long: not got
+    const QString SENT_TO_CLAUDE = QStringLiteral("sent to Claude");   // MakeLink's activity when an event goes out
+    Setting::Handle<QString> oldRouteSetting { QStringList { "Make", "route" }, QString() };
+    Setting::Handle<QString> oldAllowedSetupSetting { QStringList { "Make", "allowedSetup" }, QString() };
+    // the Allow's words as ConnectView shows them: a new version whenever they change, so changed words ask again
+    // (security R2)
+    const QString ALLOW_WORDS = QStringLiteral("allow words 2026-11-07 three routes");
+    // the link's socket or pipe in the set-up text: a fresh pipe name at each Connect on Windows, so masked in the hash
+    const QRegularExpression LINK_SOCKET(QStringLiteral("(\"--socket\",\\s*\")[^\"]*(\")"));
+
+    QString hashOf(const QString& text) {
+        return QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex());
+    }
+
+    QString homeShortened(const QString& path) {
+        const QString home = QDir::homePath();
+        return path.startsWith(home + "/") ? "~" + path.mid(home.length()) : path;
+    }
+
+    bool insideFolder(const QString& path, const QString& folder) {
+        const QString root = QFileInfo(folder).canonicalFilePath();
+        const QString file = QFileInfo(path).canonicalFilePath();
+        return !root.isEmpty() && !file.isEmpty() && file.startsWith(root + "/");
+    }
+
+    // the dock's pictures, from MakeDock's own files only, decoded off the main thread
+    QMutex servedMutex;   // guards MakeDock's model id -> sheet map for the provider's thread
+
+    class MakeImageResponse : public QQuickImageResponse, public QRunnable {
+    public:
+        MakeImageResponse(const QString& file, bool frontOnly, const QSize& requested) :
+            _file(file), _frontOnly(frontOnly), _requested(requested) {
+            setAutoDelete(false);
+        }
+        QQuickTextureFactory* textureFactory() const override {
+            return QQuickTextureFactory::textureFactoryForImage(_image);
+        }
+        QString errorString() const override { return _error; }
+        void run() override {
+            if (_file.isEmpty()) {
+                _error = "not Make's";
+            } else {
+                QImageReader reader(_file);
+                reader.setDecideFormatFromContent(true);
+                const QSize size = reader.size();
+                if (!size.isValid() || size.width() > PICTURE_MAX_SIDE || size.height() > PICTURE_MAX_SIDE) {
+                    _error = "not an image Make can show";
+                } else {
+                    if (_frontOnly) {
+                        // a model's sheet is 2x2 views: the front is the top left one
+                        reader.setClipRect(QRect(0, 0, size.width() / 2, size.height() / 2));
+                    }
+                    _image = reader.read();
+                    if (_image.isNull()) {
+                        _error = reader.errorString();
+                    } else if (_requested.isValid() && !_requested.isEmpty() &&
+                               (_image.width() > _requested.width() || _image.height() > _requested.height())) {
+                        _image = _image.scaled(_requested, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    }
+                }
+            }
+            emit finished();
+        }
+
+    private:
+        QString _file;
+        bool _frontOnly;
+        QSize _requested;
+        QImage _image;
+        QString _error;
+    };
+
+    class MakeImageProvider : public QQuickAsyncImageProvider {
+    public:
+        // id: "sheet/<model id>", "thumb/<model id>" or "picture/<picture id>"
+        QQuickImageResponse* requestImageResponse(const QString& id, const QSize& requestedSize) override {
+            const QString what = id.section('/', 0, 0);
+            const QString which = id.section('/', 1);
+            QString file;
+            if (auto dock = DependencyManager::get<MakeDock>()) {
+                file = dock->servedFile(what, which);
+            }
+            auto response = new MakeImageResponse(file, what == "thumb", requestedSize);
+            QThreadPool::globalInstance()->start(response, -1);   // after the engine's loading jobs (performance)
+            return response;
+        }
+    };
+}
+
+// ---- MakeDockRows ----
+
+int MakeDockRows::rowCount(const QModelIndex& parent) const {
+    return parent.isValid() ? 0 : _rows.size();
+}
+
+QVariant MakeDockRows::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= _rows.size()) {
+        return QVariant();
+    }
+    const Row& row = _rows.at(index.row());
+    switch (role) {
+        case KindRole: return row.kind;
+        case RequestRole: return row.request;
+        case TextRole: return row.text;
+        case DetailRole: return row.detail;
+        case ItemIdRole: return row.itemId;
+        case AnsweredRole: return row.answered;
+        case ViewsRole: return row.views;
+        case ThumbRole: return row.thumb;
+        case CostRole: return row.cost;
+        case FoldedRole: return row.folded;
+        case UndoneRole: return row.undone;
+        case TimeRole: return row.time;
+        default: return QVariant();
+    }
+}
+
+QHash<int, QByteArray> MakeDockRows::roleNames() const {
+    return {
+        { KindRole, "kind" }, { RequestRole, "request" }, { TextRole, "text" }, { DetailRole, "detail" },
+        { ItemIdRole, "itemId" }, { AnsweredRole, "answered" }, { ViewsRole, "views" }, { ThumbRole, "thumb" },
+        { CostRole, "cost" }, { FoldedRole, "folded" }, { UndoneRole, "undone" }, { TimeRole, "time" }
+    };
+}
+
+void MakeDockRows::append(const Row& row) {
+    beginInsertRows(QModelIndex(), _rows.size(), _rows.size());
+    _rows.append(row);
+    endInsertRows();
+    emit countChanged();
+}
+
+void MakeDockRows::prepend(const Row& row) {
+    beginInsertRows(QModelIndex(), 0, 0);
+    _rows.prepend(row);
+    endInsertRows();
+    emit countChanged();
+}
+
+void MakeDockRows::clear() {
+    beginResetModel();
+    _rows.clear();
+    endResetModel();
+    emit countChanged();
+}
+
+void MakeDockRows::update(const std::function<bool(const Row&)>& match, const std::function<void(Row&)>& change) {
+    for (int i = 0; i < _rows.size(); i++) {
+        if (match(_rows.at(i))) {
+            change(_rows[i]);
+            emit dataChanged(index(i), index(i));
+        }
+    }
+}
+
+void MakeDockRows::updateAt(int row, const std::function<void(Row&)>& change) {
+    if (row >= 0 && row < _rows.size()) {
+        change(_rows[row]);
+        emit dataChanged(index(row), index(row));
+    }
+}
+
+// ---- MakeDock ----
+
+bool MakeDock::isAvailable() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    return CodeEditor::isAvailable();
+#else
+    return false;
+#endif
+}
+
+MakeDock::MakeDock() {
+    _badge = new MakeBadge(this);
+    // nothing looked up until the dock first opens (watchWindow): no Keychain, Claude Code or Blender look-ups at start
+    oldRouteSetting.remove();
+    oldAllowedSetupSetting.remove();
+    _route = routeSetting.get() == "key" ? QString("key") : QString("terminal");
+
+    auto link = DependencyManager::get<MakeLink>();
+    QObject::connect(link.data(), &MakeLink::stateChanged, this, &MakeDock::linkStateChanged);
+    // Claude Code's version comes with its hello, after the connection: the panel re-reads claudeVersion (the
+    // "Update Claude Code" line; the chat kit's old-version phase)
+    QObject::connect(link.data(), &MakeLink::claudeVersionChanged, this, &MakeDock::stateChanged);
+    // a step that ran and didn't work: its row says so (stepFailed)
+    QObject::connect(link.data(), &MakeLink::callFailed, this, &MakeDock::stepFailed);
+    // where Make keeps its work: the person's choice, and whether this world offers its own files (the world, the
+    // person's rights in it)
+    QObject::connect(link.data(), &MakeLink::filesPlaceChanged, this, &MakeDock::filesPlaceChanged);
+    auto nodeList = DependencyManager::get<NodeList>();
+    QObject::connect(nodeList.data(), &LimitedNodeList::canWriteAssetsChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::domainURLChanged, this, &MakeDock::filesPlaceChanged);
+    QObject::connect(&nodeList->getDomainHandler(), &DomainHandler::connectedToDomain, this, &MakeDock::filesPlaceChanged);
+    // an Allow covers one signed-in account (allowHash)
+    QObject::connect(DependencyManager::get<AccountManager>().data(), &AccountManager::usernameChanged, this,
+                     [this] { emit setupTextChanged(); });
+    QObject::connect(link.data(), &MakeLink::activity, this, [this](int request, const QString& line) {
+        // a line about a request the person undid (the undo's own "undid N change(s)", or anything late) goes in with
+        // that request's steps and does nothing more: it isn't Claude working, so no "Working for...", no Terminal
+        // wait and no channel take-up (the kit saw Working 2 s after an Undo, 11-08; mary: Undo while working stops it)
+        bool undone = false;
+        for (const auto& row : _timeline.rows()) {
+            if (row.request == request && row.undone) {
+                undone = true;
+                break;
+            }
+        }
+        if (undone) {
+            MakeDockRows::Row row;
+            row.kind = "activity";
+            row.request = request;
+            row.text = clean(line);
+            row.undone = true;
+            addRow(row);
+            return;
+        }
+        if (line == SENT_TO_CLAUDE) {
+            _sentWaiting = true;
+            _sentRequest = request;
+            if (!_channelProven && !_notGotItTimer.isActive()) {
+                _notGotItTimer.start();
+            }
+            emit channelChanged();
+        } else {
+            channelTakenUp(request);
+        }
+        if (request > _doneRequest && _working == false) {
+            _costSoFar = -1.0;
+        }
+        // the Terminal route: a new number is a new request; the one before it is over
+        for (const auto& row : _timeline.rows()) {
+            if (row.request < request && row.request > _doneRequest && row.kind != "done") {
+                requestDone(row.request, -1.0);
+                break;
+            }
+        }
+        MakeDockRows::Row row;
+        row.kind = "activity";
+        row.request = request;
+        row.text = clean(line);
+        addRow(row);
+        setWorking(true);
+        if (_route == "terminal") {
+            _terminalQuiet.start(TERMINAL_QUIET_MS);
+        }
+    });
+    QObject::connect(link.data(), &MakeLink::askPerson, this, [this](int id, const QString& what, const QString& exactly) {
+        MakeDockRows::Row row;
+        row.kind = "question";
+        row.request = DependencyManager::get<MakeLink>()->currentRequest();
+        row.text = clean(what);
+        row.detail = clean(exactly);
+        row.itemId = QString::number(id);
+        if (_testRefusesAsks) {
+            // a test's connection: no at once, shown as the person's no would be
+            qCWarning(interfaceapp) << "Make: a test answered no to question" << id;
+            row.answered = "refused";
+            addRow(row);
+            DependencyManager::get<MakeLink>()->answer(id, false);
+            return;
+        }
+        _askTimes.insert(id, QDateTime::currentMSecsSinceEpoch());
+        emit questionsChanged();
+        _askTimeouts.start();
+        addRow(row);
+    });
+    QObject::connect(link.data(), &MakeLink::made, this, [this](int request, const QVariantMap& card) {
+        static int cards = 0;
+        MakeDockRows::Row row;
+        row.request = request;
+        const QString kind = card.value("kind").toString();
+        const QString name = clean(card.value("name").toString()).left(80);
+        if (kind == "script") {
+            row.kind = "script";
+            row.entityId = card.value("id").toString();
+            row.which = card.value("side").toString() == "serverScripts" ? QString("serverScripts") : QString("script");
+            row.text = (row.which == "script" ? QString("Entity script") : QString("Server script")) +
+                (name.isEmpty() ? QString() : " on " + name);
+            row.detail = clean(QFileInfo(card.value("file").toString()).fileName()).left(80);
+            row.itemId = "card-" + QString::number(++cards);
+        } else if (kind == "model") {
+            const QString model = card.value("model").toString();
+            const QString sheet = keepSheet(model, card.value("views"));
+            row.kind = "model";
+            row.text = "3D model";
+            row.detail = name;
+            row.itemId = MODEL_ID.match(model).hasMatch() ? model : "card-" + QString::number(++cards);
+            if (MODEL_ID.match(model).hasMatch() && insideFolder(sheet, DependencyManager::get<MakeLink>()->folder())) {
+                QMutexLocker lock(&servedMutex);
+                _sheets.insert(model, QFileInfo(sheet).canonicalFilePath());
+                row.views = QStringList { "image://make/sheet/" + model };
+                row.thumb = "image://make/thumb/" + model;
+            }
+        } else {
+            row.kind = "thing";
+            row.text = name.isEmpty() ? QString("A new thing") : name;
+            row.entityId = card.value("id").toString();
+            row.itemId = row.entityId;
+        }
+        addRow(row);
+        addMade(row);
+    });
+    QObject::connect(link.data(), &MakeLink::reply, this, [this](int request, const QString& text) {
+        channelTakenUp(request);
+        MakeDockRows::Row row;
+        row.kind = "reply";
+        row.request = request;
+        row.text = clean(MakeClaude::redact(text));
+        addRow(row);
+        // the Terminal route can't see Claude's turn end: its reply ends the request after a short quiet, not 45 s
+        if (_route == "terminal" && _working && request >= DependencyManager::get<MakeLink>()->currentRequest()) {
+            _terminalQuiet.start(TERMINAL_REPLY_QUIET_MS);
+        }
+    });
+    QObject::connect(link.data(), &MakeLink::requestCost, this, [this](int request, double usd) {
+        Q_UNUSED(request);
+        _costSoFar = usd;
+        emit workingChanged();
+    });
+
+    auto claude = link->claude();
+    QObject::connect(claude, &MakeClaude::started, this, [this](const QString& model) {
+        Q_UNUSED(model);
+        _starting = false;
+        emit stateChanged();
+    });
+    // MakeLink's own handler runs first (connected first), so the request's cost has arrived
+    QObject::connect(claude, &MakeClaude::turnEnded, this,
+                     [this](double totalCostUsd, bool error, const QString& result, const QString& subtype) {
+        Q_UNUSED(totalCostUsd);
+        const int request = DependencyManager::get<MakeLink>()->currentRequest();
+        if (error && subtype != "error_max_budget_usd" && !result.isEmpty()) {
+            MakeDockRows::Row row;
+            row.kind = "activity";
+            row.request = request;
+            row.text = "Stopped: " + clean(MakeClaude::redact(result)).left(300);
+            addRow(row);
+        }
+        requestDone(request, _costSoFar);
+        if (_working && !_stopRequested) {
+            // the Make badge: Done, or Couldn't finish (also when a step didn't work: the badge never says done then)
+            emit requestEnded(!error && !_failedRequests.contains(request));
+        }
+        setWorking(false);
+    });
+    QObject::connect(claude, &MakeClaude::ended, this, [this](const QString& why) {
+        _starting = false;
+        if (!why.isEmpty()) {
+            _reason = clean(MakeClaude::redact(why)).left(300);
+        }
+        if (_working && !_stopRequested) {
+            emit requestEnded(false);   // Claude Code ended mid-request: the Make badge's Couldn't finish
+        }
+        setWorking(false);
+        emit stateChanged();
+    });
+
+    _notGotItTimer.setSingleShot(true);
+    _notGotItTimer.setInterval(NOT_GOT_IT_MS);
+    QObject::connect(&_notGotItTimer, &QTimer::timeout, this, [this] {
+        if (_sentWaiting && !_channelProven) {
+            _notGotIt = true;
+            qCWarning(interfaceapp) << "Make: Claude didn't take up the first message in" << NOT_GOT_IT_MS / 1000 << "s"
+                                    << "(channel" << channelFlag() << ")";
+            emit channelChanged();
+        }
+    });
+    _terminalQuiet.setSingleShot(true);
+    QObject::connect(&_terminalQuiet, &QTimer::timeout, this, [this] {
+        const int request = DependencyManager::get<MakeLink>()->currentRequest();
+        requestDone(request, -1.0);
+        if (_working && !_stopRequested) {
+            // Terminal went quiet: the Make badge's Done, or Couldn't finish when a step didn't work
+            emit requestEnded(!_failedRequests.contains(request));
+        }
+        setWorking(false);
+    });
+    _askTimeouts.setInterval(5000);
+    QObject::connect(&_askTimeouts, &QTimer::timeout, this, [this] {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        bool timedOut = false;
+        for (auto it = _askTimes.begin(); it != _askTimes.end();) {
+            if (now - it.value() > ASK_TIMEOUT_MS) {
+                const QString id = QString::number(it.key());
+                _timeline.update([&](const MakeDockRows::Row& row) { return row.kind == "question" && row.itemId == id &&
+                                                                            row.answered.isEmpty(); },
+                                 [](MakeDockRows::Row& row) { row.answered = "timed out"; });
+                it = _askTimes.erase(it);
+                timedOut = true;
+            } else {
+                ++it;
+            }
+        }
+        if (timedOut) {
+            emit questionsChanged();
+        }
+        if (_askTimes.isEmpty()) {
+            _askTimeouts.stop();
+        }
+    });
+}
+
+MakeDock::~MakeDock() {
+}
+
+QString MakeDock::state() const {
+    auto link = DependencyManager::get<MakeLink>();
+    const QString linkState = link->stateName();   // off, listening, connected, failed, limit
+    if (linkState == "failed" || linkState == "limit" || linkState == "off") {
+        return linkState;
+    }
+    if (_route == "key") {
+        if (!_reason.isEmpty() && !link->claude()->isRunning()) {
+            return "failed";   // Claude Code ended by itself, or couldn't start
+        }
+        return _starting || linkState == "listening" ? QString("starting") : QString("connected");
+    }
+    return linkState;
+}
+
+QString MakeDock::reason() const {
+    auto link = DependencyManager::get<MakeLink>();
+    const QString linkState = link->stateName();
+    if (linkState == "failed" || linkState == "limit") {
+        return clean(MakeClaude::redact(link->reason())).left(300);
+    }
+    // listening after the link refused a Claude Code started with another line (security C9): its plain line
+    if (linkState == "listening" && !link->reason().isEmpty()) {
+        return clean(link->reason()).left(300);
+    }
+    return _reason;
+}
+
+QString MakeDock::keyStoreName() const {
+#if defined(Q_OS_MAC)
+    return "your Keychain";
+#elif defined(Q_OS_WIN)
+    return "Windows Credential Manager";
+#else
+    return "your keyring";
+#endif
+}
+
+QString MakeDock::setupText() const {
+    auto link = DependencyManager::get<MakeLink>();
+    return "Make folder: " + homeShortened(link->folder()) + "\n\n" +
+        "Claude Code's tools (Darkride's only):\n" + link->mcpConfigText() + "\n\n" +
+        "What Claude Code may do (no commands, no web, no files):\n" + link->settingsText();
+}
+
+QString MakeDock::allowHash() const {
+    // what one Allow covers (security R2, R4): the Allow's words, the route, what Make sets up and the start line, the
+    // per-Connect link name masked, and the signed-in account; any change asks again with the whole card
+    QString setup = setupText();
+    setup.replace(LINK_SOCKET, QStringLiteral("\\1<link>\\2"));
+    const QString account = DependencyManager::get<AccountManager>()->getAccountInfo().getUsername();
+    return hashOf(ALLOW_WORDS + "\n" + _route + "\n" + account + "\n" + setup + "\n" + startLine());
+}
+
+bool MakeDock::isSetupChanged() const {
+    return lastAllowedSetupHash() != allowHash();
+}
+
+void MakeDock::stopAllowing() {
+    allowedSetupSetting.remove();
+    emit setupTextChanged();
+}
+
+QString MakeDock::lastAllowedSetupHash() const {
+    return allowedSetupSetting.get();
+}
+
+QString MakeDock::startLine() const {
+    return DependencyManager::get<MakeLink>()->startLine(chat());
+}
+
+bool MakeDock::chat() const {
+    return _route == "terminal" && (_testChat || (CHAT_OFFERED && chatSetting.get()));
+}
+
+bool MakeDock::chatOffered() const {
+    return CHAT_OFFERED;
+}
+
+QString MakeDock::channelFlag() const {
+    return DependencyManager::get<MakeLink>()->channelFlag();
+}
+
+QString MakeDock::claudeVersion() const {
+    return clean(DependencyManager::get<MakeLink>()->claudeVersion()).left(40);
+}
+
+
+void MakeDock::channelTakenUp(int request) {
+    if (_sentWaiting && request >= _sentRequest) {
+        _sentWaiting = false;
+        _notGotIt = false;
+        _channelProven = true;
+        _notGotItTimer.stop();
+        emit channelChanged();
+    }
+}
+
+void MakeDock::resetChannel() {
+    _notGotItTimer.stop();
+    if (_sentWaiting || _notGotIt || _channelProven) {
+        _sentWaiting = false;
+        _notGotIt = false;
+        _channelProven = false;
+        emit channelChanged();
+    }
+}
+
+void MakeDock::readFound() {
+    auto link = DependencyManager::get<MakeLink>();
+    QString why;
+    const bool claudeFound = !MakeClaude::findClaude().isEmpty();
+    const bool blenderFound = !MakeBlender::findBlender(why).isEmpty();
+    const bool sealed = link->blenderOffered();
+    const QString blenderWhy = clean(link->blenderWhy());
+    if (claudeFound != _claudeFound || blenderFound != _blenderFound || sealed != _blenderSealed || blenderWhy != _blenderWhy) {
+        _claudeFound = claudeFound;
+        _blenderFound = blenderFound;
+        _blenderSealed = sealed;
+        _blenderWhy = blenderWhy;
+        emit foundChanged();
+    }
+}
+
+void MakeDock::linkStateChanged() {
+    readFound();   // while connected, blenderSealed is what that Connect decided
+    auto link = DependencyManager::get<MakeLink>();
+    if (link->stateName() != "connected") {
+        resetChannel();   // a new Claude Code proves its channel again
+    }
+    // the link refused a Claude Code started with another line (MakeLink::judgeConnection): a test's chat ends there
+    // (security 21:48 11-07)
+    if (link->stateName() == "listening" && link->reason() == MakePeer::REFUSED_WORDS) {
+        endTestChat();
+    }
+    if (DependencyManager::get<MakeLink>()->stateName() == "off") {
+        _starting = false;
+        if (_working && !_stopRequested) {
+            emit requestEnded(false);   // the link dropped mid-request: the Make badge's Couldn't finish
+        }
+        setWorking(false);
+    }
+    emit stateChanged();
+    emit setupTextChanged();
+}
+
+// ---- the person's calls ----
+
+bool MakeDock::takeRealInput(const char* call) {
+    if (_inputUnused && _sinceInput.isValid() && _sinceInput.elapsed() <= REAL_INPUT_MS) {
+        _inputUnused = false;
+        return true;
+    }
+    qCWarning(interfaceapp) << "Make: refused" << call << "(no real click or key in the dock just now)";
+    return false;
+}
+
+bool MakeDock::connect() {
+    endTestUndo();   // any Connect not made by a test ends a test's Undo (security 02:06 11-08)
+    if (!takeRealInput("connect")) {
+        return false;
+    }
+    return connectNow();
+}
+
+bool MakeDock::testConnectTerminal(bool chat) {
+    // tests only (Test.makeDockConnect, which exists only with --testScript): never the key route, and every question
+    // answered no from now on, so a kit never gets a silent yes (scripting's rule); chat for this run only, whether or
+    // not the connect screen offers it
+    _testRefusesAsks = true;
+    // Test.makeDockUndo: only requests from here on, until this run ends (endTestUndo); a refused connect ends it
+    _testUndo = true;
+    _testFirstRequest = DependencyManager::get<MakeLink>()->currentRequest() + 1;
+    if (_route != "terminal" || chat != _testChat) {
+        _route = "terminal";   // not saved: the person's own route setting stays as it was
+        _testChat = chat;
+        emit routeChanged();
+        emit setupTextChanged();
+    }
+    qCWarning(interfaceapp) << "Make: connected by a test (the Terminal route" << (chat ? "with chat" : "without chat")
+                            << "; every question is answered no)";
+    return connectNow();
+}
+
+namespace {
+    // the shown one of the items by that name (the start line is in two places, one shown at a time), else the first
+    QQuickItem* testFind(QQuickWindow* window, const QString& objectName) {
+        // only the dock's own named parts a kit needs: never "" (every unnamed item, the key's field among them)
+        static const QStringList NAMES { "makeStartLine", "makeCopy", "makeComposer", "makeFilesPlaceWords",
+                                         "makeFilesPlaceButton" };
+        if (!window || !NAMES.contains(objectName)) {
+            return nullptr;
+        }
+        const auto items = window->contentItem()->findChildren<QQuickItem*>(objectName);
+        for (QQuickItem* item : items) {
+            if (item->isVisible()) {
+                return item;
+            }
+        }
+        return items.isEmpty() ? nullptr : items.first();
+    }
+}
+
+QVariantMap MakeDock::testItem(const QString& objectName) const {
+    QQuickItem* item = testFind(_window, objectName);
+    if (!item) {
+        return { { "found", false } };
+    }
+    const QRectF place = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+    return { { "found", true }, { "visible", item->isVisible() }, { "x", place.x() }, { "y", place.y() },
+             { "width", place.width() }, { "height", place.height() }, { "text", item->property("text") },
+             { "selectedText", item->property("selectedText") } };
+}
+
+bool MakeDock::testMouse(const QString& objectName, const QPointF& from, const QPointF& to) {
+    QQuickItem* item = testFind(_window, objectName);
+    if (!item || !item->isVisible()) {
+        return false;
+    }
+    auto at = [item](const QPointF& fraction) {
+        return item->mapToScene(QPointF(fraction.x() * item->width(), fraction.y() * item->height()));
+    };
+    auto send = [this](QEvent::Type type, const QPointF& point, Qt::MouseButtons buttons) {
+        // mapToGlobal takes a QPoint on Qt 5 (QPointF is Qt 6 only): main builds on both
+        const QPointF global = _window->mapToGlobal(point.toPoint());
+        QMouseEvent event(type, point, point, global, Qt::LeftButton, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(_window, &event);
+    };
+    const QPointF start = at(from);
+    const QPointF end = at(to);
+    send(QEvent::MouseButtonPress, start, Qt::LeftButton);
+    const int steps = start == end ? 0 : 8;
+    for (int i = 1; i <= steps; ++i) {
+        send(QEvent::MouseMove, start + (end - start) * (double(i) / steps), Qt::LeftButton);
+    }
+    send(QEvent::MouseButtonRelease, end, Qt::NoButton);
+    return true;
+}
+
+bool MakeDock::connectNow() {
+    auto link = DependencyManager::get<MakeLink>();
+    _reason.clear();
+    _starting = false;
+    if (!link->connectLink()) {
+        endTestChat();   // a refused connect ends a test's chat (security 21:48 11-07)
+        readFound();
+        emit stateChanged();
+        return false;
+    }
+    // what the person allowed, as written. A test's Connect allows nothing: it keeps a hash that never matches, so the
+    // next Connect asks with the whole card, and the kit still finds a hash under private/ (security 19:27 11-07)
+    allowedSetupSetting.set(_testRefusesAsks ? hashOf(QStringLiteral("a test's Connect\n") + allowHash())
+                                             : allowHash());
+    if (_route == "key") {
+        QString why;
+        if (link->claude()->isRunning()) {
+            _starting = false;   // already running (a Connect again while connected)
+        } else if (link->startClaude(why)) {
+            _starting = true;    // until MakeClaude says started
+        } else {
+            _reason = clean(MakeClaude::redact(why)).left(300);
+        }
+    }
+    readFound();
+    emit stateChanged();
+    emit setupTextChanged();
+    return true;
+}
+
+void MakeDock::endTestChat() {
+    endTestUndo();
+    if (!_testChat) {
+        return;
+    }
+    _testChat = false;
+    qCWarning(interfaceapp) << "Make: a test's chat ended";
+    emit routeChanged();       // chat()
+    emit setupTextChanged();   // the start line
+}
+
+void MakeDock::endTestUndo() {
+    _testUndo = false;
+    _testFirstRequest = 0;
+}
+
+void MakeDock::disconnect() {
+    _stopRequested = true;   // the person's own: never shown as Couldn't finish
+    endTestChat();
+    DependencyManager::get<MakeLink>()->disconnectLink();
+    _starting = false;
+    _terminalQuiet.stop();
+    setWorking(false);
+    emit stateChanged();
+}
+
+bool MakeDock::setRoute(const QString& route) {
+    if (route != "key" && route != "terminal" && !(route == "chat" && CHAT_OFFERED)) {
+        return false;
+    }
+    if (!takeRealInput("setRoute")) {
+        return false;
+    }
+    // "chat" is the Claude-plan route with the chat line; "terminal" the same route with today's plain line
+    const QString plan = route == "chat" ? QStringLiteral("terminal") : route;
+    const bool chatChanged = route != "key" && (route == "chat") != chatSetting.get();
+    if (chatChanged) {
+        chatSetting.set(route == "chat");
+    }
+    endTestChat();   // the person's own choice from now on, not a test's run
+    if (plan != _route || chatChanged) {
+        _route = plan;
+        routeSetting.set(plan);
+        emit routeChanged();
+        emit stateChanged();
+        emit setupTextChanged();   // an Allow covers one route and one start line (allowHash)
+    }
+    return true;
+}
+
+bool MakeDock::storeKey(const QString& text) {
+    if (!takeRealInput("storeKey")) {
+        return false;
+    }
+    QString why;
+    const bool stored = MakeKey::store(text.trimmed(), why);
+    if (!stored) {
+        _reason = clean(why).left(300);
+        emit stateChanged();
+    } else if (!_reason.isEmpty() && state() != "failed") {
+        _reason.clear();
+        emit stateChanged();
+    }
+    const bool hasKey = MakeKey::isStored();
+    if (hasKey != _hasKey) {
+        _hasKey = hasKey;
+        emit keyChanged();
+    }
+    return stored;
+}
+
+bool MakeDock::forgetKey() {
+    if (!takeRealInput("forgetKey")) {
+        return false;
+    }
+    const bool forgot = MakeKey::forget();
+    const bool hasKey = MakeKey::isStored();
+    if (hasKey != _hasKey) {
+        _hasKey = hasKey;
+        emit keyChanged();
+    }
+    return forgot;
+}
+
+bool MakeDock::canSend(const QString& text) const {
+    // the key route; or the Claude-plan route's chat, while a Claude Code started with the chat line is connected
+    const bool chatting = _route == "terminal" && chat() && state() == "connected" && channelFlag() != "off";
+    if ((_route != "key" && !chatting) || text.trimmed().isEmpty() || _working) {
+        return false;
+    }
+    // the key route's typing goes only to the app's own Claude Code: once that has ended, MakeLink::send would fall
+    // through to a connected Terminal Claude Code's channel (security 19:27 11-07)
+    if (_route == "key" && !DependencyManager::get<MakeLink>()->claude()->isRunning()) {
+        return false;
+    }
+    return true;
+}
+
+int MakeDock::send(const QString& text, const QStringList& pictureIds) {
+    if (!canSend(text) || !takeRealInput("send")) {
+        return 0;
+    }
+    return sendNow(text, pictureIds);
+}
+
+int MakeDock::testSend(const QString& text) {
+    // only the chat a test turned on: _testChat is set by testConnectTerminal(true) alone and ends with Disconnect, a
+    // refused connect or the person's route, so this never reaches the person's own chat nor the key route
+    const int request = _testChat && canSend(text) ? sendNow(text, QStringList()) : 0;
+    if (request <= 0) {
+        qCWarning(interfaceapp) << "Make: a test's send refused";
+        return 0;
+    }
+    qCWarning(interfaceapp) << "Make: a test's send," << text.size() << "characters, request" << request;
+    return request;
+}
+
+int MakeDock::sendNow(const QString& text, const QStringList& pictureIds) {
+    QStringList ids;
+    QStringList views;
+    for (const auto& id : pictureIds) {
+        if (!servedFile("picture", id).isEmpty() && !ids.contains(id)) {
+            ids << id;
+            views << pictureView(id);
+        }
+    }
+    const int request = DependencyManager::get<MakeLink>()->send(text, ids);
+    if (request <= 0) {
+        return 0;
+    }
+    _costSoFar = -1.0;
+    MakeDockRows::Row row;
+    row.kind = "ask";
+    row.request = request;
+    row.text = clean(text);
+    row.views = views;
+    addRow(row);
+    setWorking(true);
+    return request;
+}
+
+bool MakeDock::answer(const QString& askId, bool allow) {
+    bool isNumber = false;
+    const int id = askId.toInt(&isNumber);
+    if (!isNumber || !_askTimes.contains(id)) {
+        return false;   // not a question waiting for an answer
+    }
+    if (!takeRealInput("answer")) {
+        return false;
+    }
+    DependencyManager::get<MakeLink>()->answer(id, allow);
+    _askTimes.remove(id);
+    emit questionsChanged();
+    _timeline.update([&](const MakeDockRows::Row& row) { return row.kind == "question" && row.itemId == askId; },
+                     [&](MakeDockRows::Row& row) { row.answered = allow ? "allowed" : "refused"; });
+    return true;
+}
+
+void MakeDock::stop() {
+    _stopRequested = true;   // the person's own: never shown as Couldn't finish
+    DependencyManager::get<MakeLink>()->stop();
+    if (_route == "terminal") {
+        _terminalQuiet.stop();
+        requestDone(DependencyManager::get<MakeLink>()->currentRequest(), -1.0);
+        setWorking(false);
+    }
+}
+
+bool MakeDock::canUndo(int request) const {
+    if (_working || request <= 0 || request != _doneRequest) {
+        return false;   // only the newest finished request, never while Claude works
+    }
+    for (const auto& row : _timeline.rows()) {
+        if (row.request == request && row.undone) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool MakeDock::undoRequest(int request) {
+    if (!canUndo(request) || !takeRealInput("undoRequest")) {
+        return false;
+    }
+    undoNow(request);
+    return true;
+}
+
+bool MakeDock::testUndo(int request) {
+    // only a request the test's own Connect led to, while its run lasts (_testUndo: set by testConnectTerminal alone,
+    // ended with a test's chat and by any other Connect), and every check of the button (security 02:06 11-08)
+    if (!_testUndo || request < _testFirstRequest || !canUndo(request)) {
+        qCWarning(interfaceapp) << "Make: a test's undo refused";
+        return false;
+    }
+    undoNow(request);
+    qCWarning(interfaceapp) << "Make: a test's undo of request" << request;
+    return true;
+}
+
+void MakeDock::undoNow(int request) {
+    // marked undone before the link is asked, so its answer (even one that comes at once) finds the request undone
+    _timeline.update([&](const MakeDockRows::Row& row) { return row.request == request; },
+                     [](MakeDockRows::Row& row) { row.undone = true; });
+    _made.update([&](const MakeDockRows::Row& row) { return row.request == request; },
+                 [](MakeDockRows::Row& row) { row.undone = true; });
+    DependencyManager::get<MakeLink>()->undoRequest(request);
+}
+
+void MakeDock::openInCode(const QString& cardId) {
+    for (const auto& row : _made.rows()) {
+        if (row.itemId == cardId && row.kind == "script" && !row.entityId.isEmpty()) {
+            if (auto code = DependencyManager::get<CodeEditor>()) {
+                code->open(QUuid(row.entityId), row.which);
+            }
+            return;
+        }
+    }
+}
+
+void MakeDock::showThing(const QString& itemId) {
+    QString entityId;
+    for (const auto& row : _made.rows()) {
+        if (row.itemId == itemId && !row.entityId.isEmpty()) {
+            entityId = row.entityId;
+        }
+    }
+    const QUuid id(entityId);
+    if (id.isNull()) {
+        return;
+    }
+    if (auto editor = DependencyManager::get<Editor>()) {
+        if (!editor->isActive()) {
+            editor->setActive(true);
+        }
+        editor->select({ id });   // a deleted thing selects nothing, and nothing is framed
+        editor->frameSelection();
+    }
+}
+
+QString MakeDock::pictureView(const QString& id) const {
+    return PICTURE_ID.match(id).hasMatch() ? "image://make/picture/" + id : QString();
+}
+
+void MakeDock::giveBackKeyboard() {
+    if (auto viewport = qApp->getPrimaryWidget()) {
+        viewport->activateWindow();
+        viewport->setFocus(Qt::OtherFocusReason);
+    }
+}
+
+bool MakeDock::copyLine(const QString& which) {
+    // a whole line of Make's own, read here: never a part (a part of the start line could leave out --restricted) and
+    // never text from QML (security, 11-07)
+    const QString text = which == "start" ? startLine() : which == "setup" ? setupText() : QString();
+    if (text.isEmpty()) {
+        qCWarning(interfaceapp) << "Make: refused copyLine" << which.left(20);
+        return false;
+    }
+    if (!takeRealInput("copyLine")) {
+        return false;
+    }
+    QGuiApplication::clipboard()->setText(text);
+    return true;
+}
+
+QString MakeDock::testCopyLine(const QString& which) {
+    // tests only (Test.makeDockCopy, with --testScript): copyLine's own clipboard write without the real-input check,
+    // so a kit can compare the system's clipboard with the start line, byte for byte (security C6); only in pm's
+    // clipboard slot, as the clipboard is the person's
+    const QString text = which == "start" ? startLine() : which == "setup" ? setupText() : QString();
+    if (text.isEmpty()) {
+        return QString();
+    }
+    qCWarning(interfaceapp) << "Make: a test copied" << which << "to the clipboard";
+    QGuiApplication::clipboard()->setText(text);
+    return text;
+}
+
+void MakeDock::showMoreMenu(qreal x, qreal y) {
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    // the Make folder in Finder, Explorer or the file manager (docs 11-08): MakeLink's own folder in the app's data,
+    // never an address from anywhere else; opened as a folder by the system (no script, no shell, no path pasted into
+    // a command), and only while it is a real folder, not a link
+    const QString folder = DependencyManager::get<MakeLink>()->folder();
+    auto realFolder = [](const QString& path) {
+        const QFileInfo info(path);
+        return !path.isEmpty() && info.isAbsolute() && info.isDir() && !info.isSymLink();
+    };
+    auto folderAction = menu->addAction(SHOW_FOLDER_WORDS);
+    folderAction->setEnabled(realFolder(folder));
+    QObject::connect(folderAction, &QAction::triggered, this, [folder, realFolder] {
+        if (realFolder(folder)) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        }
+    });
+    menu->addSeparator();
+    auto disconnectAction = menu->addAction("Disconnect");
+    disconnectAction->setEnabled(DependencyManager::get<MakeLink>()->stateName() != "off");
+    QObject::connect(disconnectAction, &QAction::triggered, this, &MakeDock::disconnect);
+    QObject::connect(menu, &QMenu::aboutToHide, this, [this] {
+        _moreMenuOpen = false;
+        emit moreMenuChanged();
+    });
+    _moreMenuOpen = true;
+    emit moreMenuChanged();
+    menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
+QString MakeDock::filesPlace() const {
+    return DependencyManager::get<MakeLink>()->filesGoTo();   // as New Script reads it (CodeEditor::newScriptPlace)
+}
+
+bool MakeDock::filesChoice() const {
+    return DependencyManager::get<MakeLink>()->worldFilesAllowed();
+}
+
+void MakeDock::showFilesPlaceMenu(qreal x, qreal y) {
+    if (_working || !filesChoice()) {
+        return;   // the row says where without a pop-up then
+    }
+    auto menu = new QMenu(qApp->getWindow());
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const QString place = filesPlace();
+    auto add = [this, menu, &place](const QString& text, const QString& value) {
+        auto action = menu->addAction(text);
+        action->setCheckable(true);
+        action->setChecked(place == value);
+        // the person's own click in the app's menu (a script can't reach it): the choice is remembered (MakeLink)
+        QObject::connect(action, &QAction::triggered, this, [this, value] {
+            if (!_working) {
+                DependencyManager::get<MakeLink>()->setFilesPlace(value);
+            }
+        });
+    };
+    add("My Files", "my_files");
+    add("This World's Files", "world");
+    menu->popup(QPoint(qRound(x), qRound(y)));
+}
+
+// ---- pictures ----
+
+QString MakeDock::keepSheet(const QString& model, const QVariant& views) const {
+    // MakeLink gives a model's views as the sheet's own bytes (MakeBlender::drawViews: one JPEG or PNG); MakeDock keeps
+    // them in the Make folder's sheets/, by the model's id, and serves them from there. A path is taken as it is (the
+    // caller checks it's inside the Make folder). One write per made model, a few hundred KB.
+    if (views.userType() != QMetaType::QByteArray) {
+        return views.toString();
+    }
+    const QByteArray bytes = views.toByteArray();
+    if (!MODEL_ID.match(model).hasMatch() || bytes.isEmpty() || bytes.size() > MAX_SHEET_BYTES) {
+        return QString();
+    }
+    const QString folder = DependencyManager::get<MakeLink>()->folder() + "/sheets";
+    if (!QDir().mkpath(folder)) {
+        return QString();
+    }
+    const QString file = folder + "/" + model + (bytes.startsWith("\x89PNG") ? ".png" : ".jpg");
+    QFile::remove(file);   // written fresh: never through a link left in its place
+    QFile out(file);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::NewOnly) || out.write(bytes) != bytes.size()) {
+        out.remove();
+        return QString();
+    }
+    return file;
+}
+
+QString MakeDock::picturesFolder() const {
+    return DependencyManager::get<MakeLink>()->folder() + "/pictures";
+}
+
+QString MakeDock::servedFile(const QString& what, const QString& id) const {
+    auto link = DependencyManager::get<MakeLink>();
+    const QString folder = link ? link->folder() : QString();
+    if (folder.isEmpty()) {
+        return QString();
+    }
+    QString file;
+    if (what == "sheet" || what == "thumb") {
+        QMutexLocker lock(&servedMutex);
+        file = _sheets.value(id);
+    } else if (what == "picture" && PICTURE_ID.match(id).hasMatch()) {
+        for (const auto& extension : { ".png", ".jpg" }) {
+            const QString candidate = folder + "/pictures/" + id + extension;
+            if (QFileInfo::exists(candidate)) {
+                file = candidate;
+                break;
+            }
+        }
+    }
+    return !file.isEmpty() && insideFolder(file, folder) ? QFileInfo(file).canonicalFilePath() : QString();
+}
+
+void MakeDock::addPictures() {
+    if (!takeRealInput("addPictures") || _chooser) {
+        return;
+    }
+    auto chooser = new QFileDialog(qApp->getWindow(), "Add Images", QDir::homePath(),
+                                   "Images (*.png *.jpg *.jpeg *.webp)");
+    chooser->setFileMode(QFileDialog::ExistingFiles);
+    chooser->setAttribute(Qt::WA_DeleteOnClose);
+    QObject::connect(chooser, &QFileDialog::filesSelected, this, [this](const QStringList& files) {
+        cleanPictures(files);
+    });
+    _chooser = chooser;
+    chooser->open();
+}
+
+bool MakeDock::dropPictures(const QVariantList& urls) {
+    QList<QUrl> given;
+    for (const auto& url : urls) {
+        given << url.toUrl();
+    }
+    const bool real = _sinceDrop.isValid() && _sinceDrop.elapsed() <= REAL_INPUT_MS && !_droppedUrls.isEmpty() &&
+        given == _droppedUrls;
+    _droppedUrls.clear();   // each drop is used once
+    if (!real) {
+        qCWarning(interfaceapp) << "Make: refused dropPictures (no real drop of these in the dock just now)";
+        return false;
+    }
+    QStringList files;
+    for (const auto& url : given) {
+        if (url.isLocalFile()) {
+            files << url.toLocalFile();
+        }
+    }
+    cleanPictures(files);
+    return true;
+}
+
+// Each picture checked before it's decoded (a file, its size, PNG/JPEG/WebP, its pixel size), then a clean copy (no
+// metadata, at most 2048 px a side) written as <Make folder>/pictures/<id>.png, off the main thread.
+void MakeDock::cleanPictures(const QStringList& files) {
+    const QString folder = picturesFolder();
+    QStringList chosen = files.mid(0, PICTURES_PER_ADD);
+    const bool tooMany = files.size() > PICTURES_PER_ADD;
+    QPointer<MakeDock> self(this);
+    QThreadPool::globalInstance()->start([self, folder, chosen, tooMany] {
+        QStringList ids;
+        QStringList refusals;
+        if (tooMany) {
+            refusals << QString("Only %1 images at a time: the first %1 were taken.").arg(PICTURES_PER_ADD);
+        }
+        QDir().mkpath(folder);
+        for (const auto& file : chosen) {
+            const QFileInfo info(file);
+            const QString name = MakeDock::clean(info.fileName()).left(60);
+            if (!info.isFile() || info.size() <= 0) {
+                refusals << name + " isn't a file Make can read.";
+                continue;
+            }
+            if (info.size() > PICTURE_MAX_BYTES) {
+                refusals << name + " is too big (20 MB at most).";
+                continue;
+            }
+            QImageReader reader(file);
+            reader.setDecideFormatFromContent(true);
+            const QByteArray format = reader.format().toLower();
+            if (format != "png" && format != "jpeg" && format != "jpg" && format != "webp") {
+                refusals << name + " isn't a PNG, JPEG or WebP image.";
+                continue;
+            }
+            const QSize size = reader.size();
+            if (!size.isValid() || size.width() > PICTURE_MAX_SIDE || size.height() > PICTURE_MAX_SIDE) {
+                refusals << name + " is too large an image (8192 pixels a side at most).";
+                continue;
+            }
+            if (size.width() > PICTURE_KEEP_SIDE || size.height() > PICTURE_KEEP_SIDE) {
+                reader.setScaledSize(size.scaled(PICTURE_KEEP_SIDE, PICTURE_KEEP_SIDE, Qt::KeepAspectRatio));
+            }
+            QImage image = reader.read();
+            if (image.isNull()) {
+                refusals << name + " couldn't be read as an image.";
+                continue;
+            }
+            const QString id = QString::number(QRandomGenerator::system()->generate64(), 16).rightJustified(16, '0');
+            QImageWriter writer(folder + "/" + id + ".png", "png");
+            if (!writer.write(image.convertToFormat(QImage::Format_ARGB32))) {
+                refusals << name + " couldn't be kept: " + writer.errorString();
+                continue;
+            }
+            ids << id;
+        }
+        QMetaObject::invokeMethod(qApp, [self, ids, refusals] {
+            if (!self) {
+                return;
+            }
+            for (const auto& refusal : refusals) {
+                emit self->pictureRefused(refusal);
+            }
+            if (!ids.isEmpty()) {
+                QVariantList list;
+                for (const auto& id : ids) {
+                    list << id;
+                }
+                emit self->picturesAdded(list);
+            }
+        }, Qt::QueuedConnection);
+    }, -1);   // below the default: a waiting texture or mesh job goes first (performance)
+}
+
+// ---- the timeline ----
+
+void MakeDock::stepFailed(int request, const QString& startedLine, const QString& failedLine) {
+    const QString started = clean(startedLine);
+    const QString failed = clean(failedLine).left(300);
+    if (request <= 0 || failed.isEmpty()) {
+        return;
+    }
+    _failedRequests.insert(request);
+    const auto& rows = _timeline.rows();
+    for (int i = rows.size() - 1; i >= 0; i--) {
+        const auto& row = rows.at(i);
+        if (row.request == request && row.kind == "activity" && row.text == started) {
+            _timeline.updateAt(i, [&](MakeDockRows::Row& changed) {
+                changed.kind = "failed";
+                changed.text = failed;
+            });
+            return;
+        }
+    }
+    // its step's row isn't there (a link that came back mid-request): the failure still shows, under its request
+    MakeDockRows::Row row;
+    row.kind = "failed";
+    row.request = request;
+    row.text = failed;
+    addRow(row);
+}
+
+void MakeDock::addRow(MakeDockRows::Row row) {
+    row.time = QDateTime::currentMSecsSinceEpoch();
+    _timeline.append(row);
+}
+
+void MakeDock::addMade(const MakeDockRows::Row& row) {
+    _made.prepend(row);
+}
+
+void MakeDock::requestDone(int request, double cost) {
+    if (request <= 0 || request <= _doneRequest) {
+        return;
+    }
+    bool any = false;
+    for (const auto& row : _timeline.rows()) {
+        if (row.request == request) {
+            any = true;
+            break;
+        }
+    }
+    if (!any) {
+        return;
+    }
+    _doneRequest = request;
+    MakeDockRows::Row row;
+    row.kind = "done";
+    row.request = request;
+    row.cost = cost;
+    addRow(row);
+}
+
+void MakeDock::setWorking(bool working) {
+    if (working != _working) {
+        if (working) {
+            _stopRequested = false;   // a new request
+        }
+        _working = working;
+        emit workingChanged();
+    }
+}
+
+// ---- the dock's window ----
+
+void MakeDock::watchWindow(QQuickWindow* window, QQmlEngine* engine) {
+    // the dock is open for the first time: what Connect shows
+    const bool hasKey = MakeKey::isStored();
+    if (hasKey != _hasKey) {
+        _hasKey = hasKey;
+        emit keyChanged();
+    }
+    readFound();
+    if (_window) {
+        _window->removeEventFilter(this);
+    }
+    _window = window;
+    if (_window) {
+        _window->installEventFilter(this);
+    }
+    if (engine && !engine->imageProvider(PROVIDER)) {
+        engine->addImageProvider(PROVIDER, new MakeImageProvider());   // the engine owns it
+    }
+}
+
+bool MakeDock::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == _window && (event->type() == QEvent::Show || event->type() == QEvent::WindowActivate)) {
+        // the dock shown again, or its window back in front: what's on this computer may have changed (Blender just
+        // installed), so the Connect view's rows are read again; at most every 2 s, a few file checks
+        if (!_sinceFoundRead.isValid() || _sinceFoundRead.elapsed() > FOUND_REREAD_MS) {
+            _sinceFoundRead.restart();
+            readFound();
+        }
+    }
+    if (watched == _window && event->spontaneous()) {   // from the window system: never a script's or a test's
+        switch (event->type()) {
+            case QEvent::MouseButtonRelease:
+            case QEvent::KeyPress:
+                _sinceInput.restart();
+                _inputUnused = true;
+                break;
+            case QEvent::Drop: {
+                auto drop = static_cast<QDropEvent*>(event);
+                if (drop->mimeData() && drop->mimeData()->hasUrls()) {
+                    _droppedUrls = drop->mimeData()->urls();
+                    _sinceDrop.restart();
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    return QObject::eventFilter(watched, event);
+}
+
+QString MakeDock::clean(const QString& text) {
+    // the link's own rules, one copy for both (security S1): by code point; line breaks kept, a tab as a space; control,
+    // bidi, separator, zero-width and tag characters dropped
+    return MakeText::plain(text);
+}

@@ -10,7 +10,6 @@ import QtQuick 2.7
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
-import QtGraphicalEffects 1.0
 import stylesUit 1.0
 import "../../controls"
 import controlsUit 1.0 as HifiControls
@@ -115,7 +114,7 @@ Item {
                     z: 2000
                     imageWidth: 442
                     imageHeight: 670
-                    source: "../../../images/calibration-help.png"
+                    source: Qt.resolvedUrl("../../../images/calibration-help.png")   // Qt 6 resolves a plain string from ImageMessageBox's folder
                 }
 
                 Rectangle {

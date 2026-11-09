@@ -16,7 +16,6 @@
 
 #include <glm/glm.hpp>
 
-#include <QtScript/QScriptEngine>
 
 #include <ColorUtils.h>
 

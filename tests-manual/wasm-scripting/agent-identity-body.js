@@ -16,3 +16,8 @@ Agent.isAvatar = true;
 Avatar.displayName = "identity-check";
 Avatar.skeletonModelURL = Script.resolvePath("../../interface/resources/meshes/defaultAvatar_full.fst");
 print("AGENT-IDENTITY body set its identity at " + Date.now());
+// what an agent's globals look like on this build (servers: `location` is the address manager itself; ai-residents:
+// Auxi's body turns hearing on only when takeHeardAudio is a function)
+print("AGENT-IDENTITY location.hostname = " + JSON.stringify(location.hostname) + ", typeof location.handleLookupString = " +
+    typeof location.handleLookupString + ", typeof Agent.takeHeardAudio = " + typeof Agent.takeHeardAudio +
+    ", typeof Agent.takeBodyToken = " + typeof Agent.takeBodyToken);

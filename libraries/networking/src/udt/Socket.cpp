@@ -53,7 +53,11 @@ Socket::Socket(QObject* parent, bool shouldChangeSocketOptions) :
     connect(&_udpSocket, &QUdpSocket::readyRead, this, &Socket::readPendingDatagrams);
 
     // make sure we hear about errors and state changes from the underlying socket
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)  // Qt 6 renamed the error signal; a string connect to the old name never fires
+    connect(&_udpSocket, SIGNAL(errorOccurred(QAbstractSocket::SocketError)),
+#else
     connect(&_udpSocket, SIGNAL(error(QAbstractSocket::SocketError)),
+#endif
             this, SLOT(handleSocketError(QAbstractSocket::SocketError)));
     connect(&_udpSocket, &QAbstractSocket::stateChanged, this, &Socket::handleStateChanged);
 

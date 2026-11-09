@@ -52,6 +52,12 @@ public:
     // adjust where we persist the cache
     void setCacheDir(const QString& cacheDir);
 
+    /// Every http, https and ftp request made from now on is held to the script network rule, judged as from `origin`
+    /// (ResourceRequest::setNetworkRule: each hop judged, then sent to the address judged), for a process whose web
+    /// requests are all its scripts' (the entity script server: its scripts, their includes, the sounds they load).
+    /// Set once, at the process's start.
+    void ruleEveryWebRequest(const QUrl& origin);
+
     QNetworkDiskCache* networkDiskCache = new QNetworkDiskCache();
 
 private:
@@ -62,6 +68,9 @@ private:
     bool _atpSupportEnabled;
     PrefixMap _prefixMap;
     QMutex _prefixMapLock;
+
+    QUrl _everyWebRequestRuleOrigin;   // ruleEveryWebRequest; empty: none
+    QMutex _ruleLock;
 
 };
 

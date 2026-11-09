@@ -17,7 +17,6 @@
 #include <QtCore/QObject>
 #include <QtCore/QString>
 #include <QtQuick/QQuickItem>
-#include <QtScript/QScriptValue>
 #include <QtWidgets/QMessageBox>
 
 #include <DependencyManager.h>

@@ -13,7 +13,9 @@
 
 #include <QOpenGLContext>
 
-#ifdef Q_OS_WIN
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/qopenglcontext_platform.h>
+#elif defined(Q_OS_WIN)
 #include <QtPlatformHeaders/QWGLNativeContext>
 #endif
 
@@ -24,11 +26,20 @@ QOpenGLContextWrapper::Pointer QOpenGLContextWrapper::currentContextWrapper() {
 
 QOpenGLContextWrapper::NativeContextPointer QOpenGLContextWrapper::getNativeContext() const {
     QOpenGLContextWrapper::NativeContextPointer result;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: the native context through the platform interface; only Windows' custom-context path reads it
+#if defined(Q_OS_WIN)
+    if (auto* wgl = _context->nativeInterface<QNativeInterface::QWGLContext>()) {
+        result = std::make_shared<QGLNativeContext>(wgl->nativeContext(), nullptr);
+    }
+#endif
+#else
     auto nativeHandle = _context->nativeHandle();
     if (nativeHandle.canConvert<QGLNativeContext>()) {
         result = std::make_shared<QGLNativeContext>();
         *result = nativeHandle.value<QGLNativeContext>();
     }
+#endif
     return result;
 }
 

@@ -16,7 +16,6 @@
 
 #include <QObject>
 #include <QMutex>
-#include <QScriptValue>
 #include <vector>
 #include <ScriptCallback.h>
 #include <JointData.h>
@@ -43,8 +42,7 @@ public:
     struct StateHandler {
         AnimVariantMap results;
         QStringList propertyNames;
-        QScriptValue function;       // a QtScript handler
-        ScriptCallback callback;     // or a WebAssembly script's function (one of the two is set)
+        ScriptCallback callback;     // the script's function
         bool useNames;
     };
 
@@ -212,10 +210,7 @@ public:
     AnimNode::ConstPointer getAnimNode() const { return _animNode; }
     AnimNode::ConstPointer findAnimNodeByName(const QString& name) const;
     AnimSkeleton::ConstPointer getAnimSkeleton() const { return _animSkeleton; }
-    QScriptValue addAnimationStateHandler(QScriptValue handler, QScriptValue propertiesList);
-    void removeAnimationStateHandler(QScriptValue handler);
-    void animationStateHandlerResult(int identifier, QScriptValue result);
-    // The same for a handler on the WebAssembly script engine: the handler's id back, 0 when refused
+    // A script's animation state handler: the handler's id back, 0 when refused
     int addAnimationStateCallback(const ScriptCallback& handler, const QStringList& propertyNames, bool useNames);
     void removeAnimationStateCallback(int identifier);
     void animationStateCallbackResult(int identifier, const QVariant& result);

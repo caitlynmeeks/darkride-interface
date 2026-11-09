@@ -47,6 +47,8 @@ void EngineStats::run(const RenderContextPointer& renderContext) {
     config->texturePendingGPUTransferSize = gpu::Context::getTexturePendingGPUTransferMemSize();
 
     config->textureResourcePopulatedGPUMemSize = gpu::Context::getTextureResourcePopulatedGPUMemSize();
+    config->textureResourceIdealGPUMemSize = gpu::Context::getTextureResourceIdealGPUMemSize();
+    config->textureTransferEngineBusy = gpu::Context::getTextureTransferEngineBusy();
 
     renderContext->args->_context->getFrameStats(_gpuStats);
 

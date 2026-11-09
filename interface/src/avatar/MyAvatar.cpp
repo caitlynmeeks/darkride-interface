@@ -68,7 +68,6 @@
 #include <recording/Frame.h>
 #include <RecordingScriptingInterface.h>
 #include <RenderableModelEntityItem.h>
-#include <VariantMapToScriptValue.h>
 
 #include "MyHead.h"
 #include "MySkeletonModel.h"
@@ -440,8 +439,7 @@ void MyAvatar::enableHandTouchForID(const QUuid& entityID) {
 }
 
 void MyAvatar::registerMetaTypes(ScriptEnginePointer engine) {
-    // through the engine's registrations, so that every script engine sees both (on QtScript the same as before:
-    // QtOwnership, no deleteLater, no child objects; DriveKeys a plain object of the keys' values)
+    // through the engine's registrations (DriveKeys a plain object of the keys' values)
     engine->registerGlobalObject("MyAvatar", this);
 
     QVariantMap driveKeys;
@@ -450,9 +448,6 @@ void MyAvatar::registerMetaTypes(ScriptEnginePointer engine) {
         driveKeys[metaEnum.key(i)] = metaEnum.value(i);
     }
     engine->registerGlobalValue("DriveKeys", driveKeys);
-
-    qScriptRegisterMetaType(engine.data(), audioListenModeToScriptValue, audioListenModeFromScriptValue);
-    qScriptRegisterMetaType(engine.data(), driveKeysToScriptValue, driveKeysFromScriptValue);
 }
 
 void MyAvatar::setOrientationVar(const QVariant& newOrientationVar) {
@@ -2389,7 +2384,12 @@ const float SCRIPT_PRIORITY = 1.0f + 1.0f;
 const float RECORDER_PRIORITY = 1.0f + 1.0f;
 
 void MyAvatar::setJointRotations(const QVector<glm::quat>& jointRotations) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     int numStates = glm::min(_skeletonModel->getJointStateCount(), jointRotations.size());
+#else
+    // Qt 6's QVector::size() is a qsizetype
+    int numStates = glm::min(_skeletonModel->getJointStateCount(), (int)jointRotations.size());
+#endif
     for (int i = 0; i < numStates; ++i) {
         // HACK: ATM only Recorder calls setJointRotations() so we hardcode its priority here
         _skeletonModel->setJointRotation(i, true, jointRotations[i], RECORDER_PRIORITY);
@@ -6093,22 +6093,6 @@ void MyAvatar::setAudioListenerMode(AudioListenerMode audioListenerMode) {
         _audioListenerMode = audioListenerMode;
         emit audioListenerModeChanged();
     }
-}
-
-QScriptValue audioListenModeToScriptValue(QScriptEngine* engine, const AudioListenerMode& audioListenerMode) {
-    return audioListenerMode;
-}
-
-void audioListenModeFromScriptValue(const QScriptValue& object, AudioListenerMode& audioListenerMode) {
-    audioListenerMode = static_cast<AudioListenerMode>(object.toUInt16());
-}
-
-QScriptValue driveKeysToScriptValue(QScriptEngine* engine, const MyAvatar::DriveKeys& driveKeys) {
-    return driveKeys;
-}
-
-void driveKeysFromScriptValue(const QScriptValue& object, MyAvatar::DriveKeys& driveKeys) {
-    driveKeys = static_cast<MyAvatar::DriveKeys>(object.toUInt16());
 }
 
 

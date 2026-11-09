@@ -207,6 +207,7 @@ class Texture : public Resource {
 
     static std::atomic<Size> _allowedCPUMemoryUsage;
     static std::atomic<bool> _enableSparseTextures;
+    static std::atomic<bool> _transferBoost;
     static void updateTextureCPUMemoryUsage(Size prevObjectSize, Size newObjectSize);
 
 public:
@@ -219,6 +220,12 @@ public:
 
     static bool getEnableSparseTextures();
     static void setEnableSparseTextures(bool enabled);
+
+    // The loading boost (entry 33): while the loading screen is up the GL texture engine uploads what it has allocated
+    // before allocating more and takes larger per-frame budgets; the client launches with it on, the arrival gate turns
+    // it off when the world is presented and on again when a new arrival closes the gate.
+    static bool getTransferBoost();
+    static void setTransferBoost(bool enabled);
 
     using ExternalRecycler = std::function<void(uint32, void*)>;
     using ExternalIdAndFence = std::pair<uint32, void*>;

@@ -17,7 +17,6 @@
 
 #include <glm/glm.hpp>
 
-#include <QtScript/QScriptEngine>
 #include "EntityItemPropertiesMacros.h"
 #include "PropertyGroup.h"
 
@@ -37,8 +36,10 @@ class ReadBitstreamToTreeParams;
  *     are cast by avatars, plus {@link Entities.EntityProperties-Model|Model} and 
  *     {@link Entities.EntityProperties-Shape|Shape} entities that have their 
  *     <code>{@link Entities.EntityProperties|canCastShadow}</code> property set to <code>true</code>.
- * @property {number} shadowBias=0.5 - The bias of the shadows cast by the light, range <code>0.0</code> &ndash; 
- *     <code>1.0</code>. This fine-tunes shadows cast by the light, to prevent shadow acne and peter panning.
+ * @property {number} shadowBias=0.5 - Fine-tunes where the key light starts its shadows, range <code>0.0</code> &ndash;
+ *     <code>1.0</code>. The default, <code>0.5</code>, suits most worlds. If you see speckled stripes on lit surfaces,
+ *     raise it a little. If a shadow doesn't quite meet the thing casting it, lower it. (The value scales a bias
+ *     measured in shadow-map texels.)
  * @property {number} shadowMaxDistance=40.0 - The maximum distance from the camera position at which shadows will be computed, 
  *     range <code>1.0</code> &ndash; <code>250.0</code>. Higher values cover more of the scene but with less precision.
  */

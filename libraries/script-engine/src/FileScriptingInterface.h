@@ -34,6 +34,12 @@ class FileScriptingInterface : public QObject {
 public:
     FileScriptingInterface(QObject* parent);
 
+    /// Extracts the archive at `zipPath` into the folder `target` (made as needed) and returns the files written, or
+    /// an empty list and writes nothing when the archive is refused: an entry whose name would land outside the
+    /// target folder, or a symbolic link entry (an archive's link to any place, with an entry stored under it,
+    /// would write through the link). The archive's permission bits are not kept: files land 0644, folders 0755.
+    static QStringList unzipArchive(const QString& zipPath, const QString& target);
+
 public slots:
 
     /**jsdoc

@@ -11,9 +11,6 @@
 #ifndef hifi_controllers_Pose_h
 #define hifi_controllers_Pose_h
 
-class QScriptEngine;
-class QScriptValue;
-
 #include <GLMHelpers.h>
 
 namespace controller {
@@ -43,9 +40,6 @@ namespace controller {
 
         Pose transform(const glm::mat4& mat) const;
         Pose postTransform(const glm::mat4& mat) const;
-
-        static QScriptValue toScriptValue(QScriptEngine* engine, const Pose& event);
-        static void fromScriptValue(const QScriptValue& object, Pose& event);
     };
 }
 

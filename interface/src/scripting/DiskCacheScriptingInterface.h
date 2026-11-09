@@ -4,6 +4,8 @@
 #include <QtCore/QObject>
 #include <QNetworkDiskCache>
 
+#include <NetworkAccessManager.h>
+
 #include <DependencyManager.h>
 #include <PathUtils.h>
 #include <SettingHandle.h>
@@ -85,7 +87,7 @@ public:
     Q_INVOKABLE void clearCache();
 
 private:
-    QNetworkDiskCache* networkDiskCache;
+    LockedNetworkCache* networkDiskCache;
 
     // GB: the HTTP cache of the models, scripts, sounds and source images (a large world is about 0.5 GB of it)
     Setting::Handle<float> maximumCacheSizeSetting{ "maximumCacheSize", 4.0f };

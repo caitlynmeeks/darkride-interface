@@ -13,6 +13,7 @@
 
 #include "QVariantGLM.h"
 
+#include <shared/WireStream.h>
 #include "PhysicsLogging.h"
 
 
@@ -170,6 +171,7 @@ QVariantMap ObjectActionOffset::getArguments() {
 QByteArray ObjectActionOffset::serialize() const {
     QByteArray ba;
     QDataStream dataStream(&ba, QIODevice::WriteOnly);
+    hifi::stream::pin(dataStream);
     dataStream << DYNAMIC_TYPE_OFFSET;
     dataStream << getID();
     dataStream << ObjectActionOffset::offsetVersion;
@@ -188,6 +190,7 @@ QByteArray ObjectActionOffset::serialize() const {
 
 void ObjectActionOffset::deserialize(QByteArray serializedArguments) {
     QDataStream dataStream(serializedArguments);
+    hifi::stream::pin(dataStream);
 
     EntityDynamicType type;
     dataStream >> type;

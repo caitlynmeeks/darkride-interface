@@ -130,12 +130,12 @@ void Application::askToWearAvatar(const QString& url, bool askFirst) {
     }
 
     // Download the FST file, to attempt to determine its model type
-    QVariantHash fstMapping = FSTReader::downloadMapping(url);
+    const hifi::VariantMultiHash fstMapping = FSTReader::downloadMapping(url);
 
     FSTReader::ModelType modelType = FSTReader::predictModelType(fstMapping);
 
-    QString modelName = fstMapping["name"].toString();
-    QString modelLicense = fstMapping["license"].toString();
+    QString modelName = fstMapping.value("name").toString();
+    QString modelLicense = fstMapping.value("license").toString();
     // the avatar's own name in the popups, else its file's
     const QString shownName = modelName.trimmed().isEmpty() ? QFileInfo(realUrl.path()).completeBaseName() : modelName.trimmed();
 
@@ -217,7 +217,11 @@ bool Application::askToLoadScript(const QString& scriptFilenameOrURL) {
 bool Application::askToWearAvatarAttachmentUrl(const QString& url) {
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
     QNetworkRequest networkRequest = QNetworkRequest(url);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // what FollowRedirectsAttribute meant
+#else
     networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+#endif
     networkRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
     QNetworkReply* reply = networkAccessManager.get(networkRequest);
     int requestNumber = ++_avatarAttachmentRequest;

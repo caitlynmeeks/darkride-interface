@@ -34,6 +34,9 @@
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
 #include <QProcessEnvironment>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QActionGroup>   // Qt 6 moved QActionGroup from QtWidgets to QtGui
+#endif
 #include <AccountManager.h>
 #include <AddressManager.h>
 #include <BuildInfo.h>
@@ -90,7 +93,11 @@ class ForegroundFilter : public QAbstractNativeEventFilter {
 public:
     explicit ForegroundFilter(Display* display) : _display(display) {}
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr*) override {
+#else
     bool nativeEventFilter(const QByteArray& eventType, void* message, long*) override {
+#endif
         auto msg = static_cast<MSG*>(message);
         if (eventType == "windows_generic_MSG" && msg->message == WM_ACTIVATEAPP) {
             bool inFront = msg->wParam != FALSE;
@@ -166,10 +173,18 @@ void addDisplayPluginToMenu(const DisplayPluginPointer& displayPlugin, int index
         displayPluginGroup->setExclusive(true);
     }
     auto parent = menu->getMenu(MenuOption::OutputMenu);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 deleted modifier + int: the shortcut is a key combination (the same keys, Ctrl+0.. by the plugin's index)
+    auto action = menu->addActionToQMenuAndActionHash(parent,
+        name, QKeySequence(Qt::CTRL | Qt::Key(Qt::Key_0 + index)), qApp,
+        SLOT(updateDisplayMode()),
+        QAction::NoRole, Menu::UNSPECIFIED_POSITION, groupingMenu);
+#else
     auto action = menu->addActionToQMenuAndActionHash(parent,
         name, QKeySequence(Qt::CTRL + (Qt::Key_0 + index)), qApp,
         SLOT(updateDisplayMode()),
         QAction::NoRole, Menu::UNSPECIFIED_POSITION, groupingMenu);
+#endif
 
     action->setCheckable(true);
     action->setChecked(active);
@@ -664,6 +679,9 @@ void Display::setDisplayPlugin(DisplayPluginPointer newDisplayPlugin) {
             sample.repeated = c.repeated;
             sample.onTwoOrMoreRefreshes = c.onTwoRefreshes + c.onThreeRefreshes + c.onMoreRefreshes;
             sample.onOneRefresh = c.onOneRefresh;
+            sample.missed = c.missed;
+            sample.slackPresents = c.slackPresents;
+            sample.minSlackUs = c.minSlackUs;
             sample.newFrames = c.newFrames;
             sample.slowMainFrames = c.slowMainFrames;
             sample.slowBuildFrames = c.slowBuildFrames;

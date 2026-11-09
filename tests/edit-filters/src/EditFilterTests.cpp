@@ -2,8 +2,8 @@
 //  EditFilterTests.cpp
 //  tests/edit-filters/src
 //
-//  The entity server's edit filters on the QtScript engine and on the WebAssembly engine: the same filter scripts
-//  over the same edits give the same outcome (accepted, rejected, the properties out) on both.
+//  The entity server's edit filters on the WebAssembly engine: each filter script over the same edits gives the outcome
+//  (accepted, rejected, the properties out) it gave on QtScript, the engine before it.
 //
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
@@ -20,7 +20,6 @@
 #include <NodeList.h>
 #include <EntityTypes.h>
 #include <PlainScriptValue.h>
-#include <QtScriptEditFilterEngine.h>
 #include <SharedUtil.h>
 #include <WasmEditFilterEngine.h>
 #include <WasmScriptEngine.h>
@@ -217,12 +216,6 @@ QString guestModulePath() {
     return QFileInfo(QString(__FILE__)).dir().absoluteFilePath("../../../tools/wasm-js/build/darkride-js.wasm");
 }
 
-void useQtScript() {
-    EntityEditFilters::setEngineFactory([](const EntityItemID& id) -> EntityEditFilterEnginePointer {
-        return std::make_unique<QtScriptEditFilterEngine>(id);
-    });
-}
-
 void useWebAssembly(std::chrono::milliseconds callTimeout) {
     EntityEditFilters::setEngineFactory([callTimeout](const EntityItemID& id) -> EntityEditFilterEnginePointer {
         return std::make_unique<WasmEditFilterEngine>(id, callTimeout);
@@ -240,25 +233,28 @@ void EditFilterTests::initTestCase() {
     }
 }
 
-void EditFilterTests::testFiltersOnBothEngines() {
+void EditFilterTests::testFilters() {
     World world;
     QVERIFY(world.tree->findEntityByEntityItemID(world.zoneID));
     QVERIFY(world.tree->findEntityByEntityItemID(world.boxID));
-    useQtScript();
-    const QList<Outcome> onQtScript = runAll(world);
+    if (!QFileInfo::exists(guestModulePath())) {
+        QSKIP("darkride-js.wasm is not built (tools/wasm-js/build.sh)");
+    }
+    useWebAssembly(std::chrono::milliseconds(10000));
+    const QList<Outcome> onWebAssembly = runAll(world);
 
-    // what the filters do, on QtScript as it has always been
-    QVERIFY(find(onQtScript, "accept-all", "add").accepted);
-    QVERIFY(!find(onQtScript, "accept-all", "add").wasChanged);
-    QVERIFY(!find(onQtScript, "reject-all", "add").accepted);
-    QVERIFY(find(onQtScript, "adds-only", "add").accepted);
-    QVERIFY(find(onQtScript, "adds-only", "add").wasChanged);
-    QCOMPARE(find(onQtScript, "adds-only", "add").out.value("name").toString(), QString("cube-filtered"));
-    QCOMPARE(find(onQtScript, "adds-only", "add").out.value("position").toMap().value("y").toDouble(), 2.0);
-    QVERIFY(!find(onQtScript, "adds-only", "add forbidden").accepted);
-    QVERIFY(find(onQtScript, "adds-only", "edit").accepted);
-    QVERIFY(!find(onQtScript, "adds-only", "edit").wasChanged);
-    const QVariantMap seen = QJsonDocument::fromJson(find(onQtScript, "reports-arguments", "edit").out.value("userData").toString().toUtf8()).toVariant().toMap();
+    // what the filters do, as they always did on QtScript
+    QVERIFY(find(onWebAssembly, "accept-all", "add").accepted);
+    QVERIFY(!find(onWebAssembly, "accept-all", "add").wasChanged);
+    QVERIFY(!find(onWebAssembly, "reject-all", "add").accepted);
+    QVERIFY(find(onWebAssembly, "adds-only", "add").accepted);
+    QVERIFY(find(onWebAssembly, "adds-only", "add").wasChanged);
+    QCOMPARE(find(onWebAssembly, "adds-only", "add").out.value("name").toString(), QString("cube-filtered"));
+    QCOMPARE(find(onWebAssembly, "adds-only", "add").out.value("position").toMap().value("y").toDouble(), 2.0);
+    QVERIFY(!find(onWebAssembly, "adds-only", "add forbidden").accepted);
+    QVERIFY(find(onWebAssembly, "adds-only", "edit").accepted);
+    QVERIFY(!find(onWebAssembly, "adds-only", "edit").wasChanged);
+    const QVariantMap seen = QJsonDocument::fromJson(find(onWebAssembly, "reports-arguments", "edit").out.value("userData").toString().toUtf8()).toVariant().toMap();
     QCOMPARE(seen.value("count").toInt(), 4);
     QVERIFY(seen.value("isEdit").toBool());
     QCOMPARE(seen.value("original").toList().value(0).toString(), QString("box"));
@@ -267,36 +263,30 @@ void EditFilterTests::testFiltersOnBothEngines() {
     // the edit's own properties, with the pseudo-properties every script object carries, and not the rest
     QVERIFY(seen.value("keys").toStringList().contains("name"));
     QVERIFY(!seen.value("keys").toStringList().contains("position"));
-    const QVariantMap seenAdd = QJsonDocument::fromJson(find(onQtScript, "reports-arguments", "add").out.value("userData").toString().toUtf8()).toVariant().toMap();
+    const QVariantMap seenAdd = QJsonDocument::fromJson(find(onWebAssembly, "reports-arguments", "add").out.value("userData").toString().toUtf8()).toVariant().toMap();
     QCOMPARE(seenAdd.value("count").toInt(), 4);  // no original: padded with undefined before the zone
     QVERIFY(seenAdd.value("isAdd").toBool());
     QVERIFY(seenAdd.value("original").isNull());
-    const QVariantMap seenGlobal = QJsonDocument::fromJson(find(onQtScript, "reports-arguments-globally", "edit").out.value("userData").toString().toUtf8()).toVariant().toMap();
+    const QVariantMap seenGlobal = QJsonDocument::fromJson(find(onWebAssembly, "reports-arguments-globally", "edit").out.value("userData").toString().toUtf8()).toVariant().toMap();
     QCOMPARE(seenGlobal.value("count").toInt(), 3);  // the domain's filter has no zone
-    QVERIFY(!find(onQtScript, "throws", "add").accepted);
-    QVERIFY(!find(onQtScript, "no-function", "add").loaded);
-    QVERIFY(!find(onQtScript, "no-function", "add").accepted);
-    QVERIFY(!find(onQtScript, "syntax-error", "add").loaded);
-    QVERIFY(!find(onQtScript, "syntax-error", "add").accepted);
+    QVERIFY(!find(onWebAssembly, "throws", "add").accepted);
+    QVERIFY(!find(onWebAssembly, "no-function", "add").loaded);
+    QVERIFY(!find(onWebAssembly, "no-function", "add").accepted);
+    QVERIFY(!find(onWebAssembly, "syntax-error", "add").loaded);
+    QVERIFY(!find(onWebAssembly, "syntax-error", "add").accepted);
+}
 
+void EditFilterTests::testFilterScriptObject() {
     if (!QFileInfo::exists(guestModulePath())) {
         QSKIP("darkride-js.wasm is not built (tools/wasm-js/build.sh)");
     }
     useWebAssembly(std::chrono::milliseconds(10000));
-    const QList<Outcome> onWebAssembly = runAll(world);
-    QCOMPARE(onWebAssembly.size(), onQtScript.size());
-    for (int i = 0; i < onQtScript.size(); ++i) {
-        QVERIFY2(onWebAssembly[i].line() == onQtScript[i].line(),
-                 qPrintable("WebAssembly: " + onWebAssembly[i].line() + "\n   QtScript: " + onQtScript[i].line()));
-    }
-}
-
-void EditFilterTests::testFilterScriptObject() {
-    useQtScript();
     World world;
     const auto reports = runFilter("reports-script", REPORTS_SCRIPT, world.zoneID, world);
     QVERIFY(find(reports, "reports-script", "edit").loaded);
-    QCOMPARE(find(reports, "reports-script", "edit").out.value("userData").toString(), QString("undefined undefined"));
+    // a filter can't delete the Script object (no deleteLater). QObject's own destroyed signal shows on WebAssembly,
+    // where QtScript hid it ("undefined undefined" there): listening to it does nothing a filter could use
+    QCOMPARE(find(reports, "reports-script", "edit").out.value("userData").toString().section(' ', 0, 0), QString("undefined"));
 }
 
 void EditFilterTests::testRunawayFilterOnWebAssembly() {
