@@ -54,6 +54,9 @@
 #                                    (2026-10-25). The background launch never activates it; this covers a click.
 #                                    It passes --noAudioInput too (no microphone, so no macOS permission prompt over
 #                                    the test); CLIENT_MIC=1 keeps the microphone for a test that needs it.
+#                                    It exports DARKRIDE_AUTO_AVATAR_PICTURES=0 unless the caller set it: a test client
+#                                    takes no automatic avatar pictures (their secondary camera would switch on in the
+#                                    middle of a timing run); DARKRIDE_AUTO_AVATAR_PICTURES=1 for a test of the pictures.
 #                                    When the client has quit, the macOS helper services it left running are stopped
 #                                    (stop_client_helpers), whichever way it was launched.
 #                                    The window, checked twice (editor-ui's kit check, 11-07): before the start, the size
@@ -296,6 +299,10 @@ client_start() {
     # prompt in front of the test; CLIENT_MIC=1 for a test that needs the microphone. Older builds list the option as
     # unknown and go on
     [ -n "${CLIENT_MIC:-}" ] || set -- --noAudioInput "$@"
+    # no automatic avatar pictures (AvatarThumbnails.cpp reads "0"): their secondary camera would cost a timing run
+    # frame time. Exported here, before both launches below: the open loop hands DARKRIDE_ variables over, and a
+    # binary run straight inherits them. A caller's own value (1 for a test of the pictures) stays
+    export DARKRIDE_AUTO_AVATAR_PICTURES="${DARKRIDE_AUTO_AVATAR_PICTURES:-0}"
     _since=$(date '+%Y-%m-%d %H:%M:%S')
     # a home of its own, away from the user's ~/Library (see the header); the user's folders are checked after
     _wallhome=""; _dropcaches=""
