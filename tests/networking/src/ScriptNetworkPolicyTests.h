@@ -13,7 +13,8 @@
 #include <QtTest/QtTest>
 
 // The rule for a script's own web requests: which addresses count as private, which names as local, which script
-// origins as local, and what a request from a script on the network is allowed, refused, or looked up.
+// origins as local, what a request from a script on the network is allowed, refused, or looked up, and that a
+// script's download never carries the visitor's login to the files host.
 class ScriptNetworkPolicyTests : public QObject {
     Q_OBJECT
 private slots:
@@ -34,6 +35,7 @@ private slots:
     void testPinnedNameIsCheckedOnEveryRequest();
     void everyWebRequestRuled();
     void worldLeft();
+    void ruledDownloadNeverCarriesTheLogin();
 };
 
 #endif // hifi_ScriptNetworkPolicyTests_h

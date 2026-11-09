@@ -12,6 +12,9 @@
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QHostInfo>
+#include <QtNetwork/QNetworkProxy>
+#include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
 
 #include <QtCore/QDir>
 #include <QtCore/QEventLoop>
@@ -22,11 +25,16 @@
 
 #include <memory>
 
+#include <AccountManager.h>
+#include <DependencyManager.h>
+#include <HTTPResourceRequest.h>
+#include <OAuthAccessToken.h>
 #include <PathUtils.h>
 #include <ResourceManager.h>
 #include <ResourceRequest.h>
 #include <ScriptCaller.h>
 #include <ScriptNetworkPolicy.h>
+#include <StatTracker.h>
 
 QTEST_MAIN(ScriptNetworkPolicyTests)
 
@@ -364,4 +372,77 @@ void ScriptNetworkPolicyTests::worldLeft() {
         ScriptCaller::WorldScope world(LEFT + 1);
         QVERIFY(ScriptNetworkPolicy::check(target, local, true).allowed);
     }
+}
+
+void ScriptNetworkPolicyTests::ruledDownloadNeverCarriesTheLogin() {
+    // security finding #82, with scripting: a download our files host refused (403) is asked again with the visitor's
+    // login only when it is the client's own; a script's download (ruled) never is, whatever world the script is from
+    if (!DependencyManager::isSet<StatTracker>()) {
+        DependencyManager::set<StatTracker>();
+    }
+    DependencyManager::set<AccountManager>();
+    // a stand-in files host, reached as the application's web proxy so that its name needs no lookup: it refuses a
+    // request without the login and answers one with it, and keeps the login header of every request it saw
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    QList<QByteArray> logins;
+    const QByteArray body = "var secret = 1;";
+    connect(&server, &QTcpServer::newConnection, &server, [&] {
+        while (QTcpSocket* socket = server.nextPendingConnection()) {
+            connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+            auto head = std::make_shared<QByteArray>();
+            connect(socket, &QTcpSocket::readyRead, socket, [socket, head, body, &logins] {
+                head->append(socket->readAll());
+                const int end = head->indexOf("\r\n\r\n");
+                if (end < 0) {
+                    return;
+                }
+                QByteArray login;
+                for (const QByteArray& line : head->left(end).split('\n')) {
+                    if (line.toLower().startsWith("authorization:")) {
+                        login = line.mid(line.indexOf(':') + 1).trimmed();
+                    }
+                }
+                logins.append(login);
+                socket->write(login.isEmpty()
+                    ? QByteArray("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    : QByteArray("HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: " +
+                                 QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body));
+                socket->disconnectFromHost();
+            });
+        }
+    });
+    qputenv("HIFI_METAVERSE_URL", "http://meta.test");
+    QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::HttpProxy, "127.0.0.1", server.serverPort()));
+    // a signed-in visitor
+    OAuthAccessToken token;
+    token.token = "visitor-token";
+    DependencyManager::get<AccountManager>()->getAccountInfo().setAccessToken(token);
+    const QUrl privateFile("http://files.meta.test/f/0123456789abcdef/secret.js");
+    auto download = [&privateFile](bool ruled) {
+        HTTPResourceRequest request(privateFile, ResourceRequest::IS_NOT_OBSERVABLE);
+        if (ruled) {
+            // a script's download (ruled)
+            request.setNetworkRule(QUrl("https://example.invalid/world/entity.js"), true);
+        }
+        QEventLoop loop;
+        connect(&request, &ResourceRequest::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(10000, &loop, &QEventLoop::quit);
+        request.send();
+        loop.exec();
+        return request.getState() == ResourceRequest::Finished ? request.getResult() : ResourceRequest::Timeout;
+    };
+    // the client's own download (a model the visitor placed): refused once, then asked again with the login
+    QCOMPARE(download(false), ResourceRequest::Success);
+    QCOMPARE(logins.size(), 2);
+    QVERIFY(logins[0].isEmpty());
+    QCOMPARE(logins[1], QByteArray("Bearer visitor-token"));
+    // a script's download: refused, asked once, never with the login
+    logins.clear();
+    QCOMPARE(download(true), ResourceRequest::AccessDenied);
+    QCOMPARE(logins.size(), 1);
+    QVERIFY(logins[0].isEmpty());
+    QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
+    qunsetenv("HIFI_METAVERSE_URL");
+    DependencyManager::destroy<AccountManager>();
 }
