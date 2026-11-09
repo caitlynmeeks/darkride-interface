@@ -32,7 +32,10 @@
 #include <CrashHelpers.h>
 #include <EntityScriptingInterface.h>
 #include <FramebufferCache.h>
+#include <cstdlib>
+
 #include <LogHandler.h>
+#include <RunningMarker.h>
 #include <MainWindow.h>
 #include <hfm/ModelFormatRegistry.h>
 #include <model-networking/ModelCacheScriptingInterface.h>
@@ -242,6 +245,28 @@ void Application::cleanupBeforeQuit() {
     qCDebug(interfaceapp) << "Application::cleanupBeforeQuit() complete";
 }
 
+namespace Setting {
+    void cleanupSettingsSaveThread();   // SettingInterface.cpp: stops the settings thread and saves every setting
+}
+
+// The Windows quit crash (qa + windowz 11-09: 2 of Caity's 3 quits of 1.1.4's cand-4): Qt WebEngine's own teardown, a
+// post routine inside ~QApplication, deletes our shared web profiles while web views made on libraries/qml's surfaces
+// are still on them, and the heap is corrupted. (Those views' lifetimes are frozen code; deleting the profiles ourselves
+// crashes on the same views: editor-ui's Mac quit kit, 11-09.) Everything of ours is done by the end of ~Application, so
+// on Windows the process ends there: the settings saved now (the post routine that would save them, taken off Qt's
+// list), the running marker removed (as main's scope would), the log written out. main() already ends release builds
+// with _exit, only after that teardown. Compiled everywhere so every build checks it; called on Windows only.
+[[maybe_unused]] static void endBeforeQtTeardown(FileLogger* logger) {
+    qCDebug(interfaceapp) << "Quit: settings saved and the process ended before Qt's late teardown (Windows)";
+    qRemovePostRoutine(Setting::cleanupSettingsSaveThread);
+    Setting::cleanupSettingsSaveThread();
+    RunningMarker(RUNNING_MARKER_FILENAME).deleteRunningMarkerFile();
+    if (logger) {
+        logger->sync();
+    }
+    std::_Exit(0);   // C++'s _exit: no static destructors, as main's
+}
+
 Application::~Application() {
     // remove avatars from physics engine
     auto avatarManager = DependencyManager::get<AvatarManager>();
@@ -306,6 +331,10 @@ Application::~Application() {
     _window->setMenuBar(nullptr);
 
     _window->deleteLater();
+
+#if defined(Q_OS_WIN) && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    endBeforeQtTeardown(_logger);   // still logging to the file here
+#endif
 
     // Can't log to file past this point, FileLogger about to be deleted
     qInstallMessageHandler(LogHandler::verboseMessageHandler);
