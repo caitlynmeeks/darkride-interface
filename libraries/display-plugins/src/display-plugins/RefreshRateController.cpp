@@ -88,6 +88,7 @@ float RefreshRateController::getPacedPeriodSeconds() const {
 void RefreshRateController::countPresent(int64_t nowNs, Schedule schedule, int refreshes, int lateUs, int displayRate) {
     _presentRefreshes = refreshes;
     _presentLateUs = lateUs;
+    _presentRepeated = false;   // notePresentedFrame says otherwise for this present
     CadenceCounters& counting = _cadenceCounting;
     counting.presents++;
     counting.displayRefreshRate = displayRate;
