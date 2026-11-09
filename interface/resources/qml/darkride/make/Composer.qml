@@ -181,7 +181,7 @@ Rectangle {
                         asynchronous: true
                         sourceSize.width: 128
                         Accessible.role: Accessible.Graphic
-                        Accessible.name: "Picture " + (thumb.index + 1)
+                        Accessible.name: "Image " + (thumb.index + 1)
                     }
                     // remove it: a round × in the corner
                     Rectangle {
@@ -193,7 +193,7 @@ Rectangle {
                         radius: width / 2
                         color: "#99000000"
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Remove picture " + (thumb.index + 1)
+                        Accessible.name: "Remove image " + (thumb.index + 1)
                         Text {
                             anchors.centerIn: parent
                             text: "×"
@@ -319,8 +319,8 @@ Rectangle {
             MakeButton {
                 Layout.alignment: Qt.AlignBottom
                 text: "+"
-                tip: "Add a picture"
-                Accessible.name: "Add a picture"
+                tip: "Add an image"
+                Accessible.name: "Add an image"
                 enabled: composer.connected
                 onClicked: composer.addPictures()
             }
@@ -335,7 +335,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             visible: composer.typesHere && !composer.atLimit && (composer.pictures.length > 0 || composer.pictureNote !== "")
-            text: composer.pictureNote !== "" ? composer.pictureNote : "Pictures you add are sent to Claude to guide the build."
+            text: composer.pictureNote !== "" ? composer.pictureNote : "Images you add are sent to Claude to guide the build."
             textFormat: Text.PlainText
             color: BuildTheme.dimText
             font.pixelSize: BuildTheme.noteSize
