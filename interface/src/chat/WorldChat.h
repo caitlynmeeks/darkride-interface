@@ -49,12 +49,17 @@ public:
     // name), and who's there: "Port Amarelle · 6 here", "Only you"
     QString hereLine() const;
     void markRead();
-    // a line to everyone in this world, or "/command params" run here (/help lists them)
+    // in a world: its loading screen gone (the domain session's physics gate open). Until then nothing is sent: there's
+    // no world to hear it yet
+    bool arrived() const;
+    // a line to everyone in this world, or "/command params" run here (/help lists them); before arriving, only a notice
+    // that it waits
     void send(const QString& text);
 
 signals:
     void itemsChanged();
     void unreadChanged(int unread);
+    void arrivedChanged(bool arrived);
     // someone came or left, or a new world (its name may come a moment later); a crowd arriving is one change
     void peopleChanged();
 

@@ -27,6 +27,8 @@
 #include <NodeList.h>
 #include <PathUtils.h>
 
+#include "Application.h"
+#include "DomainSession.h"
 #include "avatar/AvatarManager.h"
 #include "avatar/MyAvatar.h"
 #include "scripting/ChatScriptingInterface.h"
@@ -82,6 +84,7 @@ WorldChat::WorldChat() {
                 usernameReceived(session, username);
             });
     connect(nodeList.data(), &NodeList::uuidChanged, this, &WorldChat::moving);
+    connect(&qApp->getDomainSession(), &DomainSession::physicsEnabledChanged, this, &WorldChat::arrivedChanged);
     connect(DependencyManager::get<AddressManager>().data(), &AddressManager::hostChanged, this, &WorldChat::moving);
     auto avatars = DependencyManager::get<AvatarManager>();
     connect(avatars.data(), &AvatarManager::avatarAddedEvent, this, &WorldChat::avatarAdded);
@@ -117,12 +120,21 @@ void WorldChat::markRead() {
     }
 }
 
+bool WorldChat::arrived() const {
+    return qApp->isPhysicsEnabled();
+}
+
 void WorldChat::send(const QString& text) {
     QString line = text.trimmed();
     if (line.isEmpty()) {
         return;
     }
     auto chat = DependencyManager::get<ChatScriptingInterface>();
+    // (the desk's box waits disabled; this is for the VR tablet's page, whose box doesn't know)
+    if (!arrived()) {
+        chat->showMessage("You can chat once you've arrived.");
+        return;
+    }
     if (line.startsWith('/')) {
         QString name = line.mid(1).section(' ', 0, 0).toLower();
         QString params = line.section(' ', 1).trimmed();
