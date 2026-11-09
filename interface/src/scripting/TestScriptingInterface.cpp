@@ -1404,10 +1404,18 @@ QVariantMap TestScriptingInterface::worldChat() {
              { "focusText", box ? box->toPlainText() : QString() } };
 }
 
-void TestScriptingInterface::typeKeys(const QString& text, bool toView) {
+void TestScriptingInterface::typeKeys(const QString& text, bool toView, const QString& modifiers) {
     if (QThread::currentThread() != thread()) {
-        QMetaObject::invokeMethod(this, "typeKeys", Q_ARG(QString, text), Q_ARG(bool, toView));
+        QMetaObject::invokeMethod(this, "typeKeys", Q_ARG(QString, text), Q_ARG(bool, toView), Q_ARG(QString, modifiers));
         return;
+    }
+    Qt::KeyboardModifiers held = Qt::NoModifier;
+    for (const QString& name : modifiers.split('+', Qt::SkipEmptyParts)) {
+        if (name == "shift") {
+            held |= Qt::ShiftModifier;
+        } else if (name == "keypad") {
+            held |= Qt::KeypadModifier;
+        }
     }
     for (QChar c : text) {
         // the 3D view's keys go to the application, as GLWidget hands them on; the rest to the focused widget
@@ -1415,10 +1423,11 @@ void TestScriptingInterface::typeKeys(const QString& text, bool toView) {
         if (!target) {
             return;
         }
-        int key = c == '\n' ? Qt::Key_Return : c == QChar(0x1b) ? Qt::Key_Escape : (int)c.toUpper().unicode();
+        int key = c == '\n' ? ((held & Qt::KeypadModifier) ? Qt::Key_Enter : Qt::Key_Return)
+                  : c == QChar(0x1b) ? Qt::Key_Escape : (int)c.toUpper().unicode();
         QString typed = c == '\n' ? QString("\r") : c == QChar(0x1b) ? QString(QChar(0x1b)) : QString(c);
-        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier, typed);
-        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier, typed);
+        QKeyEvent press(QEvent::KeyPress, key, held, typed);
+        QKeyEvent release(QEvent::KeyRelease, key, held, typed);
         QCoreApplication::sendEvent(target, &press);
         QCoreApplication::sendEvent(target, &release);
     }
