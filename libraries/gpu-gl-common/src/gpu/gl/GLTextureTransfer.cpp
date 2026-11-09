@@ -52,6 +52,23 @@ static MemoryPressureState _memoryPressureState{ MemoryPressureState::Idle };
 // the loading boost's turn (entry 33, Amendment 2): allocation one frame, upload the next, while both have work
 static bool _boostAllocationTurn{ false };
 
+// The engine's cap rule (entry 33, Amendment 3): a texture can grow this frame only when its next step fits under the
+// over mark. Before it, at a budget smaller than the world's textures (the Potato preset's 64 MB against Port
+// Amarelle's 225), a promote crossed the mark and the next frame demoted again, a cycle that never let the sizes
+// settle: the arrival gate never opened, the loading screen ran to the script's limit, and a presented world kept
+// popping.
+// Both backends promote two mips at a time, to the texture's finest allowed level, so the step's bytes are exact.
+static size_t promotionBytes(const Texture& texture, const GLVariableAllocationSupport& vartexture) {
+    const uint16 allocated = vartexture.allocatedMip();
+    const uint16 target = std::max<uint16>(vartexture.minAllocatedMip(), allocated - std::min<uint16>(allocated, 2));
+    return target < allocated ? texture.evalTotalSize(target) - texture.evalTotalSize(allocated) : 0;
+}
+static bool canPromoteWithin(const Texture& texture, const GLVariableAllocationSupport& vartexture, size_t headroom) {
+    return vartexture.canPromote() && promotionBytes(texture, vartexture) <= headroom;
+}
+// the headroom under the over mark at this frame's scan, for the promote queue's build and the promotes themselves
+static size_t _frameHeadroom{ 0 };
+
 // test-only (TIVOLI_TEXTURE_ENGINE_TRACE): one line a second on what the engine did on the present thread, so a second
 // with a late present can be read against its texture work (the judder read of 2026-11-09). Unset: one static bool
 // read a frame.
@@ -262,7 +279,6 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     size_t totalVariableMemoryAllocation = 0;
     size_t idealMemoryAllocation = 0;
     bool canDemote = false;
-    bool canPromote = false;
     bool hasTransfers = false;
     for (const auto& texture : strongTextures) {
         GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
@@ -275,9 +291,6 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
         totalVariableMemoryAllocation += gltexture->size();
         if (vartexture->canDemote()) {
             canDemote |= true;
-        }
-        if (vartexture->canPromote()) {
-            canPromote |= true;
         }
         if (vartexture->hasPendingTransfers()) {
             hasTransfers |= true;
@@ -296,6 +309,22 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
         _traceSecond.demoteFrames += textureEngineTrace() ? 1 : 0;
         processDemotes(relief, strongTextures);
         return;
+    }
+
+    // the cap rule (above): a texture counts as promotable only when its next step fits under the over mark, so the
+    // state, the busy flag and the queue agree with what a promote will do; a second walk, only while under the mark
+    const size_t overMark = (size_t)(OVERSUBSCRIBED_PRESSURE_VALUE * (double)allowedMemoryAllocation);
+    _frameHeadroom = totalVariableMemoryAllocation < overMark ? overMark - totalVariableMemoryAllocation : 0;
+    bool canPromote = false;
+    if (pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && unallocated != 0) {
+        for (const auto& texture : strongTextures) {
+            GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
+            GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
+            if (canPromoteWithin(*texture, *vartexture, _frameHeadroom)) {
+                canPromote = true;
+                break;
+            }
+        }
     }
 
     const bool wantPromote = pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && (unallocated != 0 && canPromote);
@@ -338,7 +367,8 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
         for (const auto& texture : strongTextures) {
             GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
             GLVariableAllocationSupport* vargltexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
-            if (MemoryPressureState::Undersubscribed == _memoryPressureState && vargltexture->canPromote()) {
+            if (MemoryPressureState::Undersubscribed == _memoryPressureState &&
+                canPromoteWithin(*texture, *vargltexture, _frameHeadroom)) {
                 // Promote smallest first
                 _promoteQueue.push({ texture, 1.0f / (float)gltexture->size() });
             } else if (MemoryPressureState::Transfer == _memoryPressureState && vargltexture->hasPendingTransfers()) {
@@ -534,6 +564,12 @@ void GLTextureTransferEngineDefault::processPromotes() {
 
         GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
         GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
+        // the cap rule: the step must fit under the over mark with what this turn has allocated so far; a texture
+        // whose step does not fit stays as it is until memory is freed (it is not queued again this turn)
+        size_t headroom = _frameHeadroom > allocatedBytes ? _frameHeadroom - allocatedBytes : 0;
+        if (promotionBytes(*texture, *vartexture) > headroom) {
+            continue;
+        }
         auto originalSize = gltexture->size();
         vartexture->promote();
         // the loading boost (entry 33, Amendment 2): a texture goes to its full size before its uploads start. The
@@ -543,7 +579,8 @@ void GLTextureTransferEngineDefault::processPromotes() {
         // texture in hand is finished even past the turn's byte budget (checked below, after it): a texture left
         // half-allocated at the budget's edge was uploaded at that size and copied at its next promote (performance's
         // GPU region counts, 2026-11-09). The overshoot is at most one texture's size, under the loading screen only.
-        while (boost > 1 && vartexture->canPromote()) {
+        while (boost > 1 && canPromoteWithin(*texture, *vartexture,
+                                             headroom - std::min(headroom, gltexture->size() - originalSize))) {
             vartexture->promote();
         }
         auto allocationDelta = gltexture->size() - originalSize;
