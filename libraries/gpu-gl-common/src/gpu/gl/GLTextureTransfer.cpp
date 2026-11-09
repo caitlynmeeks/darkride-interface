@@ -24,6 +24,16 @@ static const size_t DEFAULT_ALLOWED_TEXTURE_MEMORY = MB_TO_BYTES(DEFAULT_ALLOWED
 // the loading boost (gpu::Texture::getTransferBoost, entry 33): the per-frame allocation and upload budgets times this
 // while the loading screen is up; the GPU and the present thread have nothing else to show then
 static const size_t TRANSFER_BOOST_FACTOR = 4;
+// the upload budget's factor under the loading screen; TIVOLI_TRANSFER_UPLOAD_BOOST (1-4, test-only, read once)
+// overrides it for the sitting that weighs the budget against the memory it holds (entry 33, Amendment 2)
+static size_t uploadBoostFactor() {
+    static const size_t factor = [] {
+        bool ok = false;
+        const int value = qgetenv("TIVOLI_TRANSFER_UPLOAD_BOOST").toInt(&ok);
+        return (ok && value >= 1 && value <= (int)TRANSFER_BOOST_FACTOR) ? (size_t)value : TRANSFER_BOOST_FACTOR;
+    }();
+    return factor;
+}
 
 namespace gpu { namespace gl {
 
@@ -343,7 +353,7 @@ void GLTextureTransferEngineDefault::populateActiveBufferQueue() {
     // entry 33: the loading screen's budget; the queue may hold a boosted frame's worth when the boost ends, so the
     // limit the asserts hold is the boosted one and the available size never underflows
     static const size_t MAX_QUEUED_BUFFER_SIZE = MAX_BUFFER_SIZE * TRANSFER_BOOST_FACTOR;
-    const size_t frameBufferSize = MAX_BUFFER_SIZE * (Texture::getTransferBoost() ? TRANSFER_BOOST_FACTOR : 1);
+    const size_t frameBufferSize = MAX_BUFFER_SIZE * (Texture::getTransferBoost() ? uploadBoostFactor() : 1);
     Q_ASSERT(queuedBufferSize <= MAX_QUEUED_BUFFER_SIZE);
     size_t availableBufferSize = queuedBufferSize < frameBufferSize ? frameBufferSize - queuedBufferSize : 0;
 
@@ -468,6 +478,14 @@ void GLTextureTransferEngineDefault::processPromotes() {
         GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
         auto originalSize = gltexture->size();
         vartexture->promote();
+        // the loading boost (entry 33, Amendment 2): a texture goes to its full size before its uploads start. The
+        // Mac's promote makes a new texture and copies the populated mips into it; the old order never copied, since
+        // nothing was uploaded before everything was allocated, and alternating uploads with one-step promotes would
+        // copy what the last upload turn had just put there, at the present thread's and the driver's expense.
+        while (boost > 1 && vartexture->canPromote() &&
+               gltexture->size() - originalSize < MAX_ALLOCATED_BYTES_PER_FRAME * boost) {
+            vartexture->promote();
+        }
         auto allocationDelta = gltexture->size() - originalSize;
         if (vartexture->canPromote()) {
             // Promote smallest first
