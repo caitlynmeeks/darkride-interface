@@ -36,6 +36,7 @@ int TexturePointerMetaTypeId = qRegisterMetaType<TexturePointer>();
 ContextMetricCount Texture::_textureCPUCount;
 ContextMetricSize Texture::_textureCPUMemSize;
 std::atomic<Texture::Size> Texture::_allowedCPUMemoryUsage { MB_TO_BYTES(8192) };
+std::atomic<bool> Texture::_transferBoost { true };   // the client launches into a loading screen
 
 #define MIN_CORES_FOR_INCREMENTAL_TEXTURES 4
 bool recommendedSparseTextures = (QThread::idealThreadCount() >= MIN_CORES_FOR_INCREMENTAL_TEXTURES);
@@ -68,6 +69,14 @@ Texture::Size Texture::getAllowedGPUMemoryUsage() {
     return _allowedCPUMemoryUsage;
 }
 
+
+bool Texture::getTransferBoost() {
+    return _transferBoost;
+}
+
+void Texture::setTransferBoost(bool enabled) {
+    _transferBoost = enabled;
+}
 
 void Texture::setAllowedGPUMemoryUsage(Size size) {
     qCDebug(gpulogging) << "New MAX texture memory " << BYTES_TO_MB(size) << " MB";

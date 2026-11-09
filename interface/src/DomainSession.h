@@ -35,6 +35,7 @@
 #include <map>
 
 #include <QtCore/QByteArray>
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtCore/QString>
@@ -74,7 +75,9 @@ public:
     NodeToOctreeSceneStats* octreeSceneStats() { return &_octreeServerSceneStats; }   // the stats per entity server
     int getMaxOctreePacketsPerSecond() const;
     void setMaxOctreePacketsPerSecond(int maxOctreePPS);
-    void setMinimumGPUTextureMemStabilityCount(int stabilityCount) { _minimumGPUTextureMemSizeStabilityCount = stabilityCount; }
+    // the Test API's: the texture gate's settle as a count of checks at the loading screen's 60 presents a second
+    // (30 = the default 500 ms); the check floor follows it, up to the default's
+    void setMinimumGPUTextureMemStabilityCount(int stabilityCount);
     bool gpuTextureMemSizeStable();
     void setArrivalWaitsForNearby(bool wait);   // a loading screen waits for what is near the avatar, even where the zone allows moving at once
     // The first arrival after start-up waits for what is near the avatar, as a hop does: set by the sign-in gate just
@@ -133,8 +136,14 @@ public:
 signals:
     void interstitialModeChanged(bool isInInterstitialMode);
     void worldLoadingChanged(bool isWorldLoading);
+    // the arrival gate: true when the world is presented (physics on), false when a new arrival closes it again; the
+    // loading-time work keys on it (the shader warm-up, the texture engine's loading boost), since
+    // interstitialModeChanged fires only with the domain's interstitial setting or whole-world loading
+    void physicsEnabledChanged(bool enabled);
 
 private:
+    // the arrival trace's gate line (TIVOLI_ARRIVAL_TRACE), once a second while physics is off; read-only
+    void traceArrivalGate();
     void setFailedToConnectToEntityServer();
     std::map<QString, QString> prepareServerlessDomainContents(QUrl domainURL, QByteArray data);
     void tryToEnablePhysics(bool skipTextureCheck = false);
@@ -180,9 +189,24 @@ private:
     } _firstArrivalHold;
     std::atomic<uint32_t> _fullSceneReceivedCounter{ 0 };  // how many times have we received a full-scene octree stats packet
     uint32_t _fullSceneCounterAtLastPhysicsCheck{ 0 };     // _fullSceneReceivedCounter last time we checked physics ready
-    qint64 _gpuTextureMemSizeStabilityCount{ 0 };
+    // the texture gate (gpuTextureMemSizeStable): the GPU texture memory size unchanged for a settle time, with a small
+    // floor of checks; a check runs once per present. Until 2026-11-07 the gate was a count of 30 checks alone, which a
+    // slowly presenting loading screen stretched from 0.5 s to several seconds (the shader warm-up's compiles, item 53)
     qint64 _gpuTextureMemSizeAtLastCheck{ 0 };
-    int _minimumGPUTextureMemSizeStabilityCount{ 30 };
+    qint64 _gpuTextureMemSizeStabilityCount{ 0 };     // consecutive checks that read the same size
+    QElapsedTimer _gpuTextureMemSizeStableFor;        // since the size last changed (a monotonic clock); invalid = no check yet
+    qint64 _gpuTextureMemSettleMs{ 500 };             // 500 ms = 30 checks at 60 presents a second, the old gate in front
+    int _minimumGPUTextureMemSizeStabilityCount{ 5 };  // at least this many checks (a few slow presents cannot pass on two readings)
+    // entry 33, Amendment 2: once the size test holds, the gate also waits for the texture engine to report nothing
+    // left to allocate or upload, for at most a ceiling (then it opens anyway and says so). The wait runs from the
+    // moment the size test holds and starts over whenever it stops holding (editor-ui's and physics' conditions).
+    QElapsedTimer _textureEngineIdleWait;
+    int _textureEngineIdleWaitStarts{ 0 };    // how often the wait was started this arrival (restarts = starts - 1)
+    QString _textureGateOpenedBy;             // for the "Physics enabled" line: idle, or still busy at the ceiling
+    // the arrival trace (TIVOLI_ARRIVAL_TRACE): one gate line a second while physics is off
+    QElapsedTimer _arrivalTraceTimer;
+    // the arrival trace's loading tail: started when physics turns on, the gate line goes on for 30 s more
+    QElapsedTimer _arrivalTraceTail;
     bool _domainLoadingInProgress{ false };   // the "Scene Loading" profile range is open
 
     // Whole-world loading, per arrival (reset with the physics-ready information). The choice is the domain's
