@@ -49,8 +49,9 @@ void EndGPURangeTimer::run(const render::RenderContextPointer& renderContext, co
 
 void WarmPipelines::configure(const Config& config) {
     _perFrame = std::max(1, config.perFrame);
-    if (_wasEnabled && !config.isEnabled() && !_done && _shapePlumber) {
-        // the loading screen ended first: what was not reached compiles at its first use, as before
+    if (_wasEnabled && !config.isEnabled() && !_done && _shapePlumber && _next > 0) {
+        // the loading screen ended first: what was not reached compiles at its first use, as before. Only for a job
+        // that ran: the main view's other branch (forward or deferred) never runs and is paused by the same signal.
         qCDebug(renderutils) << "WarmPipelines: paused at" << _warmed << "programs warmed,"
                              << (_shapePlumber->getFilteredPipelines().size() + _extras.size() - _next) << "pipelines not looked at";
     }
