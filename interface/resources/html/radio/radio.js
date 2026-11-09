@@ -372,9 +372,13 @@
 
     // ---- stations ----
 
-    var builtinUrls = {};
+    // any of a built-in station's official streams stands for its row (its first): with every SomaFM channel listed, a
+    // SomaFM station found or typed in is nearly always one of them, and plays that row instead of a second one
+    var builtinRowOf = {};
     var stationTracks = (window.RADIO_STATIONS || []).map(function (station) {
-        builtinUrls[station.streams[0]] = true;
+        station.streams.forEach(function (stream) {
+            builtinRowOf[stream] = station.streams[0];
+        });
         // a length of 0: Webamp shows none, and doesn't open the stream to find one
         return { url: station.streams[0], duration: 0, metaData: { artist: "SomaFM", title: station.name } };
     });
@@ -424,6 +428,7 @@
     var addedNow = {};   // stream addresses put in the list this visit
     var heard = {};      // stream addresses that have played this visit
     function playStream(url, title) {
+        url = builtinRowOf[url] || url;
         var trackWith = function () {
             var state = webamp.store.getState();
             return state.playlist.trackOrder.find(function (id) { return state.tracks[id].url === url; });
@@ -529,7 +534,7 @@
 
     // the playlist as tall as the panel allows, under the main window
     function layout() {
-        var room = window.innerHeight - 16 - MAIN_HEIGHT - PLAYLIST_HEIGHT;
+        var room = window.innerHeight - MAIN_HEIGHT - PLAYLIST_HEIGHT;   // the page has no padding: the panel's margin
         var steps = Math.max(0, Math.floor(room / PLAYLIST_STEP));
         playerElement.style.height = MAIN_HEIGHT + PLAYLIST_HEIGHT + steps * PLAYLIST_STEP + "px";
         webamp.store.dispatch({ type: "WINDOW_SIZE_CHANGED", windowId: "playlist", size: [0, steps] });
