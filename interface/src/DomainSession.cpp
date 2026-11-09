@@ -754,7 +754,9 @@ bool DomainSession::gpuTextureMemSizeStable() {
     }
     _gpuTextureMemSizeAtLastCheck = textureResourceGPUMemSize;
     if (_textureGateCeiling.isValid() && _textureGateCeiling.hasExpired(TEXTURE_GATE_CEILING_MS)) {
-        _textureGateOpenedBy = QString("texture sizes never settled %1 s after %2")
+        // the reason names what was still waiting: the sizes, or the engine once they had settled (editor-ui's read)
+        _textureGateOpenedBy = QString(_textureEngineIdleWait.isValid() ? "texture engine still busy %1 s after %2"
+                                                                        : "texture sizes never settled %1 s after %2")
             .arg(TEXTURE_GATE_CEILING_MS / MSECS_PER_SECOND).arg(_textureGateCeilingAnchor);
         return true;
     }
