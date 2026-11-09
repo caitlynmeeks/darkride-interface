@@ -819,6 +819,7 @@ Rectangle {
                 }
                 HeaderButton {
                     text: "Reload"
+                    visible: !root.hasEditor || !CodeEditor.fromMyFiles   // opened from My Files: nothing in the world is its
                     isOn: root.hasEditor && CodeEditor.hasDocument && CodeEditor.problem === "" && CodeEditor.canSave &&
                         !CodeEditor.isNew
                     tip: root.hasEditor && CodeEditor.isNew ? "Not in the world yet. Save adds it."

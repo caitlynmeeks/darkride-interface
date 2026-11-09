@@ -422,7 +422,7 @@ public slots:
      * showingChange, nearby</code> (Code near you's row count), <code>rows</code> (its rows), <code>path, usedBy, sharedBy, isShader, language,
      * openKey, loading, drafts</code> (how many files have an unsaved change kept), <code>isNew</code> (a new script not
      * saved yet), <code>newScriptOff</code> (why the header's New Script is off, <code>""</code> when on) and
-     * <code>newScriptTip</code>.
+     * <code>newScriptTip</code> and <code>fromMyFiles</code> (opened from My Files, with no entity).
      * @function Test.codePanel
      * @returns {object} The panel's state.
      */
@@ -487,6 +487,27 @@ public slots:
      * @param {string} name - A name for the stand-in world, or <code>""</code>.
      */
     Q_INVOKABLE void codeSetWorld(const QString& name);
+
+    /**jsdoc
+     * Opens a script from My Files in the Code panel, as its double-click does (the panel checks the link is one at
+     * our files host and the name a script's).
+     * @function Test.codeOpenMyFile
+     * @param {string} path - Its path in My Files ("/scripts/a.js").
+     * @param {string} link - Its link there (https://files.&lt;metaverse host&gt;/f/&lt;id&gt;/a.js).
+     * @param {string} name - Its name.
+     * @param {number} size - Its size in bytes, as the listing gives it.
+     * @returns {boolean} Whether it opened.
+     */
+    Q_INVOKABLE bool codeOpenMyFile(const QString& path, const QString& link, const QString& name, double size);
+
+    /**jsdoc
+     * Sets where Make keeps its work, as the person's choice in Make's place row does (MakeLink keeps it under private/,
+     * which a world's script can't write: security 11-08); New Script follows it.
+     * @function Test.makeSetFilesPlace
+     * @param {string} place - <code>"my_files"</code> or <code>"world"</code>.
+     * @returns {string} The place as it is now.
+     */
+    Q_INVOKABLE QString makeSetFilesPlace(const QString& place);
 
     /**jsdoc
      * The Make dock as its QML sees it (Qt 6 builds; make/MakeDock.h): <code>available, dockMade, open, floating, area,

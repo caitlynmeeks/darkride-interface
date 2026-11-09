@@ -1063,6 +1063,7 @@ QVariantMap TestScriptingInterface::codePanel() {
         { "sharedBy", code->sharedBy() }, { "isShader", code->isShader() }, { "language", code->language() },
         { "openKey", code->openKey() }, { "loading", code->isLoading() }, { "drafts", code->draftKeys().size() }, { "allDrafts", code->allDraftCount() },
         { "isNew", code->isNew() }, { "newScriptOff", code->newScriptOff() }, { "newScriptTip", code->newScriptTip() },
+        { "fromMyFiles", code->isFromMyFiles() },
     };
 }
 
@@ -1132,6 +1133,27 @@ void TestScriptingInterface::codeSetWorld(const QString& name) {
         return;
     }
     DependencyManager::get<CodeEditor>()->testSetWorld(name);
+}
+
+QString TestScriptingInterface::makeSetFilesPlace(const QString& place) {
+    if (QThread::currentThread() != thread()) {
+        QString result;
+        BLOCKING_INVOKE_METHOD(this, "makeSetFilesPlace", Q_RETURN_ARG(QString, result), Q_ARG(QString, place));
+        return result;
+    }
+    auto link = DependencyManager::get<MakeLink>();
+    link->setFilesPlace(place);
+    return link->filesPlace();
+}
+
+bool TestScriptingInterface::codeOpenMyFile(const QString& path, const QString& link, const QString& name, double size) {
+    if (QThread::currentThread() != thread()) {
+        bool result = false;
+        BLOCKING_INVOKE_METHOD(this, "codeOpenMyFile", Q_RETURN_ARG(bool, result), Q_ARG(QString, path),
+            Q_ARG(QString, link), Q_ARG(QString, name), Q_ARG(double, size));
+        return result;
+    }
+    return DependencyManager::get<CodeEditor>()->openMyFile(path, QUrl(link), name, (qint64)size);
 }
 
 namespace {

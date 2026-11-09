@@ -10,9 +10,12 @@
 
 #include "CodeEditor.h"
 
+#include <atomic>
 #include <functional>
 
 #include <QtCore/QDateTime>
+#include <QtCore/QFileInfo>
+#include <QtCore/QPointer>
 #include <QtCore/QRandomGenerator>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSet>
@@ -33,6 +36,8 @@
 #include <MappingRequest.h>
 #include <NetworkingConstants.h>
 #include <NodeList.h>
+#include <ResourceManager.h>
+#include <ResourceRequest.h>
 #include <ScriptCallback.h>
 #include <ScriptOpener.h>
 
@@ -59,6 +64,9 @@ const int POLL_MS = 2000;                  // the script's status, as often as t
 const qint64 MAX_SAVE_BYTES = 1024 * 1024; // as ScriptOpener's cap on what it opens
 const int INLINE_SCRIPT_LIMIT_BYTES = 1024;   // a written-in Script past this doesn't reach visitors (ScriptEditor.cpp)
 const int MAX_ERROR_SHOWN = 400;
+// a script opened from My Files: its unsaved typing is kept under this instead of a world (it's no world's)
+const QString MY_FILES_DRAFTS = QStringLiteral("my-files");
+const QStringList CODE_SUFFIXES { "js", "mjs", "qml" };
 
 // queryPropertyMetadata answers through a ScriptCallback, as it answers a script's function: this stands in for the
 // script engine and hands the answer to the editor on the main thread (as ScriptEditor.cpp's)
@@ -329,6 +337,9 @@ QString CodeEditor::kind() const {
     if (!hasDocument()) {
         return QString();
     }
+    if (_fromMyFiles) {
+        return "Script";   // what runs it isn't known: an entity's, a client's or a server script
+    }
     return _which == SERVER_SCRIPTS ? "Server script" : _which == FRAGMENT_SHADER ? "Fragment shader"
         : _which == VERTEX_SHADER ? "Vertex shader" : "Entity script";
 }
@@ -387,8 +398,8 @@ QString CodeEditor::draft() const {
 
 void CodeEditor::enterWorld() {
     emit draftsChanged();   // the list's Edited marks are this world's
-    if (!hasDocument() || _leaving) {
-        return;
+    if (!hasDocument() || _leaving || _fromMyFiles) {
+        return;   // a script opened from My Files is no world's: it stays open
     }
     if (_dirty && _pageReady) {
         // the person's typing since the last kept draft goes into the old world's drafts before the document goes
@@ -624,6 +635,105 @@ bool CodeEditor::open(QUuid entityId, QString which) {
     return true;
 }
 
+bool CodeEditor::opensInCode(const QString& name) {
+    return CODE_SUFFIXES.contains(QFileInfo(name).suffix().toLower());
+}
+
+bool CodeEditor::openMyFile(const QString& path, const QUrl& link, const QString& name, qint64 size) {
+    // a link at our files host only (https, no user part, /f/<id>/…): the login it may be asked with goes nowhere else
+    if (!isAvailable() || !opensInCode(name) || !path.startsWith('/') ||
+        !MakeFiles::isOwnFilesLink(link, NetworkingConstants::METAVERSE_SERVER_URL())) {
+        qCDebug(interfaceapp) << "Code: not opened from My Files:" << path;
+        return false;
+    }
+    clear();
+    _fromMyFiles = true;
+    _docWorld = MY_FILES_DRAFTS;
+    _which = SCRIPT;           // its list key ("entity|<link>") is the row of a thing near you that uses it, if any
+    _value = link.toString();
+    _url = link;
+    _place = Place::MyFiles;
+    _fileName = name;
+    _myFilesPath = path;       // from the person's own listing: theirs, so it saves back to the same path
+    _myFilesChecked = true;
+    ++_generation;
+    if (size > MAX_SAVE_BYTES) {
+        _problem = "This script is too big to show here (1 MB at most).";   // ScriptOpener's cap and words
+    } else {
+        fetchMyFile();
+    }
+    updateRights();
+    updateUsedBy();
+    qCDebug(interfaceapp) << "Code: opened from My Files" << path << (_problem.isEmpty() ? "" : "problem");
+    emit documentChanged();
+    emit headerChanged();
+    emit savedChanged();
+    emit noteChanged();
+    emit statusChanged();
+    emit claudeChanged();
+
+    DependencyManager::get<Panels>()->open(PANEL);
+    return true;
+}
+
+void CodeEditor::fetchMyFile() {
+    // the person's own file, from their own listing, at our files host only (openMyFile checked the link): fetched as
+    // the client's other My Files downloads are, its own request (no disk cache, so a file saved a moment ago comes as
+    // saved), 1 MB and 20 s at most. A private file our files host refuses without the login is asked once more with
+    // it, to that host only (HTTPResourceRequest). Not under a script's network rule: that pins the request to the
+    // host's address, and the login is never sent to an address, so a private file would always be refused
+    auto resources = DependencyManager::get<ResourceManager>();
+    ResourceRequest* request = resources ? resources->createResourceRequest(this, _url, true, -1, "CodeEditor") : nullptr;
+    if (!request) {
+        _problem = "This script couldn't be loaded.";
+        return;
+    }
+    request->setCacheEnabled(false);
+    _loading = true;
+    const int generation = _generation;
+    // one answer, on this object's thread: the download's, or the time limit's if that comes first
+    auto answered = std::make_shared<std::atomic<bool>>(false);
+    QPointer<CodeEditor> self(this);
+    auto deliver = [self, generation, answered](const QString& text, const QString& problem) {
+        if (answered->exchange(true) || !self || generation != self->_generation) {
+            return;
+        }
+        self->_loading = false;
+        self->_text = text;
+        self->_problem = problem;
+        qCDebug(interfaceapp) << "Code: My Files script" << (problem.isEmpty() ? "loaded" : "not loaded:") << problem;
+        emit self->documentChanged();
+    };
+    QTimer::singleShot(ScriptOpener::TIME_LIMIT_MS, this, [deliver] {
+        deliver(QString(), "This script took too long to load.");
+    });
+    // the request lives on the resource manager's thread and ends itself there; the answer comes here queued
+    connect(request, &ResourceRequest::finished, request, [request, self, deliver] {
+        QString text;
+        QString problem;
+        const auto result = request->getResult();
+        if (result != ResourceRequest::Success) {
+            qCDebug(interfaceapp) << "Code: My Files script not fetched (" << request->getResultString() << ")";
+            problem = result == ResourceRequest::AccessDenied && !UserFiles::isLoggedIn()
+                ? QStringLiteral("Couldn't open it: you're signed out.")   // mary's words (the files viewer, 11-08)
+                : QStringLiteral("This script couldn't be loaded.");
+        } else {
+            const QByteArray data = request->getData();
+            if (data.size() > ScriptOpener::MAX_BYTES) {
+                problem = "This script is too big to show here (1 MB at most).";
+            } else {
+                text = QString::fromUtf8(data);
+            }
+        }
+        request->deleteLater();
+        if (self) {
+            QMetaObject::invokeMethod(self.data(), [deliver, text, problem] { deliver(text, problem); },
+                Qt::QueuedConnection);
+        }
+    });
+    request->send();
+}
+
 bool CodeEditor::isFileWorld() {
     return DependencyManager::get<NodeList>()->getDomainHandler().isServerless();
 }
@@ -821,6 +931,7 @@ void CodeEditor::clear() {
     _leaving = false;
     _docWorld.clear();
     _entity = QUuid();
+    _fromMyFiles = false;
     _which.clear();
     _value.clear();
     _isNew = false;
@@ -863,7 +974,13 @@ void CodeEditor::clear() {
 void CodeEditor::updateRights() {
     bool canSave = false;
     QString reason;
-    if (hasDocument()) {
+    if (_fromMyFiles) {
+        // the person's own file from their own listing: theirs to change while they're signed in, in any world
+        if (!UserFiles::isLoggedIn()) {
+            reason = "Sign in to change scripts in My Files.";
+        }
+        canSave = reason.isEmpty() && !_myFilesPath.isEmpty();
+    } else if (hasDocument()) {
         auto nodeList = DependencyManager::get<NodeList>();
         QString value;
         QString name;
@@ -1374,7 +1491,7 @@ void CodeEditor::saveToMyFiles(const QString& text) {
 }
 
 void CodeEditor::reloadForEveryone() {
-    if (!hasDocument() || !_problem.isEmpty() || isShader() || _isNew) {
+    if (!hasDocument() || _fromMyFiles || !_problem.isEmpty() || isShader() || _isNew) {
         return;
     }
     auto entities = DependencyManager::get<EntityScriptingInterface>();
@@ -1397,7 +1514,7 @@ void CodeEditor::reloadForEveryone() {
 }
 
 void CodeEditor::showInInspector() {
-    if (!hasDocument()) {
+    if (_entity.isNull()) {
         return;
     }
     if (auto editor = DependencyManager::get<Editor>()) {
@@ -1424,7 +1541,7 @@ void CodeEditor::giveBackKeyboard() {
 QMenu* CodeEditor::makeMoreMenu() {
     auto menu = new QMenu(qApp->getWindow());
     auto inspector = menu->addAction("Show in Inspector");
-    inspector->setEnabled(hasDocument());
+    inspector->setEnabled(!_entity.isNull());
     connect(inspector, &QAction::triggered, this, &CodeEditor::showInInspector);
     auto link = menu->addAction("Copy Link");
     link->setEnabled(hasLink());
@@ -1567,7 +1684,7 @@ int CodeEditor::testRun(const QString& source) {
 }
 
 void CodeEditor::askStatus() {
-    if (!_panelOpen || !hasDocument() || !_problem.isEmpty() || isShader() || _isNew) {
+    if (!_panelOpen || !hasDocument() || _fromMyFiles || !_problem.isEmpty() || isShader() || _isNew) {
         _poll.stop();
         return;
     }

@@ -27,6 +27,14 @@
 //  file has no server for a server script (mary's words). A script in the person's own My Files opens savable: a Save
 //  sends it to the same path, and its link stays.
 //
+//  From My Files (Caity 11-08, 1.1.4: "if you open a code file there it should open in our code editor"): a script
+//  double-clicked in the person's own My Files opens with no entity (openMyFile). Its path and link come from My
+//  Files' own listing, in C++ only, never from a page or a script; the link must be one at our files host. It's fetched
+//  as the app fetches any of our files (a private one asked once more with the person's login, at our files host only),
+//  under the same cap, time limit and network rule as an entity's script, and a Save sends it back to the same path.
+//  Nothing in the world is its, so it has no status, no Reload and no Show in Inspector, and arriving in another world
+//  leaves it open (its unsaved typing is kept apart from every world's).
+//
 //  It lives on the main thread and emits only there (the panel's QML connects to it, and on Qt 6 a QML connection to an
 //  object of another thread is fatal): everything from other threads reaches it queued, and MakeDock calls it on the
 //  main thread only.
@@ -76,6 +84,8 @@ class CodeEditor : public QObject, public Dependency {
     Q_PROPERTY(bool hasLink READ hasLink NOTIFY headerChanged)
     // a new script not saved yet: nothing of it is in the world (the header says "not saved yet"; Save is on as it is)
     Q_PROPERTY(bool isNew READ isNew NOTIFY headerChanged)
+    // opened from My Files, with no entity: no Reload, no status, no Show in Inspector
+    Q_PROPERTY(bool fromMyFiles READ isFromMyFiles NOTIFY documentChanged)
     // the header's New Script: why it's off for Build mode's selection now ("" when it's on), and its tip when on
     Q_PROPERTY(QString newScriptOff READ newScriptOff NOTIFY newScriptChanged)
     Q_PROPERTY(QString newScriptTip READ newScriptTip NOTIFY newScriptChanged)
@@ -123,6 +133,12 @@ public:
     Q_INVOKABLE bool openNew(QUuid entityId, QString which);
     // the header's New Script: a new entity script for the one thing selected in Build mode
     Q_INVOKABLE void newScript();
+    // My Files' double-click on a script: the person's own file, by its path in their listing and its link there (from
+    // My Files itself, C++ only), opened with no entity; false when it can't open here (not a link at our files host,
+    // or not a script Code shows). size is the listing's, so a file over the cap isn't fetched at all
+    bool openMyFile(const QString& path, const QUrl& link, const QString& name, qint64 size);
+    // the My Files names Code opens: scripts as text (.js, .mjs, .qml); a .wasm stays as it is
+    static bool opensInCode(const QString& name);
     // why a new script can't be made for that entity's field now ("" when it can): the words the Inspector's New and
     // the header's New Script show while they're off (mary 11-08)
     static QString whyNoNewScript(const QUuid& entityId, const QString& which);
@@ -134,7 +150,8 @@ public:
     QString newScriptOff() const { return _newScriptOff; }
     QString newScriptTip() const { return _newScriptTip; }
 
-    bool hasDocument() const { return !_entity.isNull(); }
+    bool hasDocument() const { return !_entity.isNull() || _fromMyFiles; }
+    bool isFromMyFiles() const { return _fromMyFiles; }
     bool isLoading() const { return _loading; }
     QString fileName() const { return _fileName; }
     QString kind() const;
@@ -304,11 +321,13 @@ private:
     void saveWrittenIn(const QString& text);
     void saveToWorldFiles(const QString& text);
     void fetch();
+    void fetchMyFile();   // a My Files script's text, by its link (openMyFile)
     void askStatus();
     void answered(int32_t callback, const QVariantList& arguments);
     void refreshAfterUndo();
 
     QUuid _entity;
+    bool _fromMyFiles { false };   // opened from My Files: no entity (_entity null), _myFilesPath and _url its own
     QString _which;            // "script" or "serverScripts"
     QString _value;            // the entity's field as it was when opened or saved: the address, or the script itself
     bool _isNew { false };     // a new script, not saved yet: _value is the empty field, _fileName the name it will get
