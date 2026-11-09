@@ -60,6 +60,11 @@ ChatTabletPage::ChatTabletPage(TabletProxy* tablet) : QObject(tablet), _tablet(t
             sendWorldHere();
         }
     });
+    connect(WorldChat::instance(), &WorldChat::arrivedChanged, this, [this] {
+        if (!_bridge.isEmpty()) {
+            sendWorldHere();
+        }
+    });
 }
 
 void ChatTabletPage::toggle() {

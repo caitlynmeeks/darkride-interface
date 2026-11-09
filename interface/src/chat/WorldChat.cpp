@@ -211,6 +211,10 @@ int WorldChat::peopleHere() const {
 }
 
 QString WorldChat::hereLine() const {
+    // until you've arrived, who's here isn't known: no count (mary 11-09)
+    if (!arrived()) {
+        return DependencyManager::get<AddressManager>()->getDomainLabel().trimmed();
+    }
     int people = peopleHere();
     QString here = people <= 1 ? QString("Only you") : QString("%1 here").arg(people);
     QString world = DependencyManager::get<AddressManager>()->getDomainLabel().trimmed();

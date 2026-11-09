@@ -46,7 +46,7 @@ public:
     // everyone in this world, you too
     int peopleHere() const;
     // the line beside Local Chat's title (desk and tablet): the world's name, when it has one (an address is not a
-    // name), and who's there: "Port Amarelle · 6 here", "Only you"
+    // name), and who's there: "Port Amarelle · 6 here", "Only you"; before arriving, the name alone (no count yet)
     QString hereLine() const;
     void markRead();
     // in a world: its loading screen gone (the domain session's physics gate open). Until then nothing is sent: there's
