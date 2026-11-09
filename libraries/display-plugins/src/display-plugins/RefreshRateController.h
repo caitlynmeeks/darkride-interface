@@ -65,6 +65,12 @@ public:
         int withVsync { 0 };            // paced by vsync at the display's own rate (in phase by the hardware; refreshes per present unknown here)
         int inHmd { 0 };                // paced by the HMD
         int late { 0 };                 // arrived after their slot: the present before overran it
+        // handed to the display with less than PRESENT_SLACK_FLOOR_US before their refresh, or past it: the compositor
+        // then shows the frame a refresh late while the interval count above stays whole, so these are the misses the
+        // counts above cannot see (entry 34, 2026-11-09: a heavy view at 144 with shadows, every present in phase, the
+        // picture alternating on-time and one-step-old frames)
+        int missed { 0 };
+        int minSlackUs { 1000000 };     // the least slack of the second's presents (microseconds; negative past the refresh)
         int maxLateUs { 0 };            // the worst of them
         int repeated { 0 };             // showed the frame before again (no new frame was ready)
         // the frames' fit, what the cadence governor's return reads (RefreshRateManager): each stage's own work
@@ -92,6 +98,11 @@ public:
     // gpu::Frame), and the present's own work (the present less its swap) with the GPU's frame time; present thread
     void noteNewFrame(int mainUs, int buildUs);
     void notePresentCost(int executeUs, float gpuMs);
+    // how long before its refresh the present under way returned (microseconds; negative when past it); present thread.
+    // Under PRESENT_SLACK_FLOOR_US the frame is counted as missed: the flush's hand-off to the compositor within a
+    // millisecond of a refresh waits 1.4 to 2.4 ms (the pacing's measurements of 2026-10-20), past the refresh
+    void notePresentSlack(int slackUs);
+    static const int PRESENT_SLACK_FLOOR_US = 1000;
     // whether the presents are in phase with the display's refreshes (the slots) or on the free schedule
     bool isInPhase() const { return _inPhase; }
     // the refresh the present under way is due for, on std::chrono::steady_clock (nanoseconds); 0 off the phase

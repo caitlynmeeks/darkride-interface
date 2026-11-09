@@ -123,6 +123,8 @@ public:
         int repeated { 0 };
         int onTwoOrMoreRefreshes { 0 };
         int onOneRefresh { 0 };
+        int missed { 0 };               // handed to the display with under RefreshRateController::PRESENT_SLACK_FLOOR_US before the refresh
+        int minSlackUs { 0 };
         int newFrames { 0 };
         int slowMainFrames { 0 };
         int slowBuildFrames { 0 };

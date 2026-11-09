@@ -26,6 +26,7 @@
 #include "InterfaceLogging.h"
 
 #include <SharedUtil.h>
+#include <display-plugins/RefreshRateController.h>   // PRESENT_SLACK_FLOOR_US, for the drop's line
 
 #include <QtCore/QProcessEnvironment>
 #include <QtGui/QScreen>
@@ -156,9 +157,10 @@ static const std::array<
 
 static const int INACTIVE_TIMER_LIMIT = 3000;
 
-// the cadence governor's numbers (RefreshRateManager.h): presents in a second that showed the frame before again or
-// landed two or more refreshes apart before the target drops (3 of 144 is a hitch the eye sees; 1 or 2 are a world
-// loading something); the hold of fitting seconds before a return, its first value and its ceiling after failed
+// the cadence governor's numbers (RefreshRateManager.h): presents in a second that showed the frame before again,
+// landed two or more refreshes apart, or were handed to the display with under a millisecond before their refresh
+// (the compositor shows those a refresh late while the count stays whole: entry 34) before the target drops (3 of
+// 144 is a hitch the eye sees; 1 or 2 are a world loading something); the hold of fitting seconds before a return, its first value and its ceiling after failed
 // returns; the seconds after a return in which a drop marks it failed (a world that hitches every ten seconds would
 // otherwise return and drop without the hold ever growing); the clean seconds at full rate that forgive
 // the back-off. A second at half rate counts as fitting when each stage's slow count (frames over 70 % of a
@@ -341,7 +343,7 @@ void RefreshRateManager::governorTick() {
         if (sample.presents < displayRate / 2) {
             return;   // not presenting for the whole second: no verdict
         }
-        const int misses = sample.repeated + sample.onTwoOrMoreRefreshes;
+        const int misses = sample.repeated + sample.onTwoOrMoreRefreshes + sample.missed;
         if (_governorProbeSecondsLeft > 0) {
             _governorProbeSecondsLeft--;
         }
@@ -360,8 +362,9 @@ void RefreshRateManager::governorTick() {
             _governorProbeSecondsLeft = 0;
             _governorChangeNs = steadyNowNs();
             qCDebug(interfaceapp).nospace() << "Refresh governor: half rate, " << halfRateOf(displayRate) << " of " << displayRate
-                << " Hz: in the last second " << sample.repeated << " presents showed the frame before again and "
-                << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart"
+                << " Hz: in the last second " << sample.repeated << " presents showed the frame before again, "
+                << sample.onTwoOrMoreRefreshes << " landed two or more refreshes apart and " << sample.missed
+                << " reached the display with under " << RefreshRateController::PRESENT_SLACK_FLOOR_US / 1000 << " ms to spare"
                 << (returnFailed ? " (the return failed; hold now " : " (hold ") << _governorHoldSeconds << " s)";
             updateRefreshRateController();
         }
@@ -415,7 +418,7 @@ void RefreshRateManager::governorDiag(const CadenceSample& sample) const {
     qCDebug(interfaceapp).nospace() << "Refresh governor diag: " << (s_governorHeld ? "held" : (_halfRate ? "half" : "full")) << " rate, target "
         << _activeRefreshRate << " of " << sample.displayRate << " Hz; last second: presents " << sample.presents
         << " (on 1 refresh " << sample.onOneRefresh << ", on 2+ " << sample.onTwoOrMoreRefreshes << ", held " << sample.repeated
-        << "), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
+        << ", missed " << sample.missed << ", slack min " << sample.minSlackUs / 1000.0 << " ms), frames " << sample.newFrames << " (main slow " << sample.slowMainFrames << ", max " << sample.maxMainUs / 1000.0
         << " ms; build slow " << sample.slowBuildFrames << ", max " << sample.maxBuildUs / 1000.0 << " ms), execute slow "
         << sample.slowExecutes << " (max " << sample.maxExecuteUs / 1000.0 << " ms), GPU " << sample.gpuMs << " ms; fit "
         << _governorFitSeconds << " of " << _governorHoldSeconds << " s"

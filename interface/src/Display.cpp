@@ -675,6 +675,8 @@ void Display::setDisplayPlugin(DisplayPluginPointer newDisplayPlugin) {
             sample.repeated = c.repeated;
             sample.onTwoOrMoreRefreshes = c.onTwoRefreshes + c.onThreeRefreshes + c.onMoreRefreshes;
             sample.onOneRefresh = c.onOneRefresh;
+            sample.missed = c.missed;
+            sample.minSlackUs = c.minSlackUs;
             sample.newFrames = c.newFrames;
             sample.slowMainFrames = c.slowMainFrames;
             sample.slowBuildFrames = c.slowBuildFrames;
