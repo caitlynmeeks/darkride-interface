@@ -598,7 +598,8 @@
             }
             return;
         }
-        end("the world refused the connection: " + reason);
+        // a world chooses this text: quoted and cut, so its newlines can't make lines that read as the app's (security)
+        end("the world refused the connection: " + JSON.stringify(String(reason).slice(0, 200)));
     }
 
     // the world doesn't answer: the viewer gives up on it for now and opens its connection failure window, which the
