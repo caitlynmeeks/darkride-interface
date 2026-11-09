@@ -35,6 +35,8 @@ enum class MemoryPressureState
 };
 
 static MemoryPressureState _memoryPressureState{ MemoryPressureState::Idle };
+// the loading boost's turn (entry 33, Amendment 2): allocation one frame, upload the next, while both have work
+static bool _boostAllocationTurn{ false };
 
 template <typename T>
 struct LessPairSecond {
@@ -227,25 +229,35 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     if (pressure > OVERSUBSCRIBED_PRESSURE_VALUE && canDemote) {
         auto overPressure = pressure - OVERSUBSCRIBED_PRESSURE_VALUE;
         size_t relief = (size_t)(overPressure * totalVariableMemoryAllocation);
+        Backend::textureTransferEngineBusy.set(1);   // demoting is work too (the arrival gate's read, below)
         processDemotes(relief, strongTextures);
         return;
     }
 
-    auto newState = MemoryPressureState::Idle;
-    if (Texture::getTransferBoost() && hasTransfers) {
-        // under the loading screen (entry 33): upload what is allocated before allocating more, so allocation and
-        // upload alternate frame by frame instead of every allocation coming first (item 53: the uploads waited ~2 s
-        // behind the shader warm-up's slow frames); in a presented world the order below is as before
-        newState = MemoryPressureState::Transfer;
-    } else if (pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && (unallocated != 0 && canPromote)) {
-        newState = MemoryPressureState::Undersubscribed;
-    } else if (hasTransfers) {
-        newState = MemoryPressureState::Transfer;
-    } else {
+    const bool wantPromote = pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && (unallocated != 0 && canPromote);
+    bool queuesBusy = false;
+    {
         Lock lock(_bufferMutex);
-        if (!_activeBufferQueue.empty() || !_activeTransferQueue.empty() || !_pendingTransfersMap.empty()) {
-            newState = MemoryPressureState::Transfer;
-        }
+        queuesBusy = !_activeBufferQueue.empty() || !_activeTransferQueue.empty() || !_pendingTransfersMap.empty();
+    }
+    // What the engine still has to do, for the arrival gate (entry 33, Amendment 2: the gate opened on a small set of
+    // textures that was fully uploaded while most were not yet allocated). Read from the work available, not from the
+    // state: processPromotes and processTransferQueues set Idle when their queue empties, a frame before the rebuild.
+    Backend::textureTransferEngineBusy.set((wantPromote || hasTransfers || queuesBusy) ? 1 : 0);
+
+    auto newState = MemoryPressureState::Idle;
+    if (Texture::getTransferBoost() && wantPromote && hasTransfers) {
+        // under the loading screen (entry 33, Amendment 2): allocation and upload take turns, one frame each, while
+        // both have work, so the uploads run beside the shader warm-up instead of after every allocation (item 53).
+        // The first shape (upload whenever anything was queued) starved the allocation under the warm-up's slow
+        // presents: 8 MB allocated where the old order had 120. Each turn rebuilds its queue below, as every state
+        // change does. In a presented world the boost is off and the order below is the one before the boost.
+        _boostAllocationTurn = !_boostAllocationTurn;
+        newState = _boostAllocationTurn ? MemoryPressureState::Undersubscribed : MemoryPressureState::Transfer;
+    } else if (wantPromote) {
+        newState = MemoryPressureState::Undersubscribed;
+    } else if (hasTransfers || queuesBusy) {
+        newState = MemoryPressureState::Transfer;
     }
 
     // If we've changed state then we have to populate the appropriate structure with the work to be done
