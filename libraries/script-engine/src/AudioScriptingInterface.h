@@ -287,6 +287,4 @@ private:
     AbstractAudioInterface* _localAudioInterface { nullptr };
 };
 
-void registerAudioMetaTypes(QScriptEngine* engine);
-
 #endif // hifi_AudioScriptingInterface_h

@@ -186,6 +186,13 @@ void SignInGate::resumeAfterLoginDialogActionTaken() {
 
     const auto& nodeList = DependencyManager::get<NodeList>();
     nodeList->getDomainHandler().setInterstitialModeEnabled(_interstitialModeEnabled);
+    // the first arrival waits for what is near the avatar, as a hop does, from before the default scripts start:
+    // worldLoading.js, which sets that wait, starts in the same moment as the arrival and lost the race (physics on
+    // before it ran; physics 11-07). The script takes the wait over when it starts (DomainSession::holdFirstArrival).
+    // Only when a starting location is gone to below (a test run without --url stays put)
+    if (!qApp->property(hifi::properties::TEST).isValid() || ClientOptions::get().hasUrl) {
+        qApp->getDomainSession().holdFirstArrival();
+    }
     {
         auto scriptEngines = DependencyManager::get<ScriptEngines>().data();
         // this will force the model the look at the correct directory (weird order of operations issue)

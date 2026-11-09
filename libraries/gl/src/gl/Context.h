@@ -31,6 +31,21 @@ class QOpenGLDebugMessage;
 #endif
 namespace gl {
 
+    #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+    // An Objective-C autorelease pool for one pass of a thread that has no event loop to drain one (the present
+    // thread). AppKit and Qt's Cocoa plugin autorelease objects inside calls such as a context's swap (Qt 6.11
+    // asks the window's colour space for its profile data, 16 KB, on every swap), and on a thread with no pool
+    // they are never released. Pushed when made, drained when it goes out of scope; nanoseconds a pass.
+    class AutoreleasePool {
+    public:
+        AutoreleasePool();
+        ~AutoreleasePool();
+        AutoreleasePool(const AutoreleasePool&) = delete;
+        AutoreleasePool& operator=(const AutoreleasePool&) = delete;
+    private:
+        void* _pool { nullptr };
+    };
+    #endif
     class Context {
     protected:
         QWindow* _window { nullptr };
@@ -69,6 +84,13 @@ namespace gl {
         static void makeCurrent(QOpenGLContext* context, QSurface* surface);
         void swapBuffers();
         void doneCurrent();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && defined(Q_OS_MACOS)
+        // After the view's frame changed: -[NSOpenGLContext update] on the main thread (see makeCurrent)
+        void updateForViewChange();
+        // The view's window replaced under the context (Qt re-created it), or let go (nullptr): the GL context and
+        // everything in it stay; only the drawable changes. Main thread, under the view-change guard.
+        void replaceWindow(QWindow* window);
+#endif
         virtual void create(QOpenGLContext* shareContext = nullptr);
         QOpenGLContext* qglContext() const { return _qglContext; }
         void moveToThread(QThread* thread);

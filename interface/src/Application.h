@@ -406,7 +406,6 @@ public slots:
 
     void showDialog(const QUrl& widgetUrl, const QUrl& tabletUrl, const QString& name) const;
 
-    void addAssetToWorldFromURL(QString url) { _assetImport.addAssetToWorldFromURL(url); }   // QML's ApplicationInterface.addAssetToWorldFromURL (the tablet and window roots, the web view)
     void wearAvatarLink(const QString& link);   // QML's ApplicationInterface.wearAvatarLink: the Avatar panel's Wear from Link…
 
     FileScriptingInterface* getFileDownloadInterface() { return _fileDownload; }
@@ -602,7 +601,13 @@ private:
     Setting::Handle<bool> _bypassPrioritySortingSetting;
     Setting::Handle<bool> _bypassScriptThrottling;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6 events can't be copied: keep what the synthesized key release needs
+    struct PressedKey { int key; QString text; };
+    QHash<int, PressedKey> _keysPressed;
+#else
     QHash<int, QKeyEvent> _keysPressed;
+#endif
 
     bool _enableProcessOctreeThread;
     EntityEditPacketSender _entityEditSender;

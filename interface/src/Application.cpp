@@ -367,7 +367,7 @@ bool Application::acceptURL(const QString& urlString, bool defaultUpload) {
 // displayAvatarAttachmentWarning), showDialog, showScriptLogs and showAssetServerWidget are in ApplicationDialogs.cpp.
 
 // A file from a URL or a drop becoming an asset and an entity is an AssetImport (AssetImport.h), the member _assetImport,
-// reached by getAssetImport(); addAssetToWorldFromURL forwards to it for QML.
+// reached by getAssetImport().
 
 // The dialogs and windows (packageModel, loadDialog, importAvatarDialog, putAvatarInMyFiles, the previous script location,
 // loadScriptURLDialog, getSampleSound, the LOD tools, entity statistics and domain connection dialogs, the log windows) are

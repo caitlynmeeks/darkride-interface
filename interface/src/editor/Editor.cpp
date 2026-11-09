@@ -37,7 +37,7 @@
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QAbstractItemView>
 #include <QtWidgets/QAbstractSpinBox>
-#include <QtWidgets/QAction>
+#include <QAction>   // QtWidgets in Qt 5, QtGui in Qt 6
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QLabel>
@@ -49,6 +49,9 @@
 #include <QtWidgets/QTreeView>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#include <QtQuickWidgets/QQuickWidget>
+#endif
 
 #include <OffscreenUi.h>
 
@@ -91,6 +94,8 @@
 #include "scripting/RenderScriptingInterface.h"
 #include "PropertySpec.h"
 #include "ui/AssetsPanel.h"
+#include "ui/CodeEditor.h"   // interface/src/ui: the Code panel
+#include <EntityScriptRights.h>
 #include "ui/PanelTheme.h"
 #include "ui/Popup.h"
 #include "ui/HierarchyPanel.h"
@@ -858,10 +863,41 @@ void Editor::focusViewport() {
     }
 }
 
+namespace {
+    // a field on the desktop surface has the keyboard (chat, a dialog, a URL box)
+    bool surfaceHasTextFocus() {
+        if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
+            if (auto window = offscreenUi->getWindow()) {
+                if (auto item = window->activeFocusItem()) {
+                    return item->inherits("QQuickTextInput") || item->inherits("QQuickTextEdit")
+                        || item->inherits("QQuickWebEngineView");
+                }
+            }
+        }
+        return false;
+    }
+
+    // a field in a panel has the keyboard: a panel's view isn't on the desktop surface. Asked as the input method asks, so
+    // a web page's field counts as a QML one does, and a button or a page with no field in use doesn't
+    bool panelHasTextFocus() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        QObject* focus = QGuiApplication::focusObject();   // a panel's view is a window of its own
+#else
+        auto view = qobject_cast<QQuickWidget*>(QApplication::focusWidget());
+        QObject* focus = view ? view->quickWindow()->activeFocusItem() : nullptr;
+#endif
+        auto item = qobject_cast<QQuickItem*>(focus);
+        return item && item->inputMethodQuery(Qt::ImEnabled).toBool();
+    }
+}
+
 void Editor::takeFocusUnlessTyping() {
     QWidget* focus = QApplication::focusWidget();
     if (focus && (qobject_cast<QLineEdit*>(focus) || qobject_cast<QAbstractSpinBox*>(focus) ||
                   qobject_cast<QTextEdit*>(focus) || qobject_cast<QPlainTextEdit*>(focus))) {
+        return;
+    }
+    if (panelHasTextFocus()) {
         return;
     }
     focusViewport();
@@ -4214,7 +4250,7 @@ bool Editor::handleDrop(QDropEvent* event) {
     qCDebug(interfaceapp) << "editor drop:" << mime->formats() << "links" << offered << "placing" << placing;
     if (remote.isEmpty() && local.isEmpty()) {
         if (mime->hasHtml() || mime->hasImage()) {
-            setStatus("Nothing to place: no picture or model found in what was dropped", STATUS_CLEAR_MS);
+            setStatus("Nothing to place: no image or model found in what was dropped", STATUS_CLEAR_MS);
         }
         return false;   // a script or a place, perhaps: the client's own handling
     }
@@ -4369,7 +4405,60 @@ void Editor::showHierarchyMenu(const QPoint& globalPos) {
             tree->edit(tree->currentIndex());
         }
     })->setEnabled(!_selection.isEmpty() && !_readOnly);
+    addScriptActions(menu);
     menu.exec(globalPos);
+}
+
+// Edit Script and Edit Server Script: one selected entity's script in the Code panel (Make v1; Qt 6 only). A field
+// without a script says New Script instead (11-08, as the Inspector's New): a starter script, made in the world's
+// files at its first Save, off with why it can't be (mary's words)
+void Editor::addScriptActions(QMenu& menu) {
+    if (!CodeEditor::isAvailable()) {
+        return;
+    }
+    const QList<QUuid> ids = _selection.ids();
+    const bool one = ids.size() == 1;
+    menu.addSeparator();
+    bool hasScript = true;
+    bool hasServerScript = true;
+    if (one) {
+        EntityPropertyFlags flags;
+        flags += PROP_SCRIPT;
+        flags += PROP_SERVER_SCRIPTS;
+        const auto properties = DependencyManager::get<EntityScriptingInterface>()->getEntityProperties(ids.first(), flags);
+        hasScript = !properties.getScript().trimmed().isEmpty();
+        hasServerScript = !properties.getServerScripts().trimmed().isEmpty();
+    }
+    bool tips = false;
+    auto addNew = [&](const QString& text, const QString& which) {
+        const QString why = CodeEditor::whyNoNewScript(ids.first(), which);
+        auto action = menu.addAction(text, this, [ids, which] {
+            DependencyManager::get<CodeEditor>()->openNew(ids.first(), which);
+        });
+        action->setEnabled(why.isEmpty());
+        if (!why.isEmpty()) {
+            action->setToolTip("<qt>" + why.toHtmlEscaped() + "</qt>");   // a thing's name is world text: plain
+            tips = true;
+        }
+    };
+    if (one && !hasScript) {
+        addNew("New Script", "script");
+    } else {
+        menu.addAction("Edit Script", this, [ids] {
+            DependencyManager::get<CodeEditor>()->open(ids.first(), "script");
+        })->setEnabled(one);
+    }
+    if (one && !hasServerScript) {
+        addNew("New Server Script", "serverScripts");
+    } else {
+        // a world's server scripts are its editors' only (Caity, 22:25 11-06), by the entity server's own rule
+        menu.addAction("Edit Server Script", this, [ids] {
+            DependencyManager::get<CodeEditor>()->open(ids.first(), "serverScripts");
+        })->setEnabled(one && entity_script_rights::mayChangeScriptsOf(EditorUndo::isLocked(ids.first())));
+    }
+    if (tips) {
+        menu.setToolTipsVisible(true);
+    }
 }
 
 void Editor::showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos) {
@@ -4389,6 +4478,7 @@ void Editor::showViewportMenu(const QPoint& viewportPos, const QPoint& globalPos
     menu.addMenu(create);
     menu.addSeparator();
     addSelectionActions(menu, &point);
+    addScriptActions(menu);
     menu.exec(globalPos);
 }
 
@@ -4592,15 +4682,7 @@ bool Editor::handleWheel(QWheelEvent* event) {
 }
 
 bool Editor::qmlHasTextFocus() const {
-    if (auto offscreenUi = DependencyManager::get<OffscreenUi>()) {
-        if (auto window = offscreenUi->getWindow()) {
-            if (auto item = window->activeFocusItem()) {
-                return item->inherits("QQuickTextInput") || item->inherits("QQuickTextEdit")
-                    || item->inherits("QQuickWebEngineView");
-            }
-        }
-    }
-    return false;
+    return surfaceHasTextFocus() || panelHasTextFocus();
 }
 
 bool Editor::handleKeyPress(QKeyEvent* event) {
@@ -4700,7 +4782,8 @@ bool Editor::handleKeyRelease(QKeyEvent* event) {
     if (!_active) {
         return false;
     }
-    if (qmlHasTextFocus() && !_vertexSnap) {
+    // not a panel's field: a key held for the camera has to let go, whichever field has the keyboard by then
+    if (surfaceHasTextFocus() && !_vertexSnap) {
         return false;
     }
     if (event->key() == Qt::Key_V && !event->isAutoRepeat()) {

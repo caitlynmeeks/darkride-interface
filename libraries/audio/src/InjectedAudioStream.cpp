@@ -18,6 +18,7 @@
 
 #include <udt/PacketHeaders.h>
 #include <UUID.h>
+#include <shared/WireStream.h>
 
 #include "AudioHelpers.h"
 
@@ -31,8 +32,9 @@ int InjectedAudioStream::parseStreamProperties(PacketType type,
                                                const QByteArray& packetAfterSeqNum,
                                                int& numAudioSamples) {
 
-    // setup a data stream to read from this packet
+    // setup a data stream to read from this packet, in the format AudioInjector writes it
     QDataStream packetStream(packetAfterSeqNum);
+    hifi::stream::pin(packetStream);
 
     // skip the stream identifier
     packetStream.skipRawData(NUM_BYTES_RFC4122_UUID);
@@ -42,10 +44,8 @@ int InjectedAudioStream::parseStreamProperties(PacketType type,
     packetStream >> isStereo;
     
     // if isStereo value has changed, restart the ring buffer with new frame size
-    if (isStereo != _isStereo) {
-        _ringBuffer.resizeForFrameSize(isStereo
-                                       ? AudioConstants::NETWORK_FRAME_SAMPLES_STEREO
-                                       : AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL);
+    if (isStereo != _isStereo && changeFrameSize(isStereo ? AudioConstants::NETWORK_FRAME_SAMPLES_STEREO
+                                                          : AudioConstants::NETWORK_FRAME_SAMPLES_PER_CHANNEL)) {
         _isStereo = isStereo;
     }
 

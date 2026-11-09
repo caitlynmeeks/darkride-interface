@@ -217,7 +217,7 @@ QByteArray makeMorphTargetGlb(uint16_t badIndex) {
 
 HFMModel::Pointer readSharedBufferGlb(bool padJson = true) {
     AssimpSerializer serializer;
-    return serializer.read(makeSharedBufferGlb(padJson), hifi::VariantHash(), hifi::URL("file:///skin-test.glb"));
+    return serializer.read(makeSharedBufferGlb(padJson), hifi::VariantMultiHash(), hifi::URL("file:///skin-test.glb"));
 }
 
 const hfm::SkinDeformer* skinOf(const HFMModel& model, uint32_t meshIndex) {
@@ -422,7 +422,7 @@ void AssimpSkinTests::testUnpaddedJsonChunk() {
 void AssimpSkinTests::testMorphTargetPastVertices() {
     AssimpSerializer serializer;
     // "Smile" is no standard blendshape name: the model's own shapes are kept only when the .fst asks for them
-    hifi::VariantHash mapping;
+    hifi::VariantMultiHash mapping;
     mapping.insert("ownBlendshapes", "true");
     // QVERIFY and QCOMPARE return void on failure, so the lambda gathers what doesn't hold and the test checks it after
     QStringList broken;
@@ -463,7 +463,7 @@ void AssimpSkinTests::testMorphTargetPastVertices() {
 // be drawn, and the triangle mesh, the mesh count and the numbering are as read.
 void AssimpSkinTests::testPointsOnlyMeshKeptDrawable() {
     AssimpSerializer serializer;
-    const HFMModel::Pointer model = serializer.read(makePointsGlb(), hifi::VariantHash(), hifi::URL("file:///points.glb"));
+    const HFMModel::Pointer model = serializer.read(makePointsGlb(), hifi::VariantMultiHash(), hifi::URL("file:///points.glb"));
     QVERIFY(model);
     const size_t meshCount = model->meshes.size();
     QVERIFY(meshCount >= 1);

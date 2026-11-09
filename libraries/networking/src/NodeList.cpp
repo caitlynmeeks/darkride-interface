@@ -11,6 +11,8 @@
 
 #include "NodeList.h"
 
+#include <algorithm>
+
 #include <chrono>
 
 #include <QtCore/QDataStream>
@@ -40,6 +42,7 @@
 #include "udt/PacketHeaders.h"
 #include "SharedUtil.h"
 #include <Trace.h>
+#include <shared/WireStream.h>
 
 using namespace std::chrono;
 
@@ -390,6 +393,7 @@ void NodeList::sendDomainServerCheckIn() {
         auto domainPacket = NLPacket::create(domainPacketType);
 
         QDataStream packetStream(domainPacket.get());
+        hifi::stream::pin(packetStream);
 
         HifiSockAddr localSockAddr = _localSockAddr;
         if (domainPacketType == PacketType::DomainConnectRequest) {
@@ -460,7 +464,10 @@ void NodeList::sendDomainServerCheckIn() {
 
         // pack our data to send to the domain-server including
         // the hostname information (so the domain-server can see which place name we came in on)
-        packetStream << _ownerType.load() << publicSockAddr << localSockAddr << _nodeTypesOfInterest.values();
+        // the node types come from a set, so they're sorted: the same request is the same bytes on every build (Qt 6 stage 0)
+        QList<NodeType_t> nodeTypesOfInterest = _nodeTypesOfInterest.values();
+        std::sort(nodeTypesOfInterest.begin(), nodeTypesOfInterest.end());
+        packetStream << _ownerType.load() << publicSockAddr << localSockAddr << nodeTypesOfInterest;
         packetStream << DependencyManager::get<AddressManager>()->getPlaceName();
 
         if (!domainIsConnected) {
@@ -685,6 +692,7 @@ void NodeList::processDomainServerList(QSharedPointer<ReceivedMessage> message) 
 
     // parse header information 
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
 
     // grab the domain's ID from the beginning of the packet
     QUuid domainUUID;
@@ -813,6 +821,7 @@ void NodeList::processDomainServerAddedNode(QSharedPointer<ReceivedMessage> mess
     }
     // setup a QDataStream
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
 
     // use our shared method to pull out the new node
     parseNodeFromPacketStream(packetStream);
@@ -860,6 +869,7 @@ void NodeList::sendAssignment(Assignment& assignment) {
     auto assignmentPacket = NLPacket::create(assignmentPacketType);
 
     QDataStream packetStream(assignmentPacket.get());
+    hifi::stream::pin(packetStream);
     packetStream << assignment;
 
     sendPacket(std::move(assignmentPacket), _assignmentServerSocket);
@@ -932,6 +942,7 @@ void NodeList::handleNodePingTimeout() {
 void NodeList::activateSocketFromNodeCommunication(ReceivedMessage& message, const SharedNodePointer& sendingNode) {
     // deconstruct this ping packet to see if it is a public or local reply
     QDataStream packetStream(message.getMessage());
+    hifi::stream::pin(packetStream);
 
     quint8 pingType;
     packetStream >> pingType;

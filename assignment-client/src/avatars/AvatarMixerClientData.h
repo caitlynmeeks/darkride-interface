@@ -21,6 +21,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QUrl>
 
+#include "AvatarMixerChecks.h"
 #include "MixerAvatar.h"
 #include <AssociatedTraitValues.h>
 #include <NodeData.h>
@@ -161,6 +162,10 @@ public:
 
     void resetSentTraitData(Node::LocalID nodeID);
 
+    /// Logs data from this avatar's app that the mixer dropped (security #52's checks), at most once a minute per
+    /// sender, with the number dropped since the last line (performance, 11-02).
+    void logRefusedData(const QString& what, const QString& reason, const QUuid& sender);
+
 private:
     struct PacketQueue : public std::queue<QSharedPointer<ReceivedMessage>> {
         QWeakPointer<Node> node;
@@ -203,6 +208,12 @@ private:
     AvatarTraits::TraitVersions _lastReceivedTraitVersions;
     // why each worn entity not passed on was refused, so the log says it once, not on every update (performance, 10-30)
     std::unordered_map<QUuid, QString> _refusedCarriedEntities;
+    // the refused-data log's last line and the refusals since (logRefusedData; the identity's is read on the main
+    // thread, the traits' on a worker)
+    std::atomic<quint64> _lastRefusedDataLogUsecs { 0 };
+    std::atomic<int> _refusedDataSinceLog { 0 };
+    // how fast this avatar adds new instance ids (read with the traits, on one worker at a time)
+    avatar_mixer_checks::NewInstanceRate _newInstanceRate;
     TraitsCheckTimestamp _lastReceivedTraitsChange;
 
     AvatarTraits::TraitMessageSequence _currentTraitsMessageSequence{ 0 };

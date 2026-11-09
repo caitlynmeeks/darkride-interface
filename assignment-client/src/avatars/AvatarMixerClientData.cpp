@@ -12,16 +12,19 @@
 #include "AvatarMixerClientData.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <udt/PacketHeaders.h>
 
 #include <DependencyManager.h>
 #include <NodeList.h>
+#include <SharedUtil.h>
 #include <EntityTree.h>
 #include <ZoneEntityItem.h>
 #include <WebEntityItem.h>
 #include <ScriptAddressCheck.h>
 
 #include "AvatarLogging.h"
+#include "AvatarMixerChecks.h"
 
 #include "AvatarMixerWorker.h"
 
@@ -30,6 +33,17 @@
 // server's (ScriptAddressCheck), is never passed on. Its data is read from a zero-padded copy and passed on only when it
 // reads cleanly.
 static const int READ_PADDING = 1 << 20;
+
+// AvatarMixerChecks reads the skeleton by these offsets
+static_assert(sizeof(AvatarSkeletonTrait::Header) == avatar_mixer_checks::SKELETON_HEADER_SIZE, "skeleton header");
+static_assert(offsetof(AvatarSkeletonTrait::Header, numJoints) == avatar_mixer_checks::SKELETON_NUM_JOINTS_AT, "numJoints");
+static_assert(offsetof(AvatarSkeletonTrait::Header, stringTableLength) == avatar_mixer_checks::SKELETON_TABLE_LENGTH_AT,
+              "stringTableLength");
+static_assert(sizeof(AvatarSkeletonTrait::JointData) == avatar_mixer_checks::SKELETON_JOINT_SIZE, "joint record");
+static_assert(offsetof(AvatarSkeletonTrait::JointData, stringStart) == avatar_mixer_checks::SKELETON_STRING_START_AT,
+              "stringStart");
+static_assert(offsetof(AvatarSkeletonTrait::JointData, stringLength) == avatar_mixer_checks::SKELETON_STRING_LENGTH_AT,
+              "stringLength");
 
 namespace {
 
@@ -233,7 +247,7 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
                                                     Node& sendingNode) {
     // Trying to read more bytes than available, bail
     if (message.getBytesLeftToRead() < qint64(sizeof(AvatarTraits::TraitVersion))) {
-        qWarning() << "Refusing to process malformed traits packet from" << message.getSenderSockAddr();
+        logRefusedData("a traits packet", "no version", sendingNode.getUUID());
         return;
     }
 
@@ -248,7 +262,7 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
 
         // Trying to read more bytes than available, bail
         if (message.getBytesLeftToRead() < qint64(sizeof(AvatarTraits::TraitType))) {
-            qWarning() << "Refusing to process malformed traits packet from" << message.getSenderSockAddr();
+            logRefusedData("a traits packet", "a trait cut short", sendingNode.getUUID());
             return;
         }
 
@@ -258,20 +272,29 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
         if (AvatarTraits::isSimpleTrait(traitType)) {
             // Trying to read more bytes than available, bail
             if (message.getBytesLeftToRead() < qint64(sizeof(AvatarTraits::TraitWireSize))) {
-                qWarning() << "Refusing to process malformed traits packet from" << message.getSenderSockAddr();
+                logRefusedData("a traits packet", "a trait cut short", sendingNode.getUUID());
                 return;
             }
 
             AvatarTraits::TraitWireSize traitSize;
             message.readPrimitive(&traitSize);
 
-            if (traitSize < -1 || traitSize > message.getBytesLeftToRead()) {
-                qWarning() << "Refusing to process simple trait of size" << traitSize << "from" << message.getSenderSockAddr();
+            // a simple trait has no deleted form (DELETED_TRAIT_SIZE is for instances)
+            if (traitSize < 0 || traitSize > message.getBytesLeftToRead()) {
+                logRefusedData("a traits packet", QString("a trait of size %1").arg(traitSize), sendingNode.getUUID());
                 break;
             }
 
             if (packetTraitVersion > _lastReceivedTraitVersions[traitType]) {
-                _avatar->processTrait(traitType, message.read(traitSize));
+                QByteArray traitData = message.read(traitSize);
+                const QString refusal = traitType == AvatarTraits::SkeletonData
+                    ? avatar_mixer_checks::skeletonRefusal(traitData) : QString();
+                if (!refusal.isEmpty()) {
+                    // dropped: nothing is unpacked or passed on, and the version stays, so a good one still applies
+                    logRefusedData("a skeleton", refusal, sendingNode.getUUID());
+                    continue;
+                }
+                _avatar->processTrait(traitType, traitData);
                 _lastReceivedTraitVersions[traitType] = packetTraitVersion;
                 anyTraitsChanged = true;
             } else {
@@ -280,7 +303,7 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
         } else {
             // Trying to read more bytes than available, bail
             if (message.getBytesLeftToRead() < qint64(NUM_BYTES_RFC4122_UUID + sizeof(AvatarTraits::TraitWireSize))) {
-                qWarning() << "Refusing to process malformed traits packet from" << message.getSenderSockAddr();
+                logRefusedData("a traits packet", "a trait cut short", sendingNode.getUUID());
                 return;
             }
 
@@ -290,14 +313,38 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
             message.readPrimitive(&traitSize);
 
             if (traitSize < -1 || traitSize > message.getBytesLeftToRead()) {
-                qWarning() << "Refusing to process instanced trait of size" << traitSize << "from"
-                           << message.getSenderSockAddr();
+                logRefusedData("a traits packet", QString("an instance of size %1").arg(traitSize), sendingNode.getUUID());
                 break;
             }
 
             if (traitType == AvatarTraits::AvatarEntity || traitType == AvatarTraits::Grab ||
                 traitType == AvatarTraits::AvatarMenuParameters) {
-                auto& instanceVersionRef = _lastReceivedTraitVersions.getInstanceValueRef(traitType, instanceID);
+                // a new id is taken within the limits for its kind and the rate (security #52)
+                auto& instances = _lastReceivedTraitVersions.getInstanceIDValuePairs(traitType);
+                auto listed = std::find_if(instances.begin(), instances.end(),
+                                           [&instanceID](const auto& pair) { return pair.id == instanceID; });
+                if (listed == instances.end()) {
+                    const auto& limits = traitType == AvatarTraits::AvatarEntity ? avatar_mixer_checks::AVATAR_ENTITY_LIMITS
+                        : traitType == AvatarTraits::Grab ? avatar_mixer_checks::GRAB_LIMITS
+                        : avatar_mixer_checks::MENU_PARAMETERS_LIMITS;
+                    const int live = (int)std::count_if(instances.begin(), instances.end(),
+                                                        [](const auto& pair) { return pair.value > 0; });
+                    QString refusal = avatar_mixer_checks::newInstanceRefusal(live, (int)instances.size(),
+                        traitSize == AvatarTraits::DELETED_TRAIT_SIZE, limits);
+                    if (refusal.isEmpty() && !_newInstanceRate.take(usecTimestampNow())) {
+                        refusal = QString("new ids faster than %1 a second").arg(avatar_mixer_checks::NewInstanceRate::PER_SECOND);
+                    }
+                    if (!refusal.isEmpty()) {
+                        // not listed, not passed on; the app's next version of it is judged again
+                        logRefusedData(traitType == AvatarTraits::AvatarEntity ? "an avatar entity"
+                                       : traitType == AvatarTraits::Grab ? "a grab" : "menu parameters",
+                                       refusal, sendingNode.getUUID());
+                        message.seek(message.getPosition() + std::max<qint64>(traitSize, 0));
+                        continue;
+                    }
+                }
+                auto& instanceVersionRef = listed != instances.end()
+                    ? listed->value : _lastReceivedTraitVersions.getInstanceValueRef(traitType, instanceID);
 
                 if (packetTraitVersion > instanceVersionRef) {
                     if (traitSize == AvatarTraits::DELETED_TRAIT_SIZE) {
@@ -340,11 +387,11 @@ void AvatarMixerClientData::processSetTraitsMessage(ReceivedMessage& message,
 
                     anyTraitsChanged = true;
                 } else {
-                    message.seek(message.getPosition() + traitSize);
+                    // an older version: skipped (a delete has no data: its size, -1, isn't a step back)
+                    message.seek(message.getPosition() + std::max<qint64>(traitSize, 0));
                 }
             } else {
-                qWarning() << "Refusing to process traits packet with instanced trait of unprocessable type from"
-                           << message.getSenderSockAddr();
+                logRefusedData("a traits packet", "an instance of a kind the mixer doesn't take", sendingNode.getUUID());
                 break;
             }
         }
@@ -466,6 +513,19 @@ void AvatarMixerClientData::removeFromRadiusIgnoringSet(const QUuid& other) {
     if (ignoredOtherIter != _radiusIgnoredOthers.cend()) {
         _radiusIgnoredOthers.erase(ignoredOtherIter);
     }
+}
+
+void AvatarMixerClientData::logRefusedData(const QString& what, const QString& reason, const QUuid& sender) {
+    static const quint64 LOG_INTERVAL_USECS = 60 * USECS_PER_SECOND;
+    const quint64 now = usecTimestampNow();
+    const int refused = ++_refusedDataSinceLog;
+    quint64 last = _lastRefusedDataLogUsecs.load();
+    if ((last != 0 && now - last < LOG_INTERVAL_USECS) || !_lastRefusedDataLogUsecs.compare_exchange_strong(last, now)) {
+        return;
+    }
+    _refusedDataSinceLog -= refused;
+    qCWarning(avatars) << "Avatar" << sender << "sent" << what << "the mixer dropped:" << reason
+                       << QString("(%1 dropped from it since the last line)").arg(refused);
 }
 
 void AvatarMixerClientData::resetSentTraitData(Node::LocalID nodeLocalID) {

@@ -10,6 +10,7 @@
 //
 
 #include "ModelsBrowser.h"
+#include <QtCore/QRegularExpression>
 
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -224,7 +225,7 @@ void ModelHandler::update() {
         QUrl url(_model.item(i,0)->data(Qt::UserRole).toString());
         QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
         QNetworkRequest request(url);
-        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // FollowRedirectsAttribute is gone in Qt 6
         request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
         QNetworkReply* reply = networkAccessManager.head(request);
         connect(reply, SIGNAL(finished()), SLOT(downloadFinished()));
@@ -277,7 +278,7 @@ void ModelHandler::queryNewFiles(QString marker) {
     url.setQuery(query);
     QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
     QNetworkRequest request(url);
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // FollowRedirectsAttribute is gone in Qt 6
     request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
     QNetworkReply* reply = networkAccessManager.get(request);
     connect(reply, SIGNAL(finished()), SLOT(downloadFinished()));
@@ -292,7 +293,7 @@ bool ModelHandler::parseXML(QByteArray xmlFile) {
     }
     
     QXmlStreamReader xml(xmlFile);
-    QRegExp rx(_nameFilter);
+    const QRegularExpression rx(QRegularExpression::anchoredPattern(_nameFilter));   // the whole name, as QRegExp::exactMatch did
     bool truncated = false;
     QString lastKey;
     
@@ -323,7 +324,7 @@ bool ModelHandler::parseXML(QByteArray xmlFile) {
                 if(xml.tokenType() == QXmlStreamReader::StartElement && xml.name() == KEY_NAME) {
                     xml.readNext();
                     lastKey = xml.text().toString();
-                    if (rx.exactMatch(xml.text().toString())) {
+                    if (rx.match(xml.text().toString()).hasMatch()) {
                         // Add the found file to the list
                         QList<QStandardItem*> model;
                         model << new QStandardItem(QFileInfo(xml.text().toString()).baseName());

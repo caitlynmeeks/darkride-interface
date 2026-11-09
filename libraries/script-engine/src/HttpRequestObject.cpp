@@ -22,7 +22,7 @@
 #include "ScriptEngine.h"
 
 HttpRequestObject::HttpRequestObject(QObject* parent) : QObject(parent), _timer(this) {
-    _request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+    _request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);   // what FollowRedirectsAttribute meant
     _request.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
     _timer.setSingleShot(true);
     connect(&_timer, &QTimer::timeout, this, &HttpRequestObject::onTimeout);
@@ -142,7 +142,6 @@ void HttpRequestObject::doSend() {
     if (_byHand) {
         // to the address the rule checked and no other (no second lookup of the name); a redirect comes back here,
         // judged and pinned as the request was
-        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, false);
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
         ScriptNetworkPolicy::pin(request, _decision);
     }

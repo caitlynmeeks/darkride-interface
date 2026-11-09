@@ -82,8 +82,8 @@ Windows.Window {
         } else if (presentationMode === Desktop.PresentationMode.NATIVE && nativeWindow) {
             if (interactiveWindowPosition.x === 0 && interactiveWindowPosition.y === 0) {
                 // default position for native window in center of main application window
-                nativeWindow.x = Math.floor(Window.x + (Window.innerWidth / 2) - (interactiveWindowSize.width / 2));
-                nativeWindow.y = Math.floor(Window.y + (Window.innerHeight / 2) - (interactiveWindowSize.height / 2));
+                nativeWindow.x = Math.floor(WindowScriptingInterface.x + (WindowScriptingInterface.innerWidth / 2) - (interactiveWindowSize.width / 2));
+                nativeWindow.y = Math.floor(WindowScriptingInterface.y + (WindowScriptingInterface.innerHeight / 2) - (interactiveWindowSize.height / 2));
             } else {
                 nativeWindow.x = interactiveWindowPosition.x;
                 nativeWindow.y = interactiveWindowPosition.y;

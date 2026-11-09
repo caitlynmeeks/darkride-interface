@@ -4,14 +4,13 @@
 //
 //  The time limit per entity script (WASM-SCRIPTING.md, "The time limit per script"), serverless: two entities
 //  with embedded JavaScript entity scripts, one that runs away in a timer a second and a half in, one that ticks
-//  every half second. On the WebAssembly engine the runaway is stopped at the limit (the log says so) and the
-//  other keeps ticking; on QtScript, which has no limit, the runaway hangs the entities engine and the ticks
-//  stop. This script reads the names back and prints RUNAWAY-TEST lines.
+//  every half second. The runaway is stopped at the limit (the log says so) and the other keeps ticking (on the
+//  QtScript engine before this one, which had no limit, the runaway hung the entities engine and the ticks
+//  stopped). This script reads the names back and prints RUNAWAY-TEST lines.
 //
 //  Run (a 1 s limit, so the test is quick):
-//    DARKRIDE_RUN_JS_ON_WASM=1 DARKRIDE_SCRIPT_CALL_LIMIT_MS=1000 tests-manual/wasm-scripting/run-client.sh runaway-entity 60 \
+//    DARKRIDE_SCRIPT_CALL_LIMIT_MS=1000 tests-manual/wasm-scripting/run-client.sh runaway-entity 60 \
 //        --url file://$PWD/tests-manual/wasm-scripting/world.json --testScript $PWD/tests-manual/wasm-scripting/runaway-entity.js
-//    and the same with DARKRIDE_RUN_JS_ON_WASM=0 for the QtScript engine.
 //
 //  Distributed under the Apache License, Version 2.0.
 //

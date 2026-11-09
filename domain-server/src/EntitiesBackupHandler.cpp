@@ -18,8 +18,8 @@
 #pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
 
-#include <quazip5/quazip.h>
-#include <quazip5/quazipfile.h>
+#include <quazip/quazip.h>
+#include <quazip/quazipfile.h>
 
 #if !defined(__clang__) && defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -74,7 +74,7 @@ std::pair<bool, QString> EntitiesBackupHandler::recoverBackup(const QString& bac
     zipFile.close();
 
     if (zipFile.getZipError() != UNZ_OK) {
-        QString errorStr("Failed to unzip " + ENTITIES_BACKUP_FILENAME + ": " + zipFile.getZipError());
+        QString errorStr("Failed to unzip " + ENTITIES_BACKUP_FILENAME + ": " + QString::number(zipFile.getZipError()));
         qCritical() << errorStr;
         return { false, errorStr };
     }

@@ -303,6 +303,7 @@ ContextMetricSize  Backend::texturePendingGPUTransferMemSize;
 
 ContextMetricSize  Backend::textureResourcePopulatedGPUMemSize;
 ContextMetricSize  Backend::textureResourceIdealGPUMemSize;
+ContextMetricSize  Backend::textureTransferEngineBusy;
 
 int Context::getMaxSamples() {
     return Backend::maxSamples;
@@ -388,6 +389,10 @@ PipelinePointer Context::createMipGenerationPipeline(const ShaderPointer& ps) {
 
 Size Context::getTextureResourceIdealGPUMemSize() {
     return Backend::textureResourceIdealGPUMemSize.getValue();
+}
+
+Size Context::getTextureTransferEngineBusy() {
+    return Backend::textureTransferEngineBusy.getValue();
 }
 
 void Context::pushProgramsToSync(const std::vector<uint32_t>& programIDs, std::function<void()> callback, size_t rate) {

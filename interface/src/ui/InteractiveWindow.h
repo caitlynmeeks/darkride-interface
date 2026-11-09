@@ -16,7 +16,6 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
-#include <QtScript/QScriptValue>
 #include <QQmlEngine>
 #include <ui/QmlWrapper.h>
 
@@ -407,11 +406,6 @@ private:
 };
 
 typedef InteractiveWindow* InteractiveWindowPointer;
-
-QScriptValue interactiveWindowPointerToScriptValue(QScriptEngine* engine, const InteractiveWindowPointer& in);
-void interactiveWindowPointerFromScriptValue(const QScriptValue& object, InteractiveWindowPointer& out);
-
-void registerInteractiveWindowMetaType(QScriptEngine* engine);
 
 Q_DECLARE_METATYPE(InteractiveWindowPointer)
 

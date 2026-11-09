@@ -31,8 +31,6 @@
 #include <QUuid>
 #include <QVariantMap>
 #include <QVector>
-#include <QtScript/QScriptable>
-#include <QtScript/QScriptValueIterator>
 #include <QReadWriteLock>
 
 #include <AvatarConstants.h>
@@ -2004,39 +2002,6 @@ QDataStream& operator>>(QDataStream& in, AttachmentData& attachment);
 Q_DECLARE_METATYPE(AttachmentData)
 Q_DECLARE_METATYPE(QVector<AttachmentData>)
 
-/// Scriptable wrapper for attachments.
-class AttachmentDataObject : public QObject, protected QScriptable {
-    Q_OBJECT
-    Q_PROPERTY(QString modelURL READ getModelURL WRITE setModelURL)
-    Q_PROPERTY(QString jointName READ getJointName WRITE setJointName)
-    Q_PROPERTY(glm::vec3 translation READ getTranslation WRITE setTranslation)
-    Q_PROPERTY(glm::quat rotation READ getRotation WRITE setRotation)
-    Q_PROPERTY(float scale READ getScale WRITE setScale)
-    Q_PROPERTY(bool isSoft READ getIsSoft WRITE setIsSoft)
-
-public:
-
-    Q_INVOKABLE void setModelURL(const QString& modelURL);
-    Q_INVOKABLE QString getModelURL() const;
-
-    Q_INVOKABLE void setJointName(const QString& jointName);
-    Q_INVOKABLE QString getJointName() const;
-
-    Q_INVOKABLE void setTranslation(const glm::vec3& translation);
-    Q_INVOKABLE glm::vec3 getTranslation() const;
-
-    Q_INVOKABLE void setRotation(const glm::quat& rotation);
-    Q_INVOKABLE glm::quat getRotation() const;
-
-    Q_INVOKABLE void setScale(float scale);
-    Q_INVOKABLE float getScale() const;
-
-    Q_INVOKABLE void setIsSoft(bool scale);
-    Q_INVOKABLE bool getIsSoft() const;
-};
-
-void registerAvatarTypes(QScriptEngine* engine);
-
 class RayToAvatarIntersectionResult {
 public:
     bool intersects { false };
@@ -2049,8 +2014,6 @@ public:
     QVariantMap extraInfo;
 };
 Q_DECLARE_METATYPE(RayToAvatarIntersectionResult)
-QScriptValue RayToAvatarIntersectionResultToScriptValue(QScriptEngine* engine, const RayToAvatarIntersectionResult& results);
-void RayToAvatarIntersectionResultFromScriptValue(const QScriptValue& object, RayToAvatarIntersectionResult& results);
 
 // No JSDoc because it's not provided as a type to the script engine.
 class ParabolaToAvatarIntersectionResult {
@@ -2066,9 +2029,6 @@ public:
 };
 
 Q_DECLARE_METATYPE(AvatarEntityMap)
-
-QScriptValue AvatarEntityMapToScriptValue(QScriptEngine* engine, const AvatarEntityMap& value);
-void AvatarEntityMapFromScriptValue(const QScriptValue& object, AvatarEntityMap& value);
 
 // faux joint indexes (-1 means invalid)
 const int NO_JOINT_INDEX = 65535; // -1

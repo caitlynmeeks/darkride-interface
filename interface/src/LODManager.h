@@ -489,7 +489,4 @@ private:
     glm::vec4 _pidOutputs{ 0.0f };
 };
 
-QScriptValue worldDetailQualityToScriptValue(QScriptEngine* engine, const WorldDetailQuality& worldDetailQuality);
-void worldDetailQualityFromScriptValue(const QScriptValue& object, WorldDetailQuality& worldDetailQuality);
-
 #endif // hifi_LODManager_h

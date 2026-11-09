@@ -14,7 +14,7 @@
 
 const QString HifiAudioDeviceInfo::DEFAULT_DEVICE_NAME = "default ";
 
-void HifiAudioDeviceInfo::setDevice(QAudioDeviceInfo devInfo) {
+void HifiAudioDeviceInfo::setDevice(hifi::audio::Device devInfo) {
     _audioDeviceInfo = devInfo;
 }
 
@@ -23,7 +23,7 @@ HifiAudioDeviceInfo& HifiAudioDeviceInfo::operator=(const HifiAudioDeviceInfo& o
     _mode = other.getMode();
     _isDefault = other.isDefault();
     _deviceType = other.getDeviceType();
-    _debugName = other.getDevice().deviceName();
+    _debugName = hifi::audio::deviceName(other.getDevice());
     return *this;
 }
 

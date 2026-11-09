@@ -2,24 +2,18 @@
 # An agent turning its head and eyes (look-at-body.js: Avatar.setHeadLookAt, setEyesLookAt and their releases), seen by
 # a second agent through AvatarList (look-at-watch.js: the joints turned and lookAtPosition), in the wasm sandbox, on
 # either engine, up to 60 s.
-#   tests-manual/wasm-scripting/look-at.sh [wasm|qtscript]
+#   tests-manual/wasm-scripting/look-at.sh
 # Both scripts are served from this checkout on 127.0.0.1:43110 (http-echo.py). Prints the agents' LOOK-AT lines;
 # exits 0 when the watcher's RESULT says PASS. A sandbox that was running before is started again, plain, at the end.
 #
 # Copyright 2026 Darkride.
 # Distributed under the MIT License.
 set -e
-ENGINE=${1:-wasm}
 D=$(cd "$(dirname "$0")" && pwd)
 BUILD=$(cd "$D/../../build" && pwd)
 ROOT=$HOME/tivoli-sandboxes/wasm
 SERVE=http://127.0.0.1:43110/tests-manual/wasm-scripting
 OUT=$D/results/look-at
-case "$ENGINE" in
-    wasm) ON_WASM=1 ;;
-    qtscript) ON_WASM=0 ;;
-    *) echo "usage: look-at.sh [wasm|qtscript]" >&2; exit 2 ;;
-esac
 
 settings() {
     python3 - "$ROOT/domain-config.json" "$1" "$SERVE/look-at-body.js" "$SERVE/look-at-watch.js" <<'PY'
@@ -58,20 +52,20 @@ WAS_RUNNING=0
 [ -f "$ROOT/domain-server.pid" ] && kill -0 "$(cat "$ROOT/domain-server.pid")" 2>/dev/null && WAS_RUNNING=1
 stop_sandbox
 settings on
-DARKRIDE_RUN_JS_ON_WASM=$ON_WASM SANDBOX_ASSIGNMENTS=8 "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102 > /dev/null
+SANDBOX_ASSIGNMENTS=8 "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102 > /dev/null
 LOG="$ROOT/logs/assignment-client.log"
 for i in $(seq 1 60); do
     sleep 1
     # printed lines only: the log also quotes the script's source as it is downloaded
     grep "LOOK-AT RESULT" "$LOG" 2>/dev/null | grep -qv '\\n' && break
 done
-grep -h "LOOK-AT" "$LOG" | grep -v '\\n' | sed 's/.*LOOK-AT /LOOK-AT /' > "$OUT/$ENGINE.txt" || true
-cp "$LOG" "$OUT/assignment-client-$ENGINE.log" 2>/dev/null || true
+grep -h "LOOK-AT" "$LOG" | grep -v '\\n' | sed 's/.*LOOK-AT /LOOK-AT /' > "$OUT/lines.txt" || true
+cp "$LOG" "$OUT/assignment-client.log" 2>/dev/null || true
 stop_sandbox
 settings off
 if [ $WAS_RUNNING = 1 ]; then
     "$HOME/git/tivolicloud/domain-sandbox.sh" wasm "$BUILD" 43102 > /dev/null
 fi
-echo "== $ENGINE:"
-cat "$OUT/$ENGINE.txt"
-grep -qE "RESULT (.* )?PASS" "$OUT/$ENGINE.txt"
+echo "== the lines:"
+cat "$OUT/lines.txt"
+grep -qE "RESULT (.* )?PASS" "$OUT/lines.txt"

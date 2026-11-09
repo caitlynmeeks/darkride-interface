@@ -13,6 +13,7 @@
 
 #include <gpu/Batch.h>
 #include <QJsonDocument>
+#include <QtCore/QScopedPointer>
 #include <QJsonObject>
 #include <QUrl>
 #include <ResourceManager.h>
@@ -260,14 +261,23 @@ void ZoneEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scen
         updateKeySunFromEntity(entity);
     }
 
-    if (ambientLightChanged) {
-        _ambientLightProperties = entity->getAmbientLightProperties();
-        updateAmbientLightFromEntity(entity);
-    }
-
+    // The sky before the ambient light: a zone with no ambient map of its own borrows the sky's, and
+    // updateAmbientLightFromEntity reads the sky's URL from the copy taken here. With the ambient block first, the
+    // renderer's first update (both flags set) read an empty sky URL, setAmbientURL("") returned early and the zone
+    // kept the constructor's built-in sphere: a pale, flat, over-bright world until an ambient or transform edit ran
+    // the block again (Darkside on arrival, 2026-11-08). A new sky is a new ambient map for such a zone, so a sky
+    // change refreshes the ambient light too.
     if (skyboxChanged) {
         _skyboxProperties = entity->getSkyboxProperties();
         updateKeyBackgroundFromEntity(entity);
+        if (entity->getAmbientLightProperties().getAmbientURL().isEmpty()) {
+            ambientLightChanged = true;
+        }
+    }
+
+    if (ambientLightChanged) {
+        _ambientLightProperties = entity->getAmbientLightProperties();
+        updateAmbientLightFromEntity(entity);
     }
 
     if (hazeChanged) {
@@ -602,13 +612,17 @@ void ZoneEntityRenderer::fetchProbeVolume(const QString& url) {
         qCWarning(entitiesrenderer) << "Probe volume" << url << "cannot be fetched: no request for that kind of URL";
         return;
     }
-    connect(_probeVolumeRequest, &ResourceRequest::finished, this, [this, url] {
-        ResourceRequest* request = _probeVolumeRequest;
-        _probeVolumeRequest = nullptr;
-        if (!request) {
-            return;
+    // this fetch's own number and request: the handler answers to both
+    const uint64_t serial = ++_probeVolumeFetchSerial;
+    ResourceRequest* request = _probeVolumeRequest;
+    connect(_probeVolumeRequest, &ResourceRequest::finished, this, [this, request, serial, url] {
+        if (_probeVolumeRequest != request || _probeVolumeFetchSerial != serial) {
+            return;   // not the current fetch: nothing of it is touched
         }
-        request->deleteLater();
+        _probeVolumeRequest = nullptr;
+        // the request lives on the Resource Manager's thread: it is deleted only after the last read below, on every
+        // way out of this handler
+        QScopedPointer<ResourceRequest, QScopedPointerDeleteLater> holder(request);
         if (url != _probeVolumeURL) {
             return;
         }

@@ -7,7 +7,8 @@
 //  from the entity script server for Server Script ("Running", "Starting…", "Couldn't load: …", "Stopped with an
 //  error: …"), with Reload: Script's reloads it for everyone in the world (the entity's scriptTimestamp, as the old
 //  Create app did; the entity's server script starts again too), Server Script's asks the server to load it again. The status is asked for every 2 s, only while
-//  the row is on screen with a link in it.
+//  the row is on screen with a link in it. Edit beside the link opens one entity's script in the Code panel (Make v1, Qt 6); New in its place, while the field is empty,
+//  starts one there (New Script, 11-08).
 //
 //  Copyright 2026 Darkride.
 //
@@ -24,6 +25,7 @@
 #include <QtCore/QMap>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
+#include <QtCore/QVariantMap>
 
 #include "PropertyEditors.h"
 
@@ -53,6 +55,10 @@ public:
     // scripted test
     QString statusText() const;
     bool pressReload();
+    // Edit or New beside the link, as shown ({ shown, text, enabled, tip }), and pressed as a click would (false when
+    // it isn't there to press, or is off)
+    QVariantMap editButton() const;
+    bool pressEdit();
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -73,12 +79,15 @@ private:
     void showInlineNote(const QString& text);   // a written-in script too long to reach visitors
     void reload();
     void updatePolling();
+    void showEdit(bool now = true);   // now: New's rights and world checked at once, not at most once a second
 
     TextEditor* _url { nullptr };
     QWidget* _statusRow { nullptr };
     QLabel* _status { nullptr };
     QLabel* _inlineNote { nullptr };
     QPushButton* _reload { nullptr };
+    QPushButton* _edit { nullptr };   // the script in the Code panel: Edit, or New while the field is empty
+    bool _mixed { false };
     QTimer _poll;
     QList<QUuid> _ids;
     QMap<QUuid, Answer> _answers;
@@ -86,6 +95,7 @@ private:
     QMap<int32_t, QPair<int, QUuid>> _questions;   // by callback id: the generation and the entity asked about
     int32_t _nextCallback { 1 };
     qint64 _askedAt { 0 };
+    qint64 _newCheckedAt { 0 };
     QString _link;
     bool _hasLink { false };
     std::shared_ptr<CallbackTarget> _target;

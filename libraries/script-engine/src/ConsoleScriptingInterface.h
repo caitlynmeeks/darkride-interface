@@ -24,7 +24,6 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QList>
 #include <QtCore/QHash>
-#include <QtScript/QScriptable>
 
 /**jsdoc
  * The <code>console</code> API provides program logging facilities.
@@ -37,18 +36,21 @@
  * @hifi-server-entity
  * @hifi-assignment-client
  */
-// Scriptable interface of "console" object. Used exclusively in the JavaScript API
-class ConsoleScriptingInterface : public QObject, protected QScriptable {
+// The "console" object a script sees. A JavaScript script gets the JavaScript guest's own console (tools/wasm-js/
+// runtime.js), which logs through the engine and keeps its groups and timers in the script; the methods documented
+// below without a C++ member are its. A module reaches this object by reflection: the timers and the clear.
+class ConsoleScriptingInterface : public QObject {
     Q_OBJECT
 public:
+    /// Made by its script engine as a child (what the messages go through).
+    explicit ConsoleScriptingInterface(QObject* parent = nullptr) : QObject(parent) {}
 
     /**jsdoc
-     * Logs an "INFO" message to the program log and triggers {@link Script.infoMessage}. 
+     * Logs an "INFO" message to the program log and triggers {@link Script.infoMessage}.
      * The message logged is "INFO -" followed by the message values separated by spaces.
      * @function console.info
      * @param {...*} [message] - The message values to log.
      */
-    static QScriptValue info(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Logs a message to the program log and triggers {@link Script.printedMessage}.
@@ -60,13 +62,12 @@ public:
      * Script.printedMessage.connect(function (message, scriptName) {
      *     console.info("Console.log message:", "\"" + message + "\"", "in", "[" + scriptName + "]");
      * });
-     * 
+     *
      * console.log("string", 7, true);
      *
      * // string 7 true
      * // INFO - Console.log message: "string 7 true" in [console.js]
      */
-    static QScriptValue log(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Logs a message to the program log and triggers {@link Script.printedMessage}.
@@ -74,7 +75,6 @@ public:
      * @function console.debug
      * @param {...*} [message] - The message values to log.
      */
-    static QScriptValue debug(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Logs a "WARNING" message to the program log and triggers {@link Script.warningMessage}.
@@ -82,7 +82,6 @@ public:
      * @function console.warn
      * @param {...*} [message] - The message values to log.
      */
-    static QScriptValue warn(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Logs an "ERROR" message to the program log and triggers {@link Script.errorMessage}.
@@ -90,7 +89,6 @@ public:
      * @function console.error
      * @param {...*} [message] - The message values to log.
      */
-    static QScriptValue error(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * A synonym of {@link console.error}.
@@ -99,7 +97,6 @@ public:
      * @function console.exception
      * @param {...*} [message] - The message values to log.
      */
-    static QScriptValue exception(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Logs an "ERROR" message to the program log and triggers {@link Script.errorMessage}, if a test condition fails.
@@ -112,7 +109,7 @@ public:
      * Script.errorMessage.connect(function (message, scriptName) {
      *     console.info("Error message logged:", "\"" + message + "\"", "in", "[" + scriptName + "]");
      * });
-     * 
+     *
      * console.assert(5 === 5, "5 equals 5.", "This assertion will succeed.");  // No log output.
      * console.assert(5 > 6, "5 is not greater than 6.", "This assertion will fail.");  // Log output is generated.
      * console.info("Script continues running.");
@@ -121,11 +118,9 @@ public:
      * // INFO - Error message logged: "Assertion failed :  5 is not greater than 6. This assertion will fail." in [console.js]
      * // INFO - Script continues running.
      */
-    // Note: Is registered in the script engine as "assert"
-    static QScriptValue assertion(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
-     * Logs a message to the program log and triggers {@link Script.printedMessage}, then starts indenting subsequent 
+     * Logs a message to the program log and triggers {@link Script.printedMessage}, then starts indenting subsequent
      * {@link console.log} messages until a {@link console.groupEnd}. Groups may be nested.
      * @function console.group
      * @param {*} message - The message value to log.
@@ -150,7 +145,6 @@ public:
      * //   Sentence 5
      * //Sentence 6
      */
-    static QScriptValue group(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Has the same behavior as {@link console.group}.
@@ -159,18 +153,16 @@ public:
      * @function console.groupCollapsed
      * @param {*} message - The message value to log.
      */
-    static QScriptValue groupCollapsed(QScriptContext* context, QScriptEngine* engine);
 
     /**jsdoc
      * Finishes a group of indented {@link console.log} messages.
      * @function console.groupEnd
      */
-    static QScriptValue groupEnd(QScriptContext* context, QScriptEngine* engine);
 
 public slots:
-    
+
     /**jsdoc
-     * Starts a timer, logs a message to the program log, and triggers {@link Script.printedMessage}. The message logged has 
+     * Starts a timer, logs a message to the program log, and triggers {@link Script.printedMessage}. The message logged has
      * the timer name and "Timer started".
      * @function console.time
      * @param {string} name - The name of the timer.
@@ -183,7 +175,7 @@ public slots:
      *         }
      *     }
      * }
-     * 
+     *
      * console.time("MyTimer");
      * sleep(1000);  // Do some processing.
      * console.timeEnd("MyTimer");
@@ -193,7 +185,7 @@ public slots:
     void time(QString labelName);
 
     /**jsdoc
-     * Finishes a timer, logs a message to the program log, and triggers {@link Script.printedMessage}. The message logged has 
+     * Finishes a timer, logs a message to the program log, and triggers {@link Script.printedMessage}. The message logged has
      * the timer name and the number of milliseconds since the timer was started.
      * @function console.timeEnd
      * @param {string} name - The name of the timer.
@@ -212,11 +204,8 @@ public slots:
      */
     void clear();
 
-private:    
+private:
     QHash<QString, QDateTime> _timerDetails;
-    static QList<QString> _groupDetails;
-    static void logGroupMessage(QString message, QScriptEngine* engine);
-    static QString appendArguments(QScriptContext* context);
 };
 
 #endif // hifi_ConsoleScriptingInterface_h

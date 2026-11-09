@@ -60,13 +60,21 @@ bool isOwnEnum(const QMetaMethod& method, QByteArray name) {
     return meta->indexOfEnumerator(name.constData()) != -1;
 }
 
+// An enumeration Qt knows only as a metatype, with no meta-object behind it (no Q_ENUM, as PlainLevels::Level in the
+// tests): a script can't be given its keys and the API has never carried it. Qt 5 leaves such a type unresolved;
+// Qt 6 registers every type a method mentions, so it is set aside here, the same on both.
+bool isNamelessEnum(int type) {
+    return type != QMetaType::UnknownType && (QMetaType::typeFlags(type) & QMetaType::IsEnumeration) &&
+           !QMetaType::metaObjectForType(type);
+}
+
 // A parameter's type id. moc leaves an enum declared with its unqualified name ("Mode") unresolved; the
 // registered name is the qualified one ("Probe::Mode"), so that is tried with the method's class scope. A
 // pointer to a const object ("const AudioEffectOptions*") is registered, if at all, without the const.
 int parameterTypeOf(const QMetaMethod& method, int index) {
     int type = method.parameterType(index);
     if (type != QMetaType::UnknownType) {
-        return type;
+        return isNamelessEnum(type) ? QMetaType::UnknownType : type;
     }
     QByteArray name = method.parameterTypes().at(index);
     if (name.startsWith("const ") && name.endsWith('*')) {
@@ -87,7 +95,7 @@ int parameterTypeOf(const QMetaMethod& method, int index) {
 int returnTypeOf(const QMetaMethod& method) {
     int type = method.returnType();
     if (type != QMetaType::UnknownType) {
-        return type;
+        return isNamelessEnum(type) ? QMetaType::UnknownType : type;
     }
     QByteArray name = method.typeName();
     if (!name.contains("::") && method.enclosingMetaObject()) {
@@ -718,10 +726,6 @@ bool isFloatingType(int type) {
     return type == QMetaType::Double || type == QMetaType::Float;
 }
 
-bool isScriptValueType(int type) {
-    return qstrcmp(QMetaType::typeName(type), "QScriptValue") == 0;
-}
-
 const int SURPLUS_ARGUMENT_COST = 3;  // an argument an overload ignores costs as much as the worst coercion
 
 // How far a value is from a parameter's type: 0 for the type itself or its family, more for a coercion.
@@ -804,13 +808,6 @@ bool HostInterface::convertArguments(const QMetaMethod& method, const QVector<in
                 .arg(QString::fromUtf8(method.methodSignature())).arg(i + 1).arg(QString::fromUtf8(method.parameterTypes().at(i)));
             return false;
         }
-        if (isScriptValueType(type)) {
-            // only the QtScript engine has such values: the method is the QtScript engine's (its overload or twin
-            // for this engine, when it has one, is a candidate of its own)
-            error = QString("%1 takes a QtScript value as parameter %2, which a module cannot give")
-                .arg(QString::fromUtf8(method.methodSignature())).arg(i + 1);
-            return false;
-        }
         // scored by the type the argument has as a plain value, as QtScript scores its candidates; converted from
         // the guest's CBOR straight to the parameter's type
         const int from = _codec.genericTypeOf(argument);
@@ -835,11 +832,16 @@ QVariant HostInterface::invoke(QObject* object, int methodIndex, const QVector<i
     const QMetaObject* meta = object->metaObject();
     QMetaMethod method = meta->method(methodIndex);
     const int count = types.size();
+    // each argument under the method's own spelling of its type, as the return value below: QMetaMethod::invoke
+    // compares that name with the method's declaration, and the metatype's own name differs from it on Qt 6 ("Mode"
+    // declared, "Probe::Mode" registered; "glm::vec3" declared, "glm::vec<3,float>" registered)
+    const QList<QByteArray> parameterTypeNames = method.parameterTypes();
     QGenericArgument generic[MAX_INVOKE_ARGUMENTS];
     for (int i = 0; i < count; ++i) {
         const int type = types[i];
+        const char* name = i < parameterTypeNames.size() ? parameterTypeNames.at(i).constData() : QMetaType::typeName(type);
         // QGenericArgument keeps the name pointer and the data pointer: both outlive the invoke below
-        generic[i] = QGenericArgument(QMetaType::typeName(type), type == QMetaType::QVariant ? &converted[i] : converted[i].constData());
+        generic[i] = QGenericArgument(name, type == QMetaType::QVariant ? &converted[i] : converted[i].constData());
     }
 
     const int returnType = returnTypeOf(method);
@@ -859,7 +861,7 @@ QVariant HostInterface::invoke(QObject* object, int methodIndex, const QVector<i
         invoked = method.invoke(object, Qt::DirectConnection, returnArgument, generic[0], generic[1], generic[2], generic[3],
                                 generic[4], generic[5], generic[6], generic[7], generic[8], generic[9]);
         if (invoked) {
-            result = returnType == QMetaType::QVariant ? *static_cast<QVariant*>(buffer) : QVariant(returnType, buffer);
+            result = returnType == QMetaType::QVariant ? *static_cast<QVariant*>(buffer) : variantOfType(returnType, buffer);
         }
         QMetaType::destroy(returnType, buffer);
     }

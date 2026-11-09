@@ -28,8 +28,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <QRegularExpression>
+#include <RegexCompat.h>
 
-#include <quazip5/quazip.h>
+#include <quazip/quazip.h>
 
 #include <NumericalConstants.h>
 #include <PerfStat.h>
@@ -81,8 +83,8 @@ void DomainContentBackupManager::parseBackupRules(const QVariantList& backupRule
         int count = map["maxBackupVersions"].toInt();
         auto name = map["Name"].toString();
         auto format = name.toLower();
-        QRegExp matchDisallowedCharacters { "[^a-zA-Z0-9\\-_]+" };
-        format.replace(matchDisallowedCharacters, "_");
+        static const QRegularExpression DISALLOWED_CHARACTERS = regex_compat::search("[^a-zA-Z0-9\\-_]+");
+        format.replace(DISALLOWED_CHARACTERS, "_");
 
         qCDebug(domain_server) << "    Name:" << name;
         qCDebug(domain_server) << "        format:" << format;
@@ -205,7 +207,8 @@ void DomainContentBackupManager::aboutToFinish() {
 bool DomainContentBackupManager::getMostRecentBackup(const QString& format,
                                                      QString& mostRecentBackupFileName,
                                                      QDateTime& mostRecentBackupTime) {
-    QRegExp formatRE { AUTOMATIC_BACKUP_PREFIX + QRegExp::escape(format) + "\\-(" + DATETIME_FORMAT_RE + ")" + "\\.zip" };
+    const QRegularExpression formatRE =
+        regex_compat::exact(AUTOMATIC_BACKUP_PREFIX + QRegularExpression::escape(format) + "\\-(" + DATETIME_FORMAT_RE + ")" + "\\.zip");
 
     QStringList filters;
     filters << AUTOMATIC_BACKUP_PREFIX + format + "*.zip";
@@ -220,8 +223,9 @@ bool DomainContentBackupManager::getMostRecentBackup(const QString& format,
         dirIterator.next();
         auto fileName = dirIterator.fileInfo().fileName();
 
-        if (formatRE.exactMatch(fileName)) {
-            auto datetime = formatRE.cap(1);
+        const QRegularExpressionMatch formatMatch = formatRE.match(fileName);
+        if (formatMatch.hasMatch()) {
+            auto datetime = formatMatch.captured(1);
             auto createdAt = QDateTime::fromString(datetime, DATETIME_FORMAT);
 
             if (!createdAt.isValid()) {
@@ -411,19 +415,20 @@ std::vector<BackupItemInfo> DomainContentBackupManager::getAllBackups() {
     auto matchingFiles =
             backupDir.entryInfoList({ AUTOMATIC_BACKUP_PREFIX + "*.zip", MANUAL_BACKUP_PREFIX + "*.zip" },
                                     QDir::Files | QDir::NoSymLinks, QDir::Name);
-    QString prefixFormat = "(" + QRegExp::escape(AUTOMATIC_BACKUP_PREFIX) + "|" + QRegExp::escape(MANUAL_BACKUP_PREFIX) + ")";
+    QString prefixFormat = "(" + QRegularExpression::escape(AUTOMATIC_BACKUP_PREFIX) + "|" + QRegularExpression::escape(MANUAL_BACKUP_PREFIX) + ")";
     QString nameFormat = "(.+)";
     QString dateTimeFormat = "(" + DATETIME_FORMAT_RE + ")";
-    QRegExp backupNameFormat { prefixFormat + nameFormat + "-" + dateTimeFormat + "\\.zip" };
+    const QRegularExpression backupNameFormat = regex_compat::exact(prefixFormat + nameFormat + "-" + dateTimeFormat + "\\.zip");
 
     std::vector<BackupItemInfo> backups;
 
     for (const auto& fileInfo : matchingFiles) {
         auto fileName = fileInfo.fileName();
-        if (backupNameFormat.exactMatch(fileName)) {
-            auto type = backupNameFormat.cap(1);
-            auto name = backupNameFormat.cap(2);
-            auto dateTime = backupNameFormat.cap(3);
+        const QRegularExpressionMatch backupName = backupNameFormat.match(fileName);
+        if (backupName.hasMatch()) {
+            auto type = backupName.captured(1);
+            auto name = backupName.captured(2);
+            auto dateTime = backupName.captured(3);
             auto createdAt = QDateTime::fromString(dateTime, DATETIME_FORMAT);
             if (!createdAt.isValid()) {
                 qDebug().nospace() << "Skipping backup (" << fileName << ") with invalid timestamp: " << dateTime;
@@ -497,18 +502,19 @@ void DomainContentBackupManager::getAllBackupsAndStatus(MiniPromise::Promise pro
     auto creationTime = _settingsManager.valueForKeyPath(CONTENT_SETTINGS_INSTALLED_CONTENT_CREATION_TIME).toULongLong();
 
     if (name.isEmpty() || creationTime == 0) {
-        QString prefixFormat = "(" + QRegExp::escape(AUTOMATIC_BACKUP_PREFIX) + "|" + QRegExp::escape(MANUAL_BACKUP_PREFIX) + ")";
+        QString prefixFormat = "(" + QRegularExpression::escape(AUTOMATIC_BACKUP_PREFIX) + "|" + QRegularExpression::escape(MANUAL_BACKUP_PREFIX) + ")";
         QString nameFormat = "(.+)";
         QString dateTimeFormat = "(" + DATETIME_FORMAT_RE + ")";
-        QRegExp backupNameFormat { prefixFormat + nameFormat + "-" + dateTimeFormat + "\\.zip" };
+        const QRegularExpression backupNameFormat = regex_compat::exact(prefixFormat + nameFormat + "-" + dateTimeFormat + "\\.zip");
 
 
-        if (backupNameFormat.exactMatch(filename)) {
+        const QRegularExpressionMatch backupName = backupNameFormat.match(filename);
+        if (backupName.hasMatch()) {
             if (name.isEmpty()) {
-                name = backupNameFormat.cap(2);
+                name = backupName.captured(2);
             }
             if (creationTime == 0) {
-                auto dateTime = backupNameFormat.cap(3);
+                auto dateTime = backupName.captured(3);
                 creationTime = QDateTime::fromString(dateTime, DATETIME_FORMAT).toMSecsSinceEpoch();
             }
         }
@@ -704,10 +710,10 @@ void DomainContentBackupManager::createManualBackup(MiniPromise::Promise promise
     }
 
 
-    QRegExp nameRE { MANUAL_BACKUP_NAME_RE };
     bool success;
 
-    if (!nameRE.exactMatch(name)) {
+    static const QRegularExpression MANUAL_BACKUP_NAME_REGEX = regex_compat::exact(MANUAL_BACKUP_NAME_RE);
+    if (!MANUAL_BACKUP_NAME_REGEX.match(name).hasMatch()) {
         qDebug() << "Cannot create manual backup with invalid name: " << name;
         success = false;
     } else {

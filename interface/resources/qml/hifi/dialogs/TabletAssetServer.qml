@@ -8,10 +8,9 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 
-import QtQuick 2.5
-import QtQuick.Controls 1.4
-import QtQuick.Controls.Styles 1.4
-import QtQuick.Dialogs 1.2 as OriginalDialogs
+import QtQuick 2.14
+import QtQuick.Controls 2.3 as QQC2
+import "../../js/StandardDialogs.js" as OriginalDialogs  // StandardButton and StandardIcon (Dialogs 1 needs Controls 1)
 import Qt.labs.settings 1.0
 
 import stylesUit 1.0
@@ -329,7 +328,7 @@ Rectangle {
         if (!url) {
             return;
         }
-        Window.copyToClipboard(url);
+        WindowScriptingInterface.copyToClipboard(url);
     }
 
     function renameEl(index, data) {
@@ -587,7 +586,7 @@ Rectangle {
             anchors.right: parent.right
 
             treeModel: assetProxyModel
-            selectionMode: SelectionMode.ExtendedSelection
+            selectionMode: HifiControls.Tree.ExtendedSelection
             headerVisible: true
             sortIndicatorVisible: true
 
@@ -595,10 +594,10 @@ Rectangle {
 
             modifyEl: renameEl
 
-            TableViewColumn {
+            HifiControls.TableViewColumn {
                 id: nameColumn
                 title: "Name:"
-                role: "name"
+                role: "display"    // AssetMappingModel's "name" is Qt::DisplayRole
                 width: treeView.width;
             }
 
@@ -687,7 +686,7 @@ Rectangle {
                 Component {
                     id: textFieldComponent
 
-                    TextField {
+                    QQC2.TextField {
                         id: textField
                         readOnly: !activeFocus
 
@@ -696,31 +695,32 @@ Rectangle {
                         font.family: "Roboto Medium"
                         font.pixelSize: hifi.fontSizes.textFieldInput
                         height: hifi.dimensions.tableRowHeight
+                        topPadding: 0
+                        bottomPadding: 0
+                        verticalAlignment: TextInput.AlignVCenter
 
-                        style: TextFieldStyle {
-                            textColor: readOnly
-                                        ? hifi.colors.black
-                                        : (treeView.isLightColorScheme ?  hifi.colors.black :  hifi.colors.white)
-                            background: Rectangle {
-                                visible: !readOnly
-                                color: treeView.isLightColorScheme ? hifi.colors.white : hifi.colors.black
-                                border.color: hifi.colors.primaryHighlight
-                                border.width: 1
-                            }
-                            selectedTextColor: hifi.colors.black
-                            selectionColor: hifi.colors.primaryHighlight
-                            padding.left: readOnly ? 0 : hifi.dimensions.textPadding
-                            padding.right: readOnly ? 0 : hifi.dimensions.textPadding
+                        color: readOnly
+                               ? hifi.colors.black
+                               : (treeView.isLightColorScheme ?  hifi.colors.black :  hifi.colors.white)
+                        background: Rectangle {
+                            visible: !textField.readOnly
+                            color: treeView.isLightColorScheme ? hifi.colors.white : hifi.colors.black
+                            border.color: hifi.colors.primaryHighlight
+                            border.width: 1
                         }
+                        selectedTextColor: hifi.colors.black
+                        selectionColor: hifi.colors.primaryHighlight
+                        leftPadding: readOnly ? 0 : hifi.dimensions.textPadding
+                        rightPadding: readOnly ? 0 : hifi.dimensions.textPadding
 
-                        validator: RegExpValidator {
-                            regExp: /[^/]+/
+                        validator: RegularExpressionValidator {
+                            regularExpression: /[^/]+/
                         }
 
                         Keys.onPressed: {
                             if (event.key == Qt.Key_Escape) {
                                 text = styleData.value;
-                                unfocusHelper.forceActiveFocus();
+                                treeView.forceActiveFocus();
                                 event.accepted = true;
                             }
                         }
@@ -729,7 +729,7 @@ Rectangle {
                                 if (!treeView.modifyEl(treeView.selection.currentIndex, text)) {
                                     text = styleData.value;
                                 }
-                                unfocusHelper.forceActiveFocus();
+                                treeView.forceActiveFocus();
                             }
                         }
 
@@ -799,12 +799,12 @@ Rectangle {
                 }
             }
 
-            Menu {
+            QQC2.Menu {
                 id: contextMenu
                 title: "Edit"
                 property var url: ""
 
-                MenuItem {
+                QQC2.MenuItem {
                     text: "Copy URL"
                     enabled: (selectedItemCount == 1)
                     onTriggered: {
@@ -812,7 +812,7 @@ Rectangle {
                     }
                 }
 
-                MenuItem {
+                QQC2.MenuItem {
                     text: "Rename"
                     enabled: (selectedItemCount == 1)
                     onTriggered: {
@@ -820,7 +820,7 @@ Rectangle {
                     }
                 }
 
-                MenuItem {
+                QQC2.MenuItem {
                     text: "Delete"
                     enabled: (selectedItemCount > 0)
                     onTriggered: {

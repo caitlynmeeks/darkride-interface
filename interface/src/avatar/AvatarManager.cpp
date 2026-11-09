@@ -13,8 +13,6 @@
 
 #include <string>
 
-#include <QScriptEngine>
-
 #include "AvatarLogging.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -763,15 +761,6 @@ AvatarSharedPointer AvatarManager::getAvatarBySessionID(const QUuid& sessionID) 
     return findAvatar(sessionID);
 }
 
-RayToAvatarIntersectionResult AvatarManager::findRayIntersection(const PickRay& ray,
-                                                                 const QScriptValue& avatarIdsToInclude,
-                                                                 const QScriptValue& avatarIdsToDiscard,
-                                                                 bool pickAgainstMesh) {
-    QVector<EntityItemID> avatarsToInclude = qVectorEntityItemIDFromScriptValue(avatarIdsToInclude);
-    QVector<EntityItemID> avatarsToDiscard = qVectorEntityItemIDFromScriptValue(avatarIdsToDiscard);
-    return findRayIntersectionVector(ray, avatarsToInclude, avatarsToDiscard, pickAgainstMesh);
-}
-
 RayToAvatarIntersectionResult AvatarManager::findRayIntersectionVector(const PickRay& ray,
                                                                        const QVector<EntityItemID>& avatarsToInclude,
                                                                        const QVector<EntityItemID>& avatarsToDiscard,
@@ -1003,13 +992,6 @@ float AvatarManager::getAvatarSortCoefficient(const QString& name) {
         return AvatarData::_avatarSortCoefficientAge;
     }
     return 0.0f;
-}
-
-// HACK
-void AvatarManager::setAvatarSortCoefficient(const QString& name, const QScriptValue& value) {
-    if (value.isNumber()) {
-        setAvatarSortCoefficientValue(name, (float)value.toNumber());
-    }
 }
 
 void AvatarManager::setAvatarSortCoefficientValue(const QString& name, float numericalValue) {

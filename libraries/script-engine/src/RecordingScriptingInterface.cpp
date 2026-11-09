@@ -11,7 +11,6 @@
 #include <QStandardPaths>
 #include <QtCore/QThread>
 #include <QtCore/QUrl>
-#include <QtScript/QScriptValue>
 #include <QtWidgets/QFileDialog>
 
 #include <shared/QtHelpers.h>
@@ -52,64 +51,6 @@ float RecordingScriptingInterface::playerElapsed() const {
 
 float RecordingScriptingInterface::playerLength() const {
     return _player->length();
-}
-
-void RecordingScriptingInterface::playClip(NetworkClipLoaderPointer clipLoader, const QString& url, QScriptValue callback) {
-    _player->queueClip(clipLoader->getClip());
-
-    if (callback.isFunction()) {
-        QScriptValueList args { true, url };
-        callback.call(QScriptValue(), args);
-    }
-}
-
-void RecordingScriptingInterface::loadRecording(const QString& url, QScriptValue callback) {
-    if (QThread::currentThread() != thread()) {
-        BLOCKING_INVOKE_METHOD(this, "loadRecording", Q_ARG(const QString&, url), Q_ARG(QScriptValue, callback));
-        return;
-    }
-
-    auto clipLoader = DependencyManager::get<recording::ClipCache>()->getClipLoader(url);
-
-    if (clipLoader->isLoaded()) {
-        qCDebug(scriptengine) << "Recording already loaded from" << url;
-        playClip(clipLoader, url, callback);
-        return;
-    }
-
-    // hold a strong pointer to the loading clip so that it has a chance to load
-    _clipLoaders.insert(clipLoader);
-
-    auto weakClipLoader = clipLoader.toWeakRef();
-
-    // when clip loaded, call the callback with the URL and success boolean
-    connect(clipLoader.data(), &recording::NetworkClipLoader::clipLoaded, callback.engine(),
-            [this, weakClipLoader, url, callback]() mutable {
-
-        if (auto clipLoader = weakClipLoader.toStrongRef()) {
-            qCDebug(scriptengine) << "Loaded recording from" << url;
-
-            playClip(clipLoader, url, callback);
-
-            // drop our strong pointer to this clip so it is cleaned up
-            _clipLoaders.remove(clipLoader);
-        }
-    });
-
-    // when clip load fails, call the callback with the URL and failure boolean
-    connect(clipLoader.data(), &recording::NetworkClipLoader::failed, callback.engine(), [this, weakClipLoader, url, callback](QNetworkReply::NetworkError error) mutable {
-        qCDebug(scriptengine) << "Failed to load recording from\"" << url << '"';
-
-        if (callback.isFunction()) {
-            QScriptValueList args { false, url };
-            callback.call(QScriptValue(), args);
-        }
-
-        if (auto clipLoader = weakClipLoader.toStrongRef()) {
-            // drop out strong pointer to this clip so it is cleaned up
-            _clipLoaders.remove(clipLoader);
-        }
-    });
 }
 
 void RecordingScriptingInterface::loadRecording(const QString& url, const ScriptCallback& callback) {
@@ -288,50 +229,6 @@ void RecordingScriptingInterface::saveRecording(const QString& filename) {
     recording::Clip::toFile(filename, _lastClip);
 }
 
-bool RecordingScriptingInterface::saveRecordingToAsset(QScriptValue getClipAtpUrl) {
-    if (!getClipAtpUrl.isFunction()) {
-        qCWarning(scriptengine) << "The argument is not a function.";
-        return false;
-    }
-
-    if (QThread::currentThread() != thread()) {
-        bool result;
-        BLOCKING_INVOKE_METHOD(this, "saveRecordingToAsset",
-            Q_RETURN_ARG(bool, result),
-            Q_ARG(QScriptValue, getClipAtpUrl));
-        return result;
-    }
-
-    if (!_lastClip) {
-        qWarning() << "There is no recording to save";
-        return false;
-    }
-
-    if (auto upload = DependencyManager::get<AssetClient>()->createUpload(recording::Clip::toBuffer(_lastClip))) {
-        QObject::connect(upload, &AssetUpload::finished,
-                         getClipAtpUrl.engine(), [=](AssetUpload* upload, const QString& hash) mutable {
-            QString clip_atp_url = "";
-
-            if (upload->getError() == AssetUpload::NoError) {
-
-                clip_atp_url = QString("%1:%2").arg(URL_SCHEME_ATP, hash);
-                upload->deleteLater();
-            } else {
-                qCWarning(scriptengine) << "Error during the Asset upload.";
-            }
-
-            QScriptValueList args;
-            args << clip_atp_url;
-            getClipAtpUrl.call(QScriptValue(), args);
-        });
-        upload->start();
-        return true;
-    }
-
-    qCWarning(scriptengine) << "Saving on asset failed.";
-    return false;
-}
-
 bool RecordingScriptingInterface::saveRecordingToAsset(const ScriptCallback& getClipAtpUrl) {
     if (!getClipAtpUrl.isValid()) {
         qCWarning(scriptengine) << "The argument is not a function.";
@@ -356,10 +253,11 @@ bool RecordingScriptingInterface::saveRecordingToAsset(const ScriptCallback& get
             QString clip_atp_url = "";
             if (upload->getError() == AssetUpload::NoError) {
                 clip_atp_url = QString("%1:%2").arg(URL_SCHEME_ATP, hash);
-                upload->deleteLater();
             } else {
                 qCWarning(scriptengine) << "Error during the Asset upload.";
             }
+            // the upload is done with either way (a failed one was never freed before)
+            upload->deleteLater();
             getClipAtpUrl.post({ clip_atp_url });
         });
         upload->start();

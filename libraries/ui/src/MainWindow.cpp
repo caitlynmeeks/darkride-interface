@@ -26,6 +26,7 @@
 #include <QMimeData>
 #include <QtGui/QWindow>
 #include <QtCore/QDebug>
+#include <QtCore/QTimer>
 
 #include "ui/Logging.h"
 #include "DockWidget.h"
@@ -108,6 +109,51 @@ void MainWindow::checkStartGeometry() {
         resize(_startGeometry.size());
         move(_startGeometry.topLeft());
     }
+    fitOnScreen("after the start");
+}
+
+// A first start sizes the window's INNER area to the whole usable area (restoreGeometry), so a normal window's title
+// bar pushed its bottom under Windows' taskbar (or the Dock), and a quit saved that size for every later start
+// (windowz 11-08: 39 px under the taskbar at 125 %, the side edges off the screen). Moved in, and made smaller only
+// where it can't fit; maximised and full-screen windows stay the system's
+void MainWindow::fitOnScreen(const char* when) {
+    if (windowState() != Qt::WindowNoState || !isVisible()) {
+        return;
+    }
+    QScreen* screen = windowHandle() ? windowHandle()->screen() : nullptr;
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (!screen) {
+        return;
+    }
+    const QRect available = screen->availableGeometry();
+    const QRect inner = geometry();   // a top-level's geometry is its inner area, without the frame
+    const QRect frame = frameGeometry();
+    // room for the inner area: the usable area less the title bar and the frame's other edges
+    QMargins edges(std::max(0, inner.left() - frame.left()), std::max(0, inner.top() - frame.top()),
+                   std::max(0, frame.right() - inner.right()), std::max(0, frame.bottom() - inner.bottom()));
+#if defined(Q_OS_WIN)
+    // Windows draws a thin border round a normal window (1-2 px) that Qt counts in no frame margin: kept on the
+    // screen too (windowz 11-08: 1 px off each side and 2 px under the taskbar without this)
+    const int VISIBLE_BORDER = 2;
+    edges = QMargins(std::max(edges.left(), VISIBLE_BORDER), edges.top(), std::max(edges.right(), VISIBLE_BORDER),
+                     std::max(edges.bottom(), VISIBLE_BORDER));
+#endif
+    const QRect room = available.marginsRemoved(edges);
+    if (room.contains(inner)) {
+        return;   // the window, its frame and borders all on the usable area
+    }
+    if (room.width() < MIN_START_SIZE.width() || room.height() < MIN_START_SIZE.height()) {
+        return;   // a screen too small to hold a window of the smallest size: left as it is
+    }
+    const QSize size = inner.size().boundedTo(room.size());
+    const QPoint topLeft(std::clamp(inner.left(), room.left(), room.right() + 1 - size.width()),
+                         std::clamp(inner.top(), room.top(), room.bottom() + 1 - size.height()));
+    const QRect fitted(topLeft, size);
+    qCDebug(uiLogging) << "main window" << when << "outside the usable area" << available << "of its screen, at" << frame
+                       << "with its frame; fitted to" << fitted;
+    setGeometry(fitted);
 }
 
 void MainWindow::saveGeometry() {
@@ -132,7 +178,19 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     //   With ignore: App will wait until you accept or dismiss the dialog and log "Normal exit".
     //   Without ignore: App will close immediately, and nothing will log about quitting or exit.
     event->ignore();
+    // what isn't saved is asked about first (Darkride's quit check): Cancel keeps the window and the app open
+    if (_closeCheck && !_closeCheck()) {
+        return;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // On Qt 6 macOS quit() goes through AppKit's terminate:, and Qt's answer to that closes every window: this handler
+    // calling quit() again is a nested terminate, which AppKit ends with exit() at once, so exec() never returns, the
+    // shutdown never runs and static destructors race the present thread (rendering, 11-05). Ending the event loop
+    // is what quit() was on Qt 5.
+    QCoreApplication::exit(0);
+#else
     qApp->quit();
+#endif
 }
 
 void MainWindow::moveEvent(QMoveEvent* event) {
@@ -171,6 +229,12 @@ void MainWindow::changeEvent(QEvent* event) {
             emit windowShown(true);
             if ((stateChangeEvent->oldState() & Qt::WindowMinimized) == Qt::WindowMinimized) {
                 emit windowMinimizedChanged(false);
+            }
+            // back to its normal size from maximised or full screen: that size was a first start's whole usable area
+            // (fitOnScreen); once the system has put it back
+            if ((stateChangeEvent->oldState() & (Qt::WindowMaximized | Qt::WindowFullScreen)) &&
+                windowState() == Qt::WindowNoState) {
+                QTimer::singleShot(0, this, [this] { fitOnScreen("after leaving maximised or full screen"); });
             }
         }
     } else if (event->type() == QEvent::ActivationChange) {

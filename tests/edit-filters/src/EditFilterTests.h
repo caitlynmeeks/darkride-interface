@@ -16,7 +16,7 @@ class EditFilterTests : public QObject {
     Q_OBJECT
 private slots:
     void initTestCase();
-    void testFiltersOnBothEngines();
+    void testFilters();
     void testRunawayFilterOnWebAssembly();
     void testFilterScriptObject();
 };

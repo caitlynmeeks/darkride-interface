@@ -11,8 +11,6 @@
 
 #include <QtCore/QObject>
 #include <QtCore/QVariant>
-#include <QtScript/QScriptValue>
-#include <QtScript/QScriptEngine>
 
 class QmlWrapper : public QObject {
     Q_OBJECT
@@ -27,18 +25,5 @@ public:
 protected:
     QObject* _qmlObject{ nullptr };
 };
-
-template <typename T>
-QScriptValue wrapperToScriptValue(QScriptEngine* engine, T* const &in) {
-    if (!in) {
-        return engine->undefinedValue();
-    }
-    return engine->newQObject(in, QScriptEngine::QtOwnership, QScriptEngine::ExcludeDeleteLater | QScriptEngine::ExcludeChildObjects);
-}
-
-template <typename T>
-void wrapperFromScriptValue(const QScriptValue& value, T* &out) {
-    out = qobject_cast<T*>(value.toQObject());
-}
 
 #endif

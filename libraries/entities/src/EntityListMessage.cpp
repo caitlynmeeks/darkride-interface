@@ -9,7 +9,10 @@
 #include "EntityListMessage.h"
 
 #include <QtCore/QDataStream>
+#include <QtCore/QIODevice>
 #include <QtCore/QtEndian>
+
+#include <shared/WireStream.h>
 
 #include <zlib.h>
 
@@ -28,7 +31,10 @@ namespace EntityListMessage {
         const int MIN_RECORD_BYTES = 16 + 16 + 1 + 1 + 8 + 4 * 4 + 2;
         const int HEADER_BYTES = 6;
 
+        // the wire format's version first, then this message's own byte order and float size (it carries only
+        // integers, single floats and raw bytes, so the version decides nothing today; stated so it can't drift)
         void setUp(QDataStream& stream) {
+            hifi::stream::pin(stream);
             stream.setByteOrder(QDataStream::LittleEndian);
             stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
         }

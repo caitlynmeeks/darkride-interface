@@ -31,7 +31,6 @@
 #include "impl/conditionals/AndConditional.h"
 #include "impl/conditionals/NotConditional.h"
 #include "impl/conditionals/EndpointConditional.h"
-#include "impl/conditionals/ScriptConditional.h"
 #include "impl/conditionals/CallbackConditional.h"
 
 #include "impl/endpoints/ActionEndpoint.h"
@@ -40,7 +39,6 @@
 #include "impl/endpoints/CompositeEndpoint.h"
 #include "impl/endpoints/InputEndpoint.h"
 #include "impl/endpoints/JSEndpoint.h"
-#include "impl/endpoints/ScriptEndpoint.h"
 #include "impl/endpoints/CallbackEndpoint.h"
 #include "impl/endpoints/StandardEndpoint.h"
 
@@ -391,71 +389,6 @@ int inputPairMetaTypeId = qRegisterMetaType<Input::NamedPair>();
 int poseMetaTypeId = qRegisterMetaType<controller::Pose>("Pose");
 int handMetaTypeId = qRegisterMetaType<controller::Hand>();
 
-QScriptValue inputToScriptValue(QScriptEngine* engine, const Input& input);
-void inputFromScriptValue(const QScriptValue& object, Input& input);
-QScriptValue actionToScriptValue(QScriptEngine* engine, const Action& action);
-void actionFromScriptValue(const QScriptValue& object, Action& action);
-QScriptValue inputPairToScriptValue(QScriptEngine* engine, const Input::NamedPair& inputPair);
-void inputPairFromScriptValue(const QScriptValue& object, Input::NamedPair& inputPair);
-QScriptValue handToScriptValue(QScriptEngine* engine, const controller::Hand& hand);
-void handFromScriptValue(const QScriptValue& object, controller::Hand& hand);
-
-QScriptValue inputToScriptValue(QScriptEngine* engine, const Input& input) {
-    QScriptValue obj = engine->newObject();
-    obj.setProperty("device", input.getDevice());
-    obj.setProperty("channel", input.getChannel());
-    obj.setProperty("type", (unsigned short)input.getType());
-    obj.setProperty("id", input.getID());
-    return obj;
-}
-
-void inputFromScriptValue(const QScriptValue& object, Input& input) {
-    input.id = object.property("id").toInt32();
-}
-
-QScriptValue actionToScriptValue(QScriptEngine* engine, const Action& action) {
-    QScriptValue obj = engine->newObject();
-    auto userInputMapper = DependencyManager::get<UserInputMapper>();
-    obj.setProperty("action", (int)action);
-    obj.setProperty("actionName", userInputMapper->getActionName(action));
-    return obj;
-}
-
-void actionFromScriptValue(const QScriptValue& object, Action& action) {
-    action = Action(object.property("action").toVariant().toInt());
-}
-
-QScriptValue inputPairToScriptValue(QScriptEngine* engine, const Input::NamedPair& inputPair) {
-    QScriptValue obj = engine->newObject();
-    obj.setProperty("input", inputToScriptValue(engine, inputPair.first));
-    obj.setProperty("inputName", inputPair.second);
-    return obj;
-}
-
-void inputPairFromScriptValue(const QScriptValue& object, Input::NamedPair& inputPair) {
-    inputFromScriptValue(object.property("input"), inputPair.first);
-    inputPair.second = QString(object.property("inputName").toVariant().toString());
-}
-
-QScriptValue handToScriptValue(QScriptEngine* engine, const controller::Hand& hand) {
-    return engine->newVariant((int)hand);
-}
-
-void handFromScriptValue(const QScriptValue& object, controller::Hand& hand) {
-    hand = Hand(object.toVariant().toInt());
-}
-
-void UserInputMapper::registerControllerTypes(QScriptEngine* engine) {
-    qScriptRegisterSequenceMetaType<QVector<Action> >(engine);
-    qScriptRegisterSequenceMetaType<Input::NamedVector>(engine);
-    qScriptRegisterMetaType(engine, actionToScriptValue, actionFromScriptValue);
-    qScriptRegisterMetaType(engine, inputToScriptValue, inputFromScriptValue);
-    qScriptRegisterMetaType(engine, inputPairToScriptValue, inputPairFromScriptValue);
-    qScriptRegisterMetaType(engine, handToScriptValue, handFromScriptValue);
-
-    qScriptRegisterMetaType(engine, Pose::toScriptValue, Pose::fromScriptValue);
-}
-
 Input UserInputMapper::makeStandardInput(controller::StandardButtonChannel button) {
     return Input(STANDARD_DEVICE, button, ChannelType::BUTTON);
 }
@@ -668,35 +601,6 @@ Endpoint::Pointer UserInputMapper::endpointFor(const QJSValue& endpoint) {
     return Endpoint::Pointer();
 }
 
-Endpoint::Pointer UserInputMapper::endpointFor(const QScriptValue& endpoint) {
-    if (endpoint.isNumber()) {
-        return endpointFor(Input(endpoint.toInt32()));
-    }
-
-    if (endpoint.isFunction()) {
-        auto result = std::make_shared<ScriptEndpoint>(endpoint);
-        return result;
-    }
-
-    if (endpoint.isArray()) {
-        int length = endpoint.property("length").toInteger();
-        Endpoint::List children;
-        for (int i = 0; i < length; i++) {
-            QScriptValue arrayItem = endpoint.property(i);
-            Endpoint::Pointer destination = endpointFor(arrayItem);
-            if (!destination) {
-                return Endpoint::Pointer();
-            }
-            children.push_back(destination);
-        }
-        return std::make_shared<AnyEndpoint>(children);
-    }
-
-
-    qWarning() << "Unsupported input type " << endpoint.toString();
-    return Endpoint::Pointer();
-}
-
 Endpoint::Pointer UserInputMapper::endpointFor(const QVariant& endpoint) {
     if (endpoint.userType() == qMetaTypeId<ScriptCallback>()) {
         return std::make_shared<CallbackEndpoint>(endpoint.value<ScriptCallback>());
@@ -785,7 +689,7 @@ Mapping::Pointer UserInputMapper::newMapping(const QString& mappingName) {
 //        if (request->getResult() == ResourceRequest::Success) {
 //            result = parseMapping(QString(request->getData()));
 //        } else {
-//            qCWarning(controllers) << "Failed to load mapping url <" << jsonUrl << ">" << endl;
+//            qCWarning(controllers) << "Failed to load mapping url <" << jsonUrl << ">" << Qt::endl;
 //        }
 //        request->deleteLater();
 //    }
@@ -978,32 +882,6 @@ Conditional::Pointer UserInputMapper::conditionalFor(const QVariant& condition) 
         return conditionalFor(Input(uint32_t(id)));
     }
     qWarning() << "Unsupported conditional type " << condition;
-    return Conditional::Pointer();
-}
-
-Conditional::Pointer UserInputMapper::conditionalFor(const QScriptValue& condition) {
-    if (condition.isArray()) {
-        int length = condition.property("length").toInteger();
-        Conditional::List children;
-        for (int i = 0; i < length; i++) {
-            Conditional::Pointer destination = conditionalFor(condition.property(i));
-            if (!destination) {
-                return Conditional::Pointer();
-            }
-            children.push_back(destination);
-        }
-        return std::make_shared<AndConditional>(children);
-    }
-
-    if (condition.isNumber()) {
-        return conditionalFor(Input(condition.toInt32()));
-    }
-
-    if (condition.isFunction()) {
-        return std::make_shared<ScriptConditional>(condition);
-    }
-
-    qWarning() << "Unsupported conditional type " << condition.toString();
     return Conditional::Pointer();
 }
 
@@ -1275,13 +1153,13 @@ Mapping::Pointer UserInputMapper::parseMapping(const QString& json) {
     if (doc.isNull()) {
         qCDebug(controllers) << "Invalid JSON...\n";
         qCDebug(controllers) << error.errorString();
-        qCDebug(controllers) << "JSON was:\n" << json << endl;
+        qCDebug(controllers) << "JSON was:\n" << json << Qt::endl;
         return Mapping::Pointer();
     }
 
     if (!doc.isObject()) {
-        qWarning() << "Mapping json Document is not an object" << endl;
-        qCDebug(controllers) << "JSON was:\n" << json << endl;
+        qWarning() << "Mapping json Document is not an object" << Qt::endl;
+        qCDebug(controllers) << "JSON was:\n" << json << Qt::endl;
         return Mapping::Pointer();
     }
     return parseMapping(doc.object());

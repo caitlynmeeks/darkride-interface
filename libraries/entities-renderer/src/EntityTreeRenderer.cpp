@@ -31,7 +31,6 @@
 
 #include <QEventLoop>
 #include <QProcessEnvironment>
-#include <QScriptSyntaxCheckResult>
 #include <QThreadPool>
 #include <QTimer>
 #include <QSet>
@@ -183,8 +182,10 @@ render::ItemID EntityTreeRenderer::renderableIdForEntityId(const EntityItemID& i
 int EntityTreeRenderer::_entitiesScriptEngineCount = 0;
 
 void EntityTreeRenderer::resetEntitiesScriptEngine() {
+    // one series of ids with every other engine that runs a world's scripts (an avatar's: ScriptCaller::newWorld)
+    _entitiesScriptEngineCount = ScriptCaller::newWorld();
     _entitiesScriptEngine = scriptEngineFactory(ScriptEngine::ENTITY_CLIENT_SCRIPT, NO_SCRIPT,
-                                                QString("about:Entities %1").arg(++_entitiesScriptEngineCount));
+                                                QString("about:Entities %1").arg(_entitiesScriptEngineCount));
     ScriptEngine* engine = _entitiesScriptEngine.data();
     // what this engine's scripts make outside it is tagged with this id (ScriptCaller::world()), and goes when it stops
     engine->setWorldId(_entitiesScriptEngineCount);
@@ -483,7 +484,6 @@ void EntityTreeRenderer::clear() {
 
 void EntityTreeRenderer::reloadEntityScripts() {
     _entitiesScriptEngine->unloadAllEntityScripts();
-    _entitiesScriptEngine->resetModuleCache();
     for (const auto& entry : _entitiesInScene) {
         const auto& renderer = entry.second;
         const auto& entity = renderer->getEntity();
@@ -749,7 +749,7 @@ void EntityTreeRenderer::updateChangedEntities(const render::ScenePointer& scene
             renderable->getEntity()->setNeedsRenderUpdate(true);
             renderable->updateInScene(scene, transaction, changed);
             markRenderableRefreshed(renderable, frame);
-            slowest = std::max(slowest, usecTimestampNow() - start);
+            slowest = std::max<uint64_t>(slowest, usecTimestampNow() - start);
             refreshed++;
         }
         _prevNumCarriedEntityUpdates = (int)refreshed;

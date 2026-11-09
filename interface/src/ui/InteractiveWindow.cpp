@@ -30,7 +30,7 @@
 #include "MainWindow.h"
 
 #ifdef Q_OS_WIN
-#include <WinUser.h>
+#include <Windows.h>
 #endif
 
 static auto CONTENT_WINDOW_QML = QUrl("InteractiveWindow.qml");
@@ -87,20 +87,6 @@ static void qmlWindowProxyDeleter(QmlWindowProxy* qmlWindowProxy) {
 
 static void dockWidgetDeleter(DockWidget* dockWidget) {
     dockWidget->deleteLater();
-}
-
-void registerInteractiveWindowMetaType(QScriptEngine* engine) {
-    qScriptRegisterMetaType(engine, interactiveWindowPointerToScriptValue, interactiveWindowPointerFromScriptValue);
-}
-
-QScriptValue interactiveWindowPointerToScriptValue(QScriptEngine* engine, const InteractiveWindowPointer& in) {
-    return engine->newQObject(in, QScriptEngine::ScriptOwnership);
-}
-
-void interactiveWindowPointerFromScriptValue(const QScriptValue& object, InteractiveWindowPointer& out) {
-    if (const auto interactiveWindow = qobject_cast<InteractiveWindowPointer>(object.toQObject())) {
-        out = interactiveWindow;
-    }
 }
 
 void InteractiveWindow::forwardKeyPressEvent(int key, int modifiers) {

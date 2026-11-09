@@ -18,6 +18,10 @@ class WindowScriptingInterface : public QObject {
     Q_OBJECT
 };
 
+class TabletProxy : public QObject {
+    Q_OBJECT
+};
+
 class VerifiedSandboxTests : public QObject {
     Q_OBJECT
 private slots:
@@ -32,11 +36,14 @@ private slots:
     void testWorldRule();
     void testWorldRuleOnRequests();
     void testRefusalAtLoad();
+    void testEntityScriptDownloadIsRuled();
+    void testRuledWaitersKeepTheirOwnRule();
     void testAppScriptsFolder();
     void testAppScriptsForAWorldFromTheNetwork();
     void testResourcesNotForWorlds();
     void testInputAndPrivacyNotForWorlds();
     void testSignalsNotForWorlds();
+    void testWorldScriptStartsNoScript();
     void testServerEnginesAreRuled();
     void testWorldMappingDestinations();
 

@@ -10,14 +10,12 @@
 //
 
 #include "WebBrowserSuggestionsEngine.h"
-#include "qregexp.h"
 
 #include <qbuffer.h>
 #include <qcoreapplication.h>
 #include <qlocale.h>
 #include <qnetworkrequest.h>
 #include <qnetworkreply.h>
-#include <qregexp.h>
 #include <qstringlist.h>
 
 #include <QUrlQuery>

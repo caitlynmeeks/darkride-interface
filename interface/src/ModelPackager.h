@@ -17,6 +17,8 @@
 #include <QFileInfo>
 #include <QVariantHash>
 
+#include <shared/HifiTypes.h>
+
 #include "ui/ModelsBrowser.h"
 
 namespace hfm {
@@ -34,7 +36,7 @@ private:
     bool editProperties();
     bool zipModel();
     
-    void populateBasicMapping(QVariantHash& mapping, QString filename, const hfm::Model& hfmModel);
+    void populateBasicMapping(hifi::VariantMultiHash& mapping, QString filename, const hfm::Model& hfmModel);
     
     void listTextures();
     bool copyTextures(const QString& oldDir, const QDir& newDir);
@@ -44,7 +46,7 @@ private:
     QString _texDir;
     QString _scriptDir;
 
-    QVariantHash _mapping;
+    hifi::VariantMultiHash _mapping;
     std::shared_ptr<hfm::Model> _hfmModel;
     QStringList _textures;
     QStringList _scripts;

@@ -93,6 +93,7 @@ QtObject {
     readonly property real detailSize: 11.5 * unit
     readonly property real sectionSize: 11.5 * unit
     readonly property real controlTextSize: 12.5 * unit
+    readonly property real headlineSize: 16 * unit      // a large row's title (ListRow large: the avatar worn)
 
     readonly property real pageMargin: 16 * unit
     readonly property real cardPadding: 14 * unit
@@ -101,6 +102,12 @@ QtObject {
     readonly property real rowPadding: 7 * unit
     readonly property real controlHeight: 26 * unit
     readonly property real gap: 10 * unit
+    // a picker's open choices start this far past its label, so they read as its choices, not as the card's next rows
+    readonly property real choiceIndent: 16 * unit
+    readonly property real largeIconSize: 56 * unit     // a large row's picture
+    readonly property real rowIconSize: 40 * unit       // a thing's picture in a list's row (CollectionView)
+    readonly property real rowIconRadius: 8 * unit
+    readonly property real dimmed: 0.45                 // the opacity of a thing that can't be used now, or is on its way out
 
     // the build tools' label scrub (editor/ui/PropertyEditors.cpp): a few pixels before it starts; Shift coarse, Alt fine
     readonly property real scrubSlop: 3

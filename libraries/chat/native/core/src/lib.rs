@@ -55,7 +55,7 @@
 use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -427,19 +427,78 @@ async fn handle(state: &Arc<State>, op: &str, command: &Value) -> Result<()> {
     }
 }
 
-async fn build_client(state: &State) -> Result<Client> {
+async fn build_client(state: &State, store: &Path) -> Result<Client> {
     std::fs::create_dir_all(&state.config.data_dir)?;
     Ok(Client::builder()
         .homeserver_url(&state.config.homeserver)
-        .sqlite_store(state.config.data_dir.join("store"), None)
+        .sqlite_store(store, None)
         .build()
         .await?)
+}
+
+/// names the store a sign-in made when "store" couldn't be deleted for it, for the next start's restore
+const STORE_NAME_FILE: &str = "store-name";
+
+fn is_store_name(name: &str) -> bool {
+    name == "store" || name.strip_prefix("store-").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// the kept session's store: "store", or the one store-name names
+fn store_dir(state: &State) -> PathBuf {
+    let dir = &state.config.data_dir;
+    match std::fs::read_to_string(dir.join(STORE_NAME_FILE)) {
+        Ok(name) if is_store_name(name.trim()) => dir.join(name.trim()),
+        _ => dir.join("store"),
+    }
+}
+
+/// Deletes every store in the folder but keep, and says which stay (on Windows, one with a file still open) and why
+fn remove_stores(dir: &Path, keep: Option<&Path>) -> Vec<(PathBuf, std::io::Error)> {
+    let mut left = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else { return left };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if is_store_name(&entry.file_name().to_string_lossy()) && path.is_dir() && Some(path.as_path()) != keep {
+            if let Err(e) = std::fs::remove_dir_all(&path) {
+                if path.exists() {
+                    left.push((path, e));
+                }
+            }
+        }
+    }
+    left
+}
+
+/// A new sign-in is a new device: nothing an earlier one left in the folder (its session, keys, stored messages,
+/// files) is any use to it, and the next person at this computer shouldn't find it. A store that can't be deleted
+/// never stops the sign-in (it made the crypto store refuse every one, 11-08): a new store goes beside it, named in
+/// store-name for the next start, and the old one goes at the next sign-in or sign-out.
+fn fresh_store(state: &State) -> PathBuf {
+    let dir = &state.config.data_dir;
+    let _ = std::fs::remove_file(state.session_file());
+    let _ = std::fs::remove_file(dir.join(STORE_NAME_FILE));
+    let _ = std::fs::remove_dir_all(dir.join("media"));
+    let left = remove_stores(dir, None);
+    if !left.iter().any(|(path, _)| path.ends_with("store")) {
+        return dir.join("store");
+    }
+    for (path, e) in &left {
+        state.emit(json!({ "event": "error", "op": "store", "message": format!("an earlier store stays in {}: {e}; signing in with a new one", path.display()) }));
+    }
+    let millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+    let name = format!("store-{millis}");
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(dir.join(STORE_NAME_FILE), &name);
+    dir.join(name)
 }
 
 async fn restore(state: &Arc<State>) -> Result<bool> {
     let Ok(saved) = std::fs::read_to_string(state.session_file()) else { return Ok(false) };
     let session: MatrixSession = serde_json::from_str(&saved).context("the kept session")?;
-    let client = build_client(state).await?;
+    let store = store_dir(state);
+    // a store an earlier sign-in couldn't delete (store-name names the newer one): gone now that nothing has it open
+    let _ = remove_stores(&state.config.data_dir, Some(&store));
+    let client = build_client(state, &store).await?;
     client.restore_session(session).await?;
     started(state, client).await?;
     Ok(true)
@@ -450,7 +509,14 @@ async fn login_jwt(state: &Arc<State>, token: &str) -> Result<()> {
         return Err(anyhow!("already signed in"));
     }
     state.emit(json!({ "event": "state", "state": "starting" }));
-    let client = build_client(state).await?;
+    let store = fresh_store(state);
+    let client = match build_client(state, &store).await {
+        Ok(client) => client,
+        Err(e) => {
+            state.emit(json!({ "event": "state", "state": "signed_out" }));
+            return Err(e);
+        }
+    };
     let mut data = matrix_sdk::ruma::serde::JsonObject::new();
     data.insert("token".into(), token.into());
     let login = client
@@ -459,9 +525,10 @@ async fn login_jwt(state: &Arc<State>, token: &str) -> Result<()> {
         .initial_device_display_name(&state.config.device_name)
         .await;
     if let Err(e) = login {
-        // refused: the stores made for it go too (the client first, which holds them open)
+        // refused: the store made for it goes too (the client first, which holds it open)
         drop(client);
-        let _ = std::fs::remove_dir_all(state.config.data_dir.join("store"));
+        let _ = std::fs::remove_dir_all(&store);
+        let _ = std::fs::remove_file(state.config.data_dir.join(STORE_NAME_FILE));
         state.emit(json!({ "event": "state", "state": "signed_out" }));
         return Err(e.into());
     }
@@ -1052,10 +1119,10 @@ async fn forget(state: &Arc<State>, tell_server: bool) {
     let _ = std::fs::remove_file(state.session_file());
     // the pictures and files fetched for this account go too: the next person on this computer shouldn't find them
     let _ = std::fs::remove_dir_all(state.config.data_dir.join("media"));
-    let store = state.config.data_dir.join("store");
-    if let Err(e) = std::fs::remove_dir_all(&store) {
-        if store.exists() {
-            state.emit(json!({ "event": "error", "op": "logout", "message": format!("the chat's store stays in {}: {e}", store.display()) }));
-        }
+    let _ = std::fs::remove_file(state.config.data_dir.join(STORE_NAME_FILE));
+    // on Windows a store's files can stay open in this process until the library stops: the viewer deletes the
+    // folder again once it has (ChatService::forgetChatData)
+    for (store, e) in remove_stores(&state.config.data_dir, None) {
+        state.emit(json!({ "event": "error", "op": "logout", "message": format!("the chat's store stays in {}: {e}", store.display()) }));
     }
 }

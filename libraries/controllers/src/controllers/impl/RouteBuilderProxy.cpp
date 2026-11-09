@@ -32,7 +32,6 @@
 #include "endpoints/ActionEndpoint.h"
 #include "endpoints/CallbackEndpoint.h"
 #include "endpoints/JSEndpoint.h"
-#include "endpoints/ScriptEndpoint.h"
 #include "../UserInputMapper.h"
 #include <unordered_set>
 #include "filters/TranslateFilter.h"
@@ -46,12 +45,6 @@
 using namespace controller;
 
 void RouteBuilderProxy::toQml(const QJSValue& destination) {
-    qCDebug(controllers) << "Completing route " << destination.toString();
-    auto destinationEndpoint = _parent.endpointFor(destination);
-    return to(destinationEndpoint);
-}
-
-void RouteBuilderProxy::to(const QScriptValue& destination) {
     qCDebug(controllers) << "Completing route " << destination.toString();
     auto destinationEndpoint = _parent.endpointFor(destination);
     return to(destinationEndpoint);
@@ -75,8 +68,7 @@ bool RouteBuilderProxy::worldMayRouteTo(const Endpoint::Pointer& destination) {
     if (!destination) {
         return false;
     }
-    if (std::dynamic_pointer_cast<JSEndpoint>(destination) || std::dynamic_pointer_cast<ScriptEndpoint>(destination) ||
-        std::dynamic_pointer_cast<CallbackEndpoint>(destination)) {
+    if (std::dynamic_pointer_cast<JSEndpoint>(destination) || std::dynamic_pointer_cast<CallbackEndpoint>(destination)) {
         return true;   // the world's own function: it reads the input itself
     }
     if (!std::dynamic_pointer_cast<ActionEndpoint>(destination) ||
@@ -137,18 +129,6 @@ QObject* RouteBuilderProxy::debug(bool enable) {
 
 QObject* RouteBuilderProxy::peek(bool enable) {
     _route->peek = enable;
-    return this;
-}
-
-QObject* RouteBuilderProxy::when(const QScriptValue& expression) {
-    // FIXME: Support "!" conditional in simple expression and array expression.
-    // Note that "!" is supported when parsing a JSON file, in UserInputMapper::parseConditional().
-    auto newConditional = _parent.conditionalFor(expression);
-    if (_route->conditional) {
-        _route->conditional = ConditionalPointer(new AndConditional(_route->conditional, newConditional));
-    } else {
-        _route->conditional = newConditional;
-    }
     return this;
 }
 

@@ -230,7 +230,7 @@ bool PathUtils::deleteMyTemporaryDir(QString dirName) {
     QRegularExpression re { "^" + QRegularExpression::escape(appName) + "\\-(?<pid>\\d+)\\-(?<timestamp>\\d+)$" };
 
     auto match = re.match(dirName);
-    auto pid = match.capturedRef("pid").toLongLong();
+    auto pid = match.captured("pid").toLongLong();
 
     if (match.hasMatch() && rootTempDir.exists(dirName) && pid == qApp->applicationPid()) {
         auto absoluteDirPath = QDir(rootTempDir.absoluteFilePath(dirName));
@@ -265,8 +265,8 @@ int PathUtils::removeTemporaryApplicationDirs(QString appName) {
 
         auto match = re.match(dirName);
         if (match.hasMatch()) {
-            auto pid = match.capturedRef("pid").toLongLong();
-            auto timestamp = match.capturedRef("timestamp");
+            auto pid = match.captured("pid").toLongLong();
+            auto timestamp = match.captured("timestamp");
             if (!processIsRunning(pid)) {
                 qDebug() << "  Removing old temporary directory: " << dir.absoluteFilePath();
                 absoluteDirPath.removeRecursively();

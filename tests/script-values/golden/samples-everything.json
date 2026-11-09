@@ -1,0 +1,5575 @@
+{
+    "Box": {
+        "type": "Box",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "shapeType": "Box",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "alpha": 1,
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "shape": "Sphere",
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Sphere": {
+        "type": "Sphere",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "shapeType": "Sphere",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "alpha": 1,
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "shape": "Sphere",
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Shape": {
+        "type": "Shape",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "alpha": 1,
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "shape": "Sphere",
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Model": {
+        "type": "Model",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "shapeType": "box",
+        "compoundShapeURL": "",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "textures": "",
+        "modelURL": "https://example.invalid/model.glb",
+        "modelScale": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "jointRotationsSet": [],
+        "jointRotations": [],
+        "jointTranslationsSet": [],
+        "jointTranslations": [],
+        "relayParentJoints": false,
+        "groupCulled": false,
+        "blendshapeCoefficients": "",
+        "animation": {
+            "url": "https://example.invalid/animation.fbx",
+            "allowTranslation": true,
+            "fps": 24,
+            "currentFrame": 0,
+            "running": false,
+            "loop": true,
+            "firstFrame": 0,
+            "lastFrame": 100000,
+            "hold": false
+        },
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {
+            "verticesCount": 0,
+            "texturesSize": 0,
+            "hasTransparent": false,
+            "drawCalls": 0,
+            "texturesCount": 0
+        },
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Text": {
+        "type": "Text",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "billboardMode": "yaw",
+        "text": "",
+        "lineHeight": 0.10000000149011612,
+        "textColor": {
+            "red": 255,
+            "green": 255,
+            "blue": 255
+        },
+        "textAlpha": 1,
+        "backgroundColor": {
+            "red": 0,
+            "green": 0,
+            "blue": 0
+        },
+        "backgroundAlpha": 1,
+        "leftMargin": 0,
+        "rightMargin": 0,
+        "topMargin": 0,
+        "bottomMargin": 0,
+        "unlit": false,
+        "font": "Roboto",
+        "textEffect": "none",
+        "textEffectColor": {
+            "red": 255,
+            "green": 255,
+            "blue": 255
+        },
+        "textEffectThickness": 0.20000000298023224,
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Image": {
+        "type": "Image",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "alpha": 1,
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "billboardMode": "yaw",
+        "imageURL": "https://example.invalid/image.png",
+        "emissive": false,
+        "keepAspectRatio": true,
+        "subImage": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0
+        },
+        "textures": {
+            "tex.picture": "https://example.invalid/image.png"
+        },
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Web": {
+        "type": "Web",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "alpha": 1,
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "billboardMode": "yaw",
+        "sourceUrl": "http://www.google.com",
+        "dpi": 30,
+        "scriptURL": "",
+        "maxFPS": 120,
+        "inputMode": "touch",
+        "showKeyboardFocusHighlight": true,
+        "transparentBackground": false,
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "ParticleEffect": {
+        "type": "ParticleEffect",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "shapeType": "box",
+        "compoundShapeURL": "",
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "alpha": 1,
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "textures": "",
+        "maxParticles": 1000,
+        "lifespan": 3,
+        "isEmitting": true,
+        "emitRate": 15,
+        "emitSpeed": 5,
+        "speedSpread": 1,
+        "emitOrientation": {
+            "x": -0.7071067690849304,
+            "y": 0,
+            "z": 0,
+            "w": 0.7071067690849304
+        },
+        "emitDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "emitRadiusStart": 1,
+        "polarStart": 0,
+        "polarFinish": 0,
+        "azimuthStart": -3.1415927410125732,
+        "azimuthFinish": 3.1415927410125732,
+        "emitAcceleration": {
+            "x": 0,
+            "y": -9.800000190734863,
+            "z": 0
+        },
+        "accelerationSpread": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "particleRadius": 0.02500000037252903,
+        "radiusSpread": 0,
+        "radiusStart": null,
+        "radiusFinish": null,
+        "colorSpread": {
+            "red": 0,
+            "green": 0,
+            "blue": 0
+        },
+        "colorStart": {
+            "red": null,
+            "green": null,
+            "blue": null
+        },
+        "colorFinish": {
+            "red": null,
+            "green": null,
+            "blue": null
+        },
+        "alphaSpread": 0,
+        "alphaStart": null,
+        "alphaFinish": null,
+        "emitterShouldTrail": false,
+        "particleSpin": 0,
+        "spinSpread": 0,
+        "spinStart": null,
+        "spinFinish": null,
+        "rotateWithEntity": false,
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Line": {
+        "type": "Line",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "linePoints": [],
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "PolyLine": {
+        "type": "PolyLine",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "textures": "",
+        "linePoints": [],
+        "strokeWidths": [],
+        "normals": [],
+        "strokeColors": [],
+        "isUVModeStretch": true,
+        "glow": false,
+        "faceCamera": false,
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "isFacingAvatar": false
+    },
+    "Grid": {
+        "type": "Grid",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "alpha": 1,
+        "pulse": {
+            "min": 0.25,
+            "max": 1,
+            "period": 1,
+            "colorMode": "none",
+            "alphaMode": "none"
+        },
+        "followCamera": true,
+        "majorGridEvery": 5,
+        "minorGridEvery": 1,
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Gizmo": {
+        "type": "Gizmo",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gizmoType": "ring",
+        "ring": {
+            "startAngle": 0,
+            "endAngle": 360,
+            "innerRadius": 0,
+            "innerStartColor": {
+                "red": 255,
+                "green": 255,
+                "blue": 255
+            },
+            "innerEndColor": {
+                "red": 255,
+                "green": 255,
+                "blue": 255
+            },
+            "outerStartColor": {
+                "red": 255,
+                "green": 255,
+                "blue": 255
+            },
+            "outerEndColor": {
+                "red": 255,
+                "green": 255,
+                "blue": 255
+            },
+            "innerStartAlpha": 1,
+            "innerEndAlpha": 1,
+            "outerStartAlpha": 1,
+            "outerEndAlpha": 1,
+            "hasTickMarks": false,
+            "majorTickMarksAngle": 0,
+            "minorTickMarksAngle": 0,
+            "majorTickMarksLength": 0,
+            "minorTickMarksLength": 0,
+            "majorTickMarksColor": {
+                "red": 255,
+                "green": 255,
+                "blue": 255
+            },
+            "minorTickMarksColor": {
+                "red": 255,
+                "green": 255,
+                "blue": 255
+            }
+        },
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Light": {
+        "type": "Light",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "isSpotlight": false,
+        "intensity": 1,
+        "exponent": 0,
+        "cutoff": 1.5707963705062866,
+        "falloffRadius": 0.10000000149011612,
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Zone": {
+        "type": "Zone",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "shapeType": "box",
+        "compoundShapeURL": "",
+        "keyLight": {
+            "color": {
+                "red": 10,
+                "green": 20,
+                "blue": 30
+            },
+            "intensity": 0.75,
+            "direction": {
+                "x": 0,
+                "y": -1,
+                "z": 0
+            },
+            "castShadows": false,
+            "shadowBias": 0.5,
+            "shadowMaxDistance": 100
+        },
+        "ambientLight": {
+            "ambientIntensity": 0.5,
+            "ambientURL": ""
+        },
+        "skybox": {
+            "color": {
+                "red": 0,
+                "green": 0,
+                "blue": 0
+            },
+            "url": ""
+        },
+        "haze": {
+            "hazeRange": 1000,
+            "hazeColor": {
+                "red": 128,
+                "green": 154,
+                "blue": 179
+            },
+            "hazeGlareColor": {
+                "red": 255,
+                "green": 229,
+                "blue": 179
+            },
+            "hazeEnableGlare": false,
+            "hazeGlareAngle": 20,
+            "hazeAltitudeEffect": false,
+            "hazeCeiling": 200,
+            "hazeBaseRef": 0,
+            "hazeBackgroundBlend": 0,
+            "hazeAttenuateKeyLight": false,
+            "hazeKeyLightRange": 1000,
+            "hazeKeyLightAltitude": 200
+        },
+        "bloom": {
+            "bloomIntensity": 0.25,
+            "bloomThreshold": 0.699999988079071,
+            "bloomSize": 0.8999999761581421
+        },
+        "flyingAllowed": true,
+        "ghostingAllowed": true,
+        "filterURL": "",
+        "keyLightMode": "inherit",
+        "ambientLightMode": "inherit",
+        "skyboxMode": "inherit",
+        "hazeMode": "inherit",
+        "bloomMode": "inherit",
+        "zoneCullingMode": "inherit",
+        "toneMappingMode": "inherit",
+        "avatarPriority": "inherit",
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Material": {
+        "type": "Material",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "materialURL": "",
+        "materialMappingMode": "uv",
+        "priority": 0,
+        "parentMaterialName": "0",
+        "materialMappingPos": {
+            "x": 0,
+            "y": 0
+        },
+        "materialMappingScale": {
+            "x": 1,
+            "y": 1
+        },
+        "materialMappingRot": 0,
+        "materialData": "",
+        "materialRepeat": true,
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Terrain": {
+        "type": "Terrain",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "voxelSize": 0.5,
+        "terrainURL": "",
+        "terrainVersion": 0,
+        "terrainLayers": "",
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    },
+    "Track": {
+        "type": "Track",
+        "lastEdited": 0,
+        "naturalDimensions": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+        },
+        "naturalPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "simulationOwner": {
+            "ownerID": "{00000000-0000-0000-0000-000000000000}",
+            "priority": 0
+        },
+        "parentID": "{1a2b3c4d-0000-0000-0000-000000000001}",
+        "parentJointIndex": 65535,
+        "visible": true,
+        "locallyVisible": true,
+        "name": "sample",
+        "locked": false,
+        "userData": "{\"grabbable\": true}",
+        "privateUserData": "",
+        "href": "",
+        "description": "",
+        "position": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+        },
+        "dimensions": {
+            "x": 0.5,
+            "y": 1,
+            "z": 2
+        },
+        "rotation": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+        },
+        "registrationPoint": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+        },
+        "created": 1700000000000000,
+        "lastEditedBy": "{00000000-0000-0000-0000-000000000000}",
+        "entityHostType": "domain",
+        "owningAvatarID": "{00000000-0000-0000-0000-000000000000}",
+        "queryAACube": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "scale": 0
+        },
+        "canCastShadow": true,
+        "isVisibleInSecondaryCamera": true,
+        "renderLayer": "world",
+        "entityPriority": "automatic",
+        "primitiveMode": "solid",
+        "ignorePickIntersection": false,
+        "frame": false,
+        "trackID": "{00000000-0000-0000-0000-000000000000}",
+        "trackOffset": 0,
+        "grab": {
+            "grabbable": false,
+            "grabKinematic": true,
+            "grabFollowsController": true,
+            "triggerable": false,
+            "equippable": false,
+            "grabDelegateToParent": true,
+            "equippableLeftPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableLeftRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableRightPosition": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "equippableRightRotation": {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+                "w": 1
+            },
+            "equippableIndicatorURL": "",
+            "equippableIndicatorScale": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "equippableIndicatorOffset": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            }
+        },
+        "vehicle": {
+            "type": "none",
+            "mass": 0,
+            "centerOfMass": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "wheels": "",
+            "seats": "",
+            "maxSteerAngle": 30,
+            "maxTorque": 500,
+            "minRPM": 1000,
+            "maxRPM": 6000,
+            "gearRatios": "",
+            "reverseGearRatio": 2.9000000953674316,
+            "finalDriveRatio": 3.4200000762939453,
+            "maxBrakeTorque": 1500,
+            "maxHandBrakeTorque": 4000,
+            "driveType": "rear",
+            "suspensionFrequency": 1.5,
+            "suspensionDamping": 0.5,
+            "wheel": "",
+            "axle": "x",
+            "driver": "{00000000-0000-0000-0000-000000000000}",
+            "inputSequence": 0,
+            "throttle": 0,
+            "steering": 0,
+            "brake": 0,
+            "handBrake": 0,
+            "engineRPM": 0,
+            "gear": 0,
+            "stateTime": 0,
+            "envelopeVolume": 0,
+            "centerOfBuoyancy": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "gasDensity": 0.1785999983549118,
+            "maxThrust": 0,
+            "maxVerticalThrust": 0,
+            "thrustPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "dragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "angularDragArea": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "rudderArea": 0,
+            "elevatorArea": 0,
+            "finPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "maxFinAngle": 25,
+            "ballastRate": 0,
+            "ventRate": 0,
+            "pitch": 0,
+            "lift": 0,
+            "trim": 0,
+            "ballast": 0,
+            "fill": 1,
+            "wingArea": 0,
+            "wingSpan": 0,
+            "wingPoint": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "tilt": 0
+        },
+        "density": 1000,
+        "velocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "angularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "gravity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "acceleration": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "damping": 0.39346998929977417,
+        "angularDamping": 0.39346998929977417,
+        "restitution": 0.5,
+        "friction": 0.5,
+        "lifetime": 60,
+        "collisionless": true,
+        "ignoreForCollisions": true,
+        "collisionMask": 31,
+        "collidesWith": "static,dynamic,kinematic,myAvatar,otherAvatar,",
+        "dynamic": true,
+        "collisionsWillMove": true,
+        "collisionSoundURL": "",
+        "actionData": "YWN0aW9uIGJ5dGVz",
+        "cloneable": false,
+        "cloneLifetime": 300,
+        "cloneLimit": 0,
+        "cloneDynamic": false,
+        "cloneAvatarEntity": false,
+        "cloneOriginID": "{00000000-0000-0000-0000-000000000000}",
+        "cloneGrabbable": false,
+        "script": "https://example.invalid/script.js",
+        "scriptTimestamp": 0,
+        "serverScripts": "",
+        "scriptsEnabled": false,
+        "itemName": "",
+        "itemDescription": "",
+        "itemCategories": "",
+        "itemArtist": "",
+        "itemLicense": "",
+        "limitedRun": 7,
+        "marketplaceID": "",
+        "editionNumber": 0,
+        "entityInstanceNumber": 0,
+        "certificateID": "",
+        "certificateType": "",
+        "staticCertificateVersion": 0,
+        "localPosition": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localRotation": {
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "w": 1
+        },
+        "localVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localAngularVelocity": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "localDimensions": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "trackPoints": [],
+        "trackBank": [],
+        "trackDwell": [],
+        "trackClosed": false,
+        "trackSpeed": 5,
+        "trackAcceleration": 1,
+        "trainDistance": 0,
+        "trainSpeed": 0,
+        "trainReversed": false,
+        "trainDwell": 0,
+        "trainStation": 65535,
+        "trainTime": 0,
+        "trackProfile": "beam",
+        "trackWidth": 0.800000011920929,
+        "trackHeight": 1,
+        "trackClearance": 0.30000001192092896,
+        "trackPylonSpacing": 10,
+        "trackPylonFloor": -8,
+        "color": {
+            "red": 255,
+            "green": 128,
+            "blue": 0
+        },
+        "boundingBox": {
+            "brn": {
+                "x": 0.5,
+                "y": -2.25,
+                "z": 2.75
+            },
+            "tfl": {
+                "x": 2.5,
+                "y": -1.75,
+                "z": 3.75
+            },
+            "center": {
+                "x": 1.5,
+                "y": -2,
+                "z": 3.25
+            },
+            "dimensions": {
+                "x": 2,
+                "y": 0.5,
+                "z": 1
+            }
+        },
+        "originalTextures": "{\n}\n",
+        "renderInfo": {},
+        "clientOnly": false,
+        "avatarEntity": false,
+        "localEntity": false,
+        "faceCamera": true,
+        "isFacingAvatar": false
+    }
+}

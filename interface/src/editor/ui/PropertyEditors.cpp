@@ -330,7 +330,10 @@ void ScrubLabel::mouseReleaseEvent(QMouseEvent* event) {
 
 ScrubSpinBox::ScrubSpinBox(QWidget* parent) : QDoubleSpinBox(parent) {
     setKeyboardTracking(false);
-    setButtonSymbols(QAbstractSpinBox::NoButtons);
+    // Qt's up/down buttons stay, drawn 0 px wide by editor.qss (ScrubSpinBox::up-button): on Qt 6.11 a spin box with a
+    // style sheet and NoButtons lays its text field out 1 px wide, so every number drew blank (qa's 1.1.4 bug, 11-08).
+    // Nothing can click them (0 px); the keys, the scrub and the field's own typing step as before
+    setButtonSymbols(QAbstractSpinBox::UpDownArrows);
     setAlignment(Qt::AlignRight);
     setFocusPolicy(Qt::StrongFocus);    // Qt's spin boxes also take the keyboard from a wheel passing over them
     _stepPause = new QTimer(this);
@@ -859,7 +862,7 @@ ImageEditor::ImageEditor(const PropertySpec& spec, QWidget* parent) : PropertyEd
     _thumbnail->setFrameShape(QFrame::StyledPanel);
     if (!spec.readOnly) {
         _thumbnail->setCursor(Qt::PointingHandCursor);
-        _thumbnail->setToolTip("Click to choose a picture on this computer, or to clear the field");
+        _thumbnail->setToolTip("Click to choose an image on this computer, or to clear the field");
         _thumbnail->installEventFilter(this);
     }
     layout->addWidget(_thumbnail);
@@ -869,7 +872,7 @@ ImageEditor::ImageEditor(const PropertySpec& spec, QWidget* parent) : PropertyEd
     // the field takes a dropped picture itself: the line edit would paste its link in as typing, which commits nothing
     _url->setAcceptDrops(false);
     if (!spec.readOnly) {
-        _url->setToolTip("A picture by its link. Drag one here from the Assets panel or Finder, or hold the left button down "
+        _url->setToolTip("An image by its link. Drag one here from the Assets panel or Finder, or hold the left button down "
                          "in the field to choose one on this computer");
         _url->installEventFilter(this);
     }
@@ -880,7 +883,7 @@ ImageEditor::ImageEditor(const PropertySpec& spec, QWidget* parent) : PropertyEd
     connect(_holdTimer, &QTimer::timeout, this, [this] { showMenu(); });
     auto clear = new QToolButton(this);
     clear->setText(QStringLiteral("×"));
-    clear->setToolTip("No picture");
+    clear->setToolTip("No image");
     clear->setEnabled(!spec.readOnly);
     layout->addWidget(clear);
 
@@ -937,7 +940,7 @@ void ImageEditor::showMenu() {
     QMenu menu(this);
     menu.setToolTipsVisible(true);
     QAction* choose = menu.addAction("Choose File…");
-    choose->setToolTip("A picture on this computer, uploaded to your files");
+    choose->setToolTip("An image on this computer, uploaded to your files");
     QAction* clear = menu.addAction("Clear");
     clear->setEnabled(!_shown.isEmpty());
     // the choice is acted on once the menu has gone, so that the file dialog does not open inside it
@@ -950,8 +953,8 @@ void ImageEditor::showMenu() {
 }
 
 void ImageEditor::chooseFile() {
-    QString path = QFileDialog::getOpenFileName(this, "Choose a picture", QDir::homePath(),
-        "Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tga *.tif *.tiff *.ktx *.exr *.hdr)");
+    QString path = QFileDialog::getOpenFileName(this, "Choose an Image", QDir::homePath(),
+        "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tga *.tif *.tiff *.ktx *.exr *.hdr)");
     if (!path.isEmpty()) {
         takeFile(path);
     }
@@ -1271,7 +1274,7 @@ QString CollisionMaskEditor::currentMask() const {
 void CollisionMaskEditor::setValue(const QVariant& value, bool mixed) {
     _updating = true;
     _mixed = mixed;
-    QStringList groups = value.toString().split(',', QString::SkipEmptyParts);
+    QStringList groups = value.toString().split(',', Qt::SkipEmptyParts);
     for (int i = 0; i < _checks.size(); ++i) {
         _checks[i]->setTristate(mixed);
         if (mixed) {

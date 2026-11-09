@@ -16,7 +16,6 @@
 #include <memory>
 #include <vector>
 
-#include <QtScript/QScriptEngine>
 #include <QtCore/QObject>
 #include <QtCore/QUrl>
 #include <QtCore/QTimer>

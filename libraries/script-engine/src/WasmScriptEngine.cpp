@@ -8,6 +8,7 @@
 
 #include "WasmScriptEngine.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include <QtCore/QCoreApplication>
@@ -17,20 +18,18 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QMetaMethod>
 #include <QtCore/QMetaEnum>
 #include <QtCore/QPointer>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
 #include <QtCore/QUrl>
-#include <QtScript/QScriptEngine>
-#include <QtScript/QScriptValue>
 
 #include <AddressManager.h>
 #include <AudioEffectOptions.h>
 #include <EntityScriptingInterface.h>
 #include <EntityTree.h>
-#include <LocationScriptingInterface.h>
 #include <NumericalConstants.h>
 #include <OctreeConstants.h>
 #include <PathUtils.h>
@@ -38,11 +37,9 @@
 #include <ResourceCache.h>
 #include <ResourceManager.h>
 #include <ScriptCaller.h>
-#include <SettingHandle.h>
 #include <SharedUtil.h>
 #include <shared/LocalFileAccessGate.h>
 
-#include <FunctionTwins.h>
 #include <HostInterface.h>
 #include <ObjectTable.h>
 #include <SignalRelay.h>
@@ -65,6 +62,7 @@ const QString JS_SUFFIX = QStringLiteral("js");
 const int MIN_TIMEOUT_FOR_COARSE_TIMER = 200;  // below this a Qt timer is made precise, as the QtScript engine does
 const int MAX_SCRIPT_QUITTING_TIME_MS = 500;
 const int MAX_SCRIPT_ENDING_TIME_MS = 3000;  // for the scriptEnding handlers, before the modules are interrupted
+const int MAX_STOPPED_CALL_TIME_MS = 2000;   // of that, for a call a stop found running to finish; the handlers have the rest
 const int DEFAULT_SCRIPT_CALL_LIMIT_MS = 5000;  // a call into a JavaScript script, of the script's own time
 
 // A call into a JavaScript script may run this long of the script's own time (what it spends in host functions,
@@ -83,11 +81,7 @@ const QString ENTITY_LOAD_EXPORT = QStringLiteral("entity_load");
 const QString ENTITY_UNLOAD_EXPORT = QStringLiteral("entity_unload");
 const QString ENTITY_HAS_EXPORT = QStringLiteral("entity_has");
 const QString ENTITY_CALL_EXPORT = QStringLiteral("entity_call");
-
-// The way back to QtScript, off unless chosen (Developer > Scripting > Run JavaScript on QtScript). Its own key since
-// the flip (2026-10-25): the menu saved the old setting's state as "off" in every client that ever ran, so a new
-// default under the old key would never have reached them.
-Setting::Handle<bool> runJavaScriptOnQtScriptSetting { "scripting/runJavaScriptOnQtScript", false };
+const QString CONSOLE_EVAL_EXPORT = QStringLiteral("console_eval");
 
 // An instance as a callback target: a callback decoded by the instance's codec calls back through it. It
 // outlives the instance as a weak reference in the callbacks; a gone instance answers nothing.
@@ -179,7 +173,8 @@ WasmScriptEngine::WasmScriptEngine(Context context, const QString& scriptContent
         // script of the world on one thread, so a runaway there holds them all: it is interrupted and that entity
         // script alone is stopped (onCallTimeLimit). A client script or an agent runs on its own, and its runaway
         // holds only itself: the call is reported in the log once and goes on, as on QtScript (Caity's choice,
-        // 2026-10-24). stop() interrupts a call as before.
+        // 2026-10-24). stop() interrupts a call as before, up to the script's scriptEnding handlers; interruptRunningCall
+        // interrupts those too.
         if (_isEntitiesEngine) {
             _limits.callTimeout = scriptCallTimeLimit();
         } else {
@@ -192,6 +187,7 @@ WasmScriptEngine::WasmScriptEngine(Context context, const QString& scriptContent
 WasmScriptEngine::~WasmScriptEngine() {
     stopTimers();
     std::lock_guard<std::mutex> lock(_instancesMutex);
+    _starting.clear();
     _entityModules.clear();
     _main.reset();
 }
@@ -207,51 +203,6 @@ bool WasmScriptEngine::isJavaScriptFile(const QString& fileNameOrUrl) {
 std::shared_ptr<WasmRuntime> WasmScriptEngine::runtime() {
     static std::shared_ptr<WasmRuntime> shared = std::make_shared<WasmRuntime>();
     return shared;
-}
-
-bool WasmScriptEngine::runJavaScriptOnWebAssembly() {
-    // for one process (a server, a test run): DARKRIDE_RUN_JS_ON_QTSCRIPT=1 is the way back to QtScript, and
-    // DARKRIDE_RUN_JS_ON_WASM=1 or 0 chooses either engine; otherwise the setting, the new engine unless it says no
-    if (qEnvironmentVariable("DARKRIDE_RUN_JS_ON_QTSCRIPT") == "1") {
-        return false;
-    }
-    if (qEnvironmentVariableIsSet("DARKRIDE_RUN_JS_ON_WASM")) {
-        return qEnvironmentVariable("DARKRIDE_RUN_JS_ON_WASM") == "1";
-    }
-    return !runJavaScriptOnQtScriptSetting.get();
-}
-
-void WasmScriptEngine::setRunJavaScriptOnWebAssembly(bool on) {
-    runJavaScriptOnQtScriptSetting.set(!on);
-}
-
-namespace {
-
-std::mutex& chosenEnginesMutex() {
-    static std::mutex mutex;
-    return mutex;
-}
-
-QHash<QUrl, bool>& chosenEngines() {
-    static QHash<QUrl, bool> chosen;
-    return chosen;
-}
-
-} // namespace
-
-void WasmScriptEngine::chooseEngineForScript(const QUrl& url, bool onWebAssembly) {
-    std::lock_guard<std::mutex> lock(chosenEnginesMutex());
-    chosenEngines()[url] = onWebAssembly;
-}
-
-bool WasmScriptEngine::engineChosenForScript(const QUrl& url, bool& onWebAssembly) {
-    std::lock_guard<std::mutex> lock(chosenEnginesMutex());
-    auto found = chosenEngines().constFind(url);
-    if (found == chosenEngines().constEnd()) {
-        return false;
-    }
-    onWebAssembly = found.value();
-    return true;
 }
 
 QString WasmScriptEngine::javascriptGuestPath() {
@@ -279,7 +230,7 @@ bool WasmScriptEngine::hasJavaScriptGuest() {
     }
     static std::once_flag warned;
     std::call_once(warned, [&path] {
-        qCWarning(scriptengine) << "No JavaScript guest module at" << path << "- JavaScript runs on the QtScript engine";
+        qCWarning(scriptengine) << "No JavaScript guest module at" << path << "- JavaScript scripts can't run";
     });
     return false;
 }
@@ -332,8 +283,8 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
         qCDebug(scriptengine) << "WasmScriptEngine: global" << name << "is null, not registered";
         return;
     }
-    if (isEntityClientScript() && !ScriptApiPolicy::allowsGlobal(name)) {
-        // a world's entity scripts don't get this one: a stand-in of the same name, with no members
+    if (holdsWorldRules() && !ScriptApiPolicy::allowsGlobal(name)) {
+        // a world's scripts don't get this one: a stand-in of the same name, with no members
         object = new RefusedGlobal(name, this);
     }
     if (_objects->global(name) == ObjectTable::NULL_HANDLE) {
@@ -341,39 +292,71 @@ void WasmScriptEngine::registerGlobalObject(const QString& name, QObject* object
     }
 }
 
-void WasmScriptEngine::registerGetterSetter(const QString& name, QScriptEngine::FunctionSignature getter,
-                                            QScriptEngine::FunctionSignature setter, const QString& parent) {
-    Q_UNUSED(setter);
-    const QString fullName = parent.isEmpty() ? name : parent + "." + name;
-    if (getter == &LocationScriptingInterface::locationGetter) {
-        // `location` is the address manager behind a getter; a module gets the object itself
-        registerGlobalObject(fullName, DependencyManager::get<AddressManager>().data());
+void WasmScriptEngine::registerAppObject(const QString& name, QObject* object) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, name, object] { registerAppObject(name, object); });
         return;
     }
-    qCDebug(scriptengine) << "WasmScriptEngine: the property" << fullName << "is a QtScript getter and setter, not available to a module";
+    // before the engine starts (security's conditions for Make): the member gate (makeInstance) reads the classes
+    // once, as the instance is made, and nothing joins a running script
+    static const QRegularExpression NAME("^[A-Z][A-Za-z]{2,40}$");
+    if (!object || _isInitialized || isRunning() || !NAME.match(name).hasMatch()) {
+        qCWarning(scriptengine) << "WasmScriptEngine: the app object" << name
+                                << "is refused: none, a name that isn't plain, or the engine has started";
+        return;
+    }
+    _appClasses.insert(object->metaObject());
+    _appObjects.append({ name, object });
 }
 
-void WasmScriptEngine::registerFunction(const QString& name, QScriptEngine::FunctionSignature fun, int numArguments) {
-    Q_UNUSED(numArguments);
-    // a library may have registered an object that stands in for the function (FunctionTwins)
-    FunctionTwins::Factory factory = FunctionTwins::find(reinterpret_cast<const void*>(fun));
-    if (factory) {
-        QObject* twin = factory();
-        if (twin) {
-            twin->setParent(this);
-            registerGlobalObject(name, twin);
-            return;
+// The app's objects go in last, after the engine's and the app's own globals: a name already given, one the script
+// API uses (ScriptApiPolicy's globals) or one of JavaScript's own is refused, so an app object never stands in for a
+// global the policy rules.
+void WasmScriptEngine::installAppObjects() {
+    static const QStringList JAVASCRIPT { "Object", "Function", "Array", "String", "Number", "Boolean", "Symbol", "BigInt",
+                                          "Math", "JSON", "Date", "RegExp", "Promise", "Reflect", "Proxy", "Map", "Set",
+                                          "WeakMap", "WeakSet", "WeakRef", "ArrayBuffer", "DataView", "Intl", "Atomics",
+                                          "Iterator", "FinalizationRegistry", "XMLHttpRequest", "WebSocket", "Script",
+                                          "Entities", "MyAvatar", "Settings", "Messages", "Assets", "Account" };
+    for (const auto& entry : _appObjects) {
+        const QString& name = entry.first;
+        if (!entry.second || _objects->global(name) != ObjectTable::NULL_HANDLE || ScriptApiPolicy::allowsGlobal(name) ||
+            JAVASCRIPT.contains(name) || name.endsWith("Array") || name.endsWith("Error")) {
+            qCWarning(scriptengine) << "WasmScriptEngine: the app object" << name << "is refused: the name is taken";
+            _appClasses.remove(entry.second ? entry.second->metaObject() : nullptr);
+            continue;
+        }
+        _objects->registerGlobal(name, entry.second);
+    }
+    _appObjects.clear();
+}
+
+namespace {
+
+// an app object's class's own members (registerAppObject): from its offsets on, none of QObject's (deleteLater,
+// destroyed, objectName), and no method that returns a pointer
+bool isOwnMethod(const QMetaObject* meta, const QByteArray& name, QMetaMethod::MethodType wanted) {
+    for (int i = meta->methodOffset(); i < meta->methodCount(); ++i) {
+        const QMetaMethod method = meta->method(i);
+        if (method.name() != name) {
+            continue;
+        }
+        const bool callable = wanted == QMetaMethod::Signal ? method.methodType() == QMetaMethod::Signal
+                                                            : method.methodType() == QMetaMethod::Method ||
+                                                                  method.methodType() == QMetaMethod::Slot;
+        if (callable && !QByteArray(method.typeName()).endsWith('*')) {
+            return true;
         }
     }
-    qCDebug(scriptengine) << "WasmScriptEngine: the function" << name << "is a QtScript function, not available to a module";
+    return false;
 }
 
-void WasmScriptEngine::registerFunction(const QString& parent, const QString& name, QScriptEngine::FunctionSignature fun,
-                                        int numArguments) {
-    Q_UNUSED(fun);
-    Q_UNUSED(numArguments);
-    qCDebug(scriptengine) << "WasmScriptEngine: the function" << parent + "." + name << "is a QtScript function, not available to a module";
+bool isOwnProperty(const QMetaObject* meta, const QByteArray& name) {
+    const int index = meta->indexOfProperty(name.constData());
+    return index >= meta->propertyOffset() && !QByteArray(meta->property(index).typeName()).endsWith('*');
 }
+
+}  // namespace
 
 void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& value) {
     if (QThread::currentThread() != thread()) {
@@ -383,11 +366,6 @@ void WasmScriptEngine::registerGlobalValue(const QString& name, const QVariant& 
     if (!_globalValues.contains(name)) {
         _globalValues.insert(name, value);
     }
-}
-
-void WasmScriptEngine::registerValue(const QString& valueName, QScriptValue value) {
-    Q_UNUSED(value);
-    qCDebug(scriptengine) << "WasmScriptEngine: the value" << valueName << "is a QtScript value, not available to a module";
 }
 
 // --- loading ----------------------------------------------------------------------------------------------------
@@ -462,13 +440,14 @@ bool WasmScriptEngine::fetchModuleBytes() {
 // --- running ----------------------------------------------------------------------------------------------------
 
 void WasmScriptEngine::run() {
-    if (QThread::currentThread() != qApp->thread() && _context == Context::CLIENT_SCRIPT) {
+    if (QThread::currentThread() != qApp->thread() && _context == Context::CLIENT_SCRIPT && !holdsWorldRules()) {
         hifi::scripting::setLocalAccessSafeThread(true);
     }
-    if (QThread::currentThread() != qApp->thread() && _context == Context::ENTITY_CLIENT_SCRIPT) {
-        // this thread runs only the world's entity scripts: whatever is called on it is a world's script's, also a
-        // call no guard marks (ScriptCaller). Nothing clears the mark: the thread is this engine's own (runInThread
-        // makes a new one for each engine, never from a pool) and ends with it.
+    if (QThread::currentThread() != qApp->thread() && holdsWorldRules()) {
+        // this thread runs only a world's scripts (the world's entity scripts, or an avatar's as a world of their
+        // own): whatever is called on it is a world's script's, also a call no guard marks (ScriptCaller). Nothing
+        // clears the mark: the thread is this engine's own (runInThread makes a new one for each engine, never from a
+        // pool) and ends with it.
         ScriptCaller::markThreadAsWorld(_worldId);
     }
     QSharedPointer<ScriptEngines> scriptEngines(_scriptEngines);
@@ -482,17 +461,8 @@ void WasmScriptEngine::run() {
         DependencyManager::get<EntityScriptingInterface>()->init();
         registerStandardGlobals();
     }
-    // the network objects XMLHttpRequest and WebSocket are built on in the guest, and an agent's WebSocketServer
-    registerGlobalObject("Http", _http);
-    registerGlobalObject("Sockets", _sockets);
-    if (_context == Context::AGENT_SCRIPT) {
-        registerGlobalObject("WebSocketServers", new WebSocketServerFactory(this));
-    }
-    // two globals the QtScript engine gives as a native constructor and a plain object
-    registerGlobalObject("AudioEffectOptions", _audioEffectOptions);
-    registerGlobalObject("Resource", _resourceStates);
-    // a constant the QtScript engine gives as a number in a variant object; a module gets the number
-    registerGlobalValue("TREE_SCALE", QVariant(TREE_SCALE));
+    registerEngineGlobals();
+    installAppObjects();
 
     _isRunning = true;
     emit runningStateChanged();
@@ -509,6 +479,31 @@ void WasmScriptEngine::run() {
     _isRunning = false;
     emit runningStateChanged();
     emit doneRunning();
+}
+
+void WasmScriptEngine::registerEngineGlobals() {
+    // the network objects XMLHttpRequest and WebSocket are built on in the guest; and WebSocketServers, which makes
+    // listening sockets, for an agent alone (the operator's own script): a world's entity scripts, on a client or on
+    // the entity script server, get none (security's ruling, 2026-11-04)
+    registerGlobalObject("Http", _http);
+    registerGlobalObject("Sockets", _sockets);
+    if (_context == Context::AGENT_SCRIPT) {
+        registerGlobalObject("WebSocketServers", new WebSocketServerFactory(this));
+    }
+    // two globals a script had as a native constructor and a plain object
+    registerGlobalObject("AudioEffectOptions", _audioEffectOptions);
+    registerGlobalObject("Resource", _resourceStates);
+    // a constant a script gets as a number
+    registerGlobalValue("TREE_SCALE", QVariant(TREE_SCALE));
+}
+
+QStringList WasmScriptEngine::registeredGlobalNames() const {
+    return _objects->globalNames();
+}
+
+QString WasmScriptEngine::registeredGlobalClass(const QString& name) const {
+    const QObject* object = _objects->object(_objects->global(name));
+    return object ? QString(object->metaObject()->className()) : QString();
 }
 
 // An instance of a module in this engine: its codec (with this engine's table, the serializer and the
@@ -529,6 +524,30 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         instanceLimits.callTimeout = std::chrono::milliseconds(0);
     }
     instance->instance = std::make_unique<WasmInstance>(module, instanceLimits);
+    // a stop reaches the instance while it starts too (its initializer, the script's top level), not only once it is
+    // the main or an entity module: it is listed as starting, and a stop that came before is applied to it, in one
+    // locked step. Started, the caller hands it over (handOver); failed, it goes from the list here
+    {
+        std::lock_guard<std::mutex> lock(_instancesMutex);
+        _starting.push_back(instance);
+        if (_isStopping) {
+            stopInstances();
+        }
+    }
+    struct StartingFailed {
+        WasmScriptEngine* engine;
+        ModuleInstancePointer instance;
+        bool started { false };
+        ~StartingFailed() {
+            if (!started) {
+                std::lock_guard<std::mutex> lock(engine->_instancesMutex);
+                if (instance->instance && instance->instance->isStopRequested()) {
+                    engine->_startEndedByStop = true;  // for stopAll's line: it is on no list by then
+                }
+                engine->handOver(instance);
+            }
+        }
+    } startingFailed { this, instance };
     if (instanceLimits.callWarning.count() > 0) {
         // logged at once, from inside the long call: a message queued to this thread would wait for the call to end
         const QString scriptName = name;
@@ -539,8 +558,8 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         });
     }
     instance->host = std::make_unique<HostInterface>(*instance->instance, *_objects, *instance->codec, *_relay);
-    if (isEntityClientScript()) {
-        // a world's entity scripts: the script API policy, held by the host at describe, call, read and write
+    if (holdsWorldRules()) {
+        // a world's scripts: the script API policy, held by the host at describe, call, read and write
         HostInterface::MemberGate gate;
         gate.allowsClass = &ScriptApiPolicy::allowsClass;
         gate.deniesMethod = &ScriptApiPolicy::deniesMethod;
@@ -551,6 +570,30 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         gate.holdsBackDelivery = &ScriptApiPolicy::holdsBackDelivery;
         gate.refusalLine = &ScriptApiPolicy::refusalLine;
         gate.allowsAfterWorldLeft = &ScriptApiPolicy::allowsAfterWorldLeft;
+        if (!_appClasses.isEmpty()) {
+            // the app's own objects for this engine (registerAppObject): exactly their classes, all members
+            const QSet<const QMetaObject*> own = _appClasses;
+            gate.allowsClass = [own](const QMetaObject* meta) {
+                return own.contains(meta) || ScriptApiPolicy::allowsClass(meta);
+            };
+            gate.deniesMethod = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnMethod(meta, name, QMetaMethod::Method)
+                                          : ScriptApiPolicy::deniesMethod(meta, name);
+            };
+            gate.deniesPropertyWrite = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnProperty(meta, name) : ScriptApiPolicy::deniesPropertyWrite(meta, name);
+            };
+            gate.deniesPropertyRead = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnProperty(meta, name) : ScriptApiPolicy::deniesPropertyRead(meta, name);
+            };
+            gate.deniesSignal = [own](const QMetaObject* meta, const QByteArray& name) {
+                return own.contains(meta) ? !isOwnMethod(meta, name, QMetaMethod::Signal)
+                                          : ScriptApiPolicy::deniesSignal(meta, name);
+            };
+            gate.checksDelivery = [own](const QMetaObject* meta, const QByteArray& name) {
+                return !own.contains(meta) && ScriptApiPolicy::checksDelivery(meta, name);
+            };
+        }
         instance->host->setMemberGate(std::move(gate));
     }
     instance->host->setLogger([this](int level, const QString& text) {
@@ -610,14 +653,22 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::makeInstance(const QSt
         instance->running = false;
         return nullptr;
     }
+    startingFailed.started = true;
     return instance;
+}
+
+// The instance makeInstance listed as starting is off that list: it is the main or an entity module now, in the same
+// locked step, or it failed. The caller holds _instancesMutex.
+void WasmScriptEngine::handOver(const ModuleInstancePointer& instance) {
+    _starting.erase(std::remove(_starting.begin(), _starting.end(), instance), _starting.end());
 }
 
 bool WasmScriptEngine::startMain() {
     QString error;
     std::shared_ptr<WasmModule> module;
     if (_runsJavaScript) {
-        if (_scriptContents.isEmpty() && !_isEntitiesEngine) {
+        // the entities engine and the console's start with no script of their own
+        if (_scriptContents.isEmpty() && !_isEntitiesEngine && _fileNameString != CONSOLE_SCRIPT_NAME) {
             scriptErrorMessage("No script to run: " + _fileNameString);
             return false;
         }
@@ -639,12 +690,15 @@ bool WasmScriptEngine::startMain() {
     }
     ModuleInstancePointer main = makeInstance(getFilename(), module, _limits, error);
     if (!main) {
-        scriptErrorMessage(error);
+        if (!error.contains("the script was stopped")) {
+            scriptErrorMessage(error);  // a stop while it started is what was asked for, not a failure
+        }
         return false;
     }
     {
         std::lock_guard<std::mutex> lock(_instancesMutex);
         _main = main;
+        handOver(main);
     }
     return !_isFinished;
 }
@@ -730,6 +784,24 @@ void WasmScriptEngine::stopInstance(const ModuleInstancePointer& instance) {
 void WasmScriptEngine::stopAll() {
     scriptInfoMessage("WebAssembly script engine stopping:" + getFilename());
     stopTimers();
+    {
+        // a stop that found a module inside a call was for that call: its handlers still run. Not past the deadline,
+        // and not for a world that was left, which gets nothing more done
+        std::lock_guard<std::mutex> lock(_instancesMutex);
+        _scriptEndingBegun = true;
+        if (_stopLetCallFinish) {
+            // the call the stop found running: finished, or ended at the deadline (or by its world left)
+            bool ended = _startEndedByStop;
+            forEachInstance([&ended](WasmInstance& instance) { ended = ended || instance.isStopRequested(); });
+            qCDebug(scriptengine).nospace() << "the call running at the stop of " << getFilename()
+                                            << (ended ? " was ended at its deadline or by its world left, "
+                                                      : " finished within its deadline, ")
+                                            << MAX_SCRIPT_ENDING_TIME_MS - endingTimeLeftMs() << " ms after the stop";
+        }
+        if (!_endingDeadlinePassed && !worldWasLeft()) {
+            forEachInstance([](WasmInstance& instance) { instance.resumeAfterStop(); });
+        }
+    }
     // the signal first, while the modules can still answer it; then their own stops; the entity scripts'
     // modules before the main one, which may host them
     ++_callDepth;
@@ -746,6 +818,22 @@ void WasmScriptEngine::stopAll() {
         std::lock_guard<std::mutex> lock(_instancesMutex);
         _entityModules.clear();
         _main.reset();
+    }
+}
+
+void WasmScriptEngine::forEachInstance(const std::function<void(WasmInstance&)>& action) {
+    for (const ModuleInstancePointer& instance : _starting) {
+        if (instance->instance) {
+            action(*instance->instance);
+        }
+    }
+    if (_main && _main->instance) {
+        action(*_main->instance);
+    }
+    for (const ModuleInstancePointer& instance : _entityModules) {
+        if (instance->instance) {
+            action(*instance->instance);
+        }
     }
 }
 
@@ -829,6 +917,8 @@ void WasmScriptEngine::stopEntityScript(const EntityItemID& entityID, const QStr
 }
 
 void WasmScriptEngine::stop(bool marshal) {
+    quint64 notStoppedYet = 0;
+    _firstStopTime.compare_exchange_strong(notStoppedYet, usecTimestampNow());
     _isStopping = true;
     if (marshal) {
         QMetaObject::invokeMethod(this, "stop");
@@ -838,18 +928,46 @@ void WasmScriptEngine::stop(bool marshal) {
         _isFinished = true;
         emit runningStateChanged();
     }
-    if (QThread::currentThread() != thread() && _callDepth > 0) {
-        // a module is inside a call: make it return now rather than at its own pace
+    if (QThread::currentThread() != thread()) {
+        // every module, inside a call or not: one may begin at any moment, and a call through a signal's handler is
+        // not one the engine counts. A world that was left gets nothing more done: its call ends now, and its
+        // scriptEnding handlers run no more. Otherwise a call running now may finish what it is doing, for
+        // MAX_STOPPED_CALL_TIME_MS from the first stop, and no new call begins; the world left meanwhile ends it at
+        // once. stopAll lets the handlers in, which then have until the deadline in waitTillDoneRunning
         std::lock_guard<std::mutex> lock(_instancesMutex);
-        if (_main && _main->instance) {
-            _main->instance->requestStop();
-        }
-        for (const ModuleInstancePointer& instance : _entityModules) {
-            if (instance->instance) {
-                instance->instance->requestStop();
-            }
-        }
+        stopInstances();
     }
+}
+
+// stop()'s part for the modules; the caller holds _instancesMutex
+void WasmScriptEngine::stopInstances() {
+    if (worldWasLeft()) {
+        forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
+    } else if (!_scriptEndingBegun) {
+        const int leftMs = std::max(0, endingTimeLeftMs() - (MAX_SCRIPT_ENDING_TIME_MS - MAX_STOPPED_CALL_TIME_MS));
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(leftMs);
+        const int world = getWorldId();
+        bool inCall = _callDepth > 0;
+        forEachInstance([deadline, world, &inCall](WasmInstance& instance) {
+            instance.requestStopAfter(deadline, world);
+            inCall = inCall || instance.isInCall();
+        });
+        _stopLetCallFinish = _stopLetCallFinish || inCall;  // for stopAll's line: a call was running at the stop
+    }
+}
+
+int WasmScriptEngine::endingTimeLeftMs() const {
+    const quint64 now = usecTimestampNow();
+    const quint64 first = _firstStopTime;
+    const quint64 usedMs = now > first ? (now - first) / USECS_PER_MSEC : 0;
+    return MAX_SCRIPT_ENDING_TIME_MS - int(std::min<quint64>(usedMs, MAX_SCRIPT_ENDING_TIME_MS));
+}
+
+void WasmScriptEngine::interruptRunningCall() {
+    stop();
+    std::lock_guard<std::mutex> lock(_instancesMutex);
+    _endingDeadlinePassed = true;
+    forEachInstance([](WasmInstance& instance) { instance.requestStop(); });
 }
 
 void WasmScriptEngine::waitTillDoneRunning() {
@@ -875,18 +993,10 @@ void WasmScriptEngine::waitTillDoneRunning() {
             }
             return true;
         };
-        if (!waitServingCalls(MAX_SCRIPT_ENDING_TIME_MS)) {
-            {
-                std::lock_guard<std::mutex> lock(_instancesMutex);
-                if (_main && _main->instance) {
-                    _main->instance->requestStop();
-                }
-                for (const ModuleInstancePointer& instance : _entityModules) {
-                    if (instance->instance) {
-                        instance->instance->requestStop();
-                    }
-                }
-            }
+        // counted from the first stop: scripts stopped together, as at a quit, reach the deadline together, so the wait
+        // on one after another adds nothing however many handlers are stuck
+        if (!waitServingCalls(endingTimeLeftMs())) {
+            interruptRunningCall();
             if (!waitServingCalls(MAX_SCRIPT_QUITTING_TIME_MS)) {
                 qCWarning(scriptengine) << "WebAssembly script engine did not stop, terminating its thread:" << getFilename();
                 workerThread->terminate();
@@ -1036,7 +1146,10 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
     }
     EntityScriptDetails newDetails;
     newDetails.scriptText = entityScript;
-    const QString refusal = entityScriptRefusal(entityScript);
+    QString refusal = entityScriptRefusal(entityScript);
+    if (refusal.isEmpty()) {
+        refusal = ruleEntityScriptFetch(entityScript);
+    }
     if (!refusal.isEmpty()) {
         newDetails.status = EntityScriptStatus::ERROR_LOADING_SCRIPT;
         newDetails.errorInfo = "not run: " + refusal;
@@ -1045,7 +1158,7 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
         return;
     }
     newDetails.status = EntityScriptStatus::LOADING;
-    newDetails.definingSandboxURL = currentSandboxURL;
+    newDetails.definingSandboxURL = QUrl();   // the script's own address, once it runs (entityScriptReady)
     if (isWasmScript(entityScript) && !wasmEntityScriptsEnabled()) {
         // a module comes from wherever the entity's owner put it and speaks to the host directly, not through the
         // shim; until a module has an object table of its own, only JavaScript entity scripts run
@@ -1059,10 +1172,10 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
     setEntityScriptDetails(entityID, newDetails);
 
     auto scriptCache = DependencyManager::get<ScriptCache>();
-    QWeakPointer<BaseScriptEngine> weakRef(sharedFromThis());
+    QWeakPointer<ScriptEngine> weakRef(sharedFromThis());
     if (isWasmScript(entityScript)) {
         scriptCache->getScriptBytes(entityScript, [this, weakRef, entityID](const QString& url, const QByteArray& bytes, bool success, const QString& status) {
-            QSharedPointer<BaseScriptEngine> strongRef(weakRef);
+            QSharedPointer<ScriptEngine> strongRef(weakRef);
             if (!strongRef || isStopping()) {
                 return;
             }
@@ -1070,7 +1183,7 @@ void WasmScriptEngine::loadEntityScript(const EntityItemID& entityID, const QStr
         }, forceRedownload);
     } else {
         scriptCache->getScriptContents(entityScript, [this, weakRef, entityID](const QString& url, const QString& contents, bool isURL, bool success, const QString& status) {
-            QSharedPointer<BaseScriptEngine> strongRef(weakRef);
+            QSharedPointer<ScriptEngine> strongRef(weakRef);
             if (!strongRef || isStopping()) {
                 return;
             }
@@ -1138,7 +1251,7 @@ void WasmScriptEngine::entityScriptReady(const EntityItemID& entityID, const QSt
         return;
     }
     newDetails.status = EntityScriptStatus::RUNNING;
-    newDetails.definingSandboxURL = currentSandboxURL.isEmpty() ? QUrl(url) : currentSandboxURL;
+    newDetails.definingSandboxURL = QUrl(url);
     setEntityScriptDetails(entityID, newDetails);
     _entityHosts[entityID] = host;
     callEntityScriptMethod(entityID, "preload");
@@ -1164,6 +1277,7 @@ WasmScriptEngine::ModuleInstancePointer WasmScriptEngine::entityModuleInstance(c
     {
         std::lock_guard<std::mutex> lock(_instancesMutex);
         _entityModules[url] = instance;
+        handOver(instance);
     }
     return instance;
 }
@@ -1237,6 +1351,37 @@ void WasmScriptEngine::unloadAllEntityScripts(bool blockingCall) {
     }
     _entityHosts.clear();
     emit entityScriptDetailsUpdated();
+}
+
+QVariantMap WasmScriptEngine::consoleEvaluate(const QString& code) {
+    QVariantMap shown { { "error", true } };
+    ModuleInstancePointer main;
+    {
+        std::lock_guard<std::mutex> lock(_instancesMutex);
+        main = _main;
+    }
+    if (!_runsJavaScript) {
+        shown["text"] = QString("the console runs JavaScript; %1 is a WebAssembly module").arg(getFilename());
+        return shown;
+    }
+    if (!main || !main->running || !main->host) {
+        shown["text"] = QString("%1 isn't running").arg(getFilename());
+        return shown;
+    }
+    if (!main->instance->hasExport(CONSOLE_EVAL_EXPORT)) {
+        shown["text"] = "this build's JavaScript guest has no console (it needs revision 6 or later)";
+        return shown;
+    }
+    QVariant result;
+    QString error;
+    ++_callDepth;
+    const bool called = main->host->callWithPayload(CONSOLE_EVAL_EXPORT, QVariant(code), result, error);
+    --_callDepth;
+    if (!called || !result.canConvert<QVariantMap>()) {
+        shown["text"] = error.isEmpty() ? QString("the line didn't run") : error;
+        return shown;
+    }
+    return result.toMap();
 }
 
 // A method of an entity's script, through the contract's entity_call: the arguments are the entity's id and

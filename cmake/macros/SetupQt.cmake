@@ -16,8 +16,8 @@ function(get_sub_directories result curdir)
   set(${result} ${dirlist} PARENT_SCOPE)
 endfunction()
 
-function(calculate_qt5_version result _QT_DIR)
-  # All Qt5 packages have little "private" include directories named with the actual Qt version such as:
+function(calculate_qt_version result _QT_DIR)
+  # Qt packages have little "private" include directories named with the actual Qt version such as:
   #   .../include/QtCore/5.12.3/QtCore/private
   # Sometimes we need to include these private headers for debug hackery.
   # Hence we find one of these directories and pick apart its path to determine the actual QT_VERSION.
@@ -25,7 +25,12 @@ function(calculate_qt5_version result _QT_DIR)
   # macOS; only a framework build puts them inside QtCore.framework.
   set(_QT_CORE_DIR "${_QT_DIR}/include/QtCore")
   if (APPLE AND NOT EXISTS "${_QT_CORE_DIR}")
-    set(_QT_CORE_DIR "${_QT_DIR}/lib/QtCore.framework/Versions/5/Headers")
+    # Qt 5 frameworks name their version folder 5, Qt 6 frameworks A
+    if (QT_VERSION_MAJOR EQUAL 5)
+      set(_QT_CORE_DIR "${_QT_DIR}/lib/QtCore.framework/Versions/5/Headers")
+    else()
+      set(_QT_CORE_DIR "${_QT_DIR}/lib/QtCore.framework/Versions/A/Headers")
+    endif()
   endif()
   if(NOT EXISTS "${_QT_CORE_DIR}")
       message(FATAL_ERROR "Could not find 'include/QtCore' in '${_QT_DIR}'")
@@ -34,7 +39,7 @@ function(calculate_qt5_version result _QT_DIR)
   get_sub_directories(subdirs ${_QT_CORE_DIR})
 
   foreach(subdir ${subdirs})
-    string(REGEX MATCH "5.[0-9]+.[0-9]+$" _QT_VERSION ${subdir})
+    string(REGEX MATCH "${QT_VERSION_MAJOR}.[0-9]+.[0-9]+$" _QT_VERSION ${subdir})
     if (NOT "${_QT_VERSION}" STREQUAL "")
       # found it!
       set(${result} "${_QT_VERSION}" PARENT_SCOPE)
@@ -63,7 +68,7 @@ macro(setup_qt)
     # figure out where the qt dir is
     get_filename_component(QT_DIR "${QT_CMAKE_PREFIX_PATH}/../../" ABSOLUTE)
     set(QT_VERSION "unknown")
-    calculate_qt5_version(QT_VERSION "${QT_DIR}")
+    calculate_qt_version(QT_VERSION "${QT_DIR}")
     if (QT_VERSION STREQUAL "unknown")
       message(FATAL_ERROR "Could not determine QT_VERSION")
     endif()
@@ -75,8 +80,8 @@ macro(setup_qt)
         string(REPLACE \\ / QT_DIR ${QT_DIR})
     endif()
 
-    if(NOT EXISTS "${QT_CMAKE_PREFIX_PATH}/Qt5Core/Qt5CoreConfig.cmake")
-        message(FATAL_ERROR "Unable to locate Qt5CoreConfig.cmake in '${QT_CMAKE_PREFIX_PATH}'")
+    if(NOT EXISTS "${QT_CMAKE_PREFIX_PATH}/Qt${QT_VERSION_MAJOR}Core/Qt${QT_VERSION_MAJOR}CoreConfig.cmake")
+        message(FATAL_ERROR "Unable to locate Qt${QT_VERSION_MAJOR}CoreConfig.cmake in '${QT_CMAKE_PREFIX_PATH}'")
     endif()
 
     message(STATUS "Using Qt build in : '${QT_DIR}' with version ${QT_VERSION}")

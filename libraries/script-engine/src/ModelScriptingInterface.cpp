@@ -10,20 +10,12 @@
 //
 
 #include "ModelScriptingInterface.h"
-#include <QScriptEngine>
-#include <QScriptValueIterator>
-#include <QtScript/QScriptValue>
 #include <model-networking/SimpleMeshProxy.h>
 #include "ScriptEngine.h"
 #include "ScriptEngineLogging.h"
 #include "OBJWriter.h"
 
 ModelScriptingInterface::ModelScriptingInterface(QObject* parent) : QObject(parent) {
-    _modelScriptEngine = qobject_cast<QScriptEngine*>(parent);
-
-    qScriptRegisterSequenceMetaType<QList<MeshProxy*>>(_modelScriptEngine);
-    qScriptRegisterMetaType(_modelScriptEngine, meshFaceToScriptValue, meshFaceFromScriptValue);
-    qScriptRegisterMetaType(_modelScriptEngine, qVectorMeshFaceToScriptValue, qVectorMeshFaceFromScriptValue);
 }
 
 QString ModelScriptingInterface::meshToOBJ(MeshProxyList in) {

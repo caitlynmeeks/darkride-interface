@@ -30,6 +30,7 @@
 #include <ScriptCallback.h>
 
 #include "../../InterfaceLogging.h"
+#include "../../ui/CodeEditor.h"
 #include "../PropertySpec.h"
 
 namespace {
@@ -89,7 +90,30 @@ ScriptEditor::ScriptEditor(const PropertySpec& spec, QWidget* parent) : Property
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
     _url = new TextEditor(spec, this);
-    layout->addWidget(_url);
+    // the link, and Edit beside it: the script in the Code panel (Make v1; Qt 6 only, ui/CodeEditor.h); New in Edit's
+    // place while the field is empty (New Script, mary 11-08): a starter script, made in the world's files at its
+    // first Save
+    auto linkRow = new QHBoxLayout();
+    linkRow->setContentsMargins(0, 0, 0, 0);
+    linkRow->setSpacing(6);
+    linkRow->addWidget(_url, 1);
+    _edit = new QPushButton("Edit", this);
+    _edit->setVisible(false);
+    linkRow->addWidget(_edit, 0, Qt::AlignTop);
+    layout->addLayout(linkRow);
+    connect(_edit, &QPushButton::clicked, this, [this] {
+        if (_ids.size() != 1) {
+            return;
+        }
+        auto code = DependencyManager::get<CodeEditor>();
+        if (_link.isEmpty()) {
+            if (!code->openNew(_ids.first(), _spec.key)) {
+                showEdit();   // it can't now (the world or the rights changed): the button says why
+            }
+        } else {
+            code->open(_ids.first(), _spec.key);
+        }
+    });
     connect(_url, &PropertyEditor::editBegan, this, &PropertyEditor::editBegan);
     connect(_url, &PropertyEditor::liveValue, this, &PropertyEditor::liveValue);
     connect(_url, &PropertyEditor::committed, this, &PropertyEditor::committed);
@@ -154,6 +178,7 @@ void ScriptEditor::setValue(const QVariant& value, bool mixed) {
     _url->setValue(value, mixed);
     showInlineNote(mixed ? QString() : value.toString());
     const QString link = mixed ? QString("\n") : value.toString().trimmed();   // mixed: never equal to a real link
+    const bool changed = link != _link || mixed != _mixed;
     if (link != _link) {
         _link = link;
         _hasLink = !link.isEmpty();
@@ -162,7 +187,38 @@ void ScriptEditor::setValue(const QVariant& value, bool mixed) {
         showStatus();
     }
     _statusRow->setVisible(_hasLink);
+    _mixed = mixed;
+    showEdit(changed);   // the Inspector sets values every 100 ms: New's check, at most once a second unless it changed
     updatePolling();
+}
+
+// one entity's script, on a build with the Code panel: Edit, or New while the field is empty, off with why it can't
+// (a world opened from a file can't keep scripts, mary 11-08)
+void ScriptEditor::showEdit(bool now) {
+    const bool one = CodeEditor::isAvailable() && _ids.size() == 1 && !_mixed;
+    _edit->setVisible(one);
+    if (!one) {
+        return;
+    }
+    if (!_link.isEmpty()) {
+        _edit->setText("Edit");
+        _edit->setEnabled(true);
+        _edit->setToolTip(server() ? "Opens this server script in the Code panel" : "Opens this script in the Code panel");
+        return;
+    }
+    static const qint64 NEW_CHECK_MS = 1000;
+    const qint64 at = QDateTime::currentMSecsSinceEpoch();
+    if (!now && _edit->text() == "New" && at - _newCheckedAt < NEW_CHECK_MS) {
+        return;
+    }
+    _newCheckedAt = at;
+    const QString why = CodeEditor::whyNoNewScript(_ids.first(), _spec.key);
+    _edit->setText("New");
+    _edit->setEnabled(why.isEmpty());
+    // a thing's name is world text: always plain in the tooltip, never read as rich text
+    _edit->setToolTip(!why.isEmpty() ? "<qt>" + why.toHtmlEscaped() + "</qt>"
+        : server() ? "Starts a new server script for this thing in the Code panel"
+                   : "Starts a new script for this thing in the Code panel");
 }
 
 void ScriptEditor::setEntities(const QList<QUuid>& ids) {
@@ -173,6 +229,7 @@ void ScriptEditor::setEntities(const QList<QUuid>& ids) {
     ++_generation;
     _answers.clear();
     showStatus();
+    showEdit();
     updatePolling();
 }
 
@@ -318,6 +375,19 @@ void ScriptEditor::showStatus() {
 
 QString ScriptEditor::statusText() const {
     return _statusRow->isVisible() ? _status->text() : QString();
+}
+
+QVariantMap ScriptEditor::editButton() const {
+    return { { "shown", _edit->isVisibleTo(const_cast<ScriptEditor*>(this)) }, { "text", _edit->text() },
+             { "enabled", _edit->isEnabled() }, { "tip", _edit->toolTip() } };
+}
+
+bool ScriptEditor::pressEdit() {
+    if (!_edit->isVisible() || !_edit->isEnabled()) {
+        return false;
+    }
+    _edit->click();
+    return true;
 }
 
 bool ScriptEditor::pressReload() {

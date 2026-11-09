@@ -369,10 +369,23 @@ void LightStage::Shadow::setKeylightCascadeFrustum(unsigned int cascadeIndex, co
 
 // FROZEN (vehicle path): see the note at the top of this file.
 void LightStage::Shadow::setKeylightCascadeBias(unsigned int cascadeIndex, float constantBias, float slopeBias) {
+    // metres along the light, kept, and written as a fraction of this cascade's depth range: the range its map was
+    // drawn with for a held cascade (its frustum is kept), this frame's fit for a cascade about to be drawn, replaced
+    // by the adjusted range in setCascadeFrustum after its draw. Until 2026-11-07 the values were written as given,
+    // fractions sized by the cascade's view depth, and at a low sun they ate metres of shadow from the contact up
+    // (entry 31).
+    _biasMetres[cascadeIndex] = glm::vec2(constantBias, slopeBias);
+    writeCascadeBias(cascadeIndex);
+}
+
+void LightStage::Shadow::writeCascadeBias(unsigned int cascadeIndex) {
+    const auto& frustum = _cascades[cascadeIndex]._frustum;
+    const float MIN_RANGE = 0.001f;
+    const float range = std::max(frustum->getFarClip() - frustum->getNearClip(), MIN_RANGE);
     auto& schema = _schemaBuffer.edit<Schema>();
     auto& schemaCascade = schema.cascades[cascadeIndex];
-    schemaCascade.fixedBias = constantBias;
-    schemaCascade.slopeBias = slopeBias;
+    schemaCascade.fixedBias = _biasMetres[cascadeIndex].x / range;
+    schemaCascade.slopeBias = _biasMetres[cascadeIndex].y / range;
 }
 
 // FROZEN (vehicle path): see the note at the top of this file.
@@ -387,6 +400,7 @@ void LightStage::Shadow::setCascadeFrustum(unsigned int cascadeIndex, const View
     auto& schema = _schemaBuffer.edit<Schema>();
     auto& schemaCascade = schema.cascades[cascadeIndex];
     schemaCascade.reprojection = _biasMatrix * shadowFrustum.getProjection() * viewInverse.getMatrix();
+    writeCascadeBias(cascadeIndex);
 }
 
 LightStage::Index LightStage::findLight(const LightPointer& light) const {

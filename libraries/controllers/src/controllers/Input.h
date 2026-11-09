@@ -11,6 +11,7 @@
 #ifndef hifi_controllers_Input_h
 #define hifi_controllers_Input_h
 
+#include <QtCore/QMetaType>
 #include <GLMHelpers.h>
 
 namespace controller {
@@ -94,5 +95,7 @@ struct Input {
 };
 
 }
+
+Q_DECLARE_METATYPE(controller::Input)
 
 #endif

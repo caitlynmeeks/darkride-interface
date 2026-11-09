@@ -2,11 +2,11 @@
 //  parity.js
 //  tests-manual/wasm-scripting
 //
-//  Round 3 of WASM-SCRIPTING.md: the same script on the QtScript engine and on the WebAssembly engine, with
-//  one PARITY line per check; the two logs are diffed. Every line is a value a script could depend on. Lines
+//  Round 3 of WASM-SCRIPTING.md: one PARITY line per check, diffed against the recordings (this engine's own,
+//  and the QtScript engine's from before its removal). Every line is a value a script could depend on. Lines
 //  that must differ by nature (timings, generated ids) are not here.
 //
-//  Run serverless on both engines:  tests-manual/wasm-scripting/parity.sh [path/to/Darkride.app]
+//  Run serverless:  tests-manual/wasm-scripting/parity.sh [timeout seconds]
 //
 //  Written in ES5 on purpose.
 //

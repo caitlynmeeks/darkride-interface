@@ -10,7 +10,6 @@
 
 #include "ScriptableModel.h"
 
-#include <QtScript/QScriptEngine>
 
 #include "GraphicsScriptingUtil.h"
 #include "ScriptableMesh.h"
@@ -270,16 +269,3 @@ scriptable::ScriptableMeshes scriptable::ScriptableModel::getMeshes() {
     }
     return out;
 }
-
-#if 0
-glm::uint32 scriptable::ScriptableModel::forEachVertexAttribute(QScriptValue callback) {
-    glm::uint32 result = 0;
-    scriptable::ScriptableMeshes in = getMeshes();
-    if (in.size()) {
-        foreach (scriptable::ScriptableMeshPointer meshProxy, in) {
-            result += meshProxy->mapAttributeValues(callback);
-        }
-    }
-    return result;
-}
-#endif

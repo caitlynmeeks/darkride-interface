@@ -8,6 +8,7 @@
 
 #include "GLTexture.h"
 
+#include <QtCore/QElapsedTimer>
 #include <QtCore/QThread>
 #include <NumericalConstants.h>
 
@@ -21,6 +22,22 @@
 #define THREADED_TEXTURE_BUFFERING 1
 
 static const size_t DEFAULT_ALLOWED_TEXTURE_MEMORY = MB_TO_BYTES(DEFAULT_ALLOWED_TEXTURE_MEMORY_MB);
+// the loading boost (gpu::Texture::getTransferBoost, entry 33): the per-frame allocation budget times this while the
+// loading screen is up; the GPU and the present thread have nothing else to show then
+static const size_t TRANSFER_BOOST_FACTOR = 4;
+// the upload budget's factor under the loading screen. Two, not four: the loading screen is as short with either (the
+// uploads wait on the allocation turns and the one buffering thread, not on this budget), and the staging the
+// allocator keeps after the loading screen follows this number (+21 MB at two, +37 at four, performance's maps of
+// 2026-11-09). TIVOLI_TRANSFER_UPLOAD_BOOST (1-4, test-only, read once) overrides it for a sitting.
+static const size_t UPLOAD_BOOST_FACTOR = 2;
+static size_t uploadBoostFactor() {
+    static const size_t factor = [] {
+        bool ok = false;
+        const int value = qgetenv("TIVOLI_TRANSFER_UPLOAD_BOOST").toInt(&ok);
+        return (ok && value >= 1 && value <= (int)TRANSFER_BOOST_FACTOR) ? (size_t)value : UPLOAD_BOOST_FACTOR;
+    }();
+    return factor;
+}
 
 namespace gpu { namespace gl {
 
@@ -32,6 +49,65 @@ enum class MemoryPressureState
 };
 
 static MemoryPressureState _memoryPressureState{ MemoryPressureState::Idle };
+// the loading boost's turn (entry 33, Amendment 2): allocation one frame, upload the next, while both have work
+static bool _boostAllocationTurn{ false };
+
+// The engine's cap rule (entry 33, Amendment 3): a texture can grow this frame only when its next step fits under the
+// over mark. Before it, at a budget smaller than the world's textures (the Potato preset's 64 MB against Port
+// Amarelle's 225), a promote crossed the mark and the next frame demoted again, a cycle that never let the sizes
+// settle: the arrival gate never opened, the loading screen ran to the script's limit, and a presented world kept
+// popping.
+// Both backends promote two mips at a time, to the texture's finest allowed level, so the step's bytes are exact.
+// allocatedBytes is the GL object's size, already in hand wherever this is asked: one size evaluation per promotable
+// texture and none for a settled one (performance's read of 2026-11-09)
+static size_t promotionBytes(const Texture& texture, const GLVariableAllocationSupport& vartexture,
+                             size_t allocatedBytes) {
+    const uint16 allocated = vartexture.allocatedMip();
+    const uint16 target = std::max<uint16>(vartexture.minAllocatedMip(), allocated - std::min<uint16>(allocated, 2));
+    if (target >= allocated) {
+        return 0;
+    }
+    const size_t grown = texture.evalTotalSize(target);
+    return grown > allocatedBytes ? grown - allocatedBytes : 0;
+}
+static bool canPromoteWithin(const Texture& texture, const GLVariableAllocationSupport& vartexture,
+                             size_t allocatedBytes, size_t headroom) {
+    return vartexture.canPromote() && promotionBytes(texture, vartexture, allocatedBytes) <= headroom;
+}
+// the headroom under the over mark at this frame's scan, for the promote queue's build and the promotes themselves
+static size_t _frameHeadroom{ 0 };
+
+// test-only (TIVOLI_TEXTURE_ENGINE_TRACE): one line a second on what the engine did on the present thread, so a second
+// with a late present can be read against its texture work (the judder read of 2026-11-09). Unset: one static bool
+// read a frame.
+static bool textureEngineTrace() {
+    static const bool trace = !qgetenv("TIVOLI_TEXTURE_ENGINE_TRACE").isEmpty();
+    return trace;
+}
+struct TextureEngineTraceSecond {
+    uint32_t frames{ 0 }, allocationFrames{ 0 }, transferFrames{ 0 }, demoteFrames{ 0 };
+    uint32_t allocations{ 0 }, uploads{ 0 }, demotes{ 0 };
+    size_t allocatedBytes{ 0 }, uploadedBytes{ 0 }, demotedBytes{ 0 };
+    qint64 maxFrameUs{ 0 };   // the longest manageMemory call of the second
+};
+static TextureEngineTraceSecond _traceSecond;
+static QElapsedTimer _traceTimer;
+
+static void traceSecondDone() {
+    const double MB = 1024.0 * 1024.0;
+    const TextureEngineTraceSecond& t = _traceSecond;
+    qCDebug(gpugllogging).nospace() << "texture engine: frames=" << t.frames << " alloc=" << t.allocationFrames
+        << " transfer=" << t.transferFrames << " demote=" << t.demoteFrames
+        << " allocations=" << t.allocations << " allocatedMB=" << QString::number(t.allocatedBytes / MB, 'f', 1)
+        << " uploads=" << t.uploads << " uploadedMB=" << QString::number(t.uploadedBytes / MB, 'f', 1)
+        << " demotes=" << t.demotes << " demotedMB=" << QString::number(t.demotedBytes / MB, 'f', 1)
+        << " maxFrameMs=" << QString::number(t.maxFrameUs / 1000.0, 'f', 2)
+        << " pendingMB=" << QString::number(Backend::texturePendingGPUTransferMemSize.getValue() / MB, 'f', 1)
+        << " resourceMB=" << QString::number(Backend::textureResourceGPUMemSize.getValue() / MB, 'f', 1)
+        << " boost=" << (Texture::getTransferBoost() ? 1 : 0);
+    _traceSecond = TextureEngineTraceSecond();
+    _traceTimer.start();
+}
 
 template <typename T>
 struct LessPairSecond {
@@ -164,6 +240,14 @@ void GLTextureTransferEngineDefault::shutdown() {
 
 void GLTextureTransferEngineDefault::manageMemory() {
     PROFILE_RANGE(render_gpu_gl, __FUNCTION__);
+    const bool trace = textureEngineTrace();
+    QElapsedTimer frameTimer;
+    if (trace) {
+        frameTimer.start();
+        if (!_traceTimer.isValid()) {
+            _traceTimer.start();
+        }
+    }
     // reset the count used to limit the number of textures created per frame
     resetFrameTextureCreated();
     // Determine the current memory management state.  It will be either idle (no work to do),
@@ -173,9 +257,18 @@ void GLTextureTransferEngineDefault::manageMemory() {
     if (MemoryPressureState::Undersubscribed == _memoryPressureState) {
         // If we're undersubscribed, we need to process some of the textures that can have additional allocation
         processPromotes();
+        _traceSecond.allocationFrames += trace ? 1 : 0;
     } else if (MemoryPressureState::Transfer == _memoryPressureState) {
         // If we're in transfer mode we need to manage the buffering and upload queues
         processTransferQueues();
+        _traceSecond.transferFrames += trace ? 1 : 0;
+    }
+    if (trace) {
+        ++_traceSecond.frames;
+        _traceSecond.maxFrameUs = std::max(_traceSecond.maxFrameUs, frameTimer.nsecsElapsed() / 1000);
+        if (_traceTimer.hasExpired(1000)) {
+            traceSecondDone();
+        }
     }
 }
 
@@ -194,8 +287,12 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     size_t totalVariableMemoryAllocation = 0;
     size_t idealMemoryAllocation = 0;
     bool canDemote = false;
-    bool canPromote = false;
     bool hasTransfers = false;
+    // the textures with a finer level left, for the cap rule's second look below (a handful once a world is in)
+    struct Promotable { const Texture* texture; const GLVariableAllocationSupport* vartexture; size_t allocatedBytes; };
+    // present thread only; kept between frames for its capacity (no allocation per frame), cleared for this one
+    static std::vector<Promotable> promotable;
+    promotable.clear();
     for (const auto& texture : strongTextures) {
         GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
         GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
@@ -209,7 +306,7 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
             canDemote |= true;
         }
         if (vartexture->canPromote()) {
-            canPromote |= true;
+            promotable.push_back({ texture.get(), vartexture, gltexture->size() });
         }
         if (vartexture->hasPendingTransfers()) {
             hasTransfers |= true;
@@ -224,20 +321,51 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
     if (pressure > OVERSUBSCRIBED_PRESSURE_VALUE && canDemote) {
         auto overPressure = pressure - OVERSUBSCRIBED_PRESSURE_VALUE;
         size_t relief = (size_t)(overPressure * totalVariableMemoryAllocation);
+        Backend::textureTransferEngineBusy.set(1);   // demoting is work too (the arrival gate's read, below)
+        _traceSecond.demoteFrames += textureEngineTrace() ? 1 : 0;
         processDemotes(relief, strongTextures);
         return;
     }
 
-    auto newState = MemoryPressureState::Idle;
-    if (pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && (unallocated != 0 && canPromote)) {
-        newState = MemoryPressureState::Undersubscribed;
-    } else if (hasTransfers) {
-        newState = MemoryPressureState::Transfer;
-    } else {
-        Lock lock(_bufferMutex);
-        if (!_activeBufferQueue.empty() || !_activeTransferQueue.empty() || !_pendingTransfersMap.empty()) {
-            newState = MemoryPressureState::Transfer;
+    // the cap rule (above): a texture counts as promotable only when its next step fits under the over mark, so the
+    // state, the busy flag and the queue agree with what a promote will do; the look is over the promotable few from
+    // the walk above (no second walk over every texture: that cost the present thread a drop at 144, 2026-11-09)
+    const size_t overMark = (size_t)(OVERSUBSCRIBED_PRESSURE_VALUE * (double)allowedMemoryAllocation);
+    _frameHeadroom = totalVariableMemoryAllocation < overMark ? overMark - totalVariableMemoryAllocation : 0;
+    bool canPromote = false;
+    if (pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && unallocated != 0) {
+        for (const auto& candidate : promotable) {
+            if (canPromoteWithin(*candidate.texture, *candidate.vartexture, candidate.allocatedBytes, _frameHeadroom)) {
+                canPromote = true;
+                break;
+            }
         }
+    }
+
+    const bool wantPromote = pressure < UNDERSUBSCRIBED_PRESSURE_VALUE && (unallocated != 0 && canPromote);
+    bool queuesBusy = false;
+    {
+        Lock lock(_bufferMutex);
+        queuesBusy = !_activeBufferQueue.empty() || !_activeTransferQueue.empty() || !_pendingTransfersMap.empty();
+    }
+    // What the engine still has to do, for the arrival gate (entry 33, Amendment 2: the gate opened on a small set of
+    // textures that was fully uploaded while most were not yet allocated). Read from the work available, not from the
+    // state: processPromotes and processTransferQueues set Idle when their queue empties, a frame before the rebuild.
+    Backend::textureTransferEngineBusy.set((wantPromote || hasTransfers || queuesBusy) ? 1 : 0);
+
+    auto newState = MemoryPressureState::Idle;
+    if (Texture::getTransferBoost() && wantPromote && hasTransfers) {
+        // under the loading screen (entry 33, Amendment 2): allocation and upload take turns, one frame each, while
+        // both have work, so the uploads run beside the shader warm-up instead of after every allocation (item 53).
+        // The first shape (upload whenever anything was queued) starved the allocation under the warm-up's slow
+        // presents: 8 MB allocated where the old order had 120. Each turn rebuilds its queue below, as every state
+        // change does. In a presented world the boost is off and the order below is the one before the boost.
+        _boostAllocationTurn = !_boostAllocationTurn;
+        newState = _boostAllocationTurn ? MemoryPressureState::Undersubscribed : MemoryPressureState::Transfer;
+    } else if (wantPromote) {
+        newState = MemoryPressureState::Undersubscribed;
+    } else if (hasTransfers || queuesBusy) {
+        newState = MemoryPressureState::Transfer;
     }
 
     // If we've changed state then we have to populate the appropriate structure with the work to be done
@@ -254,7 +382,8 @@ void GLTextureTransferEngineDefault::updateMemoryPressure() {
         for (const auto& texture : strongTextures) {
             GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
             GLVariableAllocationSupport* vargltexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
-            if (MemoryPressureState::Undersubscribed == _memoryPressureState && vargltexture->canPromote()) {
+            if (MemoryPressureState::Undersubscribed == _memoryPressureState &&
+                canPromoteWithin(*texture, *vargltexture, gltexture->size(), _frameHeadroom)) {
                 // Promote smallest first
                 _promoteQueue.push({ texture, 1.0f / (float)gltexture->size() });
             } else if (MemoryPressureState::Transfer == _memoryPressureState && vargltexture->hasPendingTransfers()) {
@@ -300,6 +429,10 @@ void GLTextureTransferEngineDefault::processTransferQueues() {
             const auto& tranferJob = activeTransferJob.second;
             if (tranferJob->sourceMip() < vargltexture->populatedMip()) {
                 tranferJob->transfer(texturePointer);
+                if (textureEngineTrace()) {
+                    ++_traceSecond.uploads;
+                    _traceSecond.uploadedBytes += tranferJob->size();
+                }
             }
             // The pop_front MUST be the last call since all of these varaibles in scope are
             // references that will be invalid after the pop
@@ -320,8 +453,12 @@ void GLTextureTransferEngineDefault::processTransferQueues() {
 void GLTextureTransferEngineDefault::populateActiveBufferQueue() {
     size_t queuedBufferSize = _queuedBufferSize;
     static const auto& MAX_BUFFER_SIZE = GLVariableAllocationSupport::MAX_BUFFER_SIZE;
-    Q_ASSERT(queuedBufferSize <= MAX_BUFFER_SIZE);
-    size_t availableBufferSize = MAX_BUFFER_SIZE - queuedBufferSize;
+    // entry 33: the loading screen's budget; the queue may hold a boosted frame's worth when the boost ends, so the
+    // limit the asserts hold is the boosted one and the available size never underflows
+    static const size_t MAX_QUEUED_BUFFER_SIZE = MAX_BUFFER_SIZE * TRANSFER_BOOST_FACTOR;
+    const size_t frameBufferSize = MAX_BUFFER_SIZE * (Texture::getTransferBoost() ? uploadBoostFactor() : 1);
+    Q_ASSERT(queuedBufferSize <= MAX_QUEUED_BUFFER_SIZE);
+    size_t availableBufferSize = queuedBufferSize < frameBufferSize ? frameBufferSize - queuedBufferSize : 0;
 
     // Queue up buffering jobs
     ActiveTransferQueue newBufferJobs;
@@ -357,10 +494,10 @@ void GLTextureTransferEngineDefault::populateActiveBufferQueue() {
             break;
         }
         availableBufferSize -= transferSize;
-        Q_ASSERT(availableBufferSize <= MAX_BUFFER_SIZE);
-        Q_ASSERT(newTransferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(availableBufferSize <= MAX_QUEUED_BUFFER_SIZE);
+        Q_ASSERT(newTransferSize <= MAX_QUEUED_BUFFER_SIZE);
         newTransferSize += transferSize;
-        Q_ASSERT(newTransferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(newTransferSize <= MAX_QUEUED_BUFFER_SIZE);
         newBufferJobs.emplace_back(texture, transferJob);
         textureTransferQueue.pop();
         ++itr;
@@ -369,9 +506,9 @@ void GLTextureTransferEngineDefault::populateActiveBufferQueue() {
     {
         Lock lock(_bufferMutex);
         _activeBufferQueue.splice(_activeBufferQueue.end(), newBufferJobs);
-        Q_ASSERT(_queuedBufferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(_queuedBufferSize <= MAX_QUEUED_BUFFER_SIZE);
         _queuedBufferSize += newTransferSize;
-        Q_ASSERT(_queuedBufferSize <= MAX_BUFFER_SIZE);
+        Q_ASSERT(_queuedBufferSize <= MAX_QUEUED_BUFFER_SIZE);
     }
 }
 
@@ -426,6 +563,7 @@ void GLTextureTransferEngineDefault::processPromotes() {
     // FIXME use max allocated memory per frame instead of promotion count
     static const size_t MAX_ALLOCATED_BYTES_PER_FRAME = GLVariableAllocationSupport::MAX_BUFFER_SIZE;
     static const size_t MAX_ALLOCATIONS_PER_FRAME = 8;
+    const size_t boost = Texture::getTransferBoost() ? TRANSFER_BOOST_FACTOR : 1;   // entry 33: the loading screen's
     size_t allocatedBytes{ 0 };
     size_t allocations{ 0 };
 
@@ -441,18 +579,39 @@ void GLTextureTransferEngineDefault::processPromotes() {
 
         GLTexture* gltexture = Backend::getGPUObject<GLTexture>(*texture);
         GLVariableAllocationSupport* vartexture = dynamic_cast<GLVariableAllocationSupport*>(gltexture);
+        // the cap rule: the step must fit under the over mark with what this turn has allocated so far; a texture
+        // whose step does not fit stays as it is until memory is freed (it is not queued again this turn)
+        size_t headroom = _frameHeadroom > allocatedBytes ? _frameHeadroom - allocatedBytes : 0;
+        if (promotionBytes(*texture, *vartexture, gltexture->size()) > headroom) {
+            continue;
+        }
         auto originalSize = gltexture->size();
         vartexture->promote();
+        // the loading boost (entry 33, Amendment 2): a texture goes to its full size before its uploads start. The
+        // Mac's promote makes a new texture and copies the populated mips into it; the old order never copied, since
+        // nothing was uploaded before everything was allocated, and alternating uploads with one-step promotes would
+        // copy what the last upload turn had just put there, at the present thread's and the driver's expense. The
+        // texture in hand is finished even past the turn's byte budget (checked below, after it): a texture left
+        // half-allocated at the budget's edge was uploaded at that size and copied at its next promote (performance's
+        // GPU region counts, 2026-11-09). The overshoot is at most one texture's size, under the loading screen only.
+        while (boost > 1 && canPromoteWithin(*texture, *vartexture, gltexture->size(),
+                                             headroom - std::min(headroom, gltexture->size() - originalSize))) {
+            vartexture->promote();
+        }
         auto allocationDelta = gltexture->size() - originalSize;
+        if (textureEngineTrace()) {
+            ++_traceSecond.allocations;
+            _traceSecond.allocatedBytes += allocationDelta;
+        }
         if (vartexture->canPromote()) {
             // Promote smallest first
             _promoteQueue.push({ texture, 1.0f / (float)gltexture->size() });
         }
         allocatedBytes += allocationDelta;
-        if (++allocations >= MAX_ALLOCATIONS_PER_FRAME) {
+        if (++allocations >= MAX_ALLOCATIONS_PER_FRAME * boost) {
             break;
         }
-        if (allocatedBytes >= MAX_ALLOCATED_BYTES_PER_FRAME) {
+        if (allocatedBytes >= MAX_ALLOCATED_BYTES_PER_FRAME * boost) {
             break;
         }
     }
@@ -486,6 +645,10 @@ void GLTextureTransferEngineDefault::processDemotes(size_t reliefRequired, const
             vargltexture->demote();
             auto newSize = gltexture->size();
             relieved += (oldSize - newSize);
+            if (textureEngineTrace()) {
+                ++_traceSecond.demotes;
+                _traceSecond.demotedBytes += oldSize - newSize;
+            }
         }
         demoteQueue.pop();
     }

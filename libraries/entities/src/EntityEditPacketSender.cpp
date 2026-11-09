@@ -14,6 +14,7 @@
 #include <assert.h>
 
 #include <QJsonDocument>
+#include <QtCore/QProcessEnvironment>
 
 #include <AddressManager.h>
 #include <PerfStat.h>
@@ -94,7 +95,8 @@ void EntityEditPacketSender::queueEditEntityMessage(PacketType type,
         return;
     }
 
-    QByteArray bufferOut(NLPacket::maxPayloadSize(type), 0);
+    // an edit's room is the packet's, less what the sender writes at its start: a longer one would be lost unsent
+    QByteArray bufferOut(maxEditMessageSize(type), 0);
 
     if (type == PacketType::EntityAdd) {
         auto MAX_ADD_DATA_SIZE = NLPacket::maxPayloadSize(type) * 10; // a really big buffer
@@ -134,6 +136,14 @@ void EntityEditPacketSender::queueEditEntityMessage(PacketType type,
                 qCDebug(entities) << "    properties:" << properties;
             #endif
 
+            // TIVOLI_EDIT_DIAG in the environment: one line per edit message queued, with its encoded size (the size
+            // checks at the edit packet's limit). Off by default: nothing is formatted.
+            static const bool EDIT_DIAG = QProcessEnvironment::systemEnvironment().contains("TIVOLI_EDIT_DIAG");
+            if (EDIT_DIAG) {
+                qCDebug(entities).noquote() << "edit diag:" << (type == PacketType::EntityAdd ? "add" : "edit")
+                    << uuidStringWithoutCurlyBraces(entityItemID) << "bytes" << bufferOut.size()
+                    << (encodeResult == OctreeElement::COMPLETED ? "whole" : "partial") << "room" << maxEditMessageSize(type);
+            }
             queueOctreeEditMessage(type, bufferOut);
         }
 
@@ -143,7 +153,7 @@ void EntityEditPacketSender::queueEditEntityMessage(PacketType type,
             requestedProperties = didntFitProperties;
         }
 
-        bufferOut.resize(NLPacket::maxPayloadSize(type)); // resize our output buffer for the next packet
+        bufferOut.resize(maxEditMessageSize(type)); // resize our output buffer for the next packet
     }
 }
 

@@ -204,7 +204,9 @@ const pair<QString, CodecPluginPointer> AudioMixer::negotiateCodec(vector<QStrin
         }
     }
 
-    return make_pair(selectedCodecName, _availableCodecs[selectedCodecName]);
+    // (find, not [], which would insert: this runs on the workers at once)
+    auto selected = _availableCodecs.find(selectedCodecName);
+    return make_pair(selectedCodecName, selected != _availableCodecs.end() ? selected->second : CodecPluginPointer());
 }
 
 

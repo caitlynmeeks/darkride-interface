@@ -2,12 +2,13 @@
 //  JavaScriptSpeedTests.cpp
 //  tests/wasm-speed/src
 //
-//  The speed of JavaScript on the script engines, side by side in one program: the same tests run in turn on QtScript,
-//  on the JavaScript guest on WebAssembly as the client runs it (cooperative interruption: no deadline checks in its
+//  The speed of JavaScript on the script engine, side by side in one program: the same tests run in turn on the
+//  JavaScript guest on WebAssembly as the client runs it (cooperative interruption: no deadline checks in its
 //  loops), on the same guest with the runtime's epoch checks in every loop (as it ran before), and on QuickJS-NG
 //  built natively when its source is at hand (the interpreter without the sandbox). Each round runs every test once on every engine, in an order that rotates from round to
 //  round; the table gives each engine's fastest round, the one the rest of the machine disturbed least, in
-//  microseconds per iteration and as a multiple of QtScript's.
+//  microseconds per iteration and as a multiple of the first engine's (the guest as the client runs it). QtScript's
+//  numbers, from before it was taken out, are in tests-manual/wasm-scripting/results.
 //
 //  Environment: DARKRIDE_SPEED_ROUNDS (default 5); DARKRIDE_SPEED_SCALE (a multiplier for the iterations, default 1);
 //  DARKRIDE_SPEED_ONLY (a regular expression the test names must match); DARKRIDE_SPEED_RESULTS (a JSON file for
@@ -34,7 +35,6 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QRegularExpression>
-#include <QtScript/QScriptEngine>
 
 #include <HostInterface.h>
 #include <ObjectTable.h>
@@ -55,7 +55,7 @@ QTEST_GUILESS_MAIN(JavaScriptSpeedTests)
 
 namespace {
 
-// ES5 on purpose: QtScript must run it. The js- tests are tests/manual baseline.js's engine tests and two more
+// ES5 on purpose: QtScript ran them, and the numbers compare with its earlier runs. The js- tests are tests/manual baseline.js's engine tests and two more
 // (property reads and writes, a method on a prototype); the host- tests reach the engine's objects. Every test returns
 // a value its loop computed, so no engine can skip the work and the engines can be seen to agree.
 const char* TESTS = R"JS(
@@ -150,7 +150,7 @@ var tests = {
 };
 )JS";
 
-// How QtScript and the guest are told to run a test: through a signal, as the client's events reach a script.
+// How the guest is told to run a test: through a signal, as the client's events reach a script.
 const char* WIRING = R"JS(
 Probe.run.connect(function (name, n) {
     Probe.report(name, tests[name](n));
@@ -167,7 +167,7 @@ struct SpeedTest {
     bool reachesHost;
 };
 
-// Iterations chosen so that each test runs some tens of milliseconds on QtScript.
+// Iterations chosen so that each test ran some tens of milliseconds on QtScript.
 const std::vector<SpeedTest> SPEED_TESTS = {
     { "js-arithmetic", 2000000, false },
     { "js-objects", 1000000, false },
@@ -205,53 +205,6 @@ public:
     /// Runs one test to its end; false with the error when the engine reported one.
     virtual bool run(const SpeedTest& test, int iterations, QString& error) = 0;
     virtual QVariant check(const QString& test) const = 0;
-};
-
-class QtScriptSpeedEngine : public SpeedEngine {
-public:
-    QString name() const override { return "QtScript"; }
-
-    bool start(QString& error) override {
-        registerMetaTypes(&_engine);
-        // as ScriptEngine::registerGlobalObject wraps the client's objects
-        const auto options = QScriptEngine::ExcludeDeleteLater | QScriptEngine::ExcludeChildObjects;
-        QScriptValue global = _engine.globalObject();
-        global.setProperty("Probe", _engine.newQObject(&_probe, QScriptEngine::QtOwnership, options));
-        global.setProperty("Vec3", _engine.newQObject(&_vec3, QScriptEngine::QtOwnership, options));
-        global.setProperty("Quat", _engine.newQObject(&_quat, QScriptEngine::QtOwnership, options));
-        global.setProperty("Mat4", _engine.newQObject(&_mat4, QScriptEngine::QtOwnership, options));
-        global.setProperty("Uuid", _engine.newQObject(&_uuid, QScriptEngine::QtOwnership, options));
-        QObject::connect(&_engine, &QScriptEngine::signalHandlerException, [this](const QScriptValue& exception) {
-            _errors << exception.toString();
-        });
-        _engine.evaluate(QString(TESTS) + WIRING, "bench.js");
-        if (_engine.hasUncaughtException()) {
-            error = _engine.uncaughtException().toString();
-            return false;
-        }
-        return true;
-    }
-
-    bool run(const SpeedTest& test, int iterations, QString& error) override {
-        _errors.clear();
-        emit _probe.run(test.name, iterations);
-        if (!_errors.isEmpty()) {
-            error = _errors.join(" | ");
-            return false;
-        }
-        return true;
-    }
-
-    QVariant check(const QString& test) const override { return _probe.checks.value(test); }
-
-private:
-    QScriptEngine _engine;
-    SpeedProbe _probe;
-    Vec3 _vec3;
-    Quat _quat;
-    Mat4 _mat4;
-    ScriptUUID _uuid;
-    QStringList _errors;
 };
 
 class WasmSpeedEngine : public SpeedEngine {
@@ -454,7 +407,6 @@ void JavaScriptSpeedTests::testSpeed() {
     QVERIFY2(!tests.empty(), "no test matches DARKRIDE_SPEED_ONLY");
 
     std::vector<std::unique_ptr<SpeedEngine>> engines;
-    engines.push_back(std::make_unique<QtScriptSpeedEngine>());
     engines.push_back(std::make_unique<WasmSpeedEngine>("WebAssembly", WasmRuntime::Interruption::Cooperative));
     engines.push_back(std::make_unique<WasmSpeedEngine>("WebAssembly, epoch checks", WasmRuntime::Interruption::Epoch));
 #ifdef HAVE_NATIVE_QUICKJS
@@ -500,18 +452,18 @@ void JavaScriptSpeedTests::testSpeed() {
         }
     }
 
-    // the table: each engine's fastest round, and its multiple of QtScript's
+    // the table: each engine's fastest round, and its multiple of the first engine's
     QString header = QString("%1 %2").arg("test", -20).arg("iterations", 10);
     for (auto& engine : engines) {
         header += QString(" | %1").arg(engine->name(), 30);
     }
     qInfo().noquote() << "WASM-SPEED" << header;
-    qInfo().noquote() << "WASM-SPEED" << QString("(microseconds per iteration, fastest of %1 rounds; x = a multiple of QtScript's)").arg(rounds);
+    qInfo().noquote() << "WASM-SPEED" << QString("(microseconds per iteration, fastest of %1 rounds; x = a multiple of the first engine's)").arg(rounds);
     QStringList disagreements;
     QJsonObject results;
     for (const auto& test : tests) {
         const auto& byEngine = samples[test.name];
-        double qtScript = minimum(byEngine.at("QtScript"));
+        double baseline = minimum(byEngine.at(engines.front()->name()));
         QString line = QString("%1 %2").arg(test.name, -20).arg(iterationsOf(test, 1.0), 10);
         QJsonObject testResults;
         for (auto& engine : engines) {
@@ -521,7 +473,7 @@ void JavaScriptSpeedTests::testSpeed() {
                 continue;
             }
             double fastest = minimum(found->second);
-            line += QString(" | %1").arg(QString("%1 (x%2)").arg(fastest, 0, 'f', 4).arg(qtScript > 0.0 ? fastest / qtScript : 0.0, 0, 'f', 2), 30);
+            line += QString(" | %1").arg(QString("%1 (x%2)").arg(fastest, 0, 'f', 4).arg(baseline > 0.0 ? fastest / baseline : 0.0, 0, 'f', 2), 30);
             QJsonArray rounds;
             for (double value : found->second) {
                 rounds.append(value);
@@ -535,7 +487,8 @@ void JavaScriptSpeedTests::testSpeed() {
             QVariant expected = engines.front()->check(test.name);
             QVariant got = engine->check(test.name);
             if (got.toDouble() != expected.toDouble()) {
-                disagreements << QString("%1 on %2: %3, QtScript %4").arg(test.name, engine->name(), got.toString(), expected.toString());
+                disagreements << QString("%1 on %2: %3, %4 %5").arg(test.name, engine->name(), got.toString(),
+                                                                      engines.front()->name(), expected.toString());
             }
         }
         testResults["iterations"] = iterationsOf(test, 1.0);

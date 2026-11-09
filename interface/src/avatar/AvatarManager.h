@@ -94,9 +94,6 @@ public:
      * print("Own avatar: " + MyAvatar.sessionUUID);
      */
 
-    /// Registers the script types associated with the avatar manager.
-    static void registerMetaTypes(QScriptEngine* engine);
-
     virtual ~AvatarManager();
 
     void init();
@@ -188,10 +185,7 @@ public:
      *     print("No avatar found.");
      * }
      */
-    Q_INVOKABLE RayToAvatarIntersectionResult findRayIntersection(const PickRay& ray,
-                                                                  const QScriptValue& avatarIdsToInclude = QScriptValue(),
-                                                                  const QScriptValue& avatarIdsToDiscard = QScriptValue(),
-                                                                  bool pickAgainstMesh = true);
+    // what a script's findRayIntersection reaches (the JavaScript guest maps the name), the lists as lists of IDs
     /**jsdoc
      * @function AvatarManager.findRayIntersectionVector
      * @param {PickRay} ray - Ray.
@@ -233,9 +227,7 @@ public:
      * @param {number} value - Value.
      * @deprecated This function is deprecated and will be removed.
      */
-    Q_INVOKABLE void setAvatarSortCoefficient(const QString& name, const QScriptValue& value);
-    // the same with the value as a number, for the WebAssembly script engine (a name of its own: QtScript would find a
-    // same-named overload ambiguous with the QScriptValue one)
+    // what a script's setAvatarSortCoefficient reaches (the JavaScript guest maps the name)
     Q_INVOKABLE void setAvatarSortCoefficientValue(const QString& name, float value);
 
     /**jsdoc

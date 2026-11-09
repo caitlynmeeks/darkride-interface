@@ -4,10 +4,9 @@
 //
 //  What EntityEditFilters asks of a script engine for one filter script: evaluate the script, read its filter
 //  function's flags, and call the function for an edit. One engine per filter, used on the thread that calls it
-//  (the entity server's packet thread), synchronously, as the filters have always run. The QtScript
-//  implementation is QtScriptEditFilterEngine, beside this file; the WebAssembly one is in the script-engine
-//  library, which depends on this one, so the entity server installs the choice through
-//  EntityEditFilters::setEngineFactory.
+//  (the entity server's packet thread), synchronously, as the filters have always run. The implementation,
+//  WasmEditFilterEngine, is in the script-engine library, which depends on this one, so the entity server installs
+//  it through EntityEditFilters::setEngineFactory.
 //
 //  Distributed under the Apache License, Version 2.0.
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html

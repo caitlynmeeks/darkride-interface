@@ -20,9 +20,11 @@
 
 #include <AccountManager.h>
 #include <Assignment.h>
+#include <RegexCompat.h>
 
 #include "DomainServer.h"
 #include "DomainServerNodeData.h"
+#include <shared/WireStream.h>
 
 using SharedAssignmentPointer = QSharedPointer<Assignment>;
 
@@ -58,6 +60,7 @@ void DomainGatekeeper::processConnectRequestPacket(QSharedPointer<ReceivedMessag
     }
 
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
 
     // read a NodeConnectionData object from the packet so we can pass around this data while we're inspecting it
     NodeConnectionData nodeConnection = NodeConnectionData::fromDataStream(packetStream, message->getSenderSockAddr());
@@ -278,7 +281,7 @@ void DomainGatekeeper::updateNodePermissions() {
         // the id and the username in NodePermissions will often be the same, but id is set before
         // authentication and verifiedUsername is only set once they user's key has been confirmed.
         QString verifiedUsername = node->getPermissions().getVerifiedUserName();
-        NodePermissions userPerms(NodePermissionsKey(verifiedUsername, 0));
+        NodePermissions userPerms(NodePermissionsKey(verifiedUsername, QUuid()));
 
         if (node->getPermissions().isAssignment) {
             // this node is an assignment-client
@@ -399,7 +402,7 @@ SharedNodePointer DomainGatekeeper::processAgentConnectRequest(const NodeConnect
     auto limitedNodeList = DependencyManager::get<LimitedNodeList>();
 
     // start with empty permissions
-    NodePermissions userPerms(NodePermissionsKey(username, 0));
+    NodePermissions userPerms(NodePermissionsKey(username, QUuid()));
     userPerms.setAll(false);
 
     // check if this user is on our local machine - if this is true set permissions to those for a "localhost" connection
@@ -690,9 +693,10 @@ QString extractUsernameFromPublicKeyRequest(QNetworkReply* requestReply) {
     // extract the username from the request url
     QString username;
     const QString PUBLIC_KEY_URL_REGEX_STRING = "api\\/v1\\/users\\/([A-Za-z0-9_\\.]+)\\/public_key";
-    QRegExp usernameRegex(PUBLIC_KEY_URL_REGEX_STRING);
-    if (usernameRegex.indexIn(requestReply->url().toString()) != -1) {
-        username = usernameRegex.cap(1);
+    static const QRegularExpression PUBLIC_KEY_URL_REGEX = regex_compat::search(PUBLIC_KEY_URL_REGEX_STRING);
+    const QRegularExpressionMatch usernameMatch = PUBLIC_KEY_URL_REGEX.match(requestReply->url().toString());
+    if (usernameMatch.hasMatch()) {
+        username = usernameMatch.captured(1);
     }
     return username.toLower();
 }
@@ -788,7 +792,7 @@ void DomainGatekeeper::sendConnectionTokenPacket(const QString& username, const 
     if (now - _lastConnectionTokenSweepUsecs > CONNECTION_TOKEN_LIFETIME_USECS) {
         _lastConnectionTokenSweepUsecs = now;
         for (auto it = _connectionTokenHash.begin(); it != _connectionTokenHash.end();) {
-            it = now - it->issuedUsecs > CONNECTION_TOKEN_LIFETIME_USECS ? _connectionTokenHash.erase(it) : it + 1;
+            it = now - it->issuedUsecs > CONNECTION_TOKEN_LIFETIME_USECS ? _connectionTokenHash.erase(it) : std::next(it);
         }
     }
 
@@ -854,6 +858,7 @@ void DomainGatekeeper::processICEPeerInformationPacket(QSharedPointer<ReceivedMe
     // loop through the packet and pull out network peers
     // any peer we don't have we add to the hash, otherwise we update
     QDataStream iceResponseStream(message->getMessage());
+    hifi::stream::pin(iceResponseStream);
 
     auto receivedPeer = SharedNetworkPeer::create();
     iceResponseStream >> *receivedPeer;
@@ -890,6 +895,7 @@ void DomainGatekeeper::processICEPingPacket(QSharedPointer<ReceivedMessage> mess
 
 void DomainGatekeeper::processICEPingReplyPacket(QSharedPointer<ReceivedMessage> message) {
     QDataStream packetStream(message->getMessage());
+    hifi::stream::pin(packetStream);
 
     QUuid nodeUUID;
     packetStream >> nodeUUID;
@@ -946,9 +952,10 @@ QString extractUsernameFromGroupMembershipsReply(QNetworkReply* requestReply) {
     // extract the username from the request url
     QString username;
     const QString GROUP_MEMBERSHIPS_URL_REGEX_STRING = "api\\/v1\\/groups\\/members\\/([A-Za-z0-9_\\.]+)";
-    QRegExp usernameRegex(GROUP_MEMBERSHIPS_URL_REGEX_STRING);
-    if (usernameRegex.indexIn(requestReply->url().toString()) != -1) {
-        username = usernameRegex.cap(1);
+    static const QRegularExpression GROUP_MEMBERSHIPS_URL_REGEX = regex_compat::search(GROUP_MEMBERSHIPS_URL_REGEX_STRING);
+    const QRegularExpressionMatch usernameMatch = GROUP_MEMBERSHIPS_URL_REGEX.match(requestReply->url().toString());
+    if (usernameMatch.hasMatch()) {
+        username = usernameMatch.captured(1);
     }
     return username.toLower();
 }
@@ -980,7 +987,7 @@ void DomainGatekeeper::getIsGroupMemberJSONCallback(QNetworkReply* requestReply)
             QJsonObject group = groups[groupID].toObject();
             QJsonObject rank = group["rank"].toObject();
             QUuid rankID = QUuid(rank["id"].toString());
-            _server->_settingsManager.recordGroupMembership(username, groupID, rankID);
+            _server->_settingsManager.recordGroupMembership(username, QUuid(groupID), rankID);
         }
     } else {
         qDebug() << "getIsGroupMember api call returned:" << QJsonDocument(jsonObject).toJson(QJsonDocument::Compact);

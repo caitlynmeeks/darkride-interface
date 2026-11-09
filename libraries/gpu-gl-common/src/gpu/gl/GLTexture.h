@@ -102,6 +102,8 @@ public:
 
     void sanityCheck() const;
     uint16 populatedMip() const { return _populatedMip; }
+    uint16 allocatedMip() const { return _allocatedMip; }
+    uint16 minAllocatedMip() const { return _minAllocatedMip; }
     bool canPromote() const { return _allocatedMip > _minAllocatedMip; }
     bool canDemote() const { return _allocatedMip < _maxAllocatedMip; }
     bool hasPendingTransfers() const { return _populatedMip > _allocatedMip; }

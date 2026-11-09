@@ -532,7 +532,7 @@ void ScriptableAvatar::updateJointMappings() {
         QMetaObject::invokeMethod(this, [this, fstURL] {
             QNetworkAccessManager& networkAccessManager = NetworkAccessManager::getInstance();
             QNetworkRequest networkRequest = QNetworkRequest(fstURL);
-            networkRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+            networkRequest.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
             networkRequest.setHeader(QNetworkRequest::UserAgentHeader, TIVOLI_CLOUD_VR_USER_AGENT);
             DependencyManager::get<ResourceRequestObserver>()->update(
                 fstURL, -1, "AvatarData::updateJointMappings");

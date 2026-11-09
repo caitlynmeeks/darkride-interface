@@ -884,6 +884,8 @@ void EditorTerrain::save(const QUuid& id) {
     if (!upload->startData(data, fileName, TERRAIN_FOLDER, TERRAIN_MIME_TYPE, error)) {
         upload->deleteLater();
         _dirty.insert(id);   // kept for the next change to try again
+        _saveFailures++;
+        _lastSaveError = error;
         qCWarning(interfaceapp) << "terrain" << id << "could not be saved:" << error;
         emit status(QStringLiteral("Terrain not saved: ") + error, FAILED_NOTE_MS);
         return;
@@ -912,6 +914,8 @@ void EditorTerrain::save(const QUuid& id) {
         upload->deleteLater();
         _saving.remove(id);
         _dirty.insert(id);
+        _saveFailures++;
+        _lastSaveError = error;
         qCWarning(interfaceapp) << "terrain" << id << "could not be saved:" << error;
         emit status(QStringLiteral("Terrain not saved: ") + error, FAILED_NOTE_MS);
     });

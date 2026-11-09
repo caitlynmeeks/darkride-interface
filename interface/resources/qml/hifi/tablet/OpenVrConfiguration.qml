@@ -7,7 +7,6 @@
 //
 
 import QtQuick 2.5
-import QtGraphicalEffects 1.0
 
 import stylesUit 1.0
 import "../../controls"
@@ -885,7 +884,7 @@ Flickable {
                     hoverEnabled: true
                     onEntered: privacyPolicyUnderline.visible = true;
                     onExited: privacyPolicyUnderline.visible = false;
-                    onClicked: Window.openUrl("https://darkride.ai/privacy-policy");   // was Tivoli's, now a redirect to GitHub (Caity 10-29)
+                    onClicked: WindowScriptingInterface.openUrl("https://darkride.ai/privacy-policy");   // was Tivoli's, now a redirect to GitHub (Caity 10-29)
                 }
             }
 

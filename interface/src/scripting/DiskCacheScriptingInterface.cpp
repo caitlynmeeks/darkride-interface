@@ -1,5 +1,6 @@
 #include "DiskCacheScriptingInterface.h"
 
+#include <NetworkAccessManager.h>
 #include <ResourceManager.h>
 
 float oneDecimalPoint(float number) {
@@ -27,7 +28,8 @@ qint64 dirSize(QString dirPath) {
 }
 
 DiskCacheScriptingInterface::DiskCacheScriptingInterface() {
-    networkDiskCache = DependencyManager::get<ResourceManager>()->networkDiskCache;
+    // the disk cache is shared with every thread's network manager and the asset client: through the same lock
+    networkDiskCache = new LockedNetworkCache(DependencyManager::get<ResourceManager>()->networkDiskCache, this);
     setMaximumCacheSize(maximumCacheSizeSetting.get());
     setCacheDirectory(cacheDirectorySetting.get());
 }

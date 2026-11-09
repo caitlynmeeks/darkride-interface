@@ -187,8 +187,11 @@ QIcon chevron(bool open, const QColor& color) {
     return QIcon(pixmap);
 }
 
+// a popup's words are plain text, never markup: a title or text often carries outside words (a thing's name, a file's
+// name, someone's user name), and they are shown exactly as written. No caller passes markup
 QLabel* label(const char* name, const QString& text) {
     auto result = new QLabel(text);
+    result->setTextFormat(Qt::PlainText);
     result->setObjectName(name);
     result->setWordWrap(true);
     result->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
@@ -389,9 +392,11 @@ Banner::Banner(const QPixmap& picture, const QString& title, const QString& text
     auto words = new QVBoxLayout();
     words->setSpacing(2);
     auto titleLabel = new QLabel(title);
+    titleLabel->setTextFormat(Qt::PlainText);   // outside words stay words (label() above)
     titleLabel->setObjectName("bannerTitle");
     titleLabel->setWordWrap(true);
     auto textLabel = new QLabel(text);
+    textLabel->setTextFormat(Qt::PlainText);
     textLabel->setObjectName("bannerText");
     textLabel->setWordWrap(true);
     words->addWidget(titleLabel);
