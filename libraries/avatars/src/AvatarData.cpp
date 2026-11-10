@@ -135,15 +135,19 @@ AvatarData::~AvatarData() {
 // In C++, if this initialization were in the AvatarInfo, every file would have it's own copy, even for class vars.
 QUrl AvatarData::_defaultFullAvatarModelUrl = {}; 
 
+// the default avatar's folder on the web, published once by metaverse and never changed (a new version gets a new folder);
+// MyAvatar.cpp names the same folder (a frozen file, left as it is)
+const QString AvatarData::DEFAULT_AVATAR_FOLDER_URL = "https://cdn.darkride.ai/avatars/lightling-1/";
+
 void AvatarData::randomizeDefaultFullAvatarModelUrl() {
-    // TODO: this shouldnt have to live on the metaverse.
-    // the idea is that the default avatar is random for each person.
-    // on the server, it will set the albedo in the fst for the top and hair
-    // The Tivoli metaverse (which served a randomized lynden avatar) is gone; use the bundled mannequin
-    // from Overte instead. Without a loadable default avatar the skeleton never loads, the character
-    // controller never gets a rigid body, and the avatar is pinned to the world origin.
-    _defaultFullAvatarModelUrl = PathUtils::resourcesUrl("/meshes/defaultAvatar_full.fst");
+    // The Lightling for everyone (Caity, 11-10: "the mannequin should never appear unless some masochist goes out of
+    // their way to wear it"), at the address a person wearing the default sends, so both are one model in the cache.
+    // It was the bundled mannequin (the Tivoli metaverse's randomized default is gone). Without a loadable default
+    // avatar the skeleton never loads, the character controller never gets a rigid body, and the avatar is pinned to
+    // the world origin: a client reads this folder from its own copy, never the web.
+    _defaultFullAvatarModelUrl = QUrl(DEFAULT_AVATAR_FOLDER_URL + "lightling.fst");
 }
+
 
 const QUrl& AvatarData::defaultFullAvatarModelUrl() {
     if (_defaultFullAvatarModelUrl.isEmpty()) {
