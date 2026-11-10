@@ -8,6 +8,7 @@
 #ifndef hifi_Pointer_h
 #define hifi_Pointer_h
 
+#include <functional>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -83,6 +84,19 @@ public:
 
     unsigned int getRayUID() { return _pickUID; }
 
+    // A pointer a world's script made delivers its hover and trigger events only into that world's own things: a
+    // domain entity or one a world's script made. Over the HUD, or over any other entity (the visitor's own, the
+    // app's local entities), it counts as pointing at nothing. The app's own pointers are not asked.
+    //
+    // PointerManager::addPointer marks the pointer; the app says which entities are a world's own (set once at
+    // start-up; without it a world's pointer reaches no entity).
+    using WorldTargetCheck = std::function<bool(const QUuid& entityID)>;
+    static void setWorldTargetCheck(WorldTargetCheck check);
+    void setMadeByWorld() { _madeByWorld = true; }
+    bool isMadeByWorld() const { return _madeByWorld; }
+    // what a pointer made by a world's script may count as hovered: `target`, or nothing
+    static PickedObject worldTarget(const PickedObject& target);
+
 protected:
     const unsigned int _pickUID;
     bool _enabled;
@@ -109,6 +123,7 @@ private:
     Buttons _prevButtons;
     bool _prevEnabled { false };
     bool _prevDoHover { false };
+    bool _madeByWorld { false };  // set before the pointer is shared (PointerManager::addPointer), read on update
     std::unordered_map<std::string, PickedObject> _triggeredObjects;
 
     PointerEvent::Button chooseButton(const std::string& button);
