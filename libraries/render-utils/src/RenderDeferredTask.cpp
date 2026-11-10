@@ -124,6 +124,8 @@ void RenderDeferredTask::build(JobModel& task, const render::Varying& input, ren
         GeometryCache::getSimplePipeline(false, false, false),   // an opaque shape's shadow
         GeometryCache::getSimplePipeline(false, true, false),    // a translucent one's (they cast too)
         GeometryCache::getSimplePipeline(false, false, true) }); // an unlit one's
+    // the app's own custom-shader materials (the default avatar's): their programs are outside both walks above
+    task.addJob<WarmProceduralMaterials>("WarmProceduralMaterials");
 
     const auto& inputs = input.get<Input>();
     

@@ -10,6 +10,8 @@
 #define hifi_RenderCommonTask_h
 
 #include <set>
+#include <QtCore/QList>
+#include <QtCore/QUrl>
 #include <gpu/Pipeline.h>
 #include "LightStage.h"
 #include "HazeStage.h"
@@ -83,6 +85,26 @@ protected:
     bool _done { false };
     bool _wasEnabled { true };
     std::set<const gpu::Shader*> _programsBound;   // a program shared by many keys is bound once
+};
+
+// The app's own custom-shader materials (the built-in default avatar's, the Lightling's body, face and hair), kept
+// loaded and compiled ahead of their first draw (2026-11-10). A material's custom shader is a program of its own, which
+// the walk above cannot know: it compiled when the first avatar wearing it was drawn, on the thread that executes the
+// frame, 117-125 ms a program on a Mac. A viewer wearing the default had paid that at start-up; a viewer wearing
+// another avatar paid it when the first default avatar came into view, mid-ride (and every avatar shown for a blank
+// address or a failed load is the default). The material files named at start-up stay loaded for the app's life (their
+// material objects are the ones every model naming the same file draws with, so the compiled programs are theirs
+// too), and each one's program for an avatar (opaque, dual-quaternion skinned, in the view's render method) is bound
+// once, one a frame, as soon as its shader has loaded: in the first frames under the first loading screen. Nothing is
+// drawn. A view that later switches its render method binds that method's programs the same way.
+class WarmProceduralMaterials {
+public:
+    using JobModel = render::Job::Model<WarmProceduralMaterials>;
+
+    // The material files (.json) to keep loaded and warm. Main thread, once, after the material cache exists.
+    static void setMaterialUrls(const QList<QUrl>& urls);
+
+    void run(const render::RenderContextPointer& renderContext);
 };
 
 class DrawLayered3DConfig : public render::Job::Config {
