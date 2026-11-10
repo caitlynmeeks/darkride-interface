@@ -60,9 +60,13 @@ Item {
             anchors.fill: parent
             fillMode: picture.fillMode
             asynchronous: true
-            // decoded at the size it's drawn (a hundred avatars' pictures at full size cost hundreds of MB; avatars,
-            // 11-08), and only once it has a size: a size of 0 means the picture's own
-            sourceSize: Qt.size(Math.ceil(width * Screen.devicePixelRatio), Math.ceil(height * Screen.devicePixelRatio))
+            // decoded at about the size it's drawn, not the file's (a hundred avatars' pictures at full size cost hundreds
+            // of MB, avatars 11-08; a full-size upload was a ~24 ms draw in the headset, vr 11-01), and only once it has a
+            // size (a size of 0 means the picture's own). At least twice the layout size: that covers the VR screen, which
+            // draws a page about 1.5x its layout (ScreenSlot.qml), as well as Retina. In steps of 64 px, so a window being
+            // resized doesn't decode it again at every pixel
+            readonly property real decodeScale: Math.max(2, Screen.devicePixelRatio)
+            sourceSize: Qt.size(Math.ceil(width * decodeScale / 64) * 64, Math.ceil(height * decodeScale / 64) * 64)
             source: width > 0 && height > 0 ? picture.source : ""
         }
     }
