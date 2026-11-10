@@ -250,7 +250,14 @@ async fn run(config: Config, events: EventSink, mut queue: mpsc::UnboundedReceiv
         let busy = busy.clone();
         let work = async move {
             if let Err(e) = Box::pin(handle(&state, &op, &command)).await {
-                state.emit(json!({ "event": "error", "op": op, "message": format!("{e:#}") }));
+                let message = format!("{e:#}");
+                if op != "login_jwt" && refused_for_ended_session(&message) {
+                    // the server ended the session while this was on its way: the session watcher signs out and the
+                    // app signs in again, so this isn't an error of its own to show ("Couldn't open: … 401 …")
+                    tracing::debug!("{op} refused, the session has ended: {message}");
+                } else {
+                    state.emit(json!({ "event": "error", "op": op, "message": message }));
+                }
             }
             busy.fetch_sub(1, Ordering::SeqCst);
         };
@@ -1101,6 +1108,13 @@ async fn fetch_media(state: &Arc<State>, command: &Value) -> Result<String> {
         std::fs::rename(&partial, &path)?;
     }
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Whether a request was refused because the server no longer knows this session's access token (it ended the
+/// session: signed out everywhere, a password change, an admin). The server's own error code, as the SDK writes
+/// it into every error that carries one, whatever the request.
+fn refused_for_ended_session(message: &str) -> bool {
+    message.contains("M_UNKNOWN_TOKEN")
 }
 
 /// Signed out: everything stopped and waited for (Windows can't remove files still open), the server told when asked
