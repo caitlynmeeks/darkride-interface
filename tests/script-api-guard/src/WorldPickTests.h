@@ -29,6 +29,7 @@ private slots:
     void aHitTheWorldMayNotReadIsNoHit();
     void aCollisionListLeavesOutWhatTheWorldMayNotRead();
     void otherCallersReadEveryResult();
+    void theAppReachesEveryPickAndPointer();
     void withoutAReadCheckAWorldReadsNoEntity();
 };
 

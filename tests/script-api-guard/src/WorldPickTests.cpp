@@ -408,6 +408,67 @@ void WorldPickTests::otherCallersReadEveryResult() {
     QVERIFY(WorldPicks::callerMayRead(HIDDEN_ENTITY));
 }
 
+void WorldPickTests::theAppReachesEveryPickAndPointer() {
+    // A caller with no world on its thread (the app: the keyboard's mallets, sign-in's lasers, the mouse pick; and the
+    // visitor's own scripts) reaches every pick and pointer, whoever made it, with nothing filtered.
+    const QVector<QUuid> any { WORLDS_ENTITY, HIDDEN_ENTITY, AN_AVATAR };
+    for (int maker : { 0, WORLD }) {
+        MadePointer made;
+        std::shared_ptr<TestPick> pick = std::make_shared<TestPick>();
+        unsigned int pickID = 0;
+        {
+            ScriptCaller::WorldScope by(maker);
+            made = addPointer();
+            pickID = picks()->addPick(PickQuery::Ray, pick);
+        }
+        pick->setScriptParameters({ { "made", "by the test" } });
+        pick->setPickResult(std::make_shared<TestResult>(rayHit(HIDDEN_ENTITY, LOCAL_ENTITY)));
+
+        // picks: listed, read, changed, re-aimed
+        QVERIFY(picks()->getPicks().contains(pickID));
+        QVERIFY(picks()->isPickEnabled(pickID));
+        picks()->disablePick(pickID);
+        QVERIFY(!picks()->isPickEnabled(pickID));
+        picks()->enablePick(pickID);
+        QVERIFY(picks()->isPickEnabled(pickID));
+        QVERIFY(!picks()->getPickProperties(pickID).isEmpty());
+        QCOMPARE(picks()->getPickScriptParameters(pickID).value("made").toString(), QString("by the test"));
+        picks()->setIgnoreItems(pickID, any);
+        picks()->setIncludeItems(pickID, any);
+        QCOMPARE(pick->getIgnoreItems(), any);
+        QCOMPARE(pick->getIncludeItems(), any);
+        // a result on something a world may not read: whole, typed and as a script of the visitor's gets it
+        auto typed = picks()->getPrevPickResultTyped<TestResult>(pickID);
+        QVERIFY(typed);
+        QCOMPARE(typed->map.value("objectID").toUuid(), HIDDEN_ENTITY);
+        QCOMPARE(WorldPicks::resultForCaller(picks()->getPrevPickResult(pickID)), rayHit(HIDDEN_ENTITY, LOCAL_ENTITY));
+
+        // pointers: listed, read, changed, re-aimed, locked onto anything
+        QVERIFY(pointers()->getPointers().contains(made.id));
+        QVERIFY(pointers()->isPointerEnabled(made.id));
+        pointers()->disablePointer(made.id);
+        QVERIFY(!pointers()->isPointerEnabled(made.id));
+        pointers()->enablePointer(made.id);
+        QVERIFY(pointers()->isPointerEnabled(made.id));
+        pointers()->setRenderState(made.id, "full");
+        pointers()->editRenderState(made.id, "full", QVariant(), QVariant(), QVariant());
+        pointers()->setLength(made.id, 2.0f);
+        pointers()->setLockEndUUID(made.id, HIDDEN_ENTITY, false);
+        QCOMPARE(made.pointer->changes, 4);
+        QCOMPARE(made.pointer->lockEnd, HIDDEN_ENTITY);
+        QVERIFY(pointers()->getPrevPickResult(made.id));
+        QVERIFY(!pointers()->getPointerProperties(made.id).isEmpty());
+        pointers()->setIncludeItems(made.id, any);
+        QVERIFY(picks()->getPickProperties(made.pickID).contains("enabled"));
+
+        // removed
+        pointers()->removePointer(made.id);
+        QVERIFY(!pointers()->getPointers().contains(made.id));
+        picks()->removePick(pickID);
+        QVERIFY(!picks()->getPicks().contains(pickID));
+    }
+}
+
 void WorldPickTests::withoutAReadCheckAWorldReadsNoEntity() {
     WorldPicks::setReadCheck(nullptr);
     ScriptCaller::WorldScope world(WORLD);
