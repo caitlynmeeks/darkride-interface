@@ -15,6 +15,7 @@
 
 #include "WorldPickTests.h"
 
+#include <algorithm>
 #include <cfloat>
 #include <functional>
 
@@ -81,6 +82,12 @@ protected:
     Buttons getPressedButtons(const PickResultPointer&) override { return Buttons(); }
     PickResultPointer getPickResultCopy(const PickResultPointer& pickResult) const override { return pickResult; }
 };
+
+// a pick keeps its include and ignore lists sorted (PickQuery::setIgnoreItems, for the pick cache): compare as it keeps them
+QVector<QUuid> sorted(QVector<QUuid> ids) {
+    std::sort(ids.begin(), ids.end(), std::less<QUuid>());
+    return ids;
+}
 
 QSharedPointer<PickManager> picks() { return DependencyManager::get<PickManager>(); }
 QSharedPointer<PointerManager> pointers() { return DependencyManager::get<PointerManager>(); }
@@ -478,10 +485,10 @@ void WorldPickTests::listsDropWhatTheWorldMayNotRead() {
         picks()->setIncludeItems(uid, asked);
     }
     const QVector<QUuid> kept { WORLDS_ENTITY, AN_AVATAR };
-    QCOMPARE(pick->getIgnoreItems(), kept);
-    QCOMPARE(pick->getIncludeItems(), kept);
+    QCOMPARE(pick->getIgnoreItems(), sorted(kept));
+    QCOMPARE(pick->getIncludeItems(), sorted(kept));
     picks()->setIgnoreItems(uid, asked);  // the app, on the same pick: all
-    QCOMPARE(pick->getIgnoreItems(), asked);
+    QCOMPARE(pick->getIgnoreItems(), sorted(asked));
     picks()->removePick(uid);
 }
 
@@ -596,8 +603,8 @@ void WorldPickTests::theAppReachesEveryPickAndPointer() {
         QCOMPARE(picks()->getPickScriptParameters(pickID).value("made").toString(), QString("by the test"));
         picks()->setIgnoreItems(pickID, any);
         picks()->setIncludeItems(pickID, any);
-        QCOMPARE(pick->getIgnoreItems(), any);
-        QCOMPARE(pick->getIncludeItems(), any);
+        QCOMPARE(pick->getIgnoreItems(), sorted(any));
+        QCOMPARE(pick->getIncludeItems(), sorted(any));
         // a result on something a world may not read: whole, typed and as a script of the visitor's gets it
         auto typed = picks()->getPrevPickResultTyped<TestResult>(pickID);
         QVERIFY(typed);
