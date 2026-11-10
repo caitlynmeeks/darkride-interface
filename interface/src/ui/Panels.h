@@ -203,6 +203,7 @@ private:
     void showMiddleTabs();   // the middle slot's tabs and their labels, to its host
     bool putTabletOnScreen();
     void takeTabletOffScreen();
+    void tabletBehind();   // another page in front of the tablet's tab in the middle slot
     void hideTabletWindow(bool hide);
     // a dialog in the headset brings the screen up in front of the visitor (vr's showInFront); a world's dialog brings
     // up only the middle slot, with no page in it (the rules for a world's dialogs: ui/WorldDialogs.h), until the
@@ -228,6 +229,7 @@ private:
     QPointer<QQuickItem> _tabletHolder;   // a hidden item on the desktop's QML that keeps the window out of sight
     QSizeF _tabletLoaderSize;
     bool _tabletOnScreen { false };
+    QList<QPointer<QQuickItem>> _droppedTabletPages;   // its web pages dropped off the screen, until they're gone
     bool _screenDialogOnly { false };   // the screen is up only for a world's dialog: the middle slot, no page in it
     bool _screenHidden { false };   // vr hid the screen in the headset: its slots and their pages kept, out of view
     std::atomic<bool> _screenUp { false };   // _screenState set, for scripts' threads (isScreenUp)

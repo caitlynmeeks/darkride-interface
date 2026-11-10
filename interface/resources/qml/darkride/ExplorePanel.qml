@@ -678,7 +678,10 @@ Page {
             visible: height > 0
             RoundedImage {
                 id: worldPicture
-                anchors.fill: parent
+                // its own size from the start, not the row's: a picture loads only once it has a size (RoundedImage),
+                // and the row opens only once the picture is there, so filling the row it never loaded
+                width: parent.width
+                height: parent.width * 0.42
                 roundBottom: false
                 source: card.world.id ? explore.picture(card.world.id) : ""
                 opacity: card.compatible ? 1 : 0.45

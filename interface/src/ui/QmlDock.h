@@ -71,6 +71,15 @@ public:
     bool isAway() const { return _away; }
     void setPageShown(bool shown);
 
+    // Qt 6: a web view drawn in a slot can't move to another Qt Quick window. Qt WebEngine lets go of its pictures
+    // for the old window from the main thread, and a slot's window draws on its own thread, so Qt stops the app.
+    // Such a page stays where it is: hidden there behind another page, or gone with its web views there (the dock
+    // makes it again the next time it shows).
+    static bool holdsWebView(const QQuickItem* item);   // the item or any item in it is a web view (always false on Qt 5)
+    bool keepsWebView() const { return _away && holdsWebView(panel()); }
+    void hideAway();       // behind another page in its slot, unseen
+    void releaseAway();    // the page and its web views go, where they are
+
 protected:
     bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
