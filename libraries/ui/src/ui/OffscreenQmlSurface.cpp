@@ -499,6 +499,20 @@ void OffscreenQmlSurface::hoverBeginEvent(const PointerEvent& event, OffscreenTo
 
 void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, OffscreenTouchDevice& device) {
     _activeTouchPoints[event.getID()].hovering = false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: a pointer that leaves the surface with its button down ends its press here, where it last was. A desktop
+    // mouse dragged off a Web entity is released over something else, and no release would reach this surface: its
+    // button or slider would stay pressed. (A laser's trigger end still comes back afterwards: a release with nothing
+    // pressed, which does nothing.)
+    if (_activeTouchPoints[event.getID()].pressed && getRootItem() && !isPaused()) {
+        const QPointF lastPoint = _activeTouchPoints[event.getID()].touchPoint.scenePosition();
+        QMouseEvent mouseEvent(QEvent::MouseButtonRelease, lastPoint, lastPoint, lastPoint, Qt::LeftButton, Qt::NoButton,
+                               event.getKeyboardModifiers(), mouseDevice());
+        mouseEvent.ignore();
+        QCoreApplication::sendEvent(getWindow(), &mouseEvent);
+        _activeTouchPoints[event.getID()].pressed = false;
+    }
+#endif
     // Send a fake mouse move event if
     // - the event told us to
     // - we aren't pressing with this ID
@@ -519,6 +533,7 @@ void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, OffscreenTouc
 // delivered to that page, at the wrong place, before the release meant for it. So each surface sends the mouse events
 // it makes as a device of its own.
 QPointingDevice* OffscreenQmlSurface::mouseDevice() {
+    Q_ASSERT(QThread::currentThread() == thread());   // made as a child of the surface
     if (!_mouseDevice) {
         _mouseDevice = new QPointingDevice("OffscreenQmlSurfaceMouse", 0, QInputDevice::DeviceType::Mouse,
                                            QPointingDevice::PointerType::Generic,
