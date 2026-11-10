@@ -575,7 +575,7 @@ protected:
     QString _name;
     // the root goes with its surface: both are cleared when the surface is destroyed (setQmlTabletRoot)
     QPointer<QQuickItem> _qmlTabletRoot;
-    OffscreenQmlSurface* _qmlOffscreenSurface { nullptr };
+    QPointer<OffscreenQmlSurface> _qmlOffscreenSurface;
     QmlWindowClass* _desktopWindow { nullptr };
     QList<qint64> _worldPageLoads;   // when worlds' scripts last loaded pages (worldMayLoadPage)
     bool worldMayLoadPage();

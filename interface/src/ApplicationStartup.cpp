@@ -1598,9 +1598,10 @@ void Application::installOperators() {
                     delete webSurface;
                 });
             });
-            auto rootItemLoadedFunctor = [webSurface, url, isTablet] {
-                Application::setupQmlSurface(webSurface->getSurfaceContext(), isTablet || url == LOGIN_DIALOG.toString() || url == AVATAR_INPUTS_BAR_QML.toString() ||
-                   url == BUBBLE_ICON_QML.toString() || Panels::isScreenSlotUrl(url));
+            // the app's objects in reach: only for the app's own QML, on a Web entity no world made
+            auto rootItemLoadedFunctor = [webSurface, url, isTablet, appOwned] {
+                Application::setupQmlSurface(webSurface->getSurfaceContext(), appOwned && (isTablet || url == LOGIN_DIALOG.toString() ||
+                   url == AVATAR_INPUTS_BAR_QML.toString() || url == BUBBLE_ICON_QML.toString() || Panels::isScreenSlotUrl(url)));
             };
             if (webSurface->getRootItem()) {
                 rootItemLoadedFunctor();
