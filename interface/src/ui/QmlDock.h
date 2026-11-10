@@ -61,6 +61,7 @@ signals:
     // the panel's QML was made (contentWindow() and panel() are there now)
     void contentMade();
 
+public:
     // the VR screen (VR-SCREEN-PLAN.md): the page, made once, moved into one of the screen's slots (an item in another
     // Qt Quick window) and back into this dock, without being made again; a page moved back while in the headset is
     // hidden (nobody sees the desktop's docks there), so its web views stop drawing while their sound plays on
