@@ -512,6 +512,23 @@ void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, OffscreenTouc
     }
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt 6 keeps a mouse's pressed point and the item that grabbed it on the event's DEVICE, not on the window. A mouse event
+// made without a device is the primary mouse's: a page pressed that way holds the real mouse's grab, and the next real
+// mouse release anywhere in the application (the desktop overlay forwards its own, in the overlay's coordinates) is
+// delivered to that page, at the wrong place, before the release meant for it. So each surface sends the mouse events
+// it makes as a device of its own.
+QPointingDevice* OffscreenQmlSurface::mouseDevice() {
+    if (!_mouseDevice) {
+        _mouseDevice = new QPointingDevice("OffscreenQmlSurfaceMouse", 0, QInputDevice::DeviceType::Mouse,
+                                           QPointingDevice::PointerType::Generic,
+                                           QInputDevice::Capability::Position | QInputDevice::Capability::Hover, 1, 3,
+                                           QString(), QPointingDeviceUniqueId(), this);
+    }
+    return _mouseDevice;
+}
+#endif
+
 bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, OffscreenTouchDevice& device, bool release) {
 
     // Ignore mouse interaction if we're paused
@@ -622,8 +639,13 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
     bool eventsAccepted = true;
 
     if (event.getType() == PointerEvent::Move) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        QMouseEvent mouseEvent(QEvent::MouseMove, windowPoint, windowPoint, windowPoint, button, buttons,
+                               event.getKeyboardModifiers(), mouseDevice());
+#else
         QMouseEvent mouseEvent(QEvent::MouseMove, windowPoint, windowPoint, windowPoint, button, buttons,
                                event.getKeyboardModifiers());
+#endif
         // TODO - this line necessary for the QML Tooltop to work (which is not currently being used), but it causes interface to crash on launch on a fresh install
         // need to investigate into why this crash is happening.
         //_qmlContext->setContextProperty("lastMousePosition", windowPoint);
@@ -638,11 +660,12 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
     // Qt 6: a touch event made here and sent straight to the window reaches its items at (0, 0), not at its point (vr's
     // touch-check, 2026-11-10: every press of a laser or a desktop mouse on a Web entity in "touch" input landed at the
     // page's top-left corner, QML and web pages alike, while the mouse move sent above was in place). So the press and the
-    // release go as mouse events at the point, as "mouse" input sends them, and no touch events are sent.
+    // release go as mouse events at the point, as "mouse" input sends them, and no touch events are sent. They go as this
+    // surface's own mouse device (mouseDevice()), never as the real mouse.
     if (state == PRESSED || state == RELEASED) {
         QMouseEvent mouseEvent(state == PRESSED ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease, windowPoint,
                                windowPoint, windowPoint, Qt::LeftButton, state == PRESSED ? Qt::LeftButton : Qt::NoButton,
-                               event.getKeyboardModifiers());
+                               event.getKeyboardModifiers(), mouseDevice());
         mouseEvent.ignore();
         if (QCoreApplication::sendEvent(getWindow(), &mouseEvent)) {
             eventSent = true;
