@@ -42,6 +42,7 @@
 #include <PickManager.h>
 #include <PointerManager.h>
 #include <RealClicks.h>
+#include <WorldPicks.h>
 #include <ScriptCaller.h>
 #include <Preferences.h>
 #include <RecordingScriptingInterface.h>
@@ -251,6 +252,12 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
         RealClicks::setOwnershipCheck([](const QUuid& entityID) {
             auto entities = DependencyManager::get<EntityScriptingInterface>();
             return entities && entities->worldMayUse(entityID);
+        });
+        // What a world's script reads through its own picks and pointers (WorldPicks): asked on the script's
+        // thread, where forWorldRead answers for the calling world. An id that is no entity is left to the pick.
+        WorldPicks::setReadCheck([](const QUuid& entityID) {
+            auto entities = DependencyManager::get<EntityScriptingInterface>();
+            return entities && (entityID.isNull() || !entities->forWorldRead(entityID).isNull());
         });
         // A pointer a world's script made delivers its hover and trigger events only into the world's own entities
         // (Pointer::worldTarget): a domain entity, or one a world's script made. Asked on the main thread, so by the

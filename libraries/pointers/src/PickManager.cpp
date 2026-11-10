@@ -8,6 +8,8 @@
 #include "PickManager.h"
 
 #include <ScriptCaller.h>
+
+#include "WorldPicks.h"
 #include "PerfStat.h"
 #include "Profile.h"
 
@@ -40,7 +42,7 @@ unsigned int PickManager::addPick(PickQuery::PickType type, const std::shared_pt
 std::shared_ptr<PickQuery> PickManager::findPick(unsigned int uid) const {
     return resultWithReadLock<std::shared_ptr<PickQuery>>([&] {
         auto type = _typeMap.find(uid);
-        if (type != _typeMap.end()) {
+        if (type != _typeMap.end() && WorldPicks::callerMayName(_worldPicks, uid)) {
             return _picks.find(type->second)->second.find(uid)->second;
         }
         return std::shared_ptr<PickQuery>();
@@ -49,6 +51,9 @@ std::shared_ptr<PickQuery> PickManager::findPick(unsigned int uid) const {
 
 void PickManager::removePick(unsigned int uid) {
     withWriteLock([&] {
+        if (!WorldPicks::callerMayName(_worldPicks, uid)) {
+            return;
+        }
         auto typeIt = _typeMap.find(uid);
         if (typeIt != _typeMap.end()) {
             _picks[typeIt->second].erase(uid);
@@ -102,7 +107,9 @@ QVector<unsigned int> PickManager::getPicks() const {
         for (auto typeIt = _picks.cbegin(); typeIt != _picks.cend(); ++typeIt) {
             auto& picksForType = typeIt->second;
             for (auto pickIt = picksForType.cbegin(); pickIt != picksForType.cend(); ++pickIt) {
-                picks.push_back(pickIt->first);
+                if (WorldPicks::callerMayName(_worldPicks, pickIt->first)) {
+                    picks.push_back(pickIt->first);
+                }
             }
         }
     });
@@ -149,14 +156,14 @@ void PickManager::setPrecisionPicking(unsigned int uid, bool precisionPicking) c
 void PickManager::setIgnoreItems(unsigned int uid, const QVector<QUuid>& ignore) const {
     auto pick = findPick(uid);
     if (pick) {
-        pick->setIgnoreItems(ignore);
+        pick->setIgnoreItems(WorldPicks::readableByCaller(ignore));
     }
 }
 
 void PickManager::setIncludeItems(unsigned int uid, const QVector<QUuid>& include) const {
     auto pick = findPick(uid);
     if (pick) {
-        pick->setIncludeItems(include);
+        pick->setIncludeItems(WorldPicks::readableByCaller(include));
     }
 }
 

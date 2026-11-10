@@ -8,6 +8,7 @@
 
 #include "PickScriptingInterface.h"
 
+#include <WorldPicks.h>
 #include <QVariant>
 #include "GLMHelpers.h"
 
@@ -420,12 +421,8 @@ QVector<unsigned int> PickScriptingInterface::getPicks() const {
 }
 
 QVariantMap PickScriptingInterface::getPrevPickResult(unsigned int uid) {
-    QVariantMap result;
-    auto pickResult = DependencyManager::get<PickManager>()->getPrevPickResult(uid);
-    if (pickResult) {
-        result = pickResult->toVariantMap();
-    }
-    return result;
+    // as the caller may read it: for a world's script, a hit on an entity it may not read is no hit
+    return WorldPicks::resultForCaller(DependencyManager::get<PickManager>()->getPrevPickResult(uid));
 }
 
 void PickScriptingInterface::setPrecisionPicking(unsigned int uid, bool precisionPicking) {
