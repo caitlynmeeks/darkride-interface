@@ -418,7 +418,8 @@ void OffscreenQmlSurface::onRootCreated() {
     _audioOutputUpdateTimer.setSingleShot(true);
 #endif
 
-    if (getRootItem()->objectName() == "tabletRoot") {
+    // the system tablet's root: only a surface the app made for its own tablet (setAppTablet)
+    if (_appTablet && getRootItem()->objectName() == "tabletRoot") {
         getSurfaceContext()->setContextProperty("tabletRoot", QVariant::fromValue(getRootItem()));
         auto tabletScriptingInterface = DependencyManager::get<TabletScriptingInterface>();
         tabletScriptingInterface->setQmlTabletRoot("com.highfidelity.interface.tablet.system", this);

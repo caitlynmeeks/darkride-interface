@@ -507,14 +507,32 @@ void TabletProxy::setQmlTabletRoot(OffscreenQmlSurface* qmlOffscreenSurface) {
         return;
     }
 
+    // the surface before this one no longer speaks for the tablet
+    if (_qmlOffscreenSurface && _qmlOffscreenSurface != qmlOffscreenSurface) {
+        QObject::disconnect(_qmlOffscreenSurface, nullptr, this, nullptr);
+        if (_qmlTabletRoot) {
+            QObject::disconnect(_qmlTabletRoot, nullptr, this, nullptr);
+        }
+    }
+
     _qmlOffscreenSurface = qmlOffscreenSurface;
     _qmlTabletRoot = qmlOffscreenSurface ? qmlOffscreenSurface->getRootItem() : nullptr;
     if (_qmlTabletRoot && _qmlOffscreenSurface) {
+        // the root never outlives its surface here: when the surface goes (the tablet in the hand is put away), the
+        // tablet has no root until the next one registers
+        connect(_qmlOffscreenSurface, &QObject::destroyed, this, [this](QObject* surface) {
+            if (surface == _qmlOffscreenSurface) {
+                _qmlOffscreenSurface = nullptr;
+                _qmlTabletRoot = nullptr;
+                _state = State::Uninitialized;
+                _currentPathLoaded = "";
+            }
+        });
         QObject::connect(_qmlOffscreenSurface, SIGNAL(webEventReceived(QVariant)), this, SLOT(emitWebEvent(QVariant)));
         QObject::connect(_qmlTabletRoot, SIGNAL(screenChanged(QVariant, QVariant)), this, SIGNAL(screenChanged(QVariant, QVariant)));
 
         // forward qml surface events to interface js
-        connect(_qmlOffscreenSurface, &OffscreenQmlSurface::fromQml, [this](QVariant message) {
+        connect(_qmlOffscreenSurface, &OffscreenQmlSurface::fromQml, this, [this](QVariant message) {
             if (message.canConvert<QJSValue>()) {
                 emit fromQml(qvariant_cast<QJSValue>(message).toVariant());
             } else if (message.canConvert<QString>()) {

@@ -39,7 +39,7 @@ using namespace render::entities;
 const QString WebEntityRenderer::QML = "Web3DSurface.qml";
 const char* WebEntityRenderer::URL_PROPERTY = "url";
 
-std::function<void(QString, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> WebEntityRenderer::_acquireWebSurfaceOperator = nullptr;
+std::function<void(QString, bool, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> WebEntityRenderer::_acquireWebSurfaceOperator = nullptr;
 std::function<void(QSharedPointer<OffscreenQmlSurface>&, bool&, std::vector<QMetaObject::Connection>&)> WebEntityRenderer::_releaseWebSurfaceOperator = nullptr;
 
 static int MAX_WINDOW_SIZE = 4096;
@@ -412,7 +412,8 @@ void WebEntityRenderer::buildWebSurface(const EntityItemPointer& entity, const Q
     if (_countedWebView) {
         ++_currentWebCount;
     }
-    WebEntityRenderer::acquireWebSurface(newSourceURL, _contentType == ContentType::HtmlContent, _webSurface, _cachedWebSurface);
+    const bool appOwned = entity->isLocalEntity() && !entity->isMadeByWorld();
+    WebEntityRenderer::acquireWebSurface(newSourceURL, _contentType == ContentType::HtmlContent, appOwned, _webSurface, _cachedWebSurface);
     _fadeStartTime = usecTimestampNow();
     _webSurface->resume();
 
