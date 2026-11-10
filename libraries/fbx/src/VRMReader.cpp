@@ -286,7 +286,7 @@ VRMInfo readVRM(const QByteArray& glb) {
             QVector<int> springNodes;
             float stiffness = 0.0f, drag = 0.0f, gravityPower = 0.0f, gravityY = 0.0f, radius = 0.0f;
             // a joint's settings are for the segment to the next joint, so the last one's go unused
-            const int counted = glm::max(joints.size() - 1, 1);
+            const int counted = glm::max((int)joints.size() - 1, 1);
             for (int j = 0; j < joints.size(); j++) {
                 const QJsonObject joint = joints.at(j).toObject();
                 springNodes.append(joint["node"].toInt(-1));
