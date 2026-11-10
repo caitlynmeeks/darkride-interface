@@ -93,6 +93,10 @@ Rectangle {
         function layoutPages() {
             for (var i = 0; i < children.length; i++) {
                 var page = children[i];
+                // a panel's own "anchors.fill: parent" follows it here and would size it to the slot's pixels, over
+                // the size below (every page then drawn too big and cut off at the right and bottom); its dock's view
+                // sizes it again at home (SizeRootObjectToView), so the anchor isn't needed back
+                page.anchors.fill = undefined;
                 page.transformOrigin = Item.TopLeft;
                 page.scale = root.pageScale;
                 page.width = width / root.pageScale;
