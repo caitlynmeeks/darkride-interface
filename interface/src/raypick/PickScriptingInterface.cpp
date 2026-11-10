@@ -510,6 +510,8 @@ void PickScriptingInterface::setParentTransform(std::shared_ptr<PickQuery> pick,
             NestableType nestableType = sharedNestablePointer->getNestableType();
             if (nestableType == NestableType::Avatar) {
                 pick->parentTransform = std::make_shared<AvatarTransformNode>(std::static_pointer_cast<Avatar>(sharedNestablePointer), parentJointIndex);
+            } else if (!WorldPicks::callerMayRead(parentUuid, nestableType == NestableType::Entity)) {
+                // a world's script parents its pick only to an entity it may read: this pick gets no parent
             } else if (nestableType == NestableType::Entity) {
                 pick->parentTransform = std::make_shared<EntityTransformNode>(std::static_pointer_cast<EntityItem>(sharedNestablePointer), parentJointIndex);
             } else {

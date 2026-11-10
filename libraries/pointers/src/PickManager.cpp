@@ -49,6 +49,10 @@ std::shared_ptr<PickQuery> PickManager::findPick(unsigned int uid) const {
     });
 }
 
+bool PickManager::callerMayName(unsigned int uid) const {
+    return resultWithReadLock<bool>([&] { return WorldPicks::callerMayName(_worldPicks, uid); });
+}
+
 void PickManager::removePick(unsigned int uid) {
     withWriteLock([&] {
         if (!WorldPicks::callerMayName(_worldPicks, uid)) {

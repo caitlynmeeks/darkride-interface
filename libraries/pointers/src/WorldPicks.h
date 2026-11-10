@@ -26,9 +26,11 @@
 #include "Pick.h"
 
 namespace WorldPicks {
-    // True when a world's caller may read the entity with this id (asked on the caller's thread; an id that isn't an
-    // entity may be read). Set once by the app; without it a world's script reads no entity through a pick.
-    using ReadCheck = std::function<bool(const QUuid& entityID)>;
+    // True when a world's caller may read the entity with this id (asked on the caller's thread). Set once by the
+    // app, before any script engine starts; without it a world's script reads no entity through a pick.
+    // `isEntity`: the id is known to be an entity's (a pick hit one, or a parent was found to be one), so one that
+    // can't be found any more is not readable; otherwise an id that is no entity's is left to the pick.
+    using ReadCheck = std::function<bool(const QUuid& entityID, bool isEntity)>;
     void setReadCheck(ReadCheck check);
 
     // May the caller name the pick or pointer `uid`? `madeByWorld` is the manager's record of what worlds' scripts
@@ -36,7 +38,7 @@ namespace WorldPicks {
     bool callerMayName(const std::unordered_map<unsigned int, int>& madeByWorld, unsigned int uid);
 
     // May the caller read this entity through a pick (true for every caller but a world's script)
-    bool callerMayRead(const QUuid& entityID);
+    bool callerMayRead(const QUuid& entityID, bool isEntity = false);
     // The ids the caller may read (the others left out)
     QVector<QUuid> readableByCaller(const QVector<QUuid>& ids);
 

@@ -29,6 +29,9 @@ public:
 
     unsigned int addPick(PickQuery::PickType type, const std::shared_ptr<PickQuery> pick);
     void removePick(unsigned int uid);
+    /// May the calling script name this pick: any caller but a world's script may; a world's script only a pick a
+    /// world's script made (WorldPicks::callerMayName)
+    bool callerMayName(unsigned int uid) const;
     /// The picks the world `world`'s scripts made (tagged with ScriptCaller::world() when added) go: its scripts have
     /// stopped. Returns how many went.
     int removeWorldPicks(int world);

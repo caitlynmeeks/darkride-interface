@@ -20,6 +20,7 @@
 
 #include <DependencyManager.h>
 #include <PickManager.h>
+#include <PickTransformNode.h>
 #include <Pointer.h>
 #include <PointerManager.h>
 #include <RegisteredMetaTypes.h>
@@ -164,7 +165,7 @@ void WorldPickTests::initTestCase() {
 }
 
 void WorldPickTests::init() {
-    WorldPicks::setReadCheck([](const QUuid& id) { return id != HIDDEN_ENTITY; });
+    WorldPicks::setReadCheck([](const QUuid& id, bool) { return id != HIDDEN_ENTITY; });
 }
 
 void WorldPickTests::worldNamesOnlyAWorldsPicks() {
@@ -289,6 +290,40 @@ void WorldPickTests::everyPointerCallLeavesTheAppsPointerAlone() {
         pointers()->removePointer(made.id);
         QVERIFY(!pointers()->getPointers().contains(made.id));
     }
+}
+
+void WorldPickTests::aWorldsPickIsParentedOnlyToAWorldsPick() {
+    // a pick parented to another pick starts where that pick's result is; a world's script may not start its own
+    // pick from the app's (or read where the app's lands, through its own pick's origin)
+    const unsigned int apps = addPick();
+    unsigned int own = 0;
+    { ScriptCaller::WorldScope world(WORLD); own = addPick(); }
+    QVERIFY(picks()->callerMayName(apps));
+    {
+        ScriptCaller::WorldScope world(WORLD);
+        QVERIFY(!picks()->callerMayName(apps));
+        QVERIFY(picks()->callerMayName(own));
+        PickTransformNode ontoApps(apps);
+        QCOMPARE(ontoApps.toVariantMap().value("parentID").toUInt(), 0u);  // no parent
+        PickTransformNode ontoOwn(own);
+        QCOMPARE(ontoOwn.toVariantMap().value("parentID").toUInt(), own);
+        // every small number but its own: none taken
+        for (unsigned int uid = 1; uid <= 64; ++uid) {
+            if (uid != own) {
+                QCOMPARE(PickTransformNode(uid).toVariantMap().value("parentID").toUInt(), 0u);
+            }
+        }
+    }
+    // made by a world, read later by the app (as the pick manager does each frame): still no parent
+    std::shared_ptr<PickTransformNode> kept;
+    { ScriptCaller::WorldScope world(WORLD); kept = std::make_shared<PickTransformNode>(apps); }
+    QCOMPARE(kept->toVariantMap().value("parentID").toUInt(), 0u);
+    QCOMPARE(kept->getTransform(), Transform());
+    // the app parents to any
+    QCOMPARE(PickTransformNode(apps).toVariantMap().value("parentID").toUInt(), apps);
+    QCOMPARE(PickTransformNode(own).toVariantMap().value("parentID").toUInt(), own);
+    picks()->removePick(apps);
+    picks()->removePick(own);
 }
 
 void WorldPickTests::aWorldThatWasLeftNamesNothing() {

@@ -77,12 +77,12 @@ bool WorldPicks::callerMayName(const std::unordered_map<unsigned int, int>& made
            (caller == ScriptCaller::ANY_WORLD || ScriptCaller::belongsTo(tag->second, caller));
 }
 
-bool WorldPicks::callerMayRead(const QUuid& entityID) {
+bool WorldPicks::callerMayRead(const QUuid& entityID, bool isEntity) {
     if (!ScriptCaller::isWorld()) {
         return true;
     }
     const auto& check = readCheck();
-    return check && check(entityID);
+    return check && check(entityID, isEntity);
 }
 
 QVector<QUuid> WorldPicks::readableByCaller(const QVector<QUuid>& ids) {
@@ -113,7 +113,7 @@ QVariantMap WorldPicks::resultForCaller(const PickResultPointer& result) {
         const QVariantList all = map.value("intersectingObjects").toList();
         for (const QVariant& entry : all) {
             const QVariantMap object = entry.toMap();
-            if (isEntityHit(object.value("type")) && !callerMayRead(object.value("id").toUuid())) {
+            if (isEntityHit(object.value("type")) && !callerMayRead(object.value("id").toUuid(), true)) {
                 continue;
             }
             kept.append(entry);
@@ -124,7 +124,7 @@ QVariantMap WorldPicks::resultForCaller(const PickResultPointer& result) {
         }
         return map;
     }
-    if (isEntityHit(map.value("type")) && !callerMayRead(map.value("objectID").toUuid())) {
+    if (isEntityHit(map.value("type")) && !callerMayRead(map.value("objectID").toUuid(), true)) {
         return withoutHit(map);
     }
     return map;

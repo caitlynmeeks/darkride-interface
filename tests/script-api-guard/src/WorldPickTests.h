@@ -22,6 +22,7 @@ private slots:
     void everyPickCallLeavesTheAppsPickAlone();
     void worldNamesOnlyAWorldsPointers();
     void everyPointerCallLeavesTheAppsPointerAlone();
+    void aWorldsPickIsParentedOnlyToAWorldsPick();
     void aWorldThatWasLeftNamesNothing();
     void listsDropWhatTheWorldMayNotRead();
     void lockEndOnlyOntoWhatTheWorldMayRead();

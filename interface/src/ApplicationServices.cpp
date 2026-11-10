@@ -254,10 +254,25 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
             return entities && entities->worldMayUse(entityID);
         });
         // What a world's script reads through its own picks and pointers (WorldPicks): asked on the script's
-        // thread, where forWorldRead answers for the calling world. An id that is no entity is left to the pick.
-        WorldPicks::setReadCheck([](const QUuid& entityID) {
+        // thread, where forWorldRead answers for the calling world. Set here, before any script engine starts. An
+        // id known to be an entity's (a pick hit it) that is no longer in the tree is not readable; an id that is
+        // no entity's is left to the pick.
+        WorldPicks::setReadCheck([](const QUuid& entityID, bool isEntity) {
             auto entities = DependencyManager::get<EntityScriptingInterface>();
-            return entities && (entityID.isNull() || !entities->forWorldRead(entityID).isNull());
+            if (!entities) {
+                return false;
+            }
+            if (isEntity) {
+                auto tree = entities->getEntityTree();
+                EntityItemPointer entity;
+                if (tree) {
+                    tree->withReadLock([&] { entity = tree->findEntityByEntityItemID(EntityItemID(entityID)); });
+                }
+                if (!entity) {
+                    return false;
+                }
+            }
+            return entityID.isNull() || !entities->forWorldRead(entityID).isNull();
         });
         // A pointer a world's script made delivers its hover and trigger events only into the world's own entities
         // (Pointer::worldTarget): a domain entity, or one a world's script made. Asked on the main thread, so by the
