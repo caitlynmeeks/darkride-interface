@@ -1031,7 +1031,13 @@ void Panels::takeTabletOffScreen() {
             if (QmlDock::holdsWebView(item)) {
                 item->setVisible(false);
                 item->setParentItem(nullptr);
-                item->deleteLater();
+                // later, as its own code may be what's running (the page closing the tablet); but at quit now, as the
+                // event loop may not run again and the page would otherwise go only in the late teardown
+                if (qApp->isAboutToQuit()) {
+                    delete item;
+                } else {
+                    item->deleteLater();
+                }
                 dropped = true;
             }
         }
