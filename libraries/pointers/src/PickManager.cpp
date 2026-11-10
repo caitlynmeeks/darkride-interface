@@ -7,6 +7,10 @@
 //
 #include "PickManager.h"
 
+#include <atomic>
+
+#include <QtCore/QDebug>
+
 #include <ScriptCaller.h>
 
 #include "WorldPicks.h"
@@ -48,6 +52,17 @@ std::shared_ptr<PickQuery> PickManager::findPick(unsigned int uid) const {
         }
         return std::shared_ptr<PickQuery>();
     });
+}
+
+void PickManager::setPerFrameTimeBudget(unsigned int numUsecs) {
+    if (ScriptCaller::isWorld()) {
+        static std::atomic<bool> said { false };
+        if (!said.exchange(true)) {
+            qWarning() << "Picks.perFrameTimeBudget: a world's script may not set the time the visitor's picks get; ignored (shown once)";
+        }
+        return;
+    }
+    _perFrameTimeBudget = numUsecs;
 }
 
 bool PickManager::callerMayName(unsigned int uid) const {

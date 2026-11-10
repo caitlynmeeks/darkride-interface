@@ -25,6 +25,7 @@ private slots:
     void aWorldsPickIsParentedOnlyToAWorldsPick();
     void addPickMarksAWorldsPick();
     void aWorldsPickPassesThroughWhatIsHidden();
+    void aWorldDoesNotSetThePicksTimeBudget();
     void aWorldThatWasLeftNamesNothing();
     void listsDropWhatTheWorldMayNotRead();
     void lockEndOnlyOntoWhatTheWorldMayRead();

@@ -435,6 +435,23 @@ void WorldPickTests::aWorldsPickPassesThroughWhatIsHidden() {
     WorldPicks::setHiddenCheck(nullptr);
 }
 
+void WorldPickTests::aWorldDoesNotSetThePicksTimeBudget() {
+    // the time the picks get each frame is shared by everyone's picks: a world's script reads it, and its write is
+    // ignored; the app's is taken
+    const unsigned int before = picks()->getPerFrameTimeBudget();
+    QVERIFY(before > 0);
+    {
+        ScriptCaller::WorldScope world(WORLD);
+        picks()->setPerFrameTimeBudget(0);
+        QCOMPARE(picks()->getPerFrameTimeBudget(), before);
+        picks()->setPerFrameTimeBudget(1000000000u);
+        QCOMPARE(picks()->getPerFrameTimeBudget(), before);
+    }
+    picks()->setPerFrameTimeBudget(before + 1);
+    QCOMPARE(picks()->getPerFrameTimeBudget(), before + 1);
+    picks()->setPerFrameTimeBudget(before);
+}
+
 void WorldPickTests::aWorldThatWasLeftNamesNothing() {
     unsigned int own = 0;
     { ScriptCaller::WorldScope world(LEFT_WORLD); own = addPick(); }

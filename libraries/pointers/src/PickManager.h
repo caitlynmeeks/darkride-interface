@@ -69,7 +69,9 @@ public:
     static const unsigned int INVALID_PICK_ID { 0 };
 
     unsigned int getPerFrameTimeBudget() const { return _perFrameTimeBudget; }
-    void setPerFrameTimeBudget(unsigned int numUsecs) { _perFrameTimeBudget = numUsecs; }
+    /// How long the picks may take each frame: everyone's picks share it, so a world's script doesn't set it (its
+    /// write is ignored); the app and the visitor's own scripts do.
+    void setPerFrameTimeBudget(unsigned int numUsecs);
 
     bool getForceCoarsePicking() { return _forceCoarsePicking; }
 
