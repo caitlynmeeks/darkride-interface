@@ -201,10 +201,16 @@ public:
 
     std::shared_ptr<TransformNode> parentTransform;
 
+    // A pick a world's script made passes through what is hidden from worlds' scripts (WorldPicks::castPastHidden).
+    // Set once by PickManager::addPick, before the pick is shared; no script property or filter number reaches it.
+    void setMadeByWorld() { _madeByWorld = true; }
+    bool isMadeByWorld() const { return _madeByWorld; }
+
 private:
     PickFilter _filter;
     const float _maxDistance;
     bool _enabled;
+    bool _madeByWorld { false };
     PickResultPointer _prevResult;
 
     QVector<QUuid> _ignoreItems;

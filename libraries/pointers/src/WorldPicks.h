@@ -5,6 +5,7 @@
 //  What a world's script may do with picks and pointers, in one place:
 //  - it names only the picks and pointers a world's script made; any other id is, for it, an id that doesn't exist;
 //  - an entity it may not read can't be put in a pick's include or ignore list, nor be a pointer's lock end;
+//  - a pick it made passes through what is hidden from worlds' scripts, as if it weren't there;
 //  - a pick result that lands on an entity it may not read reads as no hit, with every field of the hit cleared.
 //  Every other caller (the app, the visitor's own scripts) is unaffected. The caller is the calling thread's
 //  (ScriptCaller), so these are asked on the thread the script's call arrives on.
@@ -41,6 +42,35 @@ namespace WorldPicks {
     bool callerMayRead(const QUuid& entityID, bool isEntity = false);
     // The ids the caller may read (the others left out)
     QVector<QUuid> readableByCaller(const QVector<QUuid>& ids);
+
+    // Is this entity hidden from worlds' scripts (the app's and the visitor's own local entities)? Asked on the main
+    // thread where picks are evaluated, so by the entity itself, whoever asks. Set once by the app; without it every
+    // entity is hidden.
+    using HiddenCheck = std::function<bool(const QUuid& entityID)>;
+    void setHiddenCheck(HiddenCheck check);
+    bool isHiddenFromWorlds(const QUuid& entityID);
+
+    // How many hidden entities a world's pick passes through before it gives up with no hit
+    const int MOST_PASSED_THROUGH = 8;
+
+    // The entity a pick made by a world's script hits: what is hidden from worlds' scripts is passed through, as if
+    // it weren't there, so the pick's result, the picks parented to it, a pointer's drawn end and its events all see
+    // the same thing. `cast(ignore)` casts the pick with these ids ignored and gives a result with `intersects` and
+    // `entityID`. Each hidden hit is added to the ignored ids and the pick is cast again; past
+    // MOST_PASSED_THROUGH hidden hits the answer is no hit (a default result), never the hidden one.
+    template <typename ID, typename Cast>
+    auto castPastHidden(QVector<ID> ignore, Cast&& cast) -> decltype(cast(ignore)) {
+        for (int passed = 0;; ++passed) {
+            auto hit = cast(ignore);
+            if (!hit.intersects || !isHiddenFromWorlds(hit.entityID)) {
+                return hit;
+            }
+            if (passed == MOST_PASSED_THROUGH) {
+                return decltype(hit)();
+            }
+            ignore.push_back(ID(hit.entityID));
+        }
+    }
 
     // The result as a script gets it. For a world's caller, a hit on an entity it may not read is no hit: type none,
     // no id, no distance, point, normal or extra information; what the pick itself was (its ray, parabola, stylus

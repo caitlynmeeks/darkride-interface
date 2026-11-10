@@ -23,6 +23,8 @@ private slots:
     void worldNamesOnlyAWorldsPointers();
     void everyPointerCallLeavesTheAppsPointerAlone();
     void aWorldsPickIsParentedOnlyToAWorldsPick();
+    void addPickMarksAWorldsPick();
+    void aWorldsPickPassesThroughWhatIsHidden();
     void aWorldThatWasLeftNamesNothing();
     void listsDropWhatTheWorldMayNotRead();
     void lockEndOnlyOntoWhatTheWorldMayRead();

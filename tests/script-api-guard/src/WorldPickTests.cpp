@@ -18,6 +18,8 @@
 #include <cfloat>
 #include <functional>
 
+#include <QtCore/QSet>
+
 #include <DependencyManager.h>
 #include <PickManager.h>
 #include <PickTransformNode.h>
@@ -324,6 +326,113 @@ void WorldPickTests::aWorldsPickIsParentedOnlyToAWorldsPick() {
     QCOMPARE(PickTransformNode(own).toVariantMap().value("parentID").toUInt(), own);
     picks()->removePick(apps);
     picks()->removePick(own);
+}
+
+void WorldPickTests::addPickMarksAWorldsPick() {
+    auto apps = std::make_shared<TestPick>();
+    const unsigned int appsID = picks()->addPick(PickQuery::Ray, apps);
+    QVERIFY(!apps->isMadeByWorld());
+    auto worlds = std::make_shared<TestPick>();
+    unsigned int worldsID = 0;
+    { ScriptCaller::WorldScope world(WORLD); worldsID = picks()->addPick(PickQuery::Ray, worlds); }
+    QVERIFY(worlds->isMadeByWorld());
+    picks()->removePick(appsID);
+    picks()->removePick(worldsID);
+}
+
+namespace {
+    // what a cast gives: the first thing along the pick that isn't ignored
+    struct Hit {
+        bool intersects { false };
+        QUuid entityID;
+        float distance { 0.0f };
+    };
+
+    struct Along {
+        QVector<QUuid> things;  // nearest first
+        int casts { 0 };
+        Hit cast(const QVector<QUuid>& ignore) {
+            ++casts;
+            for (int i = 0; i < things.size(); ++i) {
+                if (!ignore.contains(things[i])) {
+                    return Hit { true, things[i], float(i + 1) };
+                }
+            }
+            return Hit();
+        }
+    };
+
+    QVector<QUuid> hiddenThings(int count) {
+        QVector<QUuid> things;
+        for (int i = 0; i < count; ++i) {
+            things.push_back(QUuid::createUuid());
+        }
+        return things;
+    }
+}
+
+void WorldPickTests::aWorldsPickPassesThroughWhatIsHidden() {
+    QSet<QUuid> hidden;
+    WorldPicks::setHiddenCheck([&](const QUuid& id) { return hidden.contains(id); });
+    auto through = [](Along& along, const QVector<QUuid>& ignore = {}) {
+        return WorldPicks::castPastHidden(ignore, [&](const QVector<QUuid>& ignored) { return along.cast(ignored); });
+    };
+
+    // an app's local entity in front of a domain entity: the domain entity, at its own distance
+    {
+        Along along { hiddenThings(1) + QVector<QUuid> { WORLDS_ENTITY } };
+        hidden = QSet<QUuid>(along.things.begin(), along.things.end() - 1);
+        const Hit hit = through(along);
+        QVERIFY(hit.intersects);
+        QCOMPARE(hit.entityID, WORLDS_ENTITY);
+        QCOMPARE(hit.distance, 2.0f);
+        QCOMPARE(along.casts, 2);
+    }
+    // nothing hidden in the way: one cast, as every other pick
+    {
+        Along along { { WORLDS_ENTITY } };
+        hidden.clear();
+        QCOMPARE(through(along).entityID, WORLDS_ENTITY);
+        QCOMPARE(along.casts, 1);
+    }
+    // only something hidden: no hit
+    {
+        Along along { hiddenThings(1) };
+        hidden = QSet<QUuid>(along.things.begin(), along.things.end());
+        const Hit hit = through(along);
+        QVERIFY(!hit.intersects);
+        QVERIFY(hit.entityID.isNull());
+    }
+    // as many hidden things as it passes through, then the world's: still found
+    {
+        Along along { hiddenThings(WorldPicks::MOST_PASSED_THROUGH) + QVector<QUuid> { WORLDS_ENTITY } };
+        hidden = QSet<QUuid>(along.things.begin(), along.things.end() - 1);
+        QCOMPARE(through(along).entityID, WORLDS_ENTITY);
+    }
+    // one more: no hit, and never the hidden one
+    {
+        Along along { hiddenThings(WorldPicks::MOST_PASSED_THROUGH + 1) + QVector<QUuid> { WORLDS_ENTITY } };
+        hidden = QSet<QUuid>(along.things.begin(), along.things.end() - 1);
+        const Hit hit = through(along);
+        QVERIFY(!hit.intersects);
+        QVERIFY(hit.entityID.isNull());
+        QCOMPARE(hit.distance, 0.0f);
+        QCOMPARE(along.casts, WorldPicks::MOST_PASSED_THROUGH + 1);
+    }
+    // the pick's own ignore list stays ignored
+    {
+        Along along { { AN_AVATAR, WORLDS_ENTITY } };
+        hidden.clear();
+        QCOMPARE(through(along, { AN_AVATAR }).entityID, WORLDS_ENTITY);
+    }
+    // no check set: everything is hidden, so no entity is hit
+    {
+        WorldPicks::setHiddenCheck(nullptr);
+        Along along { { WORLDS_ENTITY } };
+        QVERIFY(!through(along).intersects);
+        QVERIFY(WorldPicks::isHiddenFromWorlds(WORLDS_ENTITY));
+    }
+    WorldPicks::setHiddenCheck(nullptr);
 }
 
 void WorldPickTests::aWorldThatWasLeftNamesNothing() {

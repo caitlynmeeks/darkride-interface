@@ -23,6 +23,11 @@ namespace {
         return check;
     }
 
+    WorldPicks::HiddenCheck& hiddenCheck() {
+        static WorldPicks::HiddenCheck check;
+        return check;
+    }
+
     bool isEntityHit(const QVariant& type) {
         const int t = type.toInt();
         return t == ENTITY || t == LOCAL_ENTITY;
@@ -58,6 +63,15 @@ namespace {
         }
         return none;
     }
+}
+
+void WorldPicks::setHiddenCheck(HiddenCheck check) {
+    hiddenCheck() = std::move(check);
+}
+
+bool WorldPicks::isHiddenFromWorlds(const QUuid& entityID) {
+    const auto& check = hiddenCheck();
+    return !check || check(entityID);
 }
 
 void WorldPicks::setReadCheck(ReadCheck check) {

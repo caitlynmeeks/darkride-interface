@@ -274,6 +274,18 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
             }
             return entityID.isNull() || !entities->forWorldRead(entityID).isNull();
         });
+        // What a pick made by a world's script passes through (WorldPicks::castPastHidden): the app's and the
+        // visitor's own local entities. Asked on the main thread, so by the entity; one that can't be found is hidden.
+        WorldPicks::setHiddenCheck([](const QUuid& entityID) {
+            auto entities = DependencyManager::get<EntityScriptingInterface>();
+            auto tree = entities ? entities->getEntityTree() : EntityTreePointer();
+            if (!tree) {
+                return true;
+            }
+            EntityItemPointer entity;
+            tree->withReadLock([&] { entity = tree->findEntityByEntityItemID(EntityItemID(entityID)); });
+            return !entity || (entity->isLocalEntity() && entity->getLocalOwner() != entity::LocalOwner::WORLD);
+        });
         // A pointer a world's script made delivers its hover and trigger events only into the world's own entities
         // (Pointer::worldTarget): a domain entity, or one a world's script made. Asked on the main thread, so by the
         // entity itself, not by the caller; an id that isn't an entity is not the world's.

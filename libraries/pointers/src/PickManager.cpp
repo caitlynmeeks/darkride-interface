@@ -33,6 +33,7 @@ unsigned int PickManager::addPick(PickQuery::PickType type, const std::shared_pt
             _totalPickCounts[type]++;
             if (int world = ScriptCaller::world()) {
                 _worldPicks[id] = world;
+                pick->setMadeByWorld();
             }
         }
     });
