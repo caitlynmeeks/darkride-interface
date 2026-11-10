@@ -581,6 +581,15 @@ bool EntityScriptingInterface::worldMayUse(const QUuid& id) const {
     return !entity || worldReachOf(*entity) == WorldReach::FULL;
 }
 
+bool EntityScriptingInterface::isWorldsOwn(const QUuid& id) const {
+    if (!_entityTree || id.isNull()) {
+        return false;
+    }
+    EntityItemPointer entity;
+    _entityTree->withReadLock([&] { entity = _entityTree->findEntityByEntityItemID(id); });
+    return entity && worldReachOf(*entity) == WorldReach::FULL;
+}
+
 bool EntityScriptingInterface::worldMayChange(const QUuid& id, const char* method) const {
     if (worldMayUse(id)) {
         return true;

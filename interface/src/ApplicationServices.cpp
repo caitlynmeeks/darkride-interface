@@ -252,6 +252,12 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
             auto entities = DependencyManager::get<EntityScriptingInterface>();
             return entities && entities->worldMayUse(entityID);
         });
+        // A pointer a world's script made delivers its hover and trigger events only into the world's own entities
+        // (Pointer::worldTarget); asked on the main thread, so by the entity, not by the caller.
+        Pointer::setWorldTargetCheck([](const QUuid& entityID) {
+            auto entities = DependencyManager::get<EntityScriptingInterface>();
+            return entities && entities->isWorldsOwn(entityID);
+        });
     }
 
 

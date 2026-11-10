@@ -86,6 +86,31 @@ bool Pointer::isMouse() const {
     return DependencyManager::get<PickManager>()->isMouse(_pickUID);
 }
 
+namespace {
+    Pointer::WorldTargetCheck& worldTargetCheck() {
+        static Pointer::WorldTargetCheck check;
+        return check;
+    }
+}
+
+void Pointer::setWorldTargetCheck(WorldTargetCheck check) {
+    worldTargetCheck() = std::move(check);
+}
+
+Pointer::PickedObject Pointer::worldTarget(const PickedObject& target) {
+    switch (target.type) {
+        case ENTITY:
+        case LOCAL_ENTITY: {
+            const auto& check = worldTargetCheck();
+            return (check && check(target.objectID)) ? target : PickedObject();
+        }
+        case HUD:
+            return PickedObject();
+        default:
+            return target;  // nothing, or an avatar: no events are delivered for those
+    }
+}
+
 void Pointer::update(unsigned int pointerID) {
     // This only needs to be a read lock because update won't change any of the properties that can be modified from scripts
     withReadLock([&] {
@@ -121,6 +146,12 @@ void Pointer::generatePointerEvents(unsigned int pointerID, const PickResultPoin
     // Hover events
     bool doHover = shouldHover(pickResult);
     Pointer::PickedObject hoveredObject = getHoveredObject(pickResult);
+    if (_madeByWorld) {
+        // Keep this right after getHoveredObject: that is the only place a pointer's target is decided (a lock end
+        // moves the drawn end and the event's position, never the target), and everything below reads hoveredObject:
+        // the hover events, and the trigger events through _triggeredObjects, saved from it at trigger begin
+        hoveredObject = worldTarget(hoveredObject);
+    }
     PointerEvent hoveredEvent = buildPointerEvent(hoveredObject, pickResult);
     hoveredEvent.setType(PointerEvent::Move);
     hoveredEvent.setID(pointerID);

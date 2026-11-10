@@ -36,6 +36,7 @@ unsigned int PointerManager::addPointer(std::shared_ptr<Pointer> pointer) {
                 _pointers[result] = pointer;
                 if (int world = ScriptCaller::world()) {
                     _worldPointers[result] = world;
+                    pointer->setMadeByWorld();
                 }
             }
         });
