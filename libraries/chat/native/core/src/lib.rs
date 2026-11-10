@@ -591,11 +591,19 @@ async fn started(state: &Arc<State>, client: Client) -> Result<()> {
         }
     }));
 
-    // a session the server has ended (signed out elsewhere, the account closed): signed out here too
+    // a session the server has ended (signed out elsewhere, the account closed, its device removed): signed out here
+    // too. The SDK's channel for these keeps one change, so when two requests are refused at once (a send and the
+    // sync) this falls behind ("lagged"); the change it then reads is the newest one, so it carries on, never stops
+    // there, or the app would stay "ready" with every request refused
     let session_state = state.clone();
     let mut changes = client.subscribe_to_session_changes();
     tasks.push(tokio::spawn(async move {
-        while let Ok(change) = changes.recv().await {
+        loop {
+            let change = match changes.recv().await {
+                Ok(change) => change,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            };
             if let SessionChange::UnknownToken(_) = change {
                 let state = session_state.clone();
                 // from a task of its own: forgetting stops this one
