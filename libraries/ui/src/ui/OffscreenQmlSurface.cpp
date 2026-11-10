@@ -570,13 +570,7 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
             _activeTouchPoints[event.getID()].pressed = false;
         }
     }
-    QList<QEventPoint> touchPoints;
-    for (const auto& entry : _activeTouchPoints) {
-        touchPoints.push_back(entry.second.touchPoint);
-    }
-    QTouchEvent touchEvent(touchType, &device, event.getKeyboardModifiers(), touchPoints);
-    touchEvent.setTimestamp((ulong)QDateTime::currentMSecsSinceEpoch());
-    touchEvent.ignore();
+    Q_UNUSED(device);
 #else
     {
         QTouchEvent::TouchPoint point;
@@ -640,6 +634,23 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
         }
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: a touch event made here and sent straight to the window reaches its items at (0, 0), not at its point (vr's
+    // touch-check, 2026-11-10: every press of a laser or a desktop mouse on a Web entity in "touch" input landed at the
+    // page's top-left corner, QML and web pages alike, while the mouse move sent above was in place). So the press and the
+    // release go as mouse events at the point, as "mouse" input sends them, and no touch events are sent.
+    if (state == PRESSED || state == RELEASED) {
+        QMouseEvent mouseEvent(state == PRESSED ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease, windowPoint,
+                               windowPoint, windowPoint, Qt::LeftButton, state == PRESSED ? Qt::LeftButton : Qt::NoButton,
+                               event.getKeyboardModifiers());
+        mouseEvent.ignore();
+        if (QCoreApplication::sendEvent(getWindow(), &mouseEvent)) {
+            eventSent = true;
+            eventsAccepted &= mouseEvent.isAccepted();
+        }
+    }
+    Q_UNUSED(touchType);
+#else
     if (touchType == QEvent::TouchBegin) {
         _touchBeginAccepted = QCoreApplication::sendEvent(getWindow(), &touchEvent);
         if (_touchBeginAccepted) {
@@ -652,6 +663,7 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
             eventsAccepted &= touchEvent.isAccepted();
         }
     }
+#endif
 
     if (removeTouchPoint) {
         _activeTouchPoints.erase(event.getID());
