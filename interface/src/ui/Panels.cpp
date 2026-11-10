@@ -112,6 +112,26 @@ namespace {
                  role("card", "#3c3c3c"), role("text", "#d2d2d2"), role("cardPressed", "#323232"),
                  role("tint", "#2c5d87"));
     }
+
+    // a page leaving the VR screen goes home to its dock; one holding a web view (Qt 6) can't change window, so it
+    // goes where it is and its dock makes it again when it next shows (QmlDock::holdsWebView)
+    void leaveScreen(QmlDock* qmlDock, bool shown) {
+        if (qmlDock->keepsWebView()) {
+            qmlDock->releaseAway();
+        } else {
+            qmlDock->moveBack(shown);
+        }
+    }
+
+    // a page another one comes in front of in the middle slot: home to its dock, unseen, or, holding a web view,
+    // hidden where it is
+    void goBehind(QmlDock* qmlDock) {
+        if (qmlDock->keepsWebView()) {
+            qmlDock->hideAway();
+        } else {
+            qmlDock->moveBack(false);
+        }
+    }
 }
 
 // floating at its first size in the middle of the main window, no bigger than the overlay window was in it (the
@@ -380,7 +400,7 @@ void Panels::change(const QString& name, Change how) {
             (screenSlotFor(name) != SLOT_MIDDLE || (!_middleTabs.isEmpty() && _middleTabs.last() == name));
         if (how == Change::Close || (how == Change::Toggle && inFront)) {
             if (qmlDock && qmlDock->isAway()) {
-                qmlDock->moveBack(false);
+                leaveScreen(qmlDock, false);
             }
             _middleTabs.removeAll(name);
             panel->close();
@@ -644,10 +664,10 @@ bool Panels::putOnScreen(const QString& name) {
     if (slot == SLOT_MIDDLE) {
         if (!_middleTabs.isEmpty() && _middleTabs.last() != name) {
             if (_middleTabs.last() == TABLET_TAB) {
-                takeTabletOffScreen();
+                tabletBehind();
             } else if (auto front = qobject_cast<QmlDock*>(dock(_middleTabs.last()))) {
                 if (front->isAway()) {
-                    front->moveBack(false);
+                    goBehind(front);
                 }
             }
         }
@@ -727,7 +747,7 @@ void Panels::releaseScreenSlots() {
     for (auto it = _docks.cbegin(); it != _docks.cend(); ++it) {
         auto qmlDock = qobject_cast<QmlDock*>(it.value().data());
         if (qmlDock && qmlDock->isAway()) {
-            qmlDock->moveBack(shown);
+            leaveScreen(qmlDock, shown);
             movedBack.append(it.key());
         }
     }
@@ -969,7 +989,7 @@ bool Panels::putTabletOnScreen() {
     if (!_middleTabs.isEmpty() && _middleTabs.last() != TABLET_TAB) {
         if (auto front = qobject_cast<QmlDock*>(dock(_middleTabs.last()))) {
             if (front->isAway()) {
-                front->moveBack(false);
+                goBehind(front);
             }
         }
     }
@@ -987,12 +1007,39 @@ bool Panels::putTabletOnScreen() {
             emit screenSlotFilled(SLOT_MIDDLE);
         }
     }
+    _tabletLoader->setVisible(true);   // (hidden in its slot while another page was in front: tabletBehind)
     hideTabletWindow(true);
     return true;
 }
 
+void Panels::tabletBehind() {
+    // another page in front of the tablet's tab: holding a web view (Qt 6), the tablet's content stays hidden in its
+    // slot, as such a page does (QmlDock::holdsWebView); otherwise it goes home
+    if (_tabletOnScreen && _tabletLoader && QmlDock::holdsWebView(_tabletLoader)) {
+        _tabletLoader->setVisible(false);
+    } else {
+        takeTabletOffScreen();
+    }
+}
+
 void Panels::takeTabletOffScreen() {
     if (_tabletOnScreen && _tabletLoader && _tabletLoaderParent) {
+        // a web view in it (Qt 6) can't change window: it goes here, and the tablet's content is made again the next
+        // time the tablet shows something (WindowRoot.qml's load)
+        bool dropped = false;
+        for (QQuickItem* item : _tabletLoader->childItems()) {
+            if (QmlDock::holdsWebView(item)) {
+                item->setVisible(false);
+                item->setParentItem(nullptr);
+                item->deleteLater();
+                dropped = true;
+            }
+        }
+        if (dropped) {
+            _tabletLoader->setProperty("item", QVariant());
+            qCDebug(interfaceapp) << "Panels: the tablet's web page closed as it left the VR screen";
+        }
+        _tabletLoader->setVisible(true);
         _tabletLoader->setParentItem(_tabletLoaderParent);
         _tabletLoader->setScale(1.0);
         _tabletLoader->setPosition(QPointF(0, 0));

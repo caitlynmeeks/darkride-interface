@@ -203,6 +203,7 @@ private:
     void showMiddleTabs();   // the middle slot's tabs and their labels, to its host
     bool putTabletOnScreen();
     void takeTabletOffScreen();
+    void tabletBehind();   // another page in front of the tablet's tab in the middle slot
     void hideTabletWindow(bool hide);
     // a dialog in the headset brings the screen up in front of the visitor (vr's showInFront); a world's dialog brings
     // up only the middle slot, with no page in it (the rules for a world's dialogs: ui/WorldDialogs.h), until the

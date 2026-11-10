@@ -9,6 +9,8 @@
 
 #include "QmlDock.h"
 
+#include <algorithm>
+
 #include <QtCore/QCoreApplication>
 #include <QtQml/QQmlComponent>
 #include <QtQml/QQmlContext>
@@ -270,6 +272,36 @@ bool QmlDock::moveBack(bool shown) {
     page->setVisible(shown);
     _away = false;
     return true;
+}
+
+bool QmlDock::holdsWebView(const QQuickItem* item) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (!item) {
+        return false;
+    }
+    if (item->inherits("QQuickWebEngineView")) {
+        return true;
+    }
+    const QList<QQuickItem*> children = item->childItems();
+    return std::any_of(children.cbegin(), children.cend(), [](const QQuickItem* child) { return holdsWebView(child); });
+#else
+    Q_UNUSED(item);
+    return false;   // Qt 5's web views move between windows (the VR screen's 11-01 runs)
+#endif
+}
+
+void QmlDock::hideAway() {
+    if (QQuickItem* page = _away ? panel() : nullptr) {
+        page->setVisible(false);   // still in its slot; putting it on the screen again shows it (moveTo)
+    }
+}
+
+void QmlDock::releaseAway() {
+    if (!_away) {
+        return;
+    }
+    _away = false;
+    releaseContent();   // the view takes its page with it, out of the slot's window only as it goes
 }
 
 void QmlDock::setPageShown(bool shown) {
