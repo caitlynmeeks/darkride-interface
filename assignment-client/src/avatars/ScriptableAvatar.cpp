@@ -23,16 +23,19 @@
 #include <AnimClip.h>
 #include <ClientTraitsHandler.h>
 #include <GLMHelpers.h>
+#include <PathUtils.h>
 #include <ResourceRequestObserver.h>
 #include <AvatarLogging.h>
 #include <EntityItem.h>
 #include <EntityItemProperties.h>
 
-// The .fst to read the skeleton from: the avatar's own, or, for the default avatar (a qrc: URL, and an assignment
-// client carries no qrc resources), the copy beside the assignment client (CMakeLists.txt). The wire still says
-// "default" (getWireSafeSkeletonModelURL), so every viewer draws its own default avatar, which this skeleton animates.
+// The .fst to read the skeleton from: the avatar's own, or, for the bundled mannequin (a qrc: URL, and an assignment
+// client carries no qrc resources), the copy beside the assignment client (CMakeLists.txt). The default avatar, which
+// a blank address also gets, is the Lightling at its web address (AvatarData::defaultFullAvatarModelUrl), read from
+// there like any other avatar, so this skeleton is the one every viewer draws.
 static QUrl skeletonFSTURL(const QUrl& skeletonModelURL) {
-    if (skeletonModelURL == AvatarData::defaultFullAvatarModelUrl()) {
+    static const QUrl BUNDLED_MANNEQUIN = PathUtils::resourcesUrl("/meshes/defaultAvatar_full.fst");
+    if (skeletonModelURL == BUNDLED_MANNEQUIN) {
         const QString builtIn = QCoreApplication::applicationDirPath() + "/resources/meshes/defaultAvatar_full.fst";
         if (QFileInfo::exists(builtIn)) {
             return QUrl::fromLocalFile(builtIn);
