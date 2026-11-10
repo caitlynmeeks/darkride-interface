@@ -315,12 +315,36 @@ Page {
             AddressManager.handleLookupString(where);
             return true;
         }
+        // where you already are: a world's own server by its id (the domain you're in), an instance by the one Explore's
+        // "here" holds. A hop there changes no world, so nothing would end its wait (onDomainChanged): "Hopping…" stayed
+        // and every other Hop was greyed until the loading screen's Cancel (servers' users' reports, 1.1.4.1)
+        function isHere(world, instance) {
+            if (instance) {
+                return here.current !== null && !!here.current.instance &&
+                    (here.current.instance.id === instance.id || here.current.instance.address === instance.address);
+            }
+            return !!world.id && String(world.id).toLowerCase() === here.domainId().toLowerCase();
+        }
+        // a Hop to where you are takes you to its start at once: no loading screen, no hop under way
+        function goToStart(where) {
+            Tablet.playSound(TabletEnums.TabletOpen);
+            root.closePanel();
+            AddressManager.handleLookupString(where);
+        }
         function joinWorld(world) {
+            if (isHere(world, null)) {
+                goToStart(world.id + (world.path || ""));
+                return;
+            }
             hoppingWorld = world.id;
             hopStart(world);
             AddressManager.handleLookupString(world.id + (world.path || ""));
         }
         function joinInstance(world, instance) {
+            if (isHere(world, instance)) {
+                goToStart(instance.address);
+                return;
+            }
             hoppingWorld = world.id;
             hopStart(world);
             AddressManager.handleLookupString(instance.address);
