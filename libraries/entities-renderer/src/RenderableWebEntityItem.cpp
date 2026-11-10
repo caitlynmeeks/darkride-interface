@@ -39,7 +39,7 @@ using namespace render::entities;
 const QString WebEntityRenderer::QML = "Web3DSurface.qml";
 const char* WebEntityRenderer::URL_PROPERTY = "url";
 
-std::function<void(QString, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> WebEntityRenderer::_acquireWebSurfaceOperator = nullptr;
+std::function<void(QString, bool, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> WebEntityRenderer::_acquireWebSurfaceOperator = nullptr;
 std::function<void(QSharedPointer<OffscreenQmlSurface>&, bool&, std::vector<QMetaObject::Connection>&)> WebEntityRenderer::_releaseWebSurfaceOperator = nullptr;
 
 static int MAX_WINDOW_SIZE = 4096;
@@ -202,8 +202,9 @@ void WebEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene
         // the local ones it makes from C++ for its own QML surfaces (the login dialog, the avatar inputs bar, the
         // bubble icon, listed by the app at start). Every other Web entity, a world's, another avatar's, or a local
         // one a world's entity script made, shows a web page (http, https, data, about) or nothing: not QML, the
-        // app's own UI language with the app's objects in reach, and not a page from the visitor's own files.
-        const bool trusted = entity->isLocalEntity() &&
+        // app's own UI language with the app's objects in reach, and not a page from the visitor's own files. QML only
+        // on an entity the app made: only the app may show its own interface.
+        const bool trusted = entity->isLocalEntity() && !entity->isMadeByWorld() &&
             (entity->getLocalSafeContext() || _trustedQmlUrls.contains(newSourceURL));
         const bool refused = !trusted && newContentType != ContentType::NoContent && !isWebPageUrl(newSourceURL);
         if (refused) {
@@ -412,7 +413,8 @@ void WebEntityRenderer::buildWebSurface(const EntityItemPointer& entity, const Q
     if (_countedWebView) {
         ++_currentWebCount;
     }
-    WebEntityRenderer::acquireWebSurface(newSourceURL, _contentType == ContentType::HtmlContent, _webSurface, _cachedWebSurface);
+    const bool appOwned = entity->isLocalEntity() && !entity->isMadeByWorld();
+    WebEntityRenderer::acquireWebSurface(newSourceURL, _contentType == ContentType::HtmlContent, appOwned, _webSurface, _cachedWebSurface);
     _fadeStartTime = usecTimestampNow();
     _webSurface->resume();
 

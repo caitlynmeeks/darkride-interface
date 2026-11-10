@@ -13,6 +13,7 @@
 #include <atomic>
 
 #include <QtCore/QObject>
+#include <QtCore/QPointer>
 #include <QtCore/QUuid>
 #include <QtCore/QVariant>
 #include <QtCore/QAbstractListModel>
@@ -572,8 +573,9 @@ protected:
     bool _initialScreen { false };
     QVariant _currentPathLoaded { "" };
     QString _name;
-    QQuickItem* _qmlTabletRoot { nullptr };
-    OffscreenQmlSurface* _qmlOffscreenSurface { nullptr };
+    // the root goes with its surface: both are cleared when the surface is destroyed (setQmlTabletRoot)
+    QPointer<QQuickItem> _qmlTabletRoot;
+    QPointer<OffscreenQmlSurface> _qmlOffscreenSurface;
     QmlWindowClass* _desktopWindow { nullptr };
     QList<qint64> _worldPageLoads;   // when worlds' scripts last loaded pages (worldMayLoadPage)
     bool worldMayLoadPage();

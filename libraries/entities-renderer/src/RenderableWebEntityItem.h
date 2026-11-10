@@ -36,7 +36,8 @@ public:
     static const QString QML;
     static const char* URL_PROPERTY;
 
-    static void setAcquireWebSurfaceOperator(std::function<void(const QString&, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> acquireWebSurfaceOperator) { _acquireWebSurfaceOperator = acquireWebSurfaceOperator; }
+    // appOwned: a local Web entity that no world made (the app's own, or one of the person's own scripts')
+    static void setAcquireWebSurfaceOperator(std::function<void(const QString&, bool, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> acquireWebSurfaceOperator) { _acquireWebSurfaceOperator = acquireWebSurfaceOperator; }
     // the app's own QML surfaces that it makes as local Web entities from C++ (the login dialog, the avatar inputs
     // bar, the bubble icon): the only QML a local Web entity may show that was not made on a client script's thread
     static void setTrustedQmlUrls(const QStringList& urls) { _trustedQmlUrls = urls; }
@@ -44,9 +45,9 @@ public:
     // count of web views and Disable Web Entities. Their number is bounded by the app. Set from C++ only, never reachable
     // from a script, or a world could exempt its own. The list is touched on the main thread only.
     static void setAppSurface(const QUuid& entityID, bool appSurface);
-    static void acquireWebSurface(const QString& url, bool htmlContent, QSharedPointer<OffscreenQmlSurface>& webSurface, bool& cachedWebSurface) {
+    static void acquireWebSurface(const QString& url, bool htmlContent, bool appOwned, QSharedPointer<OffscreenQmlSurface>& webSurface, bool& cachedWebSurface) {
         if (_acquireWebSurfaceOperator) {
-            _acquireWebSurfaceOperator(url, htmlContent, webSurface, cachedWebSurface);
+            _acquireWebSurfaceOperator(url, htmlContent, appOwned, webSurface, cachedWebSurface);
         }
     }
 
@@ -116,7 +117,7 @@ private:
 
     std::vector<QMetaObject::Connection> _connections;
 
-    static std::function<void(QString, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> _acquireWebSurfaceOperator;
+    static std::function<void(QString, bool, bool, QSharedPointer<OffscreenQmlSurface>&, bool&)> _acquireWebSurfaceOperator;
     static QStringList _trustedQmlUrls;
     static QSet<QUuid> _appSurfaces;
     bool _countedWebView { false };   // this surface is in the count of web views: false on an app surface

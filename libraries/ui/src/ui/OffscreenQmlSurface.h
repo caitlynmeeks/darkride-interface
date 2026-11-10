@@ -70,6 +70,12 @@ public slots:
     // qml event bridge
     void sendToQml(const QVariant& message);
 
+public:
+    /// The app's own tablet surface: set by the app where it makes one, before the surface loads. Only such a surface
+    /// becomes the system tablet's root.
+    void setAppTablet(bool appTablet) { _appTablet = appTablet; }
+    bool isAppTablet() const { return _appTablet; }
+
 protected:
     void loadFromQml(const QUrl& qmlSource, QQuickItem* parent, const QJSValue& callback) override;
     void clearFocusItem();
@@ -120,6 +126,7 @@ private:
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QPointingDevice* _mouseDevice { nullptr };
 #endif
+    bool _appTablet { false };
 
     QString _currentAudioOutputDevice;
     QTimer _audioOutputUpdateTimer;
