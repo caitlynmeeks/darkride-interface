@@ -30,8 +30,9 @@ QStringList bakeFaceLines(const QStringList& morphTargetNames, int* count = null
 // the joints' names (jointMap), offsets for joints whose axes aren't the ones animations expect (jointRotationOffset2),
 // the morph targets for its face (bs and bsGain; not a VRM's, whose expressions are read from the file), and a VRM's
 // spring bones and colliders (flowPhysicsData, flowCollisionsData), the colliders turned into the rig's axes. What an
-// .fst can't say, as a joint name used twice, is left out. Takes the model as Import Avatar reads it; gives the lines,
-// and what they say for the importer's question.
+// .fst can't say, as a joint name used twice or a name an .fst line can't hold (FSTReader::isLineValue), is left out;
+// the JSON lines are written with FSTReader::jsonLineValue, so each stays one line. Takes the model as Import Avatar
+// reads it; gives the lines, and what they say for the importer's question.
 void bakeFst(const HFMModel& model, bool isVRM, QStringList& lines, QStringList& found);
 
 }

@@ -17,6 +17,7 @@ private slots:
     void testPrefixedNamesBlenderAxes();
     void testVRMColliders();
     void testFace();
+    void testNamesStayOnTheirLine();
 };
 
 #endif // hifi_FstRoundTripTests_h

@@ -152,3 +152,40 @@ void FstRoundTripTests::testFace() {
     QCOMPARE(model.proceduralBlendshapeGains.value((int)Blendshapes::MouthSmile_L), 0.7f);
     QCOMPARE(model.proceduralBlendshapeGains.value((int)Blendshapes::EyeBlink_L), 1.0f);
 }
+
+// Names from the model file go onto an .fst line only when the line can hold them (FSTReader::isLineValue): a joint or
+// morph target whose name has a line break or '=' is left out, and the JSON lines keep such names, escaped, on their line
+void FstRoundTripTests::testNamesStayOnTheirLine() {
+    const QString breakName = "mixamorig:Hips\nextra = 1";
+    const QString equalsName = "mixamorig:Spine=1";
+    HFMModel model = makeModel([&](const QString& name) {
+        return name == "Hips" ? breakName : name == "Spine" ? equalsName : "mixamorig:" + name;
+    }, glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+    const QString colliderName = "Head\n=extra";
+    model.flowData._collisionsConfig.insert(colliderName, QVariantMap{ { "radius", 0.09f } });
+
+    QStringList lines, found;
+    autorig::bakeFst(model, false, lines, found);
+    const QStringList faceNames { "Face\nextra = s.jawOpen", "Face=1.mouthSmileLeft", "eyeBlinkLeft" };
+    lines << autorig::bakeFaceLines(faceNames);
+
+    QVERIFY(!lines.isEmpty());
+    for (const QString& line : lines) {
+        QVERIFY2(FSTReader::isOneLine(line), qPrintable(line));
+        QVERIFY2(!line.contains(breakName) && !line.contains(equalsName), qPrintable(line));
+    }
+    const hifi::VariantMultiHash mapping = FSTReader::readMapping(lines.join("\n").toUtf8());
+    QVERIFY(!mapping.contains("extra"));
+    // the names, and with them the offsets, worked out on each load: no jointMap line, as one of them can't be written
+    QVERIFY(!mapping.contains("jointMap"));
+    QVERIFY(found.join(" ").contains("worked out on each load"));
+    // the face: only the shape whose name a line can hold
+    const hifi::VariantMultiHash bs = hifi::multiHashFromVariant(mapping.value("bs"));
+    QVERIFY(!bs.contains("JawOpen"));
+    QVERIFY(!bs.contains("MouthSmile_L"));
+    QCOMPARE(bs.value("EyeBlink_L").toList().value(0).toString(), QString("eyeBlinkLeft"));
+    // the collider's name, escaped on its line, reads back as it was
+    FlowData flowData;
+    ParseFlowDataTask().run(nullptr, mapping, flowData);
+    QCOMPARE(flowData._collisionsConfig.keys(), QStringList{ colliderName });
+}

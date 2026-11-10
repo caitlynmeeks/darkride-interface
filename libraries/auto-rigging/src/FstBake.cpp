@@ -15,6 +15,7 @@
 
 #include <AnimSkeleton.h>
 #include <BlendshapeConstants.h>
+#include <FSTReader.h>
 #include <GLMHelpers.h>
 #include <HumanoidJointMap.h>
 #include <HumanoidRotationOffsets.h>
@@ -42,7 +43,8 @@ QStringList autorig::bakeFaceLines(const QStringList& morphTargetNames, int* cou
     int shapes = 0;
     for (int i = 0; i < (int)Blendshapes::BlendshapeCount; i++) {
         const BlendshapeSource source = findBlendshapeSource(i, morphTargetNames);
-        if (source.name.isEmpty() || source.name == BLENDSHAPE_NAMES[i]) {
+        // a morph target whose name an .fst line can't hold is left to the load, which finds it the same way
+        if (source.name.isEmpty() || source.name == BLENDSHAPE_NAMES[i] || !FSTReader::isLineValue(source.name)) {
             continue;
         }
         lines << QString("bs = %1 = %2 = %3").arg(BLENDSHAPE_NAMES[i], source.name).arg(source.weight, 0, 'f', 3);
@@ -67,11 +69,15 @@ void autorig::bakeFst(const HFMModel& model, bool isVRM, QStringList& lines, QSt
         }
         const QHash<int, QString> humanoidNames = mapHumanoidJoints(joints);
         bool ambiguous = false;
+        bool unwritable = false;
         for (auto itr = humanoidNames.begin(); itr != humanoidNames.end(); itr++) {
             ambiguous = ambiguous || names.count(model.joints[itr.key()].name) > 1;
+            unwritable = unwritable || !FSTReader::isLineValue(model.joints[itr.key()].name);
         }
         if (ambiguous) {
             found << "its joints' names (worked out on each load, as some are used twice)";
+        } else if (unwritable) {
+            found << "its joints' names (worked out on each load, as an .fst line can't hold some of them)";
         } else if (!humanoidNames.isEmpty()) {
             for (auto itr = humanoidNames.begin(); itr != humanoidNames.end(); itr++) {
                 lines << QString("jointMap = %1 = %2").arg(itr.value(), model.joints[itr.key()].name);
@@ -94,13 +100,18 @@ void autorig::bakeFst(const HFMModel& model, bool isVRM, QStringList& lines, QSt
         restJoints.push_back({ names[i], skeleton.getParentIndex(i), pose.trans(), pose.rot() });
     }
     const QMap<int, glm::quat> offsets = computeHumanoidRotationOffsets(restJoints);
+    int offsetLines = 0;
     for (auto itr = offsets.begin(); itr != offsets.end(); itr++) {
+        if (!FSTReader::isLineValue(model.joints[itr.key()].name)) {
+            continue;
+        }
+        offsetLines++;
         const glm::quat& q = itr.value();
         lines << QString("jointRotationOffset2 = %1 = (%2,%3,%4,%5)").arg(model.joints[itr.key()].name)
                      .arg(q.x, 0, 'f', 6).arg(q.y, 0, 'f', 6).arg(q.z, 0, 'f', 6).arg(q.w, 0, 'f', 6);
     }
-    if (!offsets.isEmpty()) {
-        found << QString("axis offsets for %1 joints").arg(offsets.size());
+    if (offsetLines > 0) {
+        found << QString("axis offsets for %1 joints").arg(offsetLines);
     }
 
     // The face, by ARKit's and Ready Player Me's names. Not a VRM's: its expressions are read from the file when it's
@@ -118,7 +129,7 @@ void autorig::bakeFst(const HFMModel& model, bool isVRM, QStringList& lines, QSt
     for (auto itr = model.flowData._physicsConfig.begin(); itr != model.flowData._physicsConfig.end(); itr++) {
         QJsonObject line;
         line[itr.key()] = QJsonObject::fromVariantMap(itr.value().toMap());
-        lines << "flowPhysicsData = " + QString::fromUtf8(QJsonDocument(line).toJson(QJsonDocument::Compact));
+        lines << "flowPhysicsData = " + FSTReader::jsonLineValue(QJsonDocument(line));
     }
     for (auto itr = model.flowData._collisionsConfig.begin(); itr != model.flowData._collisionsConfig.end(); itr++) {
         QVariantMap collision = itr.value().toMap();
@@ -137,7 +148,7 @@ void autorig::bakeFst(const HFMModel& model, bool isVRM, QStringList& lines, QSt
         }
         QJsonObject line;
         line[itr.key()] = QJsonObject::fromVariantMap(collision);
-        lines << "flowCollisionsData = " + QString::fromUtf8(QJsonDocument(line).toJson(QJsonDocument::Compact));
+        lines << "flowCollisionsData = " + FSTReader::jsonLineValue(QJsonDocument(line));
     }
     if (!model.flowData._physicsConfig.isEmpty()) {
         found << QString("%1 groups of spring bones").arg(model.flowData._physicsConfig.size());

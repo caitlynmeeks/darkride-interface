@@ -33,6 +33,7 @@
 #include <AvatarWriter.h>
 #include <FBXSerializer.h>
 #include <FstBake.h>
+#include <FSTReader.h>
 #include <GLMHelpers.h>
 #include <HumanoidJointMap.h>
 #include <MainWindow.h>
@@ -126,13 +127,23 @@ RigKind classify(const HFMModel& model, QString& why) {
     return RigKind::Standard;
 }
 
-// Lines added to an .fst Import Avatar has written
+// Lines added to an .fst Import Avatar has written. Each is written only if it stays one line (FstBake leaves out the
+// names a line can't hold; this is the last check).
 bool appendToFst(const QString& fstPath, const QStringList& lines) {
-    if (lines.isEmpty()) {
+    QStringList whole;
+    for (const QString& line : lines) {
+        if (FSTReader::isOneLine(line)) {
+            whole << line;
+        } else {
+            qCWarning(interfaceapp) << "Import Avatar: left out of" << QFileInfo(fstPath).fileName()
+                                    << "a line that isn't one line";
+        }
+    }
+    if (whole.isEmpty()) {
         return true;
     }
     QFile fst(fstPath);
-    return fst.open(QIODevice::Append | QIODevice::Text) && fst.write((lines.join("\n") + "\n").toUtf8()) > 0;
+    return fst.open(QIODevice::Append | QIODevice::Text) && fst.write((whole.join("\n") + "\n").toUtf8()) > 0;
 }
 
 QString avatarName(const QString& path) {
