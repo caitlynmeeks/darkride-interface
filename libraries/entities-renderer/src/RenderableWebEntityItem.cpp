@@ -553,7 +553,13 @@ void WebEntityRenderer::handlePointerEventAsMouse(const PointerEvent& event) {
             return;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // as the surface's own mouse device, never as the real mouse (OffscreenQmlSurface::mouseDevice)
+    QMouseEvent mouseEvent(type, windowPoint, windowPoint, windowPoint, button, buttons, event.getKeyboardModifiers(),
+                           _webSurface->mouseDevice());
+#else
     QMouseEvent mouseEvent(type, windowPoint, windowPoint, windowPoint, button, buttons, event.getKeyboardModifiers());
+#endif
     QCoreApplication::sendEvent(_webSurface->getWindow(), &mouseEvent);
 }
 

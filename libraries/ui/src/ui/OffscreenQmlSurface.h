@@ -90,6 +90,10 @@ public slots:
     void hoverBeginEvent(const PointerEvent& event, OffscreenTouchDevice& device);
     void hoverEndEvent(const PointerEvent& event, OffscreenTouchDevice& device);
     bool handlePointerEvent(const PointerEvent& event, OffscreenTouchDevice& device, bool release = false);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // the device this surface's own mouse events are sent as (see its definition)
+    QPointingDevice* mouseDevice();
+#endif
     void changeAudioOutputDevice(const QString& deviceName, bool isHtmlUpdate = false);
     void forceHtmlAudioOutputDeviceUpdate();
     void forceQmlAudioOutputDeviceUpdate();
@@ -113,6 +117,9 @@ private:
     bool _pressed;
     bool _touchBeginAccepted { false };
     std::map<uint32_t, TouchState> _activeTouchPoints;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QPointingDevice* _mouseDevice { nullptr };
+#endif
 
     QString _currentAudioOutputDevice;
     QTimer _audioOutputUpdateTimer;
