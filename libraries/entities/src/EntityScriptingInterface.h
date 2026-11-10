@@ -2470,10 +2470,6 @@ public:
     /// False when the caller is a world's script and may not change the entity or send it events: true for a domain
     /// entity, one a world's script made, an id that isn't an entity, and for every caller but a world's script.
     bool worldMayUse(const QUuid& id) const;
-    /// True when the entity is a world's own, whoever asks and on any thread: a domain entity, or one a world's script
-    /// made. False for every other entity and for an id that isn't an entity. (worldMayUse answers for the calling
-    /// script; this is for the app's own code deciding on a world's behalf.)
-    bool isWorldsOwn(const QUuid& id) const;
 private:
     /// False (and the refusal logged once per method on this thread) when the caller is a world's script and may not
     /// change the entity: true for a domain entity or a local entity a world's script made.

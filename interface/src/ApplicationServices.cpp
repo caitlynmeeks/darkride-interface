@@ -253,10 +253,17 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
             return entities && entities->worldMayUse(entityID);
         });
         // A pointer a world's script made delivers its hover and trigger events only into the world's own entities
-        // (Pointer::worldTarget); asked on the main thread, so by the entity, not by the caller.
+        // (Pointer::worldTarget): a domain entity, or one a world's script made. Asked on the main thread, so by the
+        // entity itself, not by the caller; an id that isn't an entity is not the world's.
         Pointer::setWorldTargetCheck([](const QUuid& entityID) {
             auto entities = DependencyManager::get<EntityScriptingInterface>();
-            return entities && entities->isWorldsOwn(entityID);
+            auto tree = entities ? entities->getEntityTree() : EntityTreePointer();
+            if (!tree || entityID.isNull()) {
+                return false;
+            }
+            EntityItemPointer entity;
+            tree->withReadLock([&] { entity = tree->findEntityByEntityItemID(EntityItemID(entityID)); });
+            return entity && entity->isMadeByWorld();
         });
     }
 
