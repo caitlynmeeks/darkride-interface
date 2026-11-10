@@ -9,6 +9,8 @@
 
 #include "Panels.h"
 
+#include <algorithm>
+
 #include <QtGui/QGuiApplication>
 #include <QtCore/QThread>
 #include <QtGui/QKeyEvent>
@@ -358,6 +360,11 @@ void Panels::resetDocks() {
 }
 
 void Panels::releaseQml() {
+    // the tablet's web pages dropped as they left the VR screen and not yet gone (takeTabletOffScreen)
+    for (const QPointer<QQuickItem>& page : _droppedTabletPages) {
+        delete page.data();
+    }
+    _droppedTabletPages.clear();
     for (const auto& made : _docks) {
         if (auto qmlDock = qobject_cast<QmlDock*>(made.data())) {
             qmlDock->releaseContent();
@@ -1031,13 +1038,13 @@ void Panels::takeTabletOffScreen() {
             if (QmlDock::holdsWebView(item)) {
                 item->setVisible(false);
                 item->setParentItem(nullptr);
-                // later, as its own code may be what's running (the page closing the tablet); but at quit now, as the
-                // event loop may not run again and the page would otherwise go only in the late teardown
-                if (qApp->isAboutToQuit()) {
-                    delete item;
-                } else {
-                    item->deleteLater();
-                }
+                // later, as its own code may be what's running (the page closing the tablet); one still there at quit
+                // (the event loop may not run again) goes in releaseQml, before the tablet and the QML engine go
+                item->deleteLater();
+                _droppedTabletPages.erase(std::remove_if(_droppedTabletPages.begin(), _droppedTabletPages.end(),
+                                                         [](const QPointer<QQuickItem>& page) { return page.isNull(); }),
+                                          _droppedTabletPages.end());
+                _droppedTabletPages.append(item);
                 dropped = true;
             }
         }

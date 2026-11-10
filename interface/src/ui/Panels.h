@@ -229,6 +229,7 @@ private:
     QPointer<QQuickItem> _tabletHolder;   // a hidden item on the desktop's QML that keeps the window out of sight
     QSizeF _tabletLoaderSize;
     bool _tabletOnScreen { false };
+    QList<QPointer<QQuickItem>> _droppedTabletPages;   // its web pages dropped off the screen, until they're gone
     bool _screenDialogOnly { false };   // the screen is up only for a world's dialog: the middle slot, no page in it
     bool _screenHidden { false };   // vr hid the screen in the headset: its slots and their pages kept, out of view
     std::atomic<bool> _screenUp { false };   // _screenState set, for scripts' threads (isScreenUp)
