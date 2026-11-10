@@ -13,6 +13,7 @@
 #include <PathUtils.h>
 #include "OffscreenQmlSurface.h"
 #include "Profile.h"
+#include "TabletScriptingInterface.h"
 
 OffscreenQmlSurfaceCache::OffscreenQmlSurfaceCache() {
 }

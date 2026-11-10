@@ -125,8 +125,8 @@ private:
     std::map<uint32_t, TouchState> _activeTouchPoints;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QPointingDevice* _mouseDevice { nullptr };
-    bool _appTablet { false };
 #endif
+    bool _appTablet { false };
 
     QString _currentAudioOutputDevice;
     QTimer _audioOutputUpdateTimer;
