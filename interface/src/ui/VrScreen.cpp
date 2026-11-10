@@ -572,7 +572,7 @@ void VrScreen::warmStep() {
         return;
     }
     if (_warmPrograms) {
-        // the Web entities' programs, compiled by the next frame on the GPU thread (rendering's WarmPipelines job), so
+        // the Web entities' programs, compiled by the next frame on the GPU thread (the WarmWebBrowserPipelines job), so
         // the first show doesn't compile them (~7 ms of its frame on the Mac); nothing is drawn
         _warmPrograms = false;
         GeometryCache::warmWebBrowserPrograms();

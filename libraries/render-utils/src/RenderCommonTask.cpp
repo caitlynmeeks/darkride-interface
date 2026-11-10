@@ -32,12 +32,12 @@ namespace gr {
 using namespace render;
 extern void initForwardPipelines(ShapePlumber& plumber, const render::ShapePipeline::BatchSetter& batchSetter, const render::ShapePipeline::ItemSetter& itemSetter);
 
-void WarmPipelines::run(const render::RenderContextPointer& renderContext) {
+void WarmWebBrowserPipelines::run(const render::RenderContextPointer& renderContext) {
     if (!GeometryCache::takeWebBrowserWarmup()) {
         return;
     }
     auto geometryCache = DependencyManager::get<GeometryCache>();
-    gpu::doInBatch("WarmPipelines", renderContext->args->_context, [&](gpu::Batch& batch) {
+    gpu::doInBatch("WarmWebBrowserPipelines", renderContext->args->_context, [&](gpu::Batch& batch) {
         // the opaque and the transparent (a page fading in) web-browser pipelines of this render method, not side by
         // side: setting a pipeline syncs its program, which compiles it the first time
         batch.setPipeline(geometryCache->getWebBrowserProgram(false, _forward, false));

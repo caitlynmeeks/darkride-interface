@@ -76,7 +76,7 @@ void RenderForwardTask::configure(const Config& config) {
 
 void RenderForwardTask::build(JobModel& task, const render::Varying& input, render::Varying& output) {
     task.addJob<SetRenderMethod>("SetRenderMethodTask", render::Args::FORWARD);
-    task.addJob<WarmPipelines>("WarmPipelines", true);
+    task.addJob<WarmWebBrowserPipelines>("WarmWebBrowserPipelines", true);
 
     // Prepare the ShapePipelines
     auto fadeEffect = DependencyManager::get<FadeEffect>();

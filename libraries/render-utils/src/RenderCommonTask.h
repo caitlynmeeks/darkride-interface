@@ -186,11 +186,11 @@ public:
 
 // Sets the pipelines a warm-up asked for (GeometryCache::warmWebBrowserPrograms) so their programs compile in this
 // frame on the GPU thread with nothing drawn; nothing at all while no warm-up is pending.
-class WarmPipelines {
+class WarmWebBrowserPipelines {
 public:
-    using JobModel = render::Job::Model<WarmPipelines>;
+    using JobModel = render::Job::Model<WarmWebBrowserPipelines>;
 
-    WarmPipelines(bool forward) : _forward(forward) {}
+    WarmWebBrowserPipelines(bool forward) : _forward(forward) {}
 
     void run(const render::RenderContextPointer& renderContext);
 
