@@ -66,7 +66,6 @@
 #include <model-networking/ModelCacheScriptingInterface.h>
 #include <plugins/InputConfiguration.h>
 #include <procedural/MaterialCacheScriptingInterface.h>
-#include <RenderCommonTask.h>
 #include <recording/ClipCache.h>
 #include <recording/Deck.h>
 #include <recording/Recorder.h>
@@ -365,19 +364,6 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
     // Last: the fade effect, the resource request observer, the keyboard and its API, grabbing.
     DependencyManager::set<FadeEffect>();
     DependencyManager::set<ResourceRequestObserver>();
-    {
-        // the default avatar's custom shaders stay loaded and are compiled in the first frames, not when the first
-        // Lightling comes into view. Here, not beside useBuiltInDefaultAvatar: a request needs the observer just set
-        // (WarmProceduralMaterials). The files lightling.fst's materialMap names, at the addresses the model
-        // loader resolves them to: keep the two lists alike
-        const QUrl defaultAvatar = MyAvatar::defaultAvatarURL();
-        QList<QUrl> materials;
-        for (const char* name : { "lightling-body.json", "lightling-face.json", "lightling-hair-short.json",
-                                  "lightling-hair-twintails.json" }) {
-            materials << defaultAvatar.resolved(QUrl(name));
-        }
-        WarmProceduralMaterials::setMaterialUrls(materials);
-    }
     DependencyManager::set<Keyboard>();
     DependencyManager::set<KeyboardScriptingInterface>();
     DependencyManager::set<GrabManager>();

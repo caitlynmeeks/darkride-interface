@@ -10,14 +10,8 @@
 
 #include "FadeEffect.h"
 
-#include <atomic>
-#include <mutex>
-
-#include <DependencyManager.h>
 #include <gpu/Context.h>
 #include <graphics/ShaderConstants.h>
-#include <procedural/Procedural.h>
-#include <procedural/ProceduralMaterialCache.h>
 
 #include "render-utils/ShaderConstants.h"
 #include "DeferredLightingEffect.h"
@@ -120,81 +114,6 @@ void WarmPipelines::run(const RenderContextPointer& renderContext) {
     if (config) {
         config->warmed = _warmed;
         config->left = (int)(count - _next);
-    }
-}
-
-namespace {
-    // the material files held for the app's life, and what has been bound: under the mutex, which the render thread
-    // only tries (a frame never waits here)
-    std::mutex warmMaterialsMutex;
-    std::vector<NetworkMaterialResourcePointer> warmMaterialResources;
-    std::set<std::pair<const graphics::ProceduralMaterial*, bool>> warmMaterialsBound;   // (material, forward)
-    int warmMaterialsLooks[2] { 0, 0 };                    // frames spent waiting, by render method
-    // nothing left to do for a render method (deferred, forward): the only read of a frame once done
-    std::atomic<bool> warmMaterialsDone[2] { { true }, { true } };
-    // a shader that never loads (no file, an OpenGL ES build) must not keep a look in every frame for ever
-    const int WARM_MATERIALS_MAX_LOOKS = 3600;
-}
-
-void WarmProceduralMaterials::setMaterialUrls(const QList<QUrl>& urls) {
-    auto materialCache = DependencyManager::get<MaterialCache>();
-    if (!materialCache) {
-        return;
-    }
-    std::lock_guard<std::mutex> lock(warmMaterialsMutex);
-    for (const auto& url : urls) {
-        warmMaterialResources.push_back(materialCache->getMaterial(url));
-    }
-    warmMaterialsDone[0] = warmMaterialsDone[1] = warmMaterialResources.empty();
-}
-
-void WarmProceduralMaterials::run(const RenderContextPointer& renderContext) {
-    const bool forward = DeferredLightingEffect::isForwardLit(renderContext->args);
-    if (warmMaterialsDone[forward ? 1 : 0].load()) {
-        return;
-    }
-    std::unique_lock<std::mutex> lock(warmMaterialsMutex, std::try_to_lock);
-    if (!lock.owns_lock()) {
-        return;
-    }
-    // the first material program not yet bound for this render method, if its shader has loaded: one a frame
-    bool waiting = false;
-    for (const auto& resource : warmMaterialResources) {
-        if (!resource || resource->isFailed()) {
-            continue;
-        }
-        if (!resource->isLoaded()) {
-            waiting = true;
-            continue;
-        }
-        for (const auto& named : resource->parsedMaterials.networkMaterials) {
-            const auto& material = named.second;
-            if (!material || !material->isProcedural()) {
-                continue;
-            }
-            auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(material);
-            if (warmMaterialsBound.count({ procedural.get(), forward })) {
-                continue;
-            }
-            if (!procedural->isReady()) {
-                waiting = true;
-                continue;
-            }
-            gpu::doInBatch("WarmProceduralMaterials", renderContext->args->_context, [&](gpu::Batch& batch) {
-                // an avatar's variant: opaque, skinned with dual quaternions (SkeletonModel). prepare() builds the
-                // program and binds its pipeline, which compiles it at the backend's sync; nothing is drawn
-                procedural->prepare(batch, glm::vec3(0.0f), glm::vec3(1.0f), glm::quat(), 0,
-                                    ProceduralProgramKey(false, true, true, forward));
-            });
-            warmMaterialsBound.insert({ procedural.get(), forward });
-            return;
-        }
-    }
-    if (!waiting || ++warmMaterialsLooks[forward ? 1 : 0] > WARM_MATERIALS_MAX_LOOKS) {
-        warmMaterialsDone[forward ? 1 : 0] = true;
-        qCDebug(renderutils) << "WarmProceduralMaterials:" << (forward ? "forward," : "deferred,")
-                             << warmMaterialsBound.size() << "material programs bound in all"
-                             << (waiting ? "(gave up waiting for a shader that did not load)" : "");
     }
 }
 
