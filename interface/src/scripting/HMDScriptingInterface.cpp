@@ -106,14 +106,14 @@ void HMDScriptingInterface::deactivateHMDHandMouse() {
 }
 
 void  HMDScriptingInterface::closeTablet() {
-    _showTablet = false;
+    setShouldShowTablet(false);   // says so: the VR screen listens
     _tabletContextualMode = false;
 
     qApp->getWindowCursor().setSystemShape(Qt::CursorShape::ArrowCursor);
 }
 
 void HMDScriptingInterface::openTablet(bool contextualMode) {
-    _showTablet = true;
+    setShouldShowTablet(true);   // says so: the VR screen listens
     _tabletContextualMode = contextualMode;
 }
 

@@ -631,6 +631,7 @@ Menu::Menu() {
 
     // Settings > Disable Web Entities
     action = addCheckableActionToQMenuAndActionHash(settingsMenu, MenuOption::DisableWebEntities, 0, false);
+    action->setToolTip("Web entities in worlds. Darkride's own panels stay on.");
     connect(action, &QAction::triggered, [action] {
         auto entityTreeRenderer = DependencyManager::get<EntityTreeRenderer>();
         entityTreeRenderer->setDisableWebEntities(action->isChecked());

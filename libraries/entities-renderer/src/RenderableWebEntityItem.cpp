@@ -66,6 +66,15 @@ static QTouchDevice& touchDevice() { return _touchDevice; }
 #endif
 
 QStringList WebEntityRenderer::_trustedQmlUrls;
+QSet<QUuid> WebEntityRenderer::_appSurfaces;
+
+void WebEntityRenderer::setAppSurface(const QUuid& entityID, bool appSurface) {
+    if (appSurface) {
+        _appSurfaces.insert(entityID);
+    } else {
+        _appSurfaces.remove(entityID);
+    }
+}
 
 // a web page's address: what a Web entity that is not the app's own may show
 static bool isWebPageUrl(const QString& urlString) {
@@ -113,7 +122,13 @@ WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(e
     _texture->setSource(__FUNCTION__);
 
     _contentType = ContentType::HtmlContent;
-    buildWebSurface(entity, "");
+    // The app's own QML surfaces (the VR screen's pieces, listed by setAppSurface before their renderer is made) get theirs
+    // at the first update: a placeholder web view made here for them was only thrown away there, and at the VR screen's
+    // first show (an empty web-view cache) it made two new web views, 2.6 ms each on the main thread, plus the empty
+    // address's "Invalid empty URL" at every show
+    if (!_appSurfaces.contains(entity->getID())) {
+        buildWebSurface(entity, "");
+    }
 
     _timer.setInterval(MSECS_PER_SECOND);
     connect(&_timer, &QTimer::timeout, this, &WebEntityRenderer::onTimeout);
@@ -276,7 +291,11 @@ void WebEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene
                 {
                     auto contextPosition = entity->getWorldPosition();
                     if (_contextPosition != contextPosition) {
-                        _webSurface->getSurfaceContext()->setContextProperty("globalPosition", vec3toVariant(contextPosition));
+                        // not on the app's own surfaces: nothing there reads it, and a surface carried on a ride would
+                        // write it every frame and sync every frame (performance, the VR screen's timing run)
+                        if (_countedWebView) {
+                            _webSurface->getSurfaceContext()->setContextProperty("globalPosition", vec3toVariant(contextPosition));
+                        }
                         _contextPosition = contextPosition;
                     }
                 }
@@ -380,15 +399,19 @@ void WebEntityRenderer::doRender(RenderArgs* args) {
 
 void WebEntityRenderer::buildWebSurface(const EntityItemPointer& entity, const QString& newSourceURL) {
     
+    const bool appSurface = _appSurfaces.contains(entity->getID());
     auto entityTreeRenderer = DependencyManager::get<EntityTreeRenderer>();
-    if (entityTreeRenderer->getDisableWebEntities()) return;
+    if (!appSurface && entityTreeRenderer->getDisableWebEntities()) return;
 
-    if (_currentWebCount >= MAX_CONCURRENT_WEB_VIEWS) {
+    if (!appSurface && _currentWebCount >= MAX_CONCURRENT_WEB_VIEWS) {
         qWarning() << "Too many concurrent web views to create new view";
         return;
     }
 
-    ++_currentWebCount;
+    _countedWebView = !appSurface;
+    if (_countedWebView) {
+        ++_currentWebCount;
+    }
     WebEntityRenderer::acquireWebSurface(newSourceURL, _contentType == ContentType::HtmlContent, _webSurface, _cachedWebSurface);
     _fadeStartTime = usecTimestampNow();
     _webSurface->resume();
@@ -418,7 +441,10 @@ void WebEntityRenderer::destroyWebSurface() {
         _contentType = ContentType::NoContent;
 
         if (webSurface) {
-            --_currentWebCount;
+            if (_countedWebView) {
+                --_currentWebCount;
+                _countedWebView = false;
+            }
             WebEntityRenderer::releaseWebSurface(webSurface, _cachedWebSurface, _connections);
         }
     });

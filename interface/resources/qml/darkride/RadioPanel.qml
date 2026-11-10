@@ -48,7 +48,7 @@ Rectangle {
     // music played on (windowz, 10-31)
     readonly property int playerWidth: 275
     readonly property int playerScale: Qt.platform.os !== "windows" && width >= 2 * playerWidth + 2 * Theme.gap &&
-        loader.height >= 500 ? 2 : 1
+        loader.height / root.screenScale >= 500 ? 2 : 1   // the loader's layout height (see the Loader)
     readonly property real column: Math.max(0, Math.min(playerWidth * playerScale, width - 2 * Theme.gap))
     // the column in the log once a resize settles (qa's pass line)
     onColumnChanged: columnLog.restart()
@@ -58,6 +58,8 @@ Rectangle {
         onTriggered: console.log("Radio: the column is", root.column, "wide, the player", root.playerScale + "x, in a",
             Math.round(root.width), "x", Math.round(root.height), "panel")
     }
+    // how much bigger the VR screen draws this panel than its layout (ScreenSlot.qml sets it); 1 on the desktop
+    property real screenScale: 1
     onPanelOpenChanged: {
         if (panelOpen) {
             on = true;
@@ -448,12 +450,15 @@ Rectangle {
 
     Loader {
         id: loader
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: root.column
-        anchors.top: parent.top
-        anchors.topMargin: Theme.gap
-        anchors.bottom: controls.top
-        anchors.bottomMargin: Theme.gap
+        // the column, centred, with the panel's one margin above it and above the controls. On the VR screen the panel is
+        // drawn bigger (screenScale, set by ScreenSlot.qml): the player is laid out at that many times its size and
+        // shrunk back, so its picture has the pixels (an item scale alone would only stretch it); 1 on the desktop
+        x: (parent.width - root.column) / 2
+        y: Theme.gap
+        width: root.column * root.screenScale
+        height: Math.max(0, controls.y - 2 * Theme.gap) * root.screenScale
+        scale: 1 / root.screenScale
+        transformOrigin: Item.TopLeft
         active: root.live
         sourceComponent: WebEngineView {
             id: view
@@ -461,8 +466,9 @@ Rectangle {
             // the panel's own colour behind the page, which draws none (radio.css): whatever the player doesn't
             // cover reads as the panel, so the column's margin is the only one
             backgroundColor: Theme.background
-            // the skin's pixels at a whole size (root.playerScale)
-            zoomFactor: root.playerScale
+            // the skin's pixels at a whole size (root.playerScale), times the VR screen's pixels per layout pixel
+            // (screenScale, so the counter-scaled loader above shows the player at the column's size)
+            zoomFactor: root.playerScale * root.screenScale
             // the stations the page lists, in the log once it has loaded (qa's pass line): read as text only
             onLoadProgressChanged: {
                 if (loadProgress === 100) {
