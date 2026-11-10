@@ -249,9 +249,18 @@ async fn run(config: Config, events: EventSink, mut queue: mpsc::UnboundedReceiv
         let state = state.clone();
         let busy = busy.clone();
         let work = async move {
+            // the session this command runs in, to ask about if it fails
+            let client = state.client().ok();
             if let Err(e) = Box::pin(handle(&state, &op, &command)).await {
                 let message = format!("{e:#}");
-                if op != "login_jwt" && refused_for_ended_session(&message) {
+                // a sign-in's refusal, and anything to do with a line being sent, always shows: a line must never go
+                // without a sign
+                let quiet_kind = !matches!(op.as_str(), "login_jwt" | "send" | "edit" | "react" | "delete");
+                let ended = match &client {
+                    Some(client) if quiet_kind => refused_for_ended_session(&e) || session_ended(client).await,
+                    _ => false,
+                };
+                if ended {
                     // the server ended the session while this was on its way: the session watcher signs out and the
                     // app signs in again, so this isn't an error of its own to show ("Couldn't open: … 401 …")
                     tracing::debug!("{op} refused, the session has ended: {message}");
@@ -1111,10 +1120,33 @@ async fn fetch_media(state: &Arc<State>, command: &Value) -> Result<String> {
 }
 
 /// Whether a request was refused because the server no longer knows this session's access token (it ended the
-/// session: signed out everywhere, a password change, an admin). The server's own error code, as the SDK writes
-/// it into every error that carries one, whatever the request.
-fn refused_for_ended_session(message: &str) -> bool {
-    message.contains("M_UNKNOWN_TOKEN")
+/// session: signed out everywhere, a password change, an admin): the SDK's own error, with the server's error kind,
+/// among the error's causes. Never a match on the text, which could quote anything. Some of the SDK's wrappers pass
+/// their inner error's message on but not the error itself, so session_ended asks the server when this can't tell.
+fn refused_for_ended_session(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        let kind = if let Some(http) = cause.downcast_ref::<matrix_sdk::HttpError>() {
+            http.client_api_error_kind()
+        } else if let Some(sdk) = cause.downcast_ref::<matrix_sdk::Error>() {
+            sdk.client_api_error_kind()
+        } else {
+            None
+        };
+        unknown_token(kind)
+    })
+}
+
+/// Whether the server has ended this session: it refuses the session's token (one small request, made only after
+/// something has failed)
+async fn session_ended(client: &Client) -> bool {
+    match client.whoami().await {
+        Err(e) => unknown_token(e.client_api_error_kind()),
+        Ok(_) => false,
+    }
+}
+
+fn unknown_token(kind: Option<&matrix_sdk::ruma::api::error::ErrorKind>) -> bool {
+    matches!(kind, Some(matrix_sdk::ruma::api::error::ErrorKind::UnknownToken(_)))
 }
 
 /// Signed out: everything stopped and waited for (Windows can't remove files still open), the server told when asked
