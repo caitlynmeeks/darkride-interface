@@ -81,6 +81,8 @@ public:
     void react(const QString& room, const QString& id, const QString& key);
     void edit(const QString& room, const QString& id, const QString& body);
     void deleteMessage(const QString& room, const QString& id);
+    // private (only you see it) unless you let everyone see you're online, as the web chat reads: FriendsService's
+    // availability "all"
     void markRead(const QString& room);
     void join(const QString& room);
     // a new direct message with someone (a Matrix user id), inviting them; commandDone says {op: create_dm, room}
