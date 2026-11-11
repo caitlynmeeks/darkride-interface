@@ -191,22 +191,22 @@ QtObject {
     // the signed-in account's last list of My Files, shown at once (an opening, another account); none: an empty list
     function readKeptFiles() {
         var key = filesKey();
+        var stored = key !== "" ? Settings.getValue(key, "") : "";
         var kept = null;
-        if (key !== "") {
-            var stored = Settings.getValue(key, "");
-            try {
-                kept = typeof stored === "string" && stored !== "" ? JSON.parse(stored) : null;
-            } catch (e) {
-                kept = null;
-            }
+        try {
+            kept = typeof stored === "string" && stored !== "" ? JSON.parse(stored) : null;
+        } catch (e) {
+            kept = null;
         }
-        var ok = !!kept && typeof kept.url === "string" && Array.isArray(kept.avatars);
+        // its base must be on the files host, as an answer's is (security, 11-11)
+        var ok = !!kept && typeof kept.url === "string" && kept.url.toLowerCase().indexOf(filesHost().toLowerCase() + "/") === 0
+            && Array.isArray(kept.avatars);
         filesRead = ok ? avatarsFrom({ url: kept.url, avatars: kept.avatars.filter(function (a) {
             return Array.isArray(a) && typeof a[0] === "string" && /^\/.*\.fst$/i.test(a[0]) && typeof a[1] === "string"
                 && typeof a[2] === "number";
         }) }) : [];
         filesKnown = ok;
-        filesKeptText = ok ? String(Settings.getValue(key, "")) : "";
+        filesKeptText = ok ? stored : "";
     }
 
     function readRecent() {
