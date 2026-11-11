@@ -16,7 +16,8 @@
 //  Recent-only entry only while the search has text. Nothing here runs while the panel is closed but the one setting
 //  written when the avatar changes, and the lists' one change when a picture is taken. My Files is asked for once per
 //  opening (refresh), and `items` and `recent` are replaced only when what they hold changed, so an opening with nothing
-//  new, or wearing an avatar that is listed already, rebuilds no row.
+//  new, or wearing an avatar that is listed already, rebuilds no row. My Files' last list is kept per account (a cache,
+//  filesSetting) and shown at once while My Files is asked again, so a slow answer never shows an empty list.
 //
 //  Copyright 2026 Darkride.
 //
@@ -55,6 +56,7 @@ QtObject {
     // with source "default" and the title "Default"
     property var recent: []
     property bool busy: false            // My Files is being asked for
+    property bool filesKnown: false      // My Files' avatars are listed: from its answer, or its last list kept
     property string status: ""           // why My Files couldn't be listed, in words, or ""
     property int myFilesCount: 0
     property int privateCount: 0
@@ -67,6 +69,12 @@ QtObject {
     readonly property string recentSetting: "private/avatarPanel/recent"
     readonly property int recentKept: 10
     readonly property int recentShown: 5
+    // My Files' last list (a cache), kept per account as Recent is, under private/ (scripts can't read it) and only for
+    // a signed-in account: { url: the files host's base, avatars: [[path, picture path?date or "", date, 1 if private]] }.
+    // Written only when it changed; at most filesKept avatars (an account with more shows the rest when the answer comes).
+    readonly property string filesSetting: "private/avatarPanel/myFiles"
+    readonly property int filesKept: 500
+    property string filesKeptText: ""    // what the setting holds, so an unchanged answer writes nothing
 
     // what the three places held when last read
     property var filesRead: []           // My Files' avatars: [{ key, url, title, folder, picture, updated, isPrivate, legacy }]
@@ -163,9 +171,42 @@ QtObject {
         autoPicturesRead = byKey;
     }
 
-    function recentKey() {
+    // the signed-in account's name hashed, or "" (signed out, or its name not known yet)
+    function accountHash() {
         var name = AccountServices.loggedIn ? String(AccountServices.username || "").toLowerCase() : "";
-        return recentSetting + "/" + (name !== "" ? Qt.md5(name) : "signed-out");
+        return name !== "" ? Qt.md5(name) : "";
+    }
+
+    function recentKey() {
+        var hash = accountHash();
+        return recentSetting + "/" + (hash !== "" ? hash : "signed-out");
+    }
+
+    // My Files' last list's setting for the signed-in account, or "" when there is none to keep
+    function filesKey() {
+        var hash = accountHash();
+        return hash !== "" ? filesSetting + "/" + hash : "";
+    }
+
+    // the signed-in account's last list of My Files, shown at once (an opening, another account); none: an empty list
+    function readKeptFiles() {
+        var key = filesKey();
+        var kept = null;
+        if (key !== "") {
+            var stored = Settings.getValue(key, "");
+            try {
+                kept = typeof stored === "string" && stored !== "" ? JSON.parse(stored) : null;
+            } catch (e) {
+                kept = null;
+            }
+        }
+        var ok = !!kept && typeof kept.url === "string" && Array.isArray(kept.avatars);
+        filesRead = ok ? avatarsFrom({ url: kept.url, avatars: kept.avatars.filter(function (a) {
+            return Array.isArray(a) && typeof a[0] === "string" && /^\/.*\.fst$/i.test(a[0]) && typeof a[1] === "string"
+                && typeof a[2] === "number";
+        }) }) : [];
+        filesKnown = ok;
+        filesKeptText = ok ? String(Settings.getValue(key, "")) : "";
     }
 
     function readRecent() {
@@ -215,8 +256,9 @@ QtObject {
     // My Files' avatars (.fst files) with their pictures; a private (tea-only) one loads with the login
     function fetchMyFiles() {
         if (!AccountServices.loggedIn) {
-            if (filesRead.length > 0 || status !== "") {
+            if (filesRead.length > 0 || status !== "" || filesKnown) {
                 filesRead = [];
+                filesKnown = false;
                 status = "";
                 rebuild();
             }
@@ -226,15 +268,33 @@ QtObject {
             return;
         }
         busy = true;
+        var asked = filesKey();
+        var started = Date.now();
         MetaverseRequests.send("GET", "/api/user/files", null, function (error, code, data) {
             busy = false;
+            if (filesKey() !== asked) {
+                fetchMyFiles();   // another account since it was asked: never one account's list under another's
+                return;
+            }
             if (error || !data) {
                 console.log("Avatar: My Files failed: " + code + " " + error);
                 status = "Couldn't list My Files. Try again in a moment.";
                 return;   // the last list stays
             }
+            var list = listed(data);
+            // counts and time only, never names (qa, 11-10: a slow list on one person's computer)
+            console.log("Avatar: My Files listed " + (data.files || []).length + " files, " + list.avatars.length
+                        + " avatars, in " + (Date.now() - started) + " ms");
             status = "";
-            filesRead = myFilesAvatars(data);
+            filesRead = avatarsFrom(list);
+            filesKnown = true;
+            if (asked !== "") {
+                var text = JSON.stringify({ url: list.url, avatars: list.avatars.slice(0, filesKept) });
+                if (text !== filesKeptText) {
+                    Settings.setValue(asked, text);
+                    filesKeptText = text;
+                }
+            }
             rebuild();
         });
     }
@@ -254,30 +314,41 @@ QtObject {
         return "";
     }
 
-    function myFilesAvatars(data) {
+    // My Files' answer as only what the list needs, in the form its last list is kept: the files host's base, and per
+    // .fst its path, its picture's path with the picture's date ("" when none), its date (ms), 1 when private
+    function listed(data) {
         var files = data.files || [];
+        var pathOf = function (file) { return file.key.charAt(0) === "/" ? file.key : "/" + file.key; };
         var keys = {};
         var updated = {};
         files.forEach(function (file) {
-            var key = file.key.charAt(0) === "/" ? file.key : "/" + file.key;
-            keys[key.toLowerCase()] = key;
-            updated[key] = Date.parse(file.updated) || 0;
+            var path = pathOf(file);
+            keys[path.toLowerCase()] = path;
+            updated[path] = Date.parse(file.updated) || 0;
         });
-        var found = [];
+        var avatars = [];
         files.forEach(function (file) {
             if (!/\.fst$/i.test(file.key)) {
                 return;
             }
-            var key = file.key.charAt(0) === "/" ? file.key : "/" + file.key;
-            var folder = key.substring(0, key.lastIndexOf("/") + 1);
-            var name = key.split("/").pop().replace(/\.fst$/i, "");
-            var picture = pictureFor(keys, folder, name);
-            var url = String(data.url || "").replace(/\/$/, "") + key;
-            found.push({ key: keyOf(url), url: url, title: name, folder: folder.replace(/^\/|\/$/g, ""),
-                         // the picture's date in its address, so a new picture isn't the old one cached
-                         picture: picture !== "" ? pictureSource(String(data.url || "").replace(/\/$/, "") + picture + "?" + updated[picture]) : "",
-                         updated: Date.parse(file.updated) || 0, isPrivate: !!file.tea,
-                         legacy: /^\/legacy\//i.test(key) });
+            var path = pathOf(file);
+            var picture = pictureFor(keys, path.substring(0, path.lastIndexOf("/") + 1), path.split("/").pop().replace(/\.fst$/i, ""));
+            // the picture's date in its address, so a new picture isn't the old one cached
+            avatars.push([path, picture !== "" ? picture + "?" + updated[picture] : "", Date.parse(file.updated) || 0, file.tea ? 1 : 0]);
+        });
+        avatars.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
+        return { url: String(data.url || "").replace(/\/$/, ""), avatars: avatars };
+    }
+
+    // the entries of My Files' avatars from what listed() gives (or the last list kept)
+    function avatarsFrom(list) {
+        var found = list.avatars.map(function (a) {
+            var path = a[0];
+            var folder = path.substring(0, path.lastIndexOf("/") + 1);
+            var url = list.url + path;
+            return { key: keyOf(url), url: url, title: path.split("/").pop().replace(/\.fst$/i, ""),
+                     folder: folder.replace(/^\/|\/$/g, ""), picture: a[1] !== "" ? pictureSource(list.url + a[1]) : "",
+                     updated: a[2], isPrivate: !!a[3], legacy: /^\/legacy\//i.test(path) };
         });
         found.sort(function (a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; });
         return found;
@@ -406,12 +477,16 @@ QtObject {
 
     // ---- what the panel calls -----------------------------------------------------------------------------------------
 
-    // when the panel shows: the worn avatar into Recent, favourites and Recent read again, My Files asked for once
+    // when the panel shows: the worn avatar into Recent, favourites and Recent read again, My Files' last list at once
+    // (a page made new for this opening), then My Files asked for once
     function refresh() {
         readFavorites();
         readAutoPictures();
         remember();
         readRecent();
+        if (!filesKnown) {
+            readKeptFiles();
+        }
         rebuild();
         fetchMyFiles();
     }
@@ -520,15 +595,12 @@ QtObject {
             library.rebuild();
         }
     }
-    // another account, or none: its own Recent and pictures; signed out, My Files' avatars (some of them private) leave
-    // the list
+    // another account, or none: its own Recent, pictures and My Files' last list (the next opening asks My Files);
+    // signed out, My Files' avatars (some of them private) leave the list
     property Connections accountChanges: Connections {
         target: AccountServices
         ignoreUnknownSignals: true
         function onLoggedInChanged() {
-            if (!AccountServices.loggedIn) {
-                library.filesRead = [];
-            }
             library.accountChanged();
         }
         function onMyUsernameChanged() {
@@ -536,7 +608,9 @@ QtObject {
         }
     }
     function accountChanged() {
+        status = "";
         readRecent();
+        readKeptFiles();
         readAutoPictures();
         rebuild();
     }

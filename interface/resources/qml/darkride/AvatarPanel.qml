@@ -683,10 +683,14 @@ Page {
             row: avatarRow
             wrapLabels: true
             actions: list.actions
-            empty: library.status !== "" ? library.status : library.busy ? "…"
+            // My Files' first list on this computer (none kept yet): said in place of an empty list, or under the
+            // favourites already shown
+            readonly property bool loading: library.busy && !library.filesKnown
+            empty: library.status !== "" ? library.status : loading ? "Loading My Files…"
                 : list.searching ? "No avatar in My Avatars matches “" + avatarBar.search + "”."
                 : "Avatars you keep and put in My Files show here."
-            footer: [library.privateCount > 0 ? "Private avatars are seen on you in Darkride 1.1 or newer, and have no public link." : "",
+            footer: [loading ? "Loading My Files…" : "",
+                     library.privateCount > 0 ? "Private avatars are seen on you in Darkride 1.1 or newer, and have no public link." : "",
                      list.keepsLinks ? "Web links you keep are stored on this computer." : ""]
                 .filter(function (line) { return line !== ""; }).join(" ")
             onActivated: avatar.wearEntry(item)
