@@ -37,8 +37,7 @@ class ScriptEngine;
  * @hifi-client-entity
  *
  * @property {string} debugScriptUrl="" - The path and name of a script to debug using the "API Debugger" developer tool 
- *     (currentAPI.js). If set, the API Debugger dialog displays the objects and values exposed by the script using 
- *     {@link Script.registerValue} and similar.
+ *     (currentAPI.js). If set, the API Debugger dialog displays the objects and values that script registered for it.
  * @property {string} defaultScriptsPath - The path where the default scripts are located in the Interface installation. 
  *     <em>Read-only.</em>
  * @property {ScriptsModel} scriptsModel - Information on the scripts that are in the default scripts directory of the 

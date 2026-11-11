@@ -150,8 +150,6 @@ public:
  * <p>Create using <code>new WebSocket(...)</code> in Interface, client entity, avatar, server entity and assignment client
  * scripts. An assignment client script also gets one for each connection to its {@link WebSocketServer}.
  *
- * <p><strong>Note:</strong> Does not support secure, <code>wss:</code> protocol.</p>
- *
  * <p>On a person's client, a script that came over the network (a world's script) may connect to public hosts only: not to
  * services on that computer or on its network. A refused connection fails as an unreachable one does (onerror, then onclose
  * with code 1006), with the reason in the script's log. A script loaded from the computer itself, or any script of a world
