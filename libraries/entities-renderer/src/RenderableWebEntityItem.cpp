@@ -22,6 +22,7 @@
 
 
 #include <GeometryCache.h>
+#include <material-networking/TextureCache.h>
 #include <PathUtils.h>
 #include <PointerEvent.h>
 #include <gl/GLHelpers.h>
@@ -120,6 +121,8 @@ WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(e
 
     _texture = gpu::Texture::createExternal(OffscreenQmlSurface::getDiscardLambda());
     _texture->setSource(__FUNCTION__);
+    // so a material can show this page: "albedoMap": "{this entity's id}" (one page on many screens)
+    Texture::registerEntityTexture(entity->getID(), _texture);
 
     _contentType = ContentType::HtmlContent;
     // The app's own QML surfaces (the VR screen's pieces, listed by setAppSurface before their renderer is made) get theirs
@@ -135,6 +138,7 @@ WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(e
 }
 
 WebEntityRenderer::~WebEntityRenderer() {
+    Texture::unregisterEntityTexture(_entity->getID(), _texture);
     destroyWebSurface();
 
     auto geometryCache = DependencyManager::get<GeometryCache>();

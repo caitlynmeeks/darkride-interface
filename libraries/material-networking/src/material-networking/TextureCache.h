@@ -39,6 +39,13 @@ class Texture {
 public:
     gpu::TexturePointer getGPUTexture() const { return _textureSource->getGPUTexture(); }
     gpu::TextureSourcePointer _textureSource;
+
+    // Entities whose picture a material can use as a map, by the entity's id: a material's "albedoMap":
+    // "{web-entity-id}" shows that web entity's page (as in Vircadia PR #1102, later Overte). A web entity's renderer
+    // registers its texture when it's made and unregisters it when it goes. Any thread.
+    static void registerEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture);
+    static void unregisterEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture);
+    static gpu::TexturePointer getEntityTexture(const QUuid& entityID);
 };
 
 /// A texture loaded from the network.
@@ -86,6 +93,8 @@ protected:
     Q_INVOKABLE void loadTextureContent(const QByteArray& content);
 
     Q_INVOKABLE void setImage(gpu::TexturePointer texture, int originalWidth, int originalHeight);
+    // a texture that is whatever textureOperator hands out each time it's asked (another entity's picture)
+    void setImageOperator(const std::function<gpu::TexturePointer()>& textureOperator);
     // A loaded texture back to its resource, on the resource's thread (queued when called from a loader's). A functor,
     // not invokeMethod by name with the texture as an argument: that form takes Qt 5's global type registry's lock for
     // the look-up and again to copy and destroy the custom-type argument, and some 30 loaders doing it at once held that
@@ -196,6 +205,8 @@ public:
     gpu::TexturePointer cacheTextureByHash(const std::string& hash, const gpu::TexturePointer& texture);
 
     NetworkTexturePointer getResourceTexture(const QUrl& resourceTextureUrl);
+    // a map named by an entity id, "{...}": that entity's picture (Texture::registerEntityTexture)
+    NetworkTexturePointer getTextureByEntityID(const QUuid& entityID);
     const gpu::FramebufferPointer& getHmdPreviewFramebuffer(int width, int height);
     const gpu::FramebufferPointer& getSpectatorCameraFramebuffer();
     const gpu::FramebufferPointer& getSpectatorCameraFramebuffer(int width, int height);

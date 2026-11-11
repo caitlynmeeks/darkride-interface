@@ -192,6 +192,11 @@ NetworkMaterialResource::ParsedMaterials NetworkMaterialResource::parseJSONMater
  *     Set to <code>"fallthrough"</code> to fall through to the material below. <code>"hifi_pbr"</code> model only.
  * @property {string} albedoMap - The URL of the albedo texture image. 
  *     Set to <code>"fallthrough"</code> to fall through to the material below. <code>"hifi_pbr"</code> model only.
+ *     Any texture map can be a Web entity's ID, <code>"{...}"</code>, instead of a URL: the map shows that entity's page,
+ *     live, so one page can be shown on many surfaces. The page comes out upside down (use a
+ *     <code>materialMappingScale</code> y of <code>-1</code> and a <code>materialMappingPos</code> y of <code>1</code>) and
+ *     lighter than its own colours, because it is read as linear (a page can make up for it with an SVG gamma filter,
+ *     exponent 2.2, on its body). The Web entity must be loaded; until it is, the map draws as a missing texture.
  * @property {string} opacityMap - The URL of the opacity texture image. Set the value the same as the <code>albedoMap</code>
  *     value to let the picture decide the transparency when <code>opacityMapMode</code> is not set: a picture whose alpha
  *     is all but 0 or 1 masks, any other blends. With an <code>opacityMapMode</code>, the <code>albedoMap</code>'s alpha is
