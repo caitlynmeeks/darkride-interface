@@ -789,8 +789,10 @@ graphics::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& baseUrl
     }
 
     const auto url = getTextureUrl(baseUrl, hfmTexture);
-    const auto texture = DependencyManager::get<TextureCache>()->getTexture(url, type, hfmTexture.content,
-                                                                            hfmTexture.maxNumPixels, hfmTexture.sourceChannel);
+    auto textureCache = DependencyManager::get<TextureCache>();
+    const auto entityID = hfmTexture.content.isEmpty() ? TextureCache::entityIDInMap(QString::fromUtf8(hfmTexture.filename)) : QUuid();
+    const auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID)
+        : textureCache->getTexture(url, type, hfmTexture.content, hfmTexture.maxNumPixels, hfmTexture.sourceChannel);
     _textures[channel] = Texture{ hfmTexture.name, texture };
 
     auto map = std::make_shared<graphics::TextureMap>();
@@ -808,8 +810,11 @@ graphics::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url,
                                                              image::ColorChannel sourceChannel) {
     auto textureCache = DependencyManager::get<TextureCache>();
     if (textureCache && !url.isEmpty()) {
+        // a map can name an entity, "{...}": that entity's picture, e.g. a Web entity's page
+        const auto entityID = TextureCache::entityIDInMap(QString::fromUtf8(url.toEncoded()));
         // a channel of a packed picture is copied into a texture of its own as it loads, as glTF's are
-        auto texture = textureCache->getTexture(url, type, QByteArray(), ABSOLUTE_MAX_TEXTURE_NUM_PIXELS, sourceChannel);
+        auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID)
+            : textureCache->getTexture(url, type, QByteArray(), ABSOLUTE_MAX_TEXTURE_NUM_PIXELS, sourceChannel);
         _textures[channel].texture = texture;
 
         auto map = std::make_shared<graphics::TextureMap>();

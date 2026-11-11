@@ -263,11 +263,6 @@ NetworkTexturePointer TextureCache::getTexture(const QUrl& url, image::TextureUs
     if (url.scheme() == RESOURCE_SCHEME) {
         return getResourceTexture(url);
     }
-    // an entity id (a material's map relative to "materialData" arrives as "%7B...%7D")
-    QString decodedURL = QUrl::fromPercentEncoding(url.toEncoded());
-    if (decodedURL.startsWith("{")) {
-        return getTextureByEntityID(QUuid(decodedURL));
-    }
     auto modifiedUrl = url;
     if (type == image::TextureUsage::SKY_TEXTURE) {
         QUrlQuery query { url.query() };
@@ -1509,6 +1504,12 @@ void TextureCache::updateSpectatorCameraNetworkTexture() {
             _spectatorCameraNetworkTexture->setImage(texture, texture->getWidth(), texture->getHeight());
         }
     }
+}
+
+QUuid TextureCache::entityIDInMap(const QString& map) {
+    // a map relative to "materialData" arrives as "%7B...%7D"
+    QString decoded = QUrl::fromPercentEncoding(map.toUtf8());
+    return decoded.startsWith("{") ? QUuid(decoded) : QUuid();
 }
 
 NetworkTexturePointer TextureCache::getTextureByEntityID(const QUuid& entityID) {

@@ -205,8 +205,11 @@ public:
     gpu::TexturePointer cacheTextureByHash(const std::string& hash, const gpu::TexturePointer& texture);
 
     NetworkTexturePointer getResourceTexture(const QUrl& resourceTextureUrl);
-    // a map named by an entity id, "{...}": that entity's picture (Texture::registerEntityTexture)
+    // A material's map named by an entity id, "{...}": that entity's picture (Texture::registerEntityTexture). Only a
+    // material's maps take an id (NetworkMaterial::fetchTextureMap); every other texture user loads a URL.
     NetworkTexturePointer getTextureByEntityID(const QUuid& entityID);
+    // The entity id a material's map names, or a null id when it's a URL (or a "{" that isn't an id)
+    static QUuid entityIDInMap(const QString& map);
     const gpu::FramebufferPointer& getHmdPreviewFramebuffer(int width, int height);
     const gpu::FramebufferPointer& getSpectatorCameraFramebuffer();
     const gpu::FramebufferPointer& getSpectatorCameraFramebuffer(int width, int height);
