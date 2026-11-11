@@ -84,9 +84,12 @@ Item {
     }
 
     function init() {
-        // a sign-in the metaverse no longer took (SignInGate::signInAgain): the form says why, once
+        // a sign-in the metaverse no longer took (SignInGate): the form says why, once, with that account's name
+        var endedName = "";
         if (Settings.getValue("private/signIn/ended", false) === true) {
             Settings.setValue("private/signIn/ended", false);
+            endedName = String(Settings.getValue("private/signIn/endedName", "") || "");
+            Settings.setValue("private/signIn/endedName", "");
             if (linkAccountBody.errorString === "") {
                 linkAccountBody.errorString = "You've been signed out. Please sign in again.";
             }
@@ -103,6 +106,9 @@ Item {
         emailField.placeholderText = "Username or Email";
         var savedUsername = Settings.getValue("keepMeLoggedIn/savedUsername", "");
         emailField.text = keepMeLoggedInCheckbox.checked ? savedUsername === "Unknown user" ? "" : savedUsername : "";
+        if (emailField.text === "" && endedName !== "") {
+            emailField.text = endedName;
+        }
         loginButton.anchors.left = emailField.left;
         loginContainer.visible = true;
     }

@@ -159,10 +159,16 @@ void SignInGate::pauseUntilLoginDetermined() {
 
 // read once by the sign-in form (LoginDialog/LinkAccountBody.qml), then cleared: under private/, so no script sets it
 static const QString SIGN_IN_ENDED_SETTING = "private/signIn/ended";
+static const QString SIGN_IN_ENDED_NAME_SETTING = "private/signIn/endedName";
 
 void SignInGate::noteSignInEnded(const QString& reason) {
-    qCDebug(interfaceapp) << "SignInGate: the metaverse ended the sign-in (" << reason << "); the form will say so";
     Setting::Handle<bool>(SIGN_IN_ENDED_SETTING, false).set(true);
+    // and the account that just ended (read before the account manager's logout() clears it), for the form's name
+    // field: its own note, as the form's remembered name is rewritten by its "Remember me" box as the form starts
+    const QString username = DependencyManager::get<AccountManager>()->getAccountInfo().getUsername();
+    Setting::Handle<QString>(SIGN_IN_ENDED_NAME_SETTING, "").set(username);
+    qCDebug(interfaceapp) << "SignInGate: the metaverse ended the sign-in (" << reason << "); the form will say so"
+                          << (username.isEmpty() ? "(no account name to fill in)" : "and fill in the name");
 }
 
 void SignInGate::signInAgain() {
@@ -174,7 +180,7 @@ void SignInGate::signInAgain() {
         return;   // already asking
     }
     qCDebug(interfaceapp) << "SignInGate: the saved sign-in was refused; signing out and asking again";
-    Setting::Handle<bool>(SIGN_IN_ENDED_SETTING, false).set(true);
+    noteSignInEnded("sign in again");   // the line and the name for the form
     // signing out brings the screen back (ApplicationStartup: logoutComplete), with the form, the name kept
     DependencyManager::get<AccountManager>()->logout();
 }
@@ -199,6 +205,7 @@ void SignInGate::resumeAfterLoginDialogActionTaken() {
     WindowLayout::instance()->restore();
     // signed in: a note of an ended sign-in the form never got to show goes, so no later sign-out says it
     Setting::Handle<bool>(SIGN_IN_ENDED_SETTING, false).set(false);
+    Setting::Handle<QString>(SIGN_IN_ENDED_NAME_SETTING, "").set(QString());
     // and the docks the screen hid, after a sign-out in a running viewer
     for (const QPointer<QWidget>& dock : _hiddenDocks) {
         if (dock) {

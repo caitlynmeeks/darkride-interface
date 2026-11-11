@@ -558,6 +558,10 @@ void Application::startServices() {
     accountManager->setIsAgent(true);
     // a saved sign-in the metaverse refuses (signed out everywhere, a password change) brings back the sign-in screen
     accountManager->setEndsRefusedSignIn(true);
+    // the form that comes back says why (SignInGate): heard before the first profile request below, whose refusal can
+    // come back during start-up
+    connect(accountManager.data(), &AccountManager::signInEnded, this,
+            [this](const QString& reason) { _signInGate.noteSignInEnded(reason); }, Qt::DirectConnection);
     accountManager->setAuthURL(NetworkingConstants::METAVERSE_SERVER_URL());
     StartupProfiler::end(authStep);
     int keypairStep = StartupProfiler::begin("keypair check (a new pair is generated on the pool)");
@@ -984,9 +988,6 @@ void Application::setupInterface() {
     // Signing out of a running viewer goes back to the sign-in screen, as at the start: out of the world, the avatar
     // hidden, until someone signs in, and then on as at the start (resumeAfterLoginDialogActionTaken).
     if (!options.hasTokens) {
-        // a sign-in the metaverse ended (AccountManager: before its logout()): the form that comes back says why
-        connect(DependencyManager::get<AccountManager>().data(), &AccountManager::signInEnded, this,
-                [this](const QString& reason) { _signInGate.noteSignInEnded(reason); }, Qt::DirectConnection);
         connect(DependencyManager::get<AccountManager>().data(), &AccountManager::logoutComplete, this, [this]() {
             if (getLoginDialogPoppedUp()) {
                 return;
