@@ -571,8 +571,27 @@ function keyReleaseEvent(event) {
     }
 }
 
+// Alt, Control (Cmd on a Mac) and Shift as every mouse event says they are held. A key event the scripts never hear (a
+// Web entity holding the keyboard takes it first) can't leave a flag set, and the camera's mode with it: each press and
+// move puts them right.
+function syncModifiers(event) {
+    if (event.isAlt === alt && event.isControl === control && event.isShifted === shift) {
+        return;
+    }
+    alt = event.isAlt;
+    control = event.isControl;
+    shift = event.isShifted;
+    handleModes();
+}
+
 function mousePressEvent(event) {
+    syncModifiers(event);
     if (alt && !isActive) {
+        // the camera's gesture, not a click on a page: a Web entity the press gave the keyboard to gives it back, so Alt's
+        // release, walking and Esc reach the scripts and the avatar again (a plain click on a page still keeps it)
+        if (!Uuid.isNull(Entities.keyboardFocusEntity)) {
+            Entities.setKeyboardFocusEntity(Uuid.NULL);
+        }
         mouseLastX = event.x;
         mouseLastY = event.y;
 
@@ -736,6 +755,7 @@ function timeQLerp(quatA, quatB) {
 }
 
 function mouseMoveEvent(event) {
+    syncModifiers(event);
     if (isActive) {
         if (mode != noMode && !rotatingTowardsTarget) {
 
