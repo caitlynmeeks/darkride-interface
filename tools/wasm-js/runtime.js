@@ -579,7 +579,13 @@
             }
         },
         trace: function () { host.log(LOG_PRINT, joinArguments(arguments) + "\n" + (new Error().stack || "")); },
-        clear: function () { host.call(Script, "clearDebugWindow", []); }
+        // the engine's own console object empties the Script Log (and refuses a script that may not)
+        clear: function () {
+            var hostConsole = globalHandles.console !== undefined ? wrapObject(globalHandles.console, undefined) : null;
+            if (hostConsole) {
+                host.call(hostConsole, "clear", []);
+            }
+        }
     };
 
     // --- Script: the engine's API that was QtScript-specific --------------------------------------------------------

@@ -16,7 +16,8 @@
 
 /// A script stopped from another thread, as the app stops scripts at a quit and a reload: its scriptEnding handlers
 /// run to their end with the host's answers reaching them, and only the deadline at a quit ends them early. A world
-/// that was left runs nothing more.
+/// that was left runs nothing more. Also, with the same real guest: console.clear empties the Script Log for the
+/// visitor's own script and is refused to a world's.
 class ScriptStopTests : public QObject {
     Q_OBJECT
 private slots:
@@ -31,6 +32,8 @@ private slots:
     void testARunawaySignalHandlerEndsAfterTwoSeconds();
     void testATopLevelSpinEndsAfterTwoSeconds();
     void testATopLevelSpinOfALeftWorldEndsAtOnce();
+    void testConsoleClearEmptiesTheScriptLog();
+    void testAWorldsConsoleClearIsRefused();
 };
 
 /// A signal for a script to connect to: a call that reaches it through a connected signal, as Messages and Controller
