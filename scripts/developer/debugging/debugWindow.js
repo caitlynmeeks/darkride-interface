@@ -20,9 +20,12 @@ if (scripts.length >= 2) {
 }
 
 var SUPPRESS_DEFAULT_SCRIPTS_MENU_NAME  = "Developer"
-var SUPPRESS_DEFAULT_SCRIPTS_ITEM_NAME = "Suppress messages from default scripts in Debug Window";
-var DEBUG_WINDOW_SUPPRESS_DEFAULTS_SCRIPTS = 'debugWindowSuppressDefaultScripts';
-var suppressDefaultScripts = Settings.getValue(DEBUG_WINDOW_SUPPRESS_DEFAULTS_SCRIPTS, false)
+var SUPPRESS_DEFAULT_SCRIPTS_ITEM_NAME = "Script Log: Hide Darkride's Own Scripts";
+// on unless the person turned it off (a new key: the old one was off by default, and the app's own scripts drown a
+// scripter's lines)
+var DEBUG_WINDOW_SUPPRESS_DEFAULTS_SCRIPTS = 'debugWindowSuppressAppScripts';
+var savedSuppress = Settings.getValue(DEBUG_WINDOW_SUPPRESS_DEFAULTS_SCRIPTS, true);
+var suppressDefaultScripts = !(savedSuppress === false || savedSuppress === "false");
 Menu.addMenuItem({
     menuName: SUPPRESS_DEFAULT_SCRIPTS_MENU_NAME,
     menuItemName: SUPPRESS_DEFAULT_SCRIPTS_ITEM_NAME,
@@ -61,7 +64,7 @@ if (hmdDebugWindowGeometryValue !== '') {
 }
 
 var window = new OverlayWindow({
-    title: 'Debug Window',
+    title: 'Script Log',
     source: qml,
     width: windowWidth, height: windowHeight,
 });
@@ -87,14 +90,32 @@ HMD.displayModeChanged.connect(function(isHMDMode) {
 
 window.closed.connect(function () { Script.stop(); });
 
+// the app's own scripts: every running script loaded from the app's scripts folder ("file:///~/...", as the running
+// list names them), by file name, the name each message carries; read again whenever the scripts change
+var APP_SCRIPTS_PREFIX = "file:///~/";
+var appScriptNames = {};
+function readAppScripts() {
+    appScriptNames = {};
+    ScriptDiscoveryService.getRunning().forEach(function (script) {
+        if (String(script.url).indexOf(APP_SCRIPTS_PREFIX) === 0 && script.name !== "debugWindow.js") {
+            appScriptNames[script.name] = true;
+        }
+    });
+}
+readAppScripts();
+ScriptDiscoveryService.scriptCountChanged.connect(readAppScripts);
+
 function shouldLogMessage(scriptFileName) {
-    return !suppressDefaultScripts
-        || (scriptFileName !== "defaultScripts.js" && scriptFileName != "controllerScripts.js");
+    return !suppressDefaultScripts || !appScriptNames[scriptFileName];
 }
 
+function twoDigits(number) {
+    return (number < 10 ? "0" : "") + number;
+}
+// the time of day, 24-hour: a log is read as it runs (getMonth() counts from 0: the old date was a month behind)
 var getFormattedDate = function() {
     var date = new Date();
-    return date.getMonth() + "/" + date.getDate() + " " + date.getHours() + ":" + date.getMinutes() + ":" + date.getSeconds();
+    return twoDigits(date.getHours()) + ":" + twoDigits(date.getMinutes()) + ":" + twoDigits(date.getSeconds());
 };
 
 var sendToLogWindow = function(type, message, scriptFileName) {

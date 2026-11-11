@@ -713,6 +713,10 @@ Menu::Menu() {
         essLogAction->setEnabled(nodeList->getThisNodeCanRez());
     }
 
+    // Developer > Scripting > Script Log (HMD friendly)...: every script's output in a window of its own, outside the
+    // main log (Caity, 11-11: back for scripters; scripts/developer/debugging/debugWindow.js)
+    addActionToQMenuAndActionHash(scriptingOptionsMenu, "Script Log (HMD friendly)...", 0, qApp, SLOT(showScriptLogs()));
+
     // Developer > Scripting > Verbose Logging
     addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::VerboseLogging, 0, false,
                                            qApp, SLOT(updateVerboseLogging()));
