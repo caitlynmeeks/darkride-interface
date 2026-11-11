@@ -29,9 +29,44 @@ Item {
 
     HifiStylesUit.HifiConstants { id: hifi }
 
+    // the saved sign-in may have ended from elsewhere ("Sign out everywhere else" on the website): it is asked first, so
+    // a refused one gets the form saying why instead of a world that can't load. No answer in a few seconds, or no
+    // network: in as before (a sign-in nobody refused stays good offline)
+    property bool checking: false
     function goIn() {
+        if (checking) {
+            return;
+        }
+        checking = true;
+        checkTimeout.start();
+        MetaverseRequests.send("GET", "/api/v1/user/profile", null, function (error, code) {
+            if (!checking) {
+                return;   // the time ran out and the viewer went in
+            }
+            checking = false;
+            checkTimeout.stop();
+            if (error && code === 401) {
+                bodyLoader.setSource("LinkAccountBody.qml", { "loginDialog": loginDialog, "root": root,
+                                     "bodyLoader": bodyLoader, "errorString": "You've been signed out. Please sign in again." });
+                Account.logOut();
+                return;
+            }
+            enter();
+        });
+    }
+    function enter() {
         loginDialog.dismissLoginDialog();
         root.tryDestroy();
+    }
+    Timer {
+        id: checkTimeout
+        interval: 4000
+        onTriggered: {
+            if (continueBody.checking) {
+                continueBody.checking = false;
+                continueBody.enter();
+            }
+        }
     }
 
     function signInAsSomeoneElse() {
