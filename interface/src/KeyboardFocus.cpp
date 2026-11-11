@@ -16,6 +16,7 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QEvent>
+#include <QtCore/QThread>
 
 #include <EntityScriptingInterface.h>
 #include <MainWindow.h>
@@ -53,6 +54,16 @@ void KeyboardFocus::highlight(const glm::vec3& position, const glm::quat& rotati
     properties.setDimensions(dimensions);
     properties.setVisible(true);
     entityScriptingInterface->editEntity(_highlightID, properties);
+}
+
+// Entities.setKeyboardFocusEntity, called by name from a script's thread: the focus changes on the main thread, where
+// the entity's renderable and the window are (setFocusedEntity)
+void Application::setKeyboardFocusEntity(const QUuid& id) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "setKeyboardFocusEntity", Qt::QueuedConnection, Q_ARG(QUuid, id));
+        return;
+    }
+    _keyboardFocus.setFocusedEntity(id);
 }
 
 void KeyboardFocus::setFocusedEntity(const QUuid& id) {

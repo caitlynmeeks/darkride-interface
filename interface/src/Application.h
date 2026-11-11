@@ -443,6 +443,9 @@ public slots:
     static void runTests();
 
     KeyboardFocus& getKeyboardFocus() { return _keyboardFocus; }   // which entity has the keyboard, and its highlight (KeyboardFocus.h)
+    // Entities.keyboardFocusEntity for scripts: EntityScriptingInterface calls these two by name, from a script's thread
+    QUuid getKeyboardFocusEntity() const { return _keyboardFocus.focusedEntity(); }   // thread-safe
+    void setKeyboardFocusEntity(const QUuid& id);   // on the main thread, or queued to it (KeyboardFocus.cpp)
     std::shared_ptr<KeyboardMouseDevice> getKeyboardMouseDevice() const { return _keyboardMouseDevice; }
 
     void loadLODToolsDialog();
