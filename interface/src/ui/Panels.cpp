@@ -212,6 +212,19 @@ void Panels::close(const QString& name) {
     QMetaObject::invokeMethod(this, [this, name] { change(name, Change::Close); });
 }
 
+void Panels::testClosePage(const QString& name) {
+    if (!qEnvironmentVariableIsSet("DARKRIDE_PANEL_TEST_HOOKS")) {
+        return;
+    }
+    QMetaObject::invokeMethod(this, [this, name] {
+        auto qmlDock = qobject_cast<QmlDock*>(dock(name));
+        QQuickItem* page = qmlDock ? qmlDock->panel() : nullptr;
+        if (page) {
+            QMetaObject::invokeMethod(page, "closePanel");
+        }
+    });
+}
+
 void Panels::toggle(const QString& name) {
     QMetaObject::invokeMethod(this, [this, name] { change(name, Change::Toggle); });
 }

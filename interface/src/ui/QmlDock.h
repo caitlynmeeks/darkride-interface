@@ -87,6 +87,7 @@ protected:
 private:
     void makeContent();
 
+    QString _name;   // the panel's name (Panels'), for its page: dockPanelName
     QUrl _source;
     QList<QPair<QString, QPointer<QObject>>> _contextObjects;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)

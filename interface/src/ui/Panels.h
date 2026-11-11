@@ -94,6 +94,9 @@ public:
      */
     Q_INVOKABLE void showProfile(const QString& username);
 
+    /// tests only (DARKRIDE_PANEL_TEST_HOOKS set): runs an open panel's own closePanel(), as its page does after a Hop
+    Q_INVOKABLE void testClosePage(const QString& name);
+
     /// Build mode's own panels (Hierarchy, Inspector): they open only while it's on
     static bool isBuildModeOnly(const QString& name);
 

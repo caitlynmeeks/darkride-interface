@@ -140,7 +140,8 @@ private:
 };
 #endif
 
-QmlDock::QmlDock(const QString& name, const QUrl& source, QWidget* parent) : QDockWidget(name, parent), _source(source) {
+QmlDock::QmlDock(const QString& name, const QUrl& source, QWidget* parent) :
+    QDockWidget(name, parent), _name(name), _source(source) {
     setObjectName(name + "Dock");
     // the bottom too, where My Files docks, so they tab with it (Caity, 10-27)
     setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
@@ -208,6 +209,8 @@ void QmlDock::makeContent() {
     for (const auto& named : _contextObjects) {
         context->setContextProperty(named.first, named.second.data());
     }
+    // the page's own panel, so it can close itself as its close box does (Page.qml closePanel: Explore after a Hop)
+    context->setContextProperty("dockPanelName", _name);
     auto component = new QQmlComponent(engine, _source, QQmlComponent::PreferSynchronous, _view);
     QObject* object = component->isReady() ? component->create(context) : nullptr;
     if (!object) {
