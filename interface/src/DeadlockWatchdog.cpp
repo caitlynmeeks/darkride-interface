@@ -141,7 +141,8 @@ void DeadlockWatchdogThread::run() {
         _lastRound = roundStart;
         if (sinceLastRound > PROCESS_STOOD_STILL_USECS) {
             _heartbeatCountsFrom = roundStart;
-            qCInfo(interfaceapp_deadlock) << "The deadlock watchdog's rounds were" << sinceLastRound / USECS_PER_SECOND
+            // a warning: rare, and it matters in a crash hunt (the Application's log rules hide hifi.*.info)
+            qCWarning(interfaceapp_deadlock) << "The deadlock watchdog's rounds were" << sinceLastRound / USECS_PER_SECOND
                 << "s apart instead of 1 (the machine slept, the process was suspended, or the clock jumped): the main"
                 << "thread's heartbeat limit counts from now";
         }
