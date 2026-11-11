@@ -35,8 +35,10 @@ Rectangle {
         anchors.fill: parent
     }
 
-    // closes the panel the page is on, as its close box does: a desktop window hides (the bar's button follows it);
-    // the tablet goes back to its home screen. Explore closes itself so a hop isn't watched from behind it.
+    // closes the panel the page is on, as its close box does: a desktop window hides (the bar's button follows it); a
+    // dock closes through Panels (dockPanelName, from QmlDock), except while the VR screen is up, where the page stands
+    // in the screen's slot; the tablet goes back to its home screen. Explore closes itself so a hop isn't watched from
+    // behind it.
     function closePanel() {
         for (var item = page.parent; item; item = item.parent) {
             if (item.hasOwnProperty("shown") && item.windowClosed !== undefined) {
@@ -44,6 +46,11 @@ Rectangle {
                 item.windowClosed();
                 return;
             }
+        }
+        if (typeof dockPanelName === "string" && dockPanelName !== "" && typeof Panels !== "undefined" &&
+                (typeof Panels.isScreenUp !== "function" || !Panels.isScreenUp())) {
+            Panels.close(dockPanelName);
+            return;
         }
         var tablet = Tablet.getTablet("com.highfidelity.interface.tablet.system");
         if (tablet) {
