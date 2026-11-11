@@ -194,6 +194,7 @@ private:
     bool _endsRefusedSignIn { false };    // setEndsRefusedSignIn
     bool _refreshAfterRefusal { false };  // the refresh running was asked because the access token was refused
     QString _tokenFromRefusalRefresh;     // the access token that refresh gave: refused too, the sign-in is over
+    bool _signInEnding { false };         // endSignIn's logout: the refused token posts no settings
 
     bool _isWaitingForKeypairResponse { false };
     QByteArray _pendingPrivateKey;

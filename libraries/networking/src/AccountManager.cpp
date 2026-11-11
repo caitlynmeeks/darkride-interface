@@ -119,7 +119,12 @@ AccountManager::AccountManager(bool accountSettingsEnabled, UserAgentGetter user
 const QString ACCOUNT_MANAGER_REQUESTED_SCOPE = "owner";
 
 void AccountManager::logout() {
-    postAccountSettings();
+    // the settings go up with the token they belong to; a token the metaverse has refused would only be refused again
+    if (!_signInEnding) {
+        postAccountSettings();
+    }
+    // a pull still retrying stops here: signed out, there are no settings of ours to fetch
+    _pullSettingsRetryTimer->stop();
     _numPullRetries = 0;
     _refreshAfterRefusal = false;
     _tokenFromRefusalRefresh.clear();
@@ -875,9 +880,11 @@ void AccountManager::endSignIn(const QString& reason) {
         return;  // signed out already
     }
     qCWarning(networking).noquote() << "This sign-in has ended (" + reason + "): signing out, to sign in again";
+    _signInEnding = true;
     // first, so that the sign-in screen the logout brings back knows why (editor-ui's SignInGate)
     emit signInEnded(reason);
     logout();
+    _signInEnding = false;
 }
 
 void AccountManager::refreshAccessTokenError(QNetworkReply::NetworkError error) {
@@ -950,6 +957,11 @@ void AccountManager::requestProfileError(QNetworkReply::NetworkError error) {
 
 void AccountManager::requestAccountSettings() {
     if (!_accountSettingsEnabled) {
+        return;
+    }
+    if (_accountInfo.getAccessToken().token.isEmpty()) {
+        // signed out: a request without a token is only refused, so nothing goes and nothing retries
+        _pullSettingsRetryTimer->stop();
         return;
     }
 
