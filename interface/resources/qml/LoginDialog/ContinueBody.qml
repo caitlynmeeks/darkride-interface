@@ -39,13 +39,15 @@ Item {
         }
         checking = true;
         checkTimeout.start();
-        MetaverseRequests.send("GET", "/api/v1/user/profile", null, function (error, code) {
+        MetaverseRequests.send("GET", "/api/v1/user/profile", null, function (error, code, data) {
             if (!checking) {
                 return;   // the time ran out and the viewer went in
             }
             checking = false;
             checkTimeout.stop();
-            if (error && code === 401) {
+            // "Unverified" (an email not verified yet) is no ended sign-in: in as before (the account manager's rule too)
+            var unverified = !!data && (data.message === "Unverified" || data.reason === "unverified");
+            if (error && code === 401 && !unverified) {
                 // the form, saying why; the sign-out itself is the account manager's (its refresh, then signInEnded
                 // and logout(): two sign-outs would race)
                 bodyLoader.setSource("LinkAccountBody.qml", { "loginDialog": loginDialog, "root": root,
