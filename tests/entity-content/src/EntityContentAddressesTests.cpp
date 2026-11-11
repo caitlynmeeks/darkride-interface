@@ -271,6 +271,16 @@ void EntityContentAddressesTests::testMaterialData() {
     QCOMPARE(materials.at(1).toObject().value("albedoMap").toString(), QString("atp:/b.png"));
     QVERIFY(properties.materialDataChanged());
 
+    // a map naming a Web entity is no address and stays; a "{" that isn't an ID is still judged as an address
+    properties.setMaterialData(
+        "{\"materials\":{\"emissiveMap\":\"{01e142aa-848f-5b8c-9ce1-210f0f18f79b}\",\"albedoMap\":\"{not-an-id}\"}}");
+    QCOMPARE(clearThisComputer(properties), QStringList({ "materialData" }));
+    QJsonObject withID = parse(properties.getMaterialData()).value("materials").toObject();
+    QCOMPARE(withID.value("emissiveMap").toString(), QString("{01e142aa-848f-5b8c-9ce1-210f0f18f79b}"));
+    QCOMPARE(withID.value("albedoMap").toString(), QString());
+    properties.setMaterialData("{\"materials\":{\"emissiveMap\":\"{01e142aa-848f-5b8c-9ce1-210f0f18f79b}\"}}");
+    QCOMPARE(clearThisComputer(properties), QStringList());
+
     // every key the loader resolves against the material's address: each "...Map", lightMapDirection, the procedural
     // shader's addresses; a non-address key beside them stays
     const QStringList pictureKeys = { "emissiveMap", "albedoMap", "opacityMap", "roughnessMap", "glossMap",
