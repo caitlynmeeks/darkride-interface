@@ -46,9 +46,10 @@ Item {
             checking = false;
             checkTimeout.stop();
             if (error && code === 401) {
+                // the form, saying why; the sign-out itself is the account manager's (its refresh, then signInEnded
+                // and logout(): two sign-outs would race)
                 bodyLoader.setSource("LinkAccountBody.qml", { "loginDialog": loginDialog, "root": root,
                                      "bodyLoader": bodyLoader, "errorString": "You've been signed out. Please sign in again." });
-                Account.logOut();
                 return;
             }
             enter();

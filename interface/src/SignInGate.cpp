@@ -160,6 +160,11 @@ void SignInGate::pauseUntilLoginDetermined() {
 // read once by the sign-in form (LoginDialog/LinkAccountBody.qml), then cleared: under private/, so no script sets it
 static const QString SIGN_IN_ENDED_SETTING = "private/signIn/ended";
 
+void SignInGate::noteSignInEnded(const QString& reason) {
+    qCDebug(interfaceapp) << "SignInGate: the metaverse ended the sign-in (" << reason << "); the form will say so";
+    Setting::Handle<bool>(SIGN_IN_ENDED_SETTING, false).set(true);
+}
+
 void SignInGate::signInAgain() {
     if (QThread::currentThread() != qApp->thread()) {
         QMetaObject::invokeMethod(this, &SignInGate::signInAgain);
@@ -192,6 +197,8 @@ void SignInGate::resumeAfterLoginDialogActionTaken() {
     DependencyManager::get<Skins>()->setHeld(false);
     // the panels where they were left, chat's open again if it was (once a run: nothing moved under the sign-in screen)
     WindowLayout::instance()->restore();
+    // signed in: a note of an ended sign-in the form never got to show goes, so no later sign-out says it
+    Setting::Handle<bool>(SIGN_IN_ENDED_SETTING, false).set(false);
     // and the docks the screen hid, after a sign-out in a running viewer
     for (const QPointer<QWidget>& dock : _hiddenDocks) {
         if (dock) {

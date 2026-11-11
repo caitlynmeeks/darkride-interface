@@ -60,6 +60,9 @@ public:
     /// saved one goes and the sign-in screen comes back, as after signing out, the name filled in, saying why ("You've
     /// been signed out. Please sign in again."). Any thread; nothing while the screen is already up.
     void signInAgain();
+    /// AccountManager::signInEnded's: the form that comes back with the sign-out says why (no sign-out here: the
+    /// account manager signs out right after)
+    void noteSignInEnded(const QString& reason);
 
 public slots:
     void onDismissedLoginDialog();
