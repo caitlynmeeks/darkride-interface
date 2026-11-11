@@ -1512,15 +1512,20 @@ QUuid TextureCache::entityIDInMap(const QString& map) {
     return decoded.startsWith("{") ? QUuid(decoded) : QUuid();
 }
 
-NetworkTexturePointer TextureCache::getTextureByEntityID(const QUuid& entityID) {
+NetworkTexturePointer TextureCache::getTextureByEntityID(const QUuid& entityID, image::TextureUsage::Type type) {
     if (entityID.isNull()) {
         return NetworkTexturePointer();
     }
-    // A reference to another entity's texture, so a resource texture: nothing to download. The entity may not be
-    // here yet (or may go and come back): the operator asks for it each time, and until then the map isn't defined
-    // and the material draws its fallback.
+    // A reference to another entity's texture, so a resource texture: nothing to download. While the entity isn't
+    // here, or has no picture yet, the map is this kind of map's fallback (black for an emissive map), so the
+    // material settles as it would on a failed download; when the entity's texture registers, goes or shows its
+    // first picture, the materials following it build themselves again (gpu::TextureSource::followedTexturesChanged).
+    auto fallback = getFallbackTextureForType(type);
     NetworkTexturePointer texture(new NetworkTexture(QUrl(entityID.toString()), true));
-    texture->setImageOperator([entityID]() { return Texture::getEntityTexture(entityID); });
+    texture->setImageOperator([entityID, fallback]() {
+        auto entityTexture = Texture::getEntityTexture(entityID);
+        return entityTexture && entityTexture->isDefined() ? entityTexture : fallback;
+    });
     return texture;
 }
 
@@ -1530,8 +1535,11 @@ namespace {
 }
 
 void Texture::registerEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture) {
-    std::lock_guard<std::mutex> lock(entityTexturesMutex);
-    entityTextures[entityID] = texture;
+    {
+        std::lock_guard<std::mutex> lock(entityTexturesMutex);
+        entityTextures[entityID] = texture;
+    }
+    gpu::TextureSource::followedTexturesChanged();
 }
 
 void Texture::unregisterEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture) {
@@ -1540,6 +1548,7 @@ void Texture::unregisterEntityTexture(const QUuid& entityID, const gpu::TextureP
     // only its own: a new renderer for the same entity may have registered already
     if (itr != entityTextures.end() && (itr->second.expired() || itr->second.lock() == texture)) {
         entityTextures.erase(itr);
+        gpu::TextureSource::followedTexturesChanged();
     }
 }
 

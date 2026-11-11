@@ -46,6 +46,8 @@ public:
     static void registerEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture);
     static void unregisterEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture);
     static gpu::TexturePointer getEntityTexture(const QUuid& entityID);
+    // A registered texture showed its first picture: the materials following it build themselves again.
+    static void entityTextureChanged() { gpu::TextureSource::followedTexturesChanged(); }
 };
 
 /// A texture loaded from the network.
@@ -207,7 +209,7 @@ public:
     NetworkTexturePointer getResourceTexture(const QUrl& resourceTextureUrl);
     // A material's map named by an entity id, "{...}": that entity's picture (Texture::registerEntityTexture). Only a
     // material's maps take an id (NetworkMaterial::fetchTextureMap); every other texture user loads a URL.
-    NetworkTexturePointer getTextureByEntityID(const QUuid& entityID);
+    NetworkTexturePointer getTextureByEntityID(const QUuid& entityID, image::TextureUsage::Type type);
     // The entity id a material's map names, or a null id when it's a URL (or a "{" that isn't an id)
     static QUuid entityIDInMap(const QString& map);
     const gpu::FramebufferPointer& getHmdPreviewFramebuffer(int width, int height);

@@ -126,6 +126,7 @@ WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(e
     // tablet, the VR screen's pieces) or a visitor's own.
     if (entity->isMadeByWorld()) {
         Texture::registerEntityTexture(entity->getID(), _texture);
+        _textureShared = true;
     }
 
     _contentType = ContentType::HtmlContent;
@@ -370,7 +371,11 @@ void WebEntityRenderer::doRender(RenderArgs* args) {
     }
 
     if (newTextureAvailable) {
+        const bool firstPicture = !_texture->isDefined();
         _texture->setExternalTexture(newTextureAndFence.first, newTextureAndFence.second);
+        if (firstPicture && _textureShared) {
+            Texture::entityTextureChanged();   // the materials showing this page swap their fallback for it
+        }
     }
 
     static const glm::vec2 texMin(0.0f), texMax(1.0f), topLeft(-0.5f), bottomRight(0.5f);

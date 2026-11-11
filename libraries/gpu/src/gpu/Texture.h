@@ -740,6 +740,14 @@ public:
 
     bool isDefined() const;
 
+    // Whether this source follows another entity's texture (its operator) rather than holding one of its own
+    bool followsAnotherTexture() const { return (bool)_gpuTextureOperator; }
+
+    // A count that goes up whenever the textures sources like that follow may have changed (a page registered or went,
+    // or showed its first frame): a material holding such a source builds itself again when it moves
+    static uint32_t followedTexturesGeneration();
+    static void followedTexturesChanged();
+
 protected:
     gpu::TexturePointer _gpuTexture;
     std::function<gpu::TexturePointer()> _gpuTextureOperator { nullptr };

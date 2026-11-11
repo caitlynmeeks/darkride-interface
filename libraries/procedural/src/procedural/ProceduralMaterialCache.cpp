@@ -791,7 +791,7 @@ graphics::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& baseUrl
     const auto url = getTextureUrl(baseUrl, hfmTexture);
     auto textureCache = DependencyManager::get<TextureCache>();
     const auto entityID = hfmTexture.content.isEmpty() ? TextureCache::entityIDInMap(QString::fromUtf8(hfmTexture.filename)) : QUuid();
-    const auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID)
+    const auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID, type)
         : textureCache->getTexture(url, type, hfmTexture.content, hfmTexture.maxNumPixels, hfmTexture.sourceChannel);
     _textures[channel] = Texture{ hfmTexture.name, texture };
 
@@ -813,7 +813,7 @@ graphics::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url,
         // a map can name an entity, "{...}": that entity's picture, e.g. a Web entity's page
         const auto entityID = TextureCache::entityIDInMap(QString::fromUtf8(url.toEncoded()));
         // a channel of a packed picture is copied into a texture of its own as it loads, as glTF's are
-        auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID)
+        auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID, type)
             : textureCache->getTexture(url, type, QByteArray(), ABSOLUTE_MAX_TEXTURE_NUM_PIXELS, sourceChannel);
         _textures[channel].texture = texture;
 

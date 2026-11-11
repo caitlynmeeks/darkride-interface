@@ -924,6 +924,16 @@ void TextureSource::resetTexture(gpu::TexturePointer texture) {
     _gpuTextureOperator = nullptr;
 }
 
+static std::atomic<uint32_t> followedTexturesCount { 0 };
+
+uint32_t TextureSource::followedTexturesGeneration() {
+    return followedTexturesCount.load(std::memory_order_relaxed);
+}
+
+void TextureSource::followedTexturesChanged() {
+    followedTexturesCount.fetch_add(1, std::memory_order_relaxed);
+}
+
 void TextureSource::resetTextureOperator(const std::function<gpu::TexturePointer()>& textureOperator) {
     _gpuTexture = nullptr;
     _gpuTextureOperator = textureOperator;
