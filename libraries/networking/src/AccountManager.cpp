@@ -818,6 +818,13 @@ bool AccountManager::carriesCurrentToken(const QNetworkReply* reply) {
            sent == _accountInfo.getAccessToken().authorizationHeaderValue();
 }
 
+void AccountManager::reportRefusedAccessToken(const QNetworkReply* reply, const char* where) {
+    if (_endsRefusedSignIn && reply && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401 &&
+        carriesCurrentToken(reply)) {
+        accessTokenRefused(where);
+    }
+}
+
 void AccountManager::accessTokenRefused(const char* where) {
     if (!_endsRefusedSignIn || _accountInfo.getAccessToken().token.isEmpty()) {
         return;

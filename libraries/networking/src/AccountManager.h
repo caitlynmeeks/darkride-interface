@@ -78,6 +78,10 @@ public:
     /// ended (signed out everywhere, a password change, an admin's sign-out): signInEnded, then logout(). Never on no
     /// answer. Off (today's behaviour) in the servers and for AI residents' key sign-ins.
     void setEndsRefusedSignIn(bool ends) { _endsRefusedSignIn = ends; }
+    /// A 401 to a request another part of the app made with our access token (chat's token request): one refresh
+    /// decides, as for AccountManager's own requests. A reply that carried an older sign-in's token is ignored.
+    /// On AccountManager's thread (the main thread).
+    void reportRefusedAccessToken(const QNetworkReply* reply, const char* where);
 
     const QUrl& getAuthURL() const { return _authURL; }
     void setAuthURL(const QUrl& authURL);
