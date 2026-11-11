@@ -462,7 +462,9 @@ function avatarMoved(place) {
         || Vec3.length(Vec3.subtract(Quat.getFront(place.orientation), Quat.getFront(now.orientation))) > AVATAR_ROTATION_SLOP;
 }
 
-function handleModes() {
+// startedByClick: the press of an Alt+click. The camera's gesture starts only there: Alt alone (Alt-Tab, a menu's Alt key,
+// held while riding) never leaves the plain camera (NexPro, 11-11: one Alt press froze his view while the monorail rode on)
+function handleModes(startedByClick) {
     var newMode = (mode == noMode) ? noMode : detachedMode;
     if (alt) {
         if (control) {
@@ -500,6 +502,9 @@ function handleModes() {
     }
 
     if (mode == noMode && newMode != noMode && (Camera.mode == "independent" || Camera.mode == "entity")) {
+        newMode = noMode;
+    }
+    if (mode == noMode && newMode != noMode && !startedByClick) {
         newMode = noMode;
     }
 
@@ -587,6 +592,7 @@ function syncModifiers(event) {
 function mousePressEvent(event) {
     syncModifiers(event);
     if (alt && !isActive) {
+        handleModes(true);   // the gesture starts here, with the click
         // the camera's gesture, not a click on a page: a Web entity the press gave the keyboard to gives it back, so Alt's
         // release, walking and Esc reach the scripts and the avatar again (a plain click on a page still keeps it)
         if (!Uuid.isNull(Entities.keyboardFocusEntity)) {
