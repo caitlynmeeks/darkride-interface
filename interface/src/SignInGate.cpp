@@ -17,6 +17,7 @@
 
 #include <QtCore/QThread>
 #include <QtQuick/QQuickItem>
+#include <QtWidgets/QDockWidget>
 
 #include <AccountManager.h>
 #include <AddressManager.h>
@@ -74,6 +75,16 @@ void SignInGate::showLoginScreen() {
         DependencyManager::get<Editor>()->setActive(false);
     }
     DependencyManager::get<MessagesClient>()->sendLocalMessage(PANELS_CHANNEL, "close");
+    // the docks too (Chat, People, Explore...), each where it was, back after it (Caity, 11-11: Chat stayed beside the
+    // screen after signing out): signed out, the screen is all there is
+    if (MainWindow* window = qApp->getWindow()) {
+        for (QDockWidget* dock : window->findChildren<QDockWidget*>()) {
+            if (dock->isVisible()) {
+                _hiddenDocks.append(QPointer<QWidget>(dock));
+                dock->hide();
+            }
+        }
+    }
 
     _poppedUp = true;
     _poppedUpSetting.set(_poppedUp);
@@ -146,6 +157,23 @@ void SignInGate::pauseUntilLoginDetermined() {
     }
 }
 
+// read once by the sign-in form (LoginDialog/LinkAccountBody.qml), then cleared: under private/, so no script sets it
+static const QString SIGN_IN_ENDED_SETTING = "private/signIn/ended";
+
+void SignInGate::signInAgain() {
+    if (QThread::currentThread() != qApp->thread()) {
+        QMetaObject::invokeMethod(this, &SignInGate::signInAgain);
+        return;
+    }
+    if (_poppedUp) {
+        return;   // already asking
+    }
+    qCDebug(interfaceapp) << "SignInGate: the saved sign-in was refused; signing out and asking again";
+    Setting::Handle<bool>(SIGN_IN_ENDED_SETTING, false).set(true);
+    // signing out brings the screen back (ApplicationStartup: logoutComplete), with the form, the name kept
+    DependencyManager::get<AccountManager>()->logout();
+}
+
 void SignInGate::resumeAfterLoginDialogActionTaken() {
     if (QThread::currentThread() != qApp->thread()) {
         QMetaObject::invokeMethod(this, &SignInGate::resumeAfterLoginDialogActionTaken);
@@ -164,6 +192,13 @@ void SignInGate::resumeAfterLoginDialogActionTaken() {
     DependencyManager::get<Skins>()->setHeld(false);
     // the panels where they were left, chat's open again if it was (once a run: nothing moved under the sign-in screen)
     WindowLayout::instance()->restore();
+    // and the docks the screen hid, after a sign-out in a running viewer
+    for (const QPointer<QWidget>& dock : _hiddenDocks) {
+        if (dock) {
+            dock->show();
+        }
+    }
+    _hiddenDocks.clear();
     if (qApp->isHMDMode() || !qApp->getDesktopTabletBecomesToolbarSetting()) {
         qApp->getApplicationCompositor().getReticleInterface()->setAllowMouseCapture(true);
         qApp->getApplicationCompositor().getReticleInterface()->setVisible(true);

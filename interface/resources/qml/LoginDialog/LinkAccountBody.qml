@@ -84,6 +84,13 @@ Item {
     }
 
     function init() {
+        // a sign-in the metaverse no longer took (SignInGate::signInAgain): the form says why, once
+        if (Settings.getValue("private/signIn/ended", false) === true) {
+            Settings.setValue("private/signIn/ended", false);
+            if (linkAccountBody.errorString === "") {
+                linkAccountBody.errorString = "You've been signed out. Please sign in again.";
+            }
+        }
         // going to/from sign in/up dialog.
         loginErrorMessage.text = linkAccountBody.errorString;
         loginErrorMessage.visible = (linkAccountBody.errorString  !== "");

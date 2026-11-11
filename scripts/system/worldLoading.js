@@ -225,8 +225,11 @@
         var now = Date.now();
         if (way.failed) {
             if (now - way.failed.at >= FAILED_SHOWN) {
-                end("the new instance couldn't start");
-                Messages.sendLocalMessage(EXPLORE_CHANNEL, "open");
+                var reopenExplore = !way.failed.signedOut;
+                end(way.failed.signedOut ? "the place's lookup was refused" : "the new instance couldn't start");
+                if (reopenExplore) {
+                    Messages.sendLocalMessage(EXPLORE_CHANNEL, "open");
+                }
             } else {
                 send(true, way.failed.text, -1, false, false);
                 if (HMD.active || CARD_ON_DESKTOP) {
@@ -631,6 +634,17 @@
         }
     }
 
+    // a lookup the metaverse refused (the saved sign-in has ended: AddressManager.lookupResultIsRefused): the screen says
+    // so for a moment instead of waiting out its time limit. No Explore after it: the sign-in screen comes back
+    function onLookupRefused() {
+        if (way && !way.left && !way.failed) {
+            print("World loading: the place's lookup was refused (signed out)");
+            way.starting = false;
+            way.failed = { text: "Couldn't open that world: you've been signed out.", at: Date.now(), signedOut: true };
+            tick();
+        }
+    }
+
     function onWorldLoadingChanged(loading) {
         if (loading && !way) {
             begin("whole", placeName(), "", placePicture());
@@ -652,6 +666,9 @@
     }
     AddressManager.lookupResultIsNotFound.connect(onLookupFailed);
     AddressManager.lookupResultIsOffline.connect(onLookupFailed);
+    if (AddressManager.lookupResultIsRefused) {
+        AddressManager.lookupResultIsRefused.connect(onLookupRefused);
+    }
     AddressManager.locationChangeRequired.connect(onLocationChangeRequired);
     if (Window.worldLoadingChanged) {
         Window.worldLoadingChanged.connect(onWorldLoadingChanged);
@@ -697,6 +714,9 @@
         }
         AddressManager.lookupResultIsNotFound.disconnect(onLookupFailed);
         AddressManager.lookupResultIsOffline.disconnect(onLookupFailed);
+        if (AddressManager.lookupResultIsRefused) {
+            AddressManager.lookupResultIsRefused.disconnect(onLookupRefused);
+        }
         AddressManager.locationChangeRequired.disconnect(onLocationChangeRequired);
         if (Window.worldLoadingChanged) {
             Window.worldLoadingChanged.disconnect(onWorldLoadingChanged);
