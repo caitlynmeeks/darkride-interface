@@ -65,7 +65,7 @@ body:
     id: extra
     attributes:
       label: Pictures, video or log
-      description: Drag files here. Before attaching a log, look through it for your name, email or anything private, and remove it.
+      description: "Drag files here. Before attaching a log, look through it for your name, email or anything private, and remove it. For a crash, the Mac crash report (.ips) or the error text is enough. Please don't attach a Windows .dmp file: it can hold your sign-in."
   - type: checkboxes
     id: not-security
     attributes:
