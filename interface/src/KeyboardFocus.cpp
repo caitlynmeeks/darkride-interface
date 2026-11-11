@@ -66,6 +66,18 @@ void Application::setKeyboardFocusEntity(const QUuid& id) {
     _keyboardFocus.setFocusedEntity(id);
 }
 
+// For a world's script taking the keyboard from its own entity: judged where the focus lives, so a page the visitor
+// clicked in the meantime keeps it
+void Application::clearKeyboardFocusEntityIf(const QUuid& expected) {
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "clearKeyboardFocusEntityIf", Qt::QueuedConnection, Q_ARG(QUuid, expected));
+        return;
+    }
+    if (!expected.isNull() && _keyboardFocus.focusedEntity() == expected) {
+        _keyboardFocus.setFocusedEntity(UNKNOWN_ENTITY_ID);
+    }
+}
+
 void KeyboardFocus::setFocusedEntity(const QUuid& id) {
     if (_focused.get() != id) {
         if (qApp->getLoginDialogPoppedUp() && !qApp->getSignInGate().loginDialogID().isNull()) {

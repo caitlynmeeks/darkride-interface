@@ -230,6 +230,36 @@ void WorldEntitiesTests::testWorldChanges() {
     QVERIFY(!find(_tree, worldsSecond));
 }
 
+void WorldEntitiesTests::testWorldKeyboardFocus() {
+    // which entity has the keyboard follows the visitor's own action. A world's script gives it to no entity, its own
+    // included, and takes it away (a null id) only from an entity of its own; the visitor's own scripts do both.
+    // (Entities.setKeyboardFocusEntity, the keyboardFocusEntity property and Overlays.setKeyboardFocusOverlay all
+    // go through the one method this rule is asked by.)
+    const QUuid none;
+    {
+        ScriptCaller::WorldScope world(true);
+        // no entity is given the keyboard, whatever has it now
+        for (const auto& id : { _worldLocal, _visitorLocal, _straightLocal, _unownedLocal, _avatar, _domain }) {
+            for (const auto& focused : { none, _worldLocal, _visitorLocal }) {
+                QVERIFY2(!_entities->worldMaySetKeyboardFocus(id, focused), qPrintable(id.toString()));
+            }
+        }
+        // taken away from the world's own entity, and when nothing has it
+        QVERIFY(_entities->worldMaySetKeyboardFocus(none, _worldLocal));
+        QVERIFY(_entities->worldMaySetKeyboardFocus(none, none));
+        // not from the visitor's own entities, the app's or another person's
+        for (const auto& focused : { _visitorLocal, _straightLocal, _unownedLocal, _avatar }) {
+            QVERIFY2(!_entities->worldMaySetKeyboardFocus(none, focused), qPrintable(focused.toString()));
+        }
+    }
+    // the visitor's own script: any entity, the world's included, and away from any
+    for (const auto& id : { _worldLocal, _visitorLocal, none }) {
+        for (const auto& focused : { none, _worldLocal, _visitorLocal }) {
+            QVERIFY(_entities->worldMaySetKeyboardFocus(id, focused));
+        }
+    }
+}
+
 void WorldEntitiesTests::testWorldParents() {
     ScriptCaller::WorldScope world(true);
     // onto the visitor's local entity: refused, both when made and by an edit

@@ -2098,11 +2098,40 @@ QUuid EntityScriptingInterface::getKeyboardFocusEntity() const {
     return forWorldRead(result);
 }
 
+bool EntityScriptingInterface::worldMaySetKeyboardFocus(const QUuid& id, const QUuid& focused) const {
+    if (!ScriptCaller::isWorld()) {
+        return true;
+    }
+    if (ScriptCaller::isRetired()) {
+        ScriptCaller::logRetiredRefusal("Entities", "setKeyboardFocusEntity");
+        return false;
+    }
+    if (!id.isNull()) {
+        logWorldRefusal("setKeyboardFocusEntity", "give an entity the keyboard: a page gets it when the visitor clicks it");
+        return false;
+    }
+    // taking the keyboard away: only from an entity of the world's own (nothing focused: nothing to take)
+    if (!focused.isNull() && !worldMayUse(focused)) {
+        logWorldRefusal("setKeyboardFocusEntity", "take the keyboard from the visitor's own entities or the app's");
+        return false;
+    }
+    return true;
+}
+
 void EntityScriptingInterface::setKeyboardFocusEntity(const QUuid& id) {
-    if (!worldMayChange(id, "setKeyboardFocusEntity")) {
+    // (Overlays.setKeyboardFocusOverlay and the keyboardFocusEntity property come through here too)
+    if (!ScriptCaller::isWorld()) {
+        QMetaObject::invokeMethod(qApp, "setKeyboardFocusEntity", Qt::DirectConnection, Q_ARG(const QUuid&, id));
         return;
     }
-    QMetaObject::invokeMethod(qApp, "setKeyboardFocusEntity", Qt::DirectConnection, Q_ARG(const QUuid&, id));
+    QUuid focused;
+    QMetaObject::invokeMethod(qApp, "getKeyboardFocusEntity", Qt::DirectConnection, Q_RETURN_ARG(QUuid, focused));
+    if (!worldMaySetKeyboardFocus(id, focused) || focused.isNull()) {
+        return;
+    }
+    // a world's script takes the keyboard from its own entity: only if that entity still has it when the change is
+    // made, on the main thread (the visitor may have clicked another page meanwhile)
+    QMetaObject::invokeMethod(qApp, "clearKeyboardFocusEntityIf", Qt::DirectConnection, Q_ARG(const QUuid&, focused));
 }
 
 void EntityScriptingInterface::sendMousePressOnEntity(const EntityItemID& id, const PointerEvent& event) {
