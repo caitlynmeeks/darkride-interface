@@ -217,8 +217,10 @@ int main(int argc, const char* argv[]) {
         Application app(argcExtended, const_cast<char**>(argvExtended.data()), startupTime, runningMarkerExisted);
         PROFILE_SYNC_END(startup, "app full ctor", "");
         if (tlsJoinTimedOut.isEmpty()) {
-            qCInfo(interfaceapp) << "TLS warm-up joined before the Application was built; the main thread waited"
-                                 << tlsJoinWaitMs << "ms";
+            // debug, as the start-up table is: the Application has set its log rules by now, and they hide hifi.*.info
+            // unless Developer > Verbose Logging is on
+            qCDebug(interfaceapp) << "TLS warm-up joined before the Application was built; the main thread waited"
+                                  << tlsJoinWaitMs << "ms";
         } else {
             qCWarning(interfaceapp).noquote() << tlsJoinTimedOut;
         }
