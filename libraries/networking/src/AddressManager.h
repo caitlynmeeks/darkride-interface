@@ -438,6 +438,16 @@ signals:
     void lookupResultIsNotFound(const QString& name, bool isUser);
 
     /**jsdoc
+     * Triggered when looking up the details of a metaverse user or location to go to has completed and the metaverse
+     * refused it because the sign-in has ended (an answer of 401): the place may well exist.
+     * @function location.lookupResultIsRefused
+     * @param {string} name - The place's or user's name that was looked up, or <code>""</code> for a domain ID.
+     * @param {boolean} isUser - <code>true</code> if a user was looked up, <code>false</code> if a place or domain.
+     * @returns {Signal}
+     */
+    void lookupResultIsRefused(const QString& name, bool isUser);
+
+    /**jsdoc
      * Triggered when a request is made to go to an IP address.
      * @function location.possibleDomainChangeRequired
      * @param {Url} domainURL - URL for domain
