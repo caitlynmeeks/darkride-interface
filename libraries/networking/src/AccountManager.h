@@ -179,6 +179,9 @@ private:
     // a 401 for our current token that is a refusal of the token: not the metaverse's "Unverified" (a valid token,
     // the account's email not verified yet), which a refresh can't change
     bool refusesCurrentToken(QNetworkReply* reply);
+    // the metaverse took the token but the account's email isn't verified: message "Unverified", or reason
+    // "unverified" where a route's filter rewrites the message (the instance routes' PeopleErrorsFilter)
+    static bool isUnverifiedAnswer(QNetworkReply* reply);
 
     UserAgentGetter _userAgentGetter;
 

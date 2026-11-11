@@ -827,9 +827,15 @@ bool AccountManager::refusesCurrentToken(QNetworkReply* reply) {
         return false;
     }
     // MetaverseAuthGuard and UserOrDomainGuard answer 401 "Unverified" for a valid token whose account hasn't verified
-    // its email: the sign-in stands. Read with peek, so the reply's own callbacks still get the whole answer
+    // its email: the sign-in stands
+    return !isUnverifiedAnswer(reply);
+}
+
+bool AccountManager::isUnverifiedAnswer(QNetworkReply* reply) {
+    // read with peek, so the reply's own callbacks still get the whole answer
     const QJsonObject answer = QJsonDocument::fromJson(reply->peek(reply->bytesAvailable())).object();
-    return answer.value("message").toString() != QStringLiteral("Unverified");
+    return answer.value("message").toString() == QStringLiteral("Unverified") ||
+           answer.value("reason").toString() == QStringLiteral("unverified");
 }
 
 void AccountManager::reportRefusedAccessToken(QNetworkReply* reply, const char* where) {
@@ -907,6 +913,12 @@ void AccountManager::requestProfileFinished() {
     if (_endsRefusedSignIn && refusesCurrentToken(profileReply)) {
         accessTokenRefused("profile");
         return;
+    }
+    // the profile check got past the token and stopped only at the unverified email: the token stands, so a later
+    // refusal of it (a route whose filter hides "Unverified") gets its own refresh, not the end at once
+    if (profileReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401 &&
+        carriesCurrentToken(profileReply) && isUnverifiedAnswer(profileReply)) {
+        _tokenFromRefusalRefresh.clear();
     }
 
     QJsonDocument jsonResponse = QJsonDocument::fromJson(profileReply->readAll());
