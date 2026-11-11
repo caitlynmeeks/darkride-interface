@@ -81,7 +81,7 @@ public:
     /// A 401 to a request another part of the app made with our access token (chat's token request): one refresh
     /// decides, as for AccountManager's own requests. A reply that carried an older sign-in's token is ignored.
     /// On AccountManager's thread (the main thread).
-    void reportRefusedAccessToken(const QNetworkReply* reply, const char* where);
+    void reportRefusedAccessToken(QNetworkReply* reply, const char* where);
 
     const QUrl& getAuthURL() const { return _authURL; }
     void setAuthURL(const QUrl& authURL);
@@ -176,6 +176,9 @@ private:
     void accessTokenRefused(const char* where);
     void endSignIn(const QString& reason);
     bool carriesCurrentToken(const QNetworkReply* reply);
+    // a 401 for our current token that is a refusal of the token: not the metaverse's "Unverified" (a valid token,
+    // the account's email not verified yet), which a refresh can't change
+    bool refusesCurrentToken(QNetworkReply* reply);
 
     UserAgentGetter _userAgentGetter;
 

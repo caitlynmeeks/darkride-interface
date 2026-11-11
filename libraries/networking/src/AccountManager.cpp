@@ -353,8 +353,7 @@ void AccountManager::sendRequest(const QString& path,
                 _sessionID = QUuid(networkReply->rawHeader(METAVERSE_SESSION_ID_HEADER));
             }
             // the metaverse refused the access token this request carried: one refresh decides (accessTokenRefused)
-            if (_endsRefusedSignIn && networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401 &&
-                carriesCurrentToken(networkReply)) {
+            if (_endsRefusedSignIn && refusesCurrentToken(networkReply)) {
                 accessTokenRefused(qPrintable(networkReply->url().path()));
             }
         });
@@ -818,9 +817,23 @@ bool AccountManager::carriesCurrentToken(const QNetworkReply* reply) {
            sent == _accountInfo.getAccessToken().authorizationHeaderValue();
 }
 
-void AccountManager::reportRefusedAccessToken(const QNetworkReply* reply, const char* where) {
-    if (_endsRefusedSignIn && reply && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401 &&
-        carriesCurrentToken(reply)) {
+bool AccountManager::refusesCurrentToken(QNetworkReply* reply) {
+    if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 401 || !carriesCurrentToken(reply)) {
+        return false;
+    }
+    // only the metaverse our token is for judges it (scheme, host and port of the auth URL), whoever reports the reply
+    const QUrl url = reply->url();
+    if (url.scheme() != _authURL.scheme() || url.host() != _authURL.host() || url.port() != _authURL.port()) {
+        return false;
+    }
+    // MetaverseAuthGuard and UserOrDomainGuard answer 401 "Unverified" for a valid token whose account hasn't verified
+    // its email: the sign-in stands. Read with peek, so the reply's own callbacks still get the whole answer
+    const QJsonObject answer = QJsonDocument::fromJson(reply->peek(reply->bytesAvailable())).object();
+    return answer.value("message").toString() != QStringLiteral("Unverified");
+}
+
+void AccountManager::reportRefusedAccessToken(QNetworkReply* reply, const char* where) {
+    if (_endsRefusedSignIn && reply && refusesCurrentToken(reply)) {
         accessTokenRefused(where);
     }
 }
@@ -891,8 +904,7 @@ void AccountManager::requestProfileFinished() {
     QNetworkReply* profileReply = reinterpret_cast<QNetworkReply*>(sender());
 
     // the profile check refused our access token (at start, the saved sign-in's first use): one refresh decides
-    if (_endsRefusedSignIn && profileReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401 &&
-        carriesCurrentToken(profileReply)) {
+    if (_endsRefusedSignIn && refusesCurrentToken(profileReply)) {
         accessTokenRefused("profile");
         return;
     }
@@ -902,6 +914,8 @@ void AccountManager::requestProfileFinished() {
 
     if (rootObject.contains("status") && rootObject["status"].toString() == "success") {
         _accountInfo.setProfileInfoFromJSON(rootObject);
+        // the token stands: a later 401 for it gets its own refresh again (not the end at once)
+        _tokenFromRefusalRefresh.clear();
 
         emit profileChanged();
 
