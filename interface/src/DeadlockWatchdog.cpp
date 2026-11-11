@@ -12,6 +12,7 @@
 
 #include "DeadlockWatchdog.h"
 
+#include <algorithm>
 #include <chrono>
 #include <string>
 
@@ -121,14 +122,36 @@ void DeadlockWatchdogThread::reportPresentStall() {
 }
 
 void DeadlockWatchdogThread::run() {
+    _lastRound = usecTimestampNow();
     while (!_quit) {
         QThread::sleep(HEARTBEAT_UPDATE_INTERVAL_SECS);
         reportPresentStall();
+        // This thread wakes every second. When its rounds are far further apart than that, the whole process stood
+        // still (the machine slept, the process was suspended, or the clock jumped), and the main thread could not beat
+        // either: that time isn't a hang, so the main thread's limit counts from now. The pause over the machine's sleep
+        // (startWatching) relies on the system's sleep message, which didn't pause it in time when a client left open
+        // overnight on a Windows laptop was crashed on waking (11-11). A main thread that is really stuck still runs
+        // out of its limit, as this thread keeps waking every second.
+        const uint64_t roundStart = usecTimestampNow();
+        if (roundStart < _lastRound) {
+            // the clock went back: a count start set before would lie in its future and blind the check until then
+            _heartbeatCountsFrom = 0;
+        }
+        const uint64_t sinceLastRound = (roundStart > _lastRound) ? roundStart - _lastRound : 0;
+        _lastRound = roundStart;
+        if (sinceLastRound > PROCESS_STOOD_STILL_USECS) {
+            _heartbeatCountsFrom = roundStart;
+            qCInfo(interfaceapp_deadlock) << "The deadlock watchdog's rounds were" << sinceLastRound / USECS_PER_SECOND
+                << "s apart instead of 1 (the machine slept, the process was suspended, or the clock jumped): the main"
+                << "thread's heartbeat limit counts from now";
+        }
         // Don't do heartbeat detection under nsight
         if (_paused) {
             continue;
         }
-        uint64_t lastHeartbeat = _heartbeat; // sample atomic _heartbeat, because we could context switch away and have it updated on us
+        // sample atomic _heartbeat, because we could context switch away and have it updated on us; no earlier than
+        // the process last stood still
+        uint64_t lastHeartbeat = std::max<uint64_t>(_heartbeat, _heartbeatCountsFrom);
         uint64_t now = usecTimestampNow();
         auto lastHeartbeatAge = (now > lastHeartbeat) ? now - lastHeartbeat : 0;
         auto elapsedMovingAverage = _movingAverage.getAverage();
