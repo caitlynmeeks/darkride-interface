@@ -1354,8 +1354,11 @@ void Application::installOperators() {
     StartupProfiler::phase("constructor: pointer, entity and material operators");
     // If the user clicks on an object, we will check that it's a web surface, and if so, set the focus to it
     auto pointerManager = DependencyManager::get<PointerManager>();
-    auto keyboardFocusOperator = [this](const QUuid& id, const PointerEvent& event) {
-        if (event.shouldFocus()) {
+    // The keyboard follows the visitor's own pointers: a press from a pointer a world's script made neither gives an
+    // entity the keyboard nor takes it from the one that has it (as Entities.setKeyboardFocusEntity for a world)
+    // (the manager by plain pointer: these connections are its own, and holding a share of it here would keep it alive)
+    auto keyboardFocusOperator = [this, pointers = pointerManager.data()](const QUuid& id, const PointerEvent& event) {
+        if (event.shouldFocus() && !pointers->isWorldPointer(event.getID())) {
             auto keyboard = DependencyManager::get<Keyboard>();
             if (getEntities()->wantsKeyboardFocus(id)) {
                 _keyboardFocus.setFocusedEntity(id);
