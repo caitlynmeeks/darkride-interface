@@ -37,6 +37,10 @@ SkeletonModel::SkeletonModel(Avatar* owningAvatar, QObject* parent) :
     // SkeletonModels, and by extention Avatars, use Dual Quaternion skinning.
     _useDualQuaternionSkinning = true;
 
+    // A model worn without an .fst has its humanoid joints worked out automatically, names and rotation offsets, as an
+    // .fst with "autoHumanoid = true" asks (PrepareJointsTask); one with any other .fst is read as the .fst says
+    _resourceMapping.replace("autoHumanoid", true);
+
     // Avatars all cast shadow
     setCanCastShadow(true);
 

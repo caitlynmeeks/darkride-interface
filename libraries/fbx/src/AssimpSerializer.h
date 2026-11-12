@@ -5,6 +5,8 @@
 
 #include <assimp/scene.h>
 
+#include "VRMReader.h"
+
 class AssimpSerializer : public QObject, public HFMSerializer {
     Q_OBJECT
 
@@ -17,6 +19,7 @@ public:
 private:
     QUrl url;
     QString ext;
+    VRMInfo vrm;  // a .vrm's VRM data
 
     const aiScene* scene;
     hfm::Model::Pointer hfmModel;
@@ -37,6 +40,7 @@ private:
     void processNode(const aiNode* aiNode, int parentIndex = -1);
 
     void processScene(const hifi::VariantMultiHash& mapping);
+    void processVRM();
 
     void processGltfExtras(const hifi::ByteArray& data);
 
