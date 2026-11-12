@@ -2470,6 +2470,10 @@ public:
     /// False when the caller is a world's script and may not change the entity or send it events: true for a domain
     /// entity, one a world's script made, an id that isn't an entity, and for every caller but a world's script.
     bool worldMayUse(const QUuid& id) const;
+    /// Whether the calling script may change which entity has the keyboard to `id`, when `focused` has it now. The
+    /// app's and the visitor's own scripts: always. A world's script gives the keyboard to no entity, its own
+    /// included (a page gets it by the visitor's click), and takes it away (a null id) only from an entity of its own.
+    bool worldMaySetKeyboardFocus(const QUuid& id, const QUuid& focused) const;
 private:
     /// False (and the refusal logged once per method on this thread) when the caller is a world's script and may not
     /// change the entity: true for a domain entity or a local entity a world's script made.

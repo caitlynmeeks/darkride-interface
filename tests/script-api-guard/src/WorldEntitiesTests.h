@@ -30,6 +30,7 @@ private slots:
     void testWorldReads();
     void testVisitorSeesEverything();
     void testWorldChanges();
+    void testWorldKeyboardFocus();
     void testWorldParents();
     void testWorldEvents();
     void testOwnerKeptOnEdit();
