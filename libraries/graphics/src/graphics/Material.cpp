@@ -81,6 +81,10 @@ Material::Material(const Material& material) :
     _scattering(material._scattering),
     _opacityCutoff(material._opacityCutoff),
     _occlusionStrength(material._occlusionStrength),
+    _toonShadeColor(material._toonShadeColor),
+    _toonShadingShift(material._toonShadingShift),
+    _toonShadingToony(material._toonShadingToony),
+    _toonGiEqualization(material._toonGiEqualization),
     _texcoordTransforms(material._texcoordTransforms),
     _lightmapParams(material._lightmapParams),
     _materialParams(material._materialParams),
@@ -105,6 +109,10 @@ Material& Material::operator=(const Material& material) {
     _scattering = material._scattering;
     _opacityCutoff = material._opacityCutoff;
     _occlusionStrength = material._occlusionStrength;
+    _toonShadeColor = material._toonShadeColor;
+    _toonShadingShift = material._toonShadingShift;
+    _toonShadingToony = material._toonShadingToony;
+    _toonGiEqualization = material._toonGiEqualization;
     _texcoordTransforms = material._texcoordTransforms;
     _lightmapParams = material._lightmapParams;
     _materialParams = material._materialParams;
@@ -130,6 +138,14 @@ void Material::setOpacity(float opacity) {
 
 void Material::setUnlit(bool value) {
     _key.setUnlit(value);
+}
+
+void Material::setToon(const glm::vec3& shadeColor, float shadingShift, float shadingToony, float giEqualization, bool isSRGB) {
+    _key.setToon(true);
+    _toonShadeColor = (isSRGB ? ColorUtils::sRGBToLinearVec3(shadeColor) : shadeColor);
+    _toonShadingShift = glm::clamp(shadingShift, -1.0f, 1.0f);
+    _toonShadingToony = glm::clamp(shadingToony, 0.0f, 1.0f);
+    _toonGiEqualization = glm::clamp(giEqualization, 0.0f, 1.0f);
 }
 
 void Material::setAlbedo(const glm::vec3& albedo, bool isSRGB) {
