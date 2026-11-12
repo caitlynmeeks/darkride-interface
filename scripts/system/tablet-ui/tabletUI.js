@@ -200,7 +200,8 @@
         var toolbarMode = gTablet.toolbarMode;
         var landscape = gTablet.landscape;
 
-        if (tabletShown && toolbarMode) {
+        // (the VR screen stands for the tablet in toolbar mode while it's up: its "shown" stays, worlds read it)
+        if (tabletShown && toolbarMode && !(typeof Panels !== "undefined" && Panels.isScreenUp())) {
             closeTabletUI();
             HMD.closeTablet();
             return;

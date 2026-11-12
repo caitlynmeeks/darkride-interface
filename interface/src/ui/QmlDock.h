@@ -61,6 +61,25 @@ signals:
     // the panel's QML was made (contentWindow() and panel() are there now)
     void contentMade();
 
+public:
+    // the VR screen (VR-SCREEN-PLAN.md): the page, made once, moved into one of the screen's slots (an item in another
+    // Qt Quick window) and back into this dock, without being made again; a page moved back while in the headset is
+    // hidden (nobody sees the desktop's docks there), so its web views stop drawing while their sound plays on
+    QQuickItem* makePage();   // the page, made now if it hasn't been (without showing the dock)
+    bool moveTo(QQuickItem* host);
+    bool moveBack(bool shown);
+    bool isAway() const { return _away; }
+    void setPageShown(bool shown);
+
+    // Qt 6: a web view drawn in a slot can't move to another Qt Quick window. Qt WebEngine lets go of its pictures
+    // for the old window from the main thread, and a slot's window draws on its own thread, so Qt stops the app.
+    // Such a page stays where it is: hidden there behind another page, or gone with its web views there (the dock
+    // makes it again the next time it shows).
+    static bool holdsWebView(const QQuickItem* item);   // the item or any item in it is a web view (always false on Qt 5)
+    bool keepsWebView() const { return _away && holdsWebView(panel()); }
+    void hideAway();       // behind another page in its slot, unseen
+    void releaseAway();    // the page and its web views go, where they are
+
 protected:
     bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -68,6 +87,7 @@ protected:
 private:
     void makeContent();
 
+    QString _name;   // the panel's name (Panels'), for its page: dockPanelName
     QUrl _source;
     QList<QPair<QString, QPointer<QObject>>> _contextObjects;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -77,6 +97,7 @@ private:
     QQuickWidget* _view { nullptr };
 #endif
     bool _releasing { false };
+    bool _away { false };   // the page is on the VR screen
 };
 
 #endif // hifi_QmlDock_h

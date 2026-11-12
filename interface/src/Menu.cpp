@@ -631,6 +631,7 @@ Menu::Menu() {
 
     // Settings > Disable Web Entities
     action = addCheckableActionToQMenuAndActionHash(settingsMenu, MenuOption::DisableWebEntities, 0, false);
+    action->setToolTip("Web entities in worlds. Darkride's own panels stay on.");
     connect(action, &QAction::triggered, [action] {
         auto entityTreeRenderer = DependencyManager::get<EntityTreeRenderer>();
         entityTreeRenderer->setDisableWebEntities(action->isChecked());
@@ -712,6 +713,10 @@ Menu::Menu() {
         });
         essLogAction->setEnabled(nodeList->getThisNodeCanRez());
     }
+
+    // Developer > Scripting > Script Log...: every script's output in a window of its own, outside the main log (Caity,
+    // 11-11: back for scripters; scripts/developer/debugging/debugWindow.js; mary's name)
+    addActionToQMenuAndActionHash(scriptingOptionsMenu, "Script Log...", 0, qApp, SLOT(showScriptLogs()));
 
     // Developer > Scripting > Verbose Logging
     addCheckableActionToQMenuAndActionHash(scriptingOptionsMenu, MenuOption::VerboseLogging, 0, false,

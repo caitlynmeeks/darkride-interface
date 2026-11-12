@@ -11,6 +11,7 @@
 #ifndef hifi_OpenXrDisplayPlugin_h
 #define hifi_OpenXrDisplayPlugin_h
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -78,6 +79,11 @@ private:
     bool _frameBegun { false };
     bool _layerViewsValid { false };
     bool _hmdMounted { false };
+
+    // The session was lost while this display was the active one: leave VR as the visitor would, through the Display
+    // menu's Desktop item, asked for on the main thread; once per loss (present thread)
+    void leaveVrAfterLoss();
+    std::atomic<bool> _leaveAsked { false };
 };
 
 #endif // hifi_OpenXrDisplayPlugin_h

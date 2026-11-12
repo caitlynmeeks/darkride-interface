@@ -897,6 +897,10 @@ scriptable::ScriptableModelBase Model::getScriptableModel() {
 
     const HFMModel& hfmModel = getHFMModel();
     uint32_t numberOfMeshes = (uint32_t)hfmModel.meshes.size();
+    // a shape's material and its name exist once the model's render items do (createRenderItemSet, when it is added to
+    // the scene); until then, and for a part past the model's shapes, a part has neither
+    const int numberOfShapes = (int)hfmModel.shapes.size();
+    static const std::string NO_NAME;
     int shapeID = 0;
     for (uint32_t i = 0; i < numberOfMeshes; i++) {
         const HFMMesh& hfmMesh = hfmModel.meshes.at(i);
@@ -905,8 +909,12 @@ scriptable::ScriptableModelBase Model::getScriptableModel() {
 
             int numParts = (int)mesh->getNumParts();
             for (int partIndex = 0; partIndex < numParts; partIndex++) {
-                auto& materialName = _modelMeshMaterialNames[shapeID];
-                result.appendMaterial(graphics::MaterialLayer(getNetworkModel()->getShapeMaterial(shapeID), 0), shapeID, materialName);
+                const std::string& materialName =
+                    shapeID < (int)_modelMeshMaterialNames.size() ? _modelMeshMaterialNames[shapeID] : NO_NAME;
+                if (shapeID < numberOfShapes) {
+                    result.appendMaterial(graphics::MaterialLayer(getNetworkModel()->getShapeMaterial(shapeID), 0),
+                                          shapeID, materialName);
+                }
 
                 {
                     std::unique_lock<std::mutex> lock(_materialMappingMutex);
@@ -1297,7 +1305,10 @@ void Model::removeFromScene(const render::ScenePointer& scene, render::Transacti
     }
     _modelMeshRenderItemIDs.clear();
     _modelMeshRenderItems.clear();
-    _modelMeshMaterialNames.clear();
+    {
+        QMutexLocker locker(&_mutex);   // getScriptableModel reads the names on a script's thread
+        _modelMeshMaterialNames.clear();
+    }
     _priorityMap.clear();
 
     _addedToScene = false;
@@ -1804,7 +1815,8 @@ void Model::createRenderItemSet() {
     Q_ASSERT(_modelMeshRenderItems.isEmpty());
 
     _modelMeshRenderItems.clear();
-    _modelMeshMaterialNames.clear();
+    // the names are built aside and put in place under the lock: getScriptableModel reads them on a script's thread
+    std::vector<std::string> materialNames;
 
     Transform transform;
     transform.setTranslation(_translation);
@@ -1823,8 +1835,10 @@ void Model::createRenderItemSet() {
         _modelMeshRenderItems.back()->setHidden(isShapeHidden(shapeID));
 
         auto material = getNetworkModel()->getShapeMaterial(shapeID);
-        _modelMeshMaterialNames.push_back(material ? material->getName() : "");
+        materialNames.push_back(material ? material->getName() : "");
     }
+    QMutexLocker locker(&_mutex);
+    _modelMeshMaterialNames.swap(materialNames);
 }
 
 bool Model::isRenderable() const {

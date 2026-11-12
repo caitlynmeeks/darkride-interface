@@ -13,6 +13,7 @@
 #include <atomic>
 
 #include <QtCore/QObject>
+#include <QtCore/QPointer>
 #include <QtCore/QUuid>
 #include <QtCore/QVariant>
 #include <QtCore/QAbstractListModel>
@@ -306,15 +307,19 @@ public:
      * @deprecated This function is deprecated and will be removed.
      */
     // Internal function, do not call from scripts.
+    // worldPage: a world's script's (security finding #54): in the headset its page loads, but it never brings the
+    // tablet (the VR screen) up by itself
     Q_INVOKABLE void loadHTMLSourceOnTopImpl(const QString& url, const QString& injectedJavaScriptUrl, bool loadOtherBase, bool localSafeContext,
-                                             bool worldPage = false);   // worldPage: a world's script's (security finding #54)
+                                             bool worldPage = false);
 
     /**jsdoc
      * @function TabletProxy#returnToPreviousAppImpl
      * @deprecated This function is deprecated and will be removed.
      */
     // Internal function, do not call from scripts.
-    Q_INVOKABLE void returnToPreviousAppImpl(bool localSafeContext);
+    // fromWorld: a world's script's call (ScriptCaller::isWorld): in the headset it never
+    // brings the tablet (the VR screen) up by itself
+    Q_INVOKABLE void returnToPreviousAppImpl(bool localSafeContext, bool fromWorld = false);
 
     /**jsdoc
      * @function TabletProxy#loadQMLOnTopImpl
@@ -478,6 +483,10 @@ public:
 
     QQuickItem* getTabletRoot() const { return _qmlTabletRoot; }
 
+    // the tablet's window in toolbar mode (WindowRoot.qml on the desktop's QML engine), or null: the VR screen shows
+    // its content in a tab (interface's Panels)
+    QQuickItem* getToolbarWindowItem() const;
+
     OffscreenQmlSurface* getTabletSurface();
 
     QQuickItem* getQmlTablet() const;
@@ -564,9 +573,12 @@ protected:
     bool _initialScreen { false };
     QVariant _currentPathLoaded { "" };
     QString _name;
-    QQuickItem* _qmlTabletRoot { nullptr };
-    OffscreenQmlSurface* _qmlOffscreenSurface { nullptr };
+    // the root goes with its surface: both are cleared when the surface is destroyed (setQmlTabletRoot)
+    QPointer<QQuickItem> _qmlTabletRoot;
+    QPointer<OffscreenQmlSurface> _qmlOffscreenSurface;
     QmlWindowClass* _desktopWindow { nullptr };
+    QList<qint64> _worldPageLoads;   // when worlds' scripts last loaded pages (worldMayLoadPage)
+    bool worldMayLoadPage();
     bool _toolbarMode { false };
     bool _tabletShown { false };
 

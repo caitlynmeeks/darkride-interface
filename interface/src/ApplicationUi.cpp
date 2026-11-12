@@ -53,6 +53,7 @@
 #include "ui/LoginDialog.h"
 #include "ui/Stats.h"
 #include "ui/Keyboard.h"
+#include "ui/VrScreen.h"
 #include "webbrowser/WebBrowserSuggestionsEngine.h"
 #if defined(Q_OS_ANDROID)
 #include <android/log.h>
@@ -70,6 +71,13 @@ void addDisplayPluginToMenu(const DisplayPluginPointer& displayPlugin, int index
 static const QString INFO_HELP_PATH = "html/tabletHelp.html";
 
 void Application::toggleTabletUI(bool shouldOpen) const {
+    if (VrScreen::isOn()) {
+        auto screen = DependencyManager::get<VrScreen>();
+        if (!(shouldOpen && screen->isShown())) {
+            screen->toggle();
+        }
+        return;
+    }
     auto hmd = DependencyManager::get<HMDScriptingInterface>();
     if (!(shouldOpen && hmd->getShouldShowTablet())) {
         auto HMD = DependencyManager::get<HMDScriptingInterface>();
@@ -336,11 +344,9 @@ void Application::centerUI() {
 void Application::updateSystemTabletMode() {
     if (_settingsLoaded && !getLoginDialogPoppedUp()) {
         qApp->setProperty(hifi::properties::HMD, isHMDMode());
-        if (isHMDMode()) {
-            DependencyManager::get<TabletScriptingInterface>()->setToolbarMode(getHmdTabletBecomesToolbarSetting());
-        } else {
-            DependencyManager::get<TabletScriptingInterface>()->setToolbarMode(getDesktopTabletBecomesToolbarSetting());
-        }
+        // the 3D tablet is gone: the Tablet API's window is on the desktop's QML engine in both modes, and in the headset
+        // Panels moves its content onto the VR screen
+        DependencyManager::get<TabletScriptingInterface>()->setToolbarMode(true);
     }
 }
 

@@ -60,9 +60,24 @@ Item {
             anchors.fill: parent
             fillMode: picture.fillMode
             asynchronous: true
-            // decoded at the size it's drawn (a hundred avatars' pictures at full size cost hundreds of MB; avatars,
-            // 11-08), and only once it has a size: a size of 0 means the picture's own
-            sourceSize: Qt.size(Math.ceil(width * Screen.devicePixelRatio), Math.ceil(height * Screen.devicePixelRatio))
+            // decoded at about the size it's drawn, not the file's (a hundred avatars' pictures at full size cost hundreds
+            // of MB, avatars 11-08; a full-size upload was a ~24 ms draw in the headset, vr 11-01), and only once it has a
+            // size (a size of 0 means the picture's own): its layout size times the screen's pixel ratio times the scale
+            // of the items it sits in. That scale is 1 on the desktop, so a 1x screen decodes at 1x; the VR screen draws a
+            // page about 1.5x its layout (ScreenSlot.qml), and only there do its pictures decode bigger (performance,
+            // 11-10). Read in halves, so a card's small hover scale doesn't decode it again; in steps of 32 px, so a window
+            // being resized doesn't either. The binding reruns whenever an ancestor's scale changes: nothing animates a
+            // page's scale today (the VR screen sets it once); one that eases a page full of pictures should read the scale
+            // once its animation ends instead (performance, 11-10)
+            readonly property real drawnScale: {
+                var total = 1;
+                for (var item = picture; item; item = item.parent) {
+                    total *= item.scale;
+                }
+                return Math.max(1, Math.round(total * 2) / 2);
+            }
+            readonly property real decodeScale: Screen.devicePixelRatio * drawnScale
+            sourceSize: Qt.size(Math.ceil(width * decodeScale / 32) * 32, Math.ceil(height * decodeScale / 32) * 32)
             source: width > 0 && height > 0 ? picture.source : ""
         }
     }

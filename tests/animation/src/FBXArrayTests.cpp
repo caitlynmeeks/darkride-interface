@@ -162,3 +162,29 @@ void FBXArrayTests::refusesArrayHeaderCutShort() {
     const int cut = file.indexOf("Ad") + 4;  // the name, the type letter and 2 bytes of the element count
     QVERIFY_EXCEPTION_THROWN(parse(file.left(cut)), QString);
 }
+
+// An FBX string is kept as bytes and the reader checks it against text ("Mesh", "Cluster", "LimbNode"); they must be
+// equal by their characters on Qt 6 as on Qt 5 (Qt 6's QVariant never finds bytes equal to text: #67, every FBX mesh
+// was taken for a blendshape)
+void FBXArrayTests::comparesTextAndBytesByCharacters() {
+    const FBXProperty mesh(QByteArray("Mesh"));
+    QVERIFY(mesh == "Mesh");
+    QVERIFY(mesh == QVariant(QString("Mesh")));
+    QVERIFY(mesh == QVariant(QByteArray("Mesh")));
+    QVERIFY(mesh != "Shape");
+    QVERIFY(mesh != "mesh");  // case still counts
+    QVERIFY(FBXProperty(QString("Cluster")) == QVariant(QByteArray("Cluster")));
+    QVERIFY(FBXProperty(QByteArray("Lcl Rotation")) == QVariant(QByteArray("Lcl Rotation")));
+    QVERIFY(FBXProperty(QVector<qint32>({ 1, 2 })) != "Mesh");  // an array equals no scalar
+    QVERIFY(FBXProperty(2) == QVariant(2.0));  // numbers as before
+
+    // a string as a parsed file gives it, through the reader's own parser
+    QByteArray stringProperty("S");
+    append32(stringProperty, 4);
+    stringProperty.append("Mesh");
+    const FBXNode root = parse(fileWithProperty(stringProperty));
+    QCOMPARE(root.children.size(), 1);
+    QCOMPARE(root.children[0].properties.size(), 1);
+    QVERIFY(root.children[0].properties[0] == "Mesh");
+}
+
