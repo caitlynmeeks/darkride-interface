@@ -582,6 +582,44 @@ void AssimpSerializer::processMeshes(const hifi::VariantMultiHash& mapping) {
         }
     };
 
+    // the sum of several shapes' offsets from the mesh, each times its weight, for the vertices any of them moves
+    auto sumBlendshapes = [](hfm::Blendshape& blendshape, const aiMesh* mMesh,
+                             const std::vector<std::pair<aiAnimMesh*, float>>& animMeshes) {
+        const size_t vertexCount = mMesh->mNumVertices;
+        std::vector<glm::vec3> vertices(vertexCount), normals(vertexCount), tangents(vertexCount);
+        bool hasNormals = false;
+        bool hasTangents = false;
+        for (const auto& weighted : animMeshes) {
+            const aiAnimMesh* animMesh = weighted.first;
+            const float weight = weighted.second;
+            const bool sourceHasNormals = animMesh->HasNormals() && mMesh->HasNormals();
+            const bool sourceHasTangents = animMesh->HasTangentsAndBitangents() && mMesh->HasTangentsAndBitangents();
+            hasNormals = hasNormals || sourceHasNormals;
+            hasTangents = hasTangents || sourceHasTangents;
+            for (size_t vertexIndex = 0; vertexIndex < animMesh->mNumVertices && vertexIndex < vertexCount; vertexIndex++) {
+                vertices[vertexIndex] += (asVec3(animMesh->mVertices[vertexIndex]) - asVec3(mMesh->mVertices[vertexIndex])) * weight;
+                if (sourceHasNormals) {
+                    normals[vertexIndex] += (asVec3(animMesh->mNormals[vertexIndex]) - asVec3(mMesh->mNormals[vertexIndex])) * weight;
+                }
+                if (sourceHasTangents) {
+                    tangents[vertexIndex] += (asVec3(animMesh->mTangents[vertexIndex]) - asVec3(mMesh->mTangents[vertexIndex])) * weight;
+                }
+            }
+        }
+        for (size_t vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) {
+            const glm::vec3& v = vertices[vertexIndex];
+            const glm::vec3& n = normals[vertexIndex];
+            const glm::vec3& t = tangents[vertexIndex];
+            if (isEmptyVec3(v) && isEmptyVec3(n) && isEmptyVec3(t)) {
+                continue;
+            }
+            blendshape.indices.push_back(vertexIndex);
+            blendshape.vertices.push_back(v);
+            if (hasNormals) blendshape.normals.push_back(n);
+            if (hasTangents) blendshape.tangents.push_back(t);
+        }
+    };
+
     for (size_t meshIndex = 0; meshIndex < scene->mNumMeshes; meshIndex++) {
         aiMesh* mMesh = scene->mMeshes[meshIndex];
 
@@ -659,29 +697,48 @@ void AssimpSerializer::processMeshes(const hifi::VariantMultiHash& mapping) {
                 meshPtr->blendshapes.push_back(hfm::Blendshape());
                 hfm::Blendshape* blendshapePtr = &meshPtr->blendshapes.back();
 
-                QString toName;
-                float weight = 1.0f;
-
+                QVector<BlendshapeSource> sources;
                 if (blendshapeMappings.contains(fromName)) {
-                    auto mapping = blendshapeMappings.value(fromName).toList();
-                    if (mapping.count() >= 2) {
-                        toName = mapping.at(0).toString();
-                        weight = mapping.at(1).toFloat();
+                    // every line for it, summed, as FBXSerializer does
+                    for (const QVariant& value : blendshapeMappings.values(fromName)) {
+                        auto mapping = value.toList();
+                        if (mapping.count() >= 2) {
+                            sources.append({ mapping.at(0).toString(), mapping.at(1).toFloat() });
+                        }
                     }
+                } else if (vrm.blendshapes.contains((int)i)) {
+                    // a VRM's expression, which may blend several morph targets
+                    sources = vrm.blendshapes.value((int)i);
                 } else {
-                    toName = fromName;
+                    sources.append({ fromName, 1.0f });
                 }
 
-                if (weight == 0.0f && fromName == toName) {
-                    continue;
+                std::vector<std::pair<aiAnimMesh*, float>> animMeshes;
+                for (const BlendshapeSource& source : sources) {
+                    if (source.weight == 0.0f && fromName == source.name) {
+                        continue;
+                    }
+                    aiAnimMesh* animMesh = source.name.isEmpty() ? nullptr : getBlendshapeByName(source.name, mMesh);
+                    if (animMesh == nullptr && source.index >= 0 && source.index < (int)mMesh->mNumAnimMeshes &&
+                            !source.meshName.isEmpty()) {
+                        // by its number, in the glTF mesh this one came from: Assimp names a mesh's primitives
+                        // "<mesh>-0", "<mesh>-1"...
+                        const QString name = mMesh->mName.C_Str();
+                        if (name == source.meshName || name.startsWith(source.meshName + "-")) {
+                            animMesh = mMesh->mAnimMeshes[source.index];
+                        }
+                    }
+                    if (animMesh == nullptr) {
+                        continue;
+                    }
+                    standardShapes.insert(animMesh->mName.C_Str());
+                    animMeshes.push_back({ animMesh, source.weight });
                 }
-
-                aiAnimMesh* animMesh = getBlendshapeByName(toName, mMesh);
-                if (animMesh == nullptr) {
-                    continue;
+                if (animMeshes.size() == 1) {
+                    fillBlendshape(*blendshapePtr, mMesh, animMeshes[0].first, animMeshes[0].second);
+                } else if (animMeshes.size() > 1) {
+                    sumBlendshapes(*blendshapePtr, mMesh, animMeshes);
                 }
-                standardShapes.insert(toName);
-                fillBlendshape(*blendshapePtr, mMesh, animMesh, weight);
             }
 
             if (keepOwnBlendshapes) {
@@ -1043,6 +1100,71 @@ void AssimpSerializer::processScene(const hifi::VariantMultiHash& mapping) {
     processBones();
 
     processAnimations();
+
+    if (vrm.isVRM()) {
+        processVRM();
+    }
+}
+
+// A VRM's humanoid bones get Darkride's names, and its spring bones Flow's, with Flow's data for them
+void AssimpSerializer::processVRM() {
+    std::vector<hfm::Joint>& joints = hfmModel->joints;
+    QHash<int, QString> newNames;
+    int named = 0;
+    int springs = 0;
+    for (int i = 0; i < (int)joints.size(); i++) {
+        auto name = vrm.jointNames.find(joints[i].name);
+        auto flowName = vrm.flowJointNames.find(joints[i].name);
+        if (name != vrm.jointNames.end()) {
+            newNames.insert(i, name.value());
+            named++;
+        } else if (flowName != vrm.flowJointNames.end()) {
+            newNames.insert(i, flowName.value());
+            springs++;
+        }
+    }
+    // A node already called what a bone becomes gives the bone the name and takes another first: a VRM made from a
+    // Mixamo rig can map its chest to "Spine2" while another node is called that
+    const QSet<QString> takenNames(newNames.cbegin(), newNames.cend());
+    QSet<QString> names = takenNames;
+    for (const hfm::Joint& joint : joints) {
+        names.insert(joint.name);
+    }
+    for (int i = 0; i < (int)joints.size(); i++) {
+        if (newNames.contains(i) || !takenNames.contains(joints[i].name)) {
+            continue;
+        }
+        QString name = joints[i].name + "_joint";
+        for (int n = 1; names.contains(name); n++) {
+            name = joints[i].name + "_joint" + QString::number(n);
+        }
+        names.insert(name);
+        qCDebug(modelformat) << "VRM" << url.fileName() << "- node" << joints[i].name << "renamed" << name
+                             << "for the humanoid bone of its name";
+        newNames.insert(i, name);
+    }
+    for (auto itr = newNames.begin(); itr != newNames.end(); itr++) {
+        const QString& oldName = joints[itr.key()].name;
+        if (hfmModel->jointIndices.value(oldName, -1) == itr.key()) {
+            hfmModel->jointIndices.remove(oldName);
+        }
+    }
+    for (auto itr = newNames.begin(); itr != newNames.end(); itr++) {
+        joints[itr.key()].name = itr.value();
+        hfmModel->jointIndices.insert(itr.value(), itr.key());
+    }
+
+    hfmModel->flowData._physicsConfig = vrm.flowPhysics;
+    hfmModel->flowData._collisionsConfig = vrm.flowCollisions;
+    hfmModel->nodeConstraints = vrm.nodeConstraints;
+    hfmModel->eyeLookScale = vrm.eyeLookScale;
+    hfmModel->eyeLookMaxAngle = glm::radians(vrm.eyeLookMaxAngle);
+    hfmModel->eyeLookExpressionScale = vrm.eyeLookExpressionScale / RADIANS_PER_DEGREE;
+    qCDebug(modelformat) << "VRM" << (vrm.version == 0 ? "0.x" : "1.0") << url.fileName() << "-" << vrm.title << "by"
+                         << vrm.authors << "-" << named << "humanoid joints," << vrm.blendshapes.size()
+                         << "blendshapes from its expressions," << springs << "spring joints in" << vrm.flowPhysics.size()
+                         << "groups," << vrm.flowCollisions.size() << "colliders," << (int)vrm.nodeConstraints.size()
+                         << "node constraints";
 }
 
 // Assimp drops glTF "extras" (e.g., Blender custom properties), so read the nodes' and materials' extras from the file's
@@ -1252,9 +1374,11 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
 
     // what follows the last dot, as the format registry chose this reader by: Blender's Tree.001.glb is a "glb"
     ext = QFileInfo(url.path()).suffix();
-    // a VRM is a binary glTF (glTF 2.0 with VRM's own extensions, which the reader leaves aside): it is read as a .glb,
-    // with glTF's materials and extras
-    if (ext.compare("vrm", Qt::CaseInsensitive) == 0) {
+    // a VRM is a binary glTF (glTF 2.0 with VRM's own extensions, which VRMReader reads once Assimp has read the file):
+    // it is read as a .glb, with glTF's materials and extras
+    const bool isVRM = ext.compare("vrm", Qt::CaseInsensitive) == 0;
+    vrm = VRMInfo();
+    if (isVRM) {
         ext = "glb";
     }
 
@@ -1318,6 +1442,12 @@ HFMModel::Pointer AssimpSerializer::read(const hifi::ByteArray& data, const hifi
     if (!scene) {
         qCDebug(modelformat) << "AssimpSerializer::read Error parsing model file"<<importer.GetErrorString();
         return nullptr;
+    }
+
+    // A .vrm's VRM data, read once Assimp has read the file. A .glb that kept its VRM extensions is read as glTF alone,
+    // as before
+    if (isVRM) {
+        vrm = readVRM(data);
     }
 
     processScene(mapping);
