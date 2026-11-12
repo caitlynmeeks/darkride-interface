@@ -15,7 +15,8 @@
 //!   react {room, id, key}        a reaction (an emoji) on a message, or yours taken back when it is there already
 //!   edit {room, id, body}        a new text for one of your own messages
 //!   delete {room, id}            one of your own messages, gone for everyone
-//!   read {room}                  mark it read
+//!   read {room, public?}         mark it read: privately (m.read.private: it clears your unread count, and no one else
+//!                                sees it), unless public is true (m.read, which the room's members see as a "seen")
 //!   join {room}                  accept an invite, or join by id or alias
 //!   leave {room}
 //!   create_dm {user, encrypted?} a DM with someone, inviting them (encrypted when asked)
@@ -282,6 +283,12 @@ fn arg<'a>(command: &'a Value, name: &str) -> Result<&'a str> {
     command[name].as_str().ok_or_else(|| anyhow!("{name} is missing"))
 }
 
+/// The receipt a read sends: a public one (m.read) only when the host says so with "public": true, for someone who
+/// lets everyone see they're online; anything else, a missing or unknown value among them, is private (m.read.private)
+fn read_receipt_type(command: &Value) -> ReceiptType {
+    if command["public"].as_bool() == Some(true) { ReceiptType::Read } else { ReceiptType::ReadPrivate }
+}
+
 async fn handle(state: &Arc<State>, op: &str, command: &Value) -> Result<()> {
     match op {
         "login_jwt" => login_jwt(state, arg(command, "token")?).await,
@@ -363,7 +370,7 @@ async fn handle(state: &Arc<State>, op: &str, command: &Value) -> Result<()> {
         }
         "read" => {
             let timeline = open_timeline(state, arg(command, "room")?).await?;
-            timeline.mark_as_read(ReceiptType::Read).await?;
+            timeline.mark_as_read(read_receipt_type(command)).await?;
             Ok(())
         }
         "join" => {
@@ -1178,5 +1185,33 @@ async fn forget(state: &Arc<State>, tell_server: bool) {
     // folder again once it has (ChatService::forgetChatData)
     for (store, e) in remove_stores(&state.config.data_dir, None) {
         state.emit(json!({ "event": "error", "op": "logout", "message": format!("the chat's store stays in {}: {e}", store.display()) }));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_read_is_private_unless_public_is_true() {
+        let read = |extra: Value| {
+            let mut command = json!({ "op": "read", "room": "!room:darkride.localhost" });
+            if let (Some(command), Some(extra)) = (command.as_object_mut(), extra.as_object()) {
+                command.extend(extra.clone());
+            }
+            read_receipt_type(&command)
+        };
+        // the host hasn't said (an older viewer, or the setting not known yet)
+        assert_eq!(read(json!({})), ReceiptType::ReadPrivate);
+        assert_eq!(read(json!({ "public": false })), ReceiptType::ReadPrivate);
+        assert_eq!(read(json!({ "public": null })), ReceiptType::ReadPrivate);
+        // only a JSON true is public: not the word, a number or the setting's own value
+        assert_eq!(read(json!({ "public": "true" })), ReceiptType::ReadPrivate);
+        assert_eq!(read(json!({ "public": 1 })), ReceiptType::ReadPrivate);
+        assert_eq!(read(json!({ "public": "all" })), ReceiptType::ReadPrivate);
+        assert_eq!(read(json!({ "public": true })), ReceiptType::Read);
+        // what goes to the homeserver
+        assert_eq!(read(json!({})).as_str(), "m.read.private");
+        assert_eq!(read(json!({ "public": true })).as_str(), "m.read");
     }
 }
