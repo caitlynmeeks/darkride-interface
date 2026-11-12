@@ -185,7 +185,10 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_SIGNALS {
     // thread, so a page's event sent before a world's own page opened could arrive after it. A world's page in the
     // tablet stays (gotoWebScreen); a page that talks to a world's script is a Web entity, whose events reach only
     // its own world (CHECKED_DELIVERIES)
-    { "TabletProxy", { "webEventReceived", "fromQml", "screenChanged" } }
+    { "TabletProxy", { "webEventReceived", "fromQml", "screenChanged" } },
+    // the address a lookup was for when it found nothing, found it offline or was refused: the app's own screen
+    // tells the visitor; whether any lookup finished (lookupResultsFinished) stays
+    { "AddressManager", { "lookupResultIsOffline", "lookupResultIsNotFound", "lookupResultIsRefused" } }
 };
 
 // Signals that carry an entity's id, and which of their arguments are ids: a world's script hears such a signal only
