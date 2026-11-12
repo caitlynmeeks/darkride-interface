@@ -19,8 +19,8 @@
 #include <QDataStream>
 
 #include <AccountManager.h>
+#include <AccountName.h>
 #include <Assignment.h>
-#include <RegexCompat.h>
 
 #include "DomainServer.h"
 #include "DomainServerNodeData.h"
@@ -106,6 +106,24 @@ void DomainGatekeeper::processConnectRequestPacket(QSharedPointer<ReceivedMessag
                 packetStream >> usernameSignature;
             }
         }
+
+        // The name is checked once, here, and only that checked name, lower-cased, goes on to every later step (the
+        // tables, the token, the metaverse's addresses, what its answers are filed under). A name that can't be an
+        // account's is dropped before anything is asked, answered or kept: no token, no question to the metaverse,
+        // no table entry, nothing sent back. A real app only ever sends its account's name. (No name at all is a
+        // connection without an account, as before.)
+        if (!username.isEmpty() && !account_name::isAccountName(username)) {
+            ++_badNamesSinceLogged;
+            const quint64 now = usecTimestampNow();
+            if (now - _badNameLastLoggedUsecs > 10 * USECS_PER_SECOND) {
+                qDebug() << "Dropped" << _badNamesSinceLogged << "connect request(s) with a name that can't be an account's;"
+                         << "the latest" << username.size() << "characters, starting" << username.left(24);
+                _badNameLastLoggedUsecs = now;
+                _badNamesSinceLogged = 0;
+            }
+            return;
+        }
+        username = username.toLower();
 
         node = processAgentConnectRequest(nodeConnection, username, usernameSignature);
     }
@@ -666,6 +684,11 @@ void DomainGatekeeper::requestUserPublicKey(const QString& username, bool isOpti
         return;
     }
 
+    // only an account's name is ever put into an address (the door drops any other; this is the second line)
+    if (!account_name::isAccountName(username)) {
+        return;
+    }
+
     QString lowerUsername = username.toLower();
     if (_inFlightPublicKeyRequests.contains(lowerUsername)) {
         // public-key request for this username is already flight, not rerequesting
@@ -673,41 +696,32 @@ void DomainGatekeeper::requestUserPublicKey(const QString& username, bool isOpti
     }
     _inFlightPublicKeyRequests.insert(lowerUsername, isOptimistic);
 
-    // even if we have a public key for them right now, request a new one in case it has just changed
+    // even if we have a public key for them right now, request a new one in case it has just changed. The answer is
+    // filed under the name the request carries, never one read back from its address.
     JSONCallbackParameters callbackParams;
     callbackParams.callbackReceiver = this;
     callbackParams.jsonCallbackMethod = "publicKeyJSONCallback";
     callbackParams.errorCallbackMethod = "publicKeyJSONErrorCallback";
+    callbackParams.callbackData = account_name::requestData(lowerUsername);
 
+    qDebug().nospace() << "Requesting " << (isOptimistic ? "optimistic " : " ") << "public key for user " << lowerUsername;
 
-    const QString USER_PUBLIC_KEY_PATH = "api/v1/users/%1/public_key";
-
-    qDebug().nospace() << "Requesting " << (isOptimistic ? "optimistic " : " ") << "public key for user " << username;
-
-    DependencyManager::get<AccountManager>()->sendRequest(USER_PUBLIC_KEY_PATH.arg(username),
+    DependencyManager::get<AccountManager>()->sendRequest(account_name::keyRequestPath(lowerUsername),
                                               AccountManagerAuth::None,
                                               QNetworkAccessManager::GetOperation, callbackParams);
 }
 
-QString extractUsernameFromPublicKeyRequest(QNetworkReply* requestReply) {
-    // extract the username from the request url
-    QString username;
-    const QString PUBLIC_KEY_URL_REGEX_STRING = "api\\/v1\\/users\\/([A-Za-z0-9_\\.]+)\\/public_key";
-    static const QRegularExpression PUBLIC_KEY_URL_REGEX = regex_compat::search(PUBLIC_KEY_URL_REGEX_STRING);
-    const QRegularExpressionMatch usernameMatch = PUBLIC_KEY_URL_REGEX.match(requestReply->url().toString());
-    if (usernameMatch.hasMatch()) {
-        username = usernameMatch.captured(1);
+void DomainGatekeeper::publicKeyJSONCallback(QNetworkReply* requestReply, const QJsonObject& callbackData) {
+    const QString username = account_name::nameFromRequest(callbackData);
+    if (username.isEmpty()) {
+        qDebug() << "An answer about a key came back without the name it was asked about - dropped.";
+        return;
     }
-    return username.toLower();
-}
-
-void DomainGatekeeper::publicKeyJSONCallback(QNetworkReply* requestReply) {
     QJsonObject jsonObject = QJsonDocument::fromJson(requestReply->readAll()).object();
-    QString username = extractUsernameFromPublicKeyRequest(requestReply);
 
     bool isOptimisticKey = _inFlightPublicKeyRequests.take(username);
 
-    if (jsonObject["status"].toString() == "success" && !username.isEmpty()) {
+    if (jsonObject["status"].toString() == "success") {
         // pull the public key as a QByteArray from this response
         const QString JSON_DATA_KEY = "data";
         const QString JSON_PUBLIC_KEY_KEY = "public_key";
@@ -722,9 +736,13 @@ void DomainGatekeeper::publicKeyJSONCallback(QNetworkReply* requestReply) {
     }
 }
 
-void DomainGatekeeper::publicKeyJSONErrorCallback(QNetworkReply* requestReply) {
+void DomainGatekeeper::publicKeyJSONErrorCallback(QNetworkReply* requestReply, const QJsonObject& callbackData) {
     qDebug() << "publicKey api call failed:" << requestReply->error();
-    QString username = extractUsernameFromPublicKeyRequest(requestReply);
+    const QString username = account_name::nameFromRequest(callbackData);
+    if (username.isEmpty()) {
+        qDebug() << "An answer about a key came back without the name it was asked about - dropped.";
+        return;
+    }
     _inFlightPublicKeyRequests.remove(username);
 }
 
@@ -926,6 +944,11 @@ void DomainGatekeeper::getGroupMemberships(const QString& username) {
     QJsonArray groupIDs = QJsonArray::fromStringList(groupIDSet.values());
     json["groups"] = groupIDs;
 
+    // only an account's name is ever put into an address
+    if (!account_name::isAccountName(username)) {
+        return;
+    }
+
     // if we've already asked, wait for the answer before asking again
     QString lowerUsername = username.toLower();
     if (_inFlightGroupMembershipsRequests.contains(lowerUsername)) {
@@ -939,28 +962,16 @@ void DomainGatekeeper::getGroupMemberships(const QString& username) {
     callbackParams.callbackReceiver = this;
     callbackParams.jsonCallbackMethod = "getIsGroupMemberJSONCallback";
     callbackParams.errorCallbackMethod = "getIsGroupMemberErrorCallback";
+    callbackParams.callbackData = account_name::requestData(lowerUsername);
 
-    const QString GET_IS_GROUP_MEMBER_PATH = "api/v1/groups/members/%2";
-    DependencyManager::get<AccountManager>()->sendRequest(GET_IS_GROUP_MEMBER_PATH.arg(username),
+    DependencyManager::get<AccountManager>()->sendRequest(account_name::groupMembershipsPath(lowerUsername),
                                                           AccountManagerAuth::Required,
                                                           QNetworkAccessManager::PostOperation, callbackParams,
                                                           QJsonDocument(json).toJson());
 
 }
 
-QString extractUsernameFromGroupMembershipsReply(QNetworkReply* requestReply) {
-    // extract the username from the request url
-    QString username;
-    const QString GROUP_MEMBERSHIPS_URL_REGEX_STRING = "api\\/v1\\/groups\\/members\\/([A-Za-z0-9_\\.]+)";
-    static const QRegularExpression GROUP_MEMBERSHIPS_URL_REGEX = regex_compat::search(GROUP_MEMBERSHIPS_URL_REGEX_STRING);
-    const QRegularExpressionMatch usernameMatch = GROUP_MEMBERSHIPS_URL_REGEX.match(requestReply->url().toString());
-    if (usernameMatch.hasMatch()) {
-        username = usernameMatch.captured(1);
-    }
-    return username.toLower();
-}
-
-void DomainGatekeeper::getIsGroupMemberJSONCallback(QNetworkReply* requestReply) {
+void DomainGatekeeper::getIsGroupMemberJSONCallback(QNetworkReply* requestReply, const QJsonObject& callbackData) {
     // {
     //     "data":{
     //         "username":"sethalves",
@@ -977,11 +988,23 @@ void DomainGatekeeper::getIsGroupMemberJSONCallback(QNetworkReply* requestReply)
     //     "status":"success"
     // }
 
+    // filed under the name the request carried; an answer that names another account is dropped
+    const QString username = account_name::nameFromRequest(callbackData);
+    if (username.isEmpty()) {
+        qDebug() << "An answer about group memberships came back without the name it was asked about - dropped.";
+        return;
+    }
+    _inFlightGroupMembershipsRequests.remove(username);
+
     QJsonObject jsonObject = QJsonDocument::fromJson(requestReply->readAll()).object();
     if (jsonObject["status"].toString() == "success") {
         QJsonObject data = jsonObject["data"].toObject();
         QJsonObject groups = data["groups"].toObject();
-        QString username = data["username"].toString();
+        const QString answeredName = data["username"].toString();
+        if (!answeredName.isEmpty() && answeredName.compare(username, Qt::CaseInsensitive) != 0) {
+            qDebug() << "An answer about the group memberships of" << username << "named another account - dropped.";
+            return;
+        }
         _server->_settingsManager.clearGroupMemberships(username);
         foreach (auto groupID, groups.keys()) {
             QJsonObject group = groups[groupID].toObject();
@@ -992,13 +1015,14 @@ void DomainGatekeeper::getIsGroupMemberJSONCallback(QNetworkReply* requestReply)
     } else {
         qDebug() << "getIsGroupMember api call returned:" << QJsonDocument(jsonObject).toJson(QJsonDocument::Compact);
     }
-
-    _inFlightGroupMembershipsRequests.remove(extractUsernameFromGroupMembershipsReply(requestReply));
 }
 
-void DomainGatekeeper::getIsGroupMemberErrorCallback(QNetworkReply* requestReply) {
+void DomainGatekeeper::getIsGroupMemberErrorCallback(QNetworkReply* requestReply, const QJsonObject& callbackData) {
     qDebug() << "getIsGroupMember api call failed:" << requestReply->error();
-    _inFlightGroupMembershipsRequests.remove(extractUsernameFromGroupMembershipsReply(requestReply));
+    const QString username = account_name::nameFromRequest(callbackData);
+    if (!username.isEmpty()) {
+        _inFlightGroupMembershipsRequests.remove(username);
+    }
 }
 
 void DomainGatekeeper::getDomainOwnerFriendsList() {
