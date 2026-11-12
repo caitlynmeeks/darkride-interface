@@ -21,7 +21,6 @@
 #include <darkride_chat.h>
 
 #include "ChatLogging.h"
-#include "FriendsService.h"
 
 static const QString CHAT_TOKEN_PATH = "/api/v1/user/chat-token";
 // the metaverse's chat token lasts two minutes; one older than this is asked for again rather than risked
@@ -519,17 +518,11 @@ void ChatService::deleteMessage(const QString& room, const QString& id) {
     }
 }
 
-// A read that the room's members see (m.read, a "seen" under their message) only for someone who lets everyone see
-// they're online: the privacy setting "Who sees you're online, and where" on Everyone (the metaverse's availability
-// "all"), as the web chat does. For anyone else, and until Darkride has said, the read is private (m.read.private): it
-// clears the unread count for you alone. Asked at each read, so a change of the setting counts from the next one.
-static bool publicReceipts() {
-    return DependencyManager::isSet<FriendsService>() && DependencyManager::get<FriendsService>()->availability() == "all";
-}
-
+// A read is always private (m.read.private, the core's doing): it clears the unread count for you alone, and no one
+// sees a "seen" under their message, whatever your privacy setting (Caity, 2026-11-12), as in the web chat.
 void ChatService::markRead(const QString& room) {
     if (_state == State::Ready) {
-        command({ { "op", "read" }, { "room", room }, { "public", publicReceipts() } });
+        command({ { "op", "read" }, { "room", room } });
     }
 }
 
