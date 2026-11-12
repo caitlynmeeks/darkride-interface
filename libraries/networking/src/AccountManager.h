@@ -74,6 +74,14 @@ public:
                                  const QVariantMap& propertyMap = QVariantMap());
 
     void setIsAgent(bool isAgent) { _isAgent = isAgent; }
+    /// The app's own sign-in: when the metaverse refuses our access token (401) and then its refresh, the sign-in has
+    /// ended (signed out everywhere, a password change, an admin's sign-out): signInEnded, then logout(). Never on no
+    /// answer. Off (today's behaviour) in the servers and for AI residents' key sign-ins.
+    void setEndsRefusedSignIn(bool ends) { _endsRefusedSignIn = ends; }
+    /// A 401 to a request another part of the app made with our access token (chat's token request): one refresh
+    /// decides, as for AccountManager's own requests. A reply that carried an older sign-in's token is ignored.
+    /// On AccountManager's thread (the main thread).
+    void reportRefusedAccessToken(QNetworkReply* reply, const char* where);
 
     const QUrl& getAuthURL() const { return _authURL; }
     void setAuthURL(const QUrl& authURL);
@@ -134,6 +142,9 @@ signals:
     void loginComplete(const QUrl& authURL);
     void loginFailed();
     void logoutComplete();
+    /// The metaverse ended this sign-in (setEndsRefusedSignIn); emitted just before the logout() that follows it.
+    /// reason: a code, "signed-out-elsewhere" (the token and its refresh were refused) or "no-refresh-token"
+    void signInEnded(const QString& reason);
     void newKeypair();
     void accountSettingsLoaded();
 
@@ -161,6 +172,17 @@ private:
     void passSuccessToCallback(QNetworkReply* reply);
     void passErrorToCallback(QNetworkReply* reply);
 
+    // a reply to a request that carried our current access token came back 401 (setEndsRefusedSignIn)
+    void accessTokenRefused(const char* where);
+    void endSignIn(const QString& reason);
+    bool carriesCurrentToken(const QNetworkReply* reply);
+    // a 401 for our current token that is a refusal of the token: not the metaverse's "Unverified" (a valid token,
+    // the account's email not verified yet), which a refresh can't change
+    bool refusesCurrentToken(QNetworkReply* reply);
+    // the metaverse took the token but the account's email isn't verified: message "Unverified", or reason
+    // "unverified" where a route's filter rewrites the message (the instance routes' PeopleErrorsFilter)
+    static bool isUnverifiedAnswer(QNetworkReply* reply);
+
     UserAgentGetter _userAgentGetter;
 
     QUrl _authURL;
@@ -169,6 +191,10 @@ private:
     bool _isWaitingForTokenRefresh { false };
     bool _isAgent { false };
     bool _keyLogin { false }; // signed in with a connection key: nothing is written to AccountInfo.bin
+    bool _endsRefusedSignIn { false };    // setEndsRefusedSignIn
+    bool _refreshAfterRefusal { false };  // the refresh running was asked because the access token was refused
+    QString _tokenFromRefusalRefresh;     // the access token that refresh gave: refused too, the sign-in is over
+    bool _signInEnding { false };         // endSignIn's logout: the refused token posts no settings
 
     bool _isWaitingForKeypairResponse { false };
     QByteArray _pendingPrivateKey;

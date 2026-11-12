@@ -599,6 +599,13 @@ void AddressManager::handleAPIError(QNetworkReply* errorReply) {
 
         emit lookupResultIsNotFound(errorReply->property(LOOKUP_NAME_KEY).toString(),
                                     errorReply->property(LOOKUP_IS_USER_KEY).toBool());
+    } else if (errorReply->error() == QNetworkReply::AuthenticationRequiredError) {
+        // refused (401): the sign-in has ended; AccountManager signs out and the sign-in screen comes back. Not
+        // retried: the same lookup would be refused again until someone signs in
+        _previousAPILookup.clear();
+
+        emit lookupResultIsRefused(errorReply->property(LOOKUP_NAME_KEY).toString(),
+                                   errorReply->property(LOOKUP_IS_USER_KEY).toBool());
     }
 
     emit lookupResultsFinished();

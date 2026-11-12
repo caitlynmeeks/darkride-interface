@@ -119,8 +119,15 @@ AccountManager::AccountManager(bool accountSettingsEnabled, UserAgentGetter user
 const QString ACCOUNT_MANAGER_REQUESTED_SCOPE = "owner";
 
 void AccountManager::logout() {
-    postAccountSettings();
+    // the settings go up with the token they belong to; a token the metaverse has refused would only be refused again
+    if (!_signInEnding) {
+        postAccountSettings();
+    }
+    // a pull still retrying stops here: signed out, there are no settings of ours to fetch
+    _pullSettingsRetryTimer->stop();
     _numPullRetries = 0;
+    _refreshAfterRefusal = false;
+    _tokenFromRefusalRefresh.clear();
 
     // a logout means we want to delete the DataServerAccountInfo we currently have for this URL, in-memory and in file
     _accountInfo = DataServerAccountInfo();
@@ -349,6 +356,10 @@ void AccountManager::sendRequest(const QString& path,
             // sure that our session ID matches that value if so
             if (networkReply->hasRawHeader(METAVERSE_SESSION_ID_HEADER)) {
                 _sessionID = QUuid(networkReply->rawHeader(METAVERSE_SESSION_ID_HEADER));
+            }
+            // the metaverse refused the access token this request carried: one refresh decides (accessTokenRefused)
+            if (_endsRefusedSignIn && refusesCurrentToken(networkReply)) {
+                accessTokenRefused(qPrintable(networkReply->url().path()));
             }
         });
 
@@ -756,6 +767,19 @@ void AccountManager::refreshAccessTokenFinished() {
 
     QJsonDocument jsonResponse = QJsonDocument::fromJson(requestReply->readAll());
     const QJsonObject& rootObject = jsonResponse.object();
+    const int status = requestReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool afterRefusal = _refreshAfterRefusal;
+    _refreshAfterRefusal = false;
+
+    // the metaverse refused the refresh (400 or 401, an OAuth error such as invalid_grant): this sign-in is over.
+    // No answer (status 0) or a server error leaves it as it is: the next refresh tries again
+    if (_endsRefusedSignIn && (status == 400 || status == 401)) {
+        qCWarning(networking).noquote() << "The metaverse refused this sign-in's refresh:" << status
+                                        << rootObject["error"].toString();
+        _isWaitingForTokenRefresh = false;
+        endSignIn("signed-out-elsewhere");
+        return;
+    }
 
     if (!rootObject.contains("error")) {
         // construct an OAuthAccessToken from the json object
@@ -774,12 +798,93 @@ void AccountManager::refreshAccessTokenFinished() {
             _accountInfo.setAccessTokenFromJSON(rootObject);
 
             persistAccountToFile();
+
+            if (afterRefusal) {
+                // asked because the old token was refused: the profile check again, with the new one. Refused in
+                // turn, the sign-in is over (accessTokenRefused)
+                _tokenFromRefusalRefresh = _accountInfo.getAccessToken().token;
+                _isWaitingForTokenRefresh = false;
+                requestProfile();
+                return;
+            }
         }
     } else {
         qCWarning(networking) << "Error in response for refresh grant - " << rootObject["error_description"].toString();
     }
 
     _isWaitingForTokenRefresh = false;
+}
+
+bool AccountManager::carriesCurrentToken(const QNetworkReply* reply) {
+    // a reply for an older sign-in (before a sign-out and a new sign-in) says nothing about this one
+    const QByteArray sent = reply->request().rawHeader(ACCESS_TOKEN_AUTHORIZATION_HEADER);
+    return !sent.isEmpty() && !_accountInfo.getAccessToken().token.isEmpty() &&
+           sent == _accountInfo.getAccessToken().authorizationHeaderValue();
+}
+
+bool AccountManager::refusesCurrentToken(QNetworkReply* reply) {
+    if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 401 || !carriesCurrentToken(reply)) {
+        return false;
+    }
+    // only the metaverse our token is for judges it (scheme, host and port of the auth URL), whoever reports the reply
+    const QUrl url = reply->url();
+    if (url.scheme() != _authURL.scheme() || url.host() != _authURL.host() || url.port() != _authURL.port()) {
+        return false;
+    }
+    // MetaverseAuthGuard and UserOrDomainGuard answer 401 "Unverified" for a valid token whose account hasn't verified
+    // its email: the sign-in stands
+    return !isUnverifiedAnswer(reply);
+}
+
+bool AccountManager::isUnverifiedAnswer(QNetworkReply* reply) {
+    // read with peek, so the reply's own callbacks still get the whole answer
+    const QJsonObject answer = QJsonDocument::fromJson(reply->peek(reply->bytesAvailable())).object();
+    return answer.value("message").toString() == QStringLiteral("Unverified") ||
+           answer.value("reason").toString() == QStringLiteral("unverified");
+}
+
+void AccountManager::reportRefusedAccessToken(QNetworkReply* reply, const char* where) {
+    if (_endsRefusedSignIn && reply && refusesCurrentToken(reply)) {
+        accessTokenRefused(where);
+    }
+}
+
+void AccountManager::accessTokenRefused(const char* where) {
+    if (!_endsRefusedSignIn || _accountInfo.getAccessToken().token.isEmpty()) {
+        return;
+    }
+    if (!_tokenFromRefusalRefresh.isEmpty() && _accountInfo.getAccessToken().token == _tokenFromRefusalRefresh) {
+        // the token the metaverse gave just now, after a refusal, refused in turn
+        qCWarning(networking) << "The metaverse refused this sign-in's new access token too:" << where;
+        endSignIn("signed-out-elsewhere");
+        return;
+    }
+    if (_accountInfo.getAccessToken().refreshToken.isEmpty()) {
+        qCWarning(networking) << "The metaverse refused this sign-in's access token, and there is no refresh token:"
+                              << where;
+        endSignIn("no-refresh-token");
+        return;
+    }
+    _refreshAfterRefusal = true;
+    if (_isWaitingForTokenRefresh) {
+        return;  // the refresh already running decides
+    }
+    qCWarning(networking) << "The metaverse refused this sign-in's access token:" << where << "- one refresh decides";
+    refreshAccessToken();
+}
+
+void AccountManager::endSignIn(const QString& reason) {
+    _refreshAfterRefusal = false;
+    _tokenFromRefusalRefresh.clear();
+    if (_accountInfo.getAccessToken().token.isEmpty()) {
+        return;  // signed out already
+    }
+    qCWarning(networking).noquote() << "This sign-in has ended (" + reason + "): signing out, to sign in again";
+    _signInEnding = true;
+    // first, so that the sign-in screen the logout brings back knows why (editor-ui's SignInGate)
+    emit signInEnded(reason);
+    logout();
+    _signInEnding = false;
 }
 
 void AccountManager::refreshAccessTokenError(QNetworkReply::NetworkError error) {
@@ -811,11 +916,25 @@ void AccountManager::requestProfile() {
 void AccountManager::requestProfileFinished() {
     QNetworkReply* profileReply = reinterpret_cast<QNetworkReply*>(sender());
 
+    // the profile check refused our access token (at start, the saved sign-in's first use): one refresh decides
+    if (_endsRefusedSignIn && refusesCurrentToken(profileReply)) {
+        accessTokenRefused("profile");
+        return;
+    }
+    // the profile check got past the token and stopped only at the unverified email: the token stands, so a later
+    // refusal of it (a route whose filter hides "Unverified") gets its own refresh, not the end at once
+    if (profileReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401 &&
+        carriesCurrentToken(profileReply) && isUnverifiedAnswer(profileReply)) {
+        _tokenFromRefusalRefresh.clear();
+    }
+
     QJsonDocument jsonResponse = QJsonDocument::fromJson(profileReply->readAll());
     const QJsonObject& rootObject = jsonResponse.object();
 
     if (rootObject.contains("status") && rootObject["status"].toString() == "success") {
         _accountInfo.setProfileInfoFromJSON(rootObject);
+        // the token stands: a later 401 for it gets its own refresh again (not the end at once)
+        _tokenFromRefusalRefresh.clear();
 
         emit profileChanged();
 
@@ -838,6 +957,11 @@ void AccountManager::requestProfileError(QNetworkReply::NetworkError error) {
 
 void AccountManager::requestAccountSettings() {
     if (!_accountSettingsEnabled) {
+        return;
+    }
+    if (_accountInfo.getAccessToken().token.isEmpty()) {
+        // signed out: a request without a token is only refused, so nothing goes and nothing retries
+        _pullSettingsRetryTimer->stop();
         return;
     }
 
