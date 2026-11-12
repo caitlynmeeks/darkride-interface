@@ -241,7 +241,9 @@ void Pointer::generatePointerEvents(unsigned int pointerID, const PickResultPoin
     for (const std::string& button : newButtons) {
         hoveredEvent.setType(PointerEvent::Press);
         hoveredEvent.setButton(chooseButton(button));
-        hoveredEvent.setShouldFocus(button == SHOULD_FOCUS_BUTTON);
+        // a "Focus" press of a pointer that a world's script made asks for no focus: the keyboard follows the
+        // visitor's own pointers (decided here, from the pointer's own flag, as its target is above)
+        hoveredEvent.setShouldFocus(button == SHOULD_FOCUS_BUTTON && !_madeByWorld);
         if (hoveredObject.type == ENTITY) {
             emit pointerManager->triggerBeginEntity(hoveredObject.objectID, hoveredEvent);
         } else if (hoveredObject.type == LOCAL_ENTITY) {
