@@ -28,7 +28,9 @@
 
 #include <atomic>
 
+#include <QtCore/QList>
 #include <QtCore/QObject>
+#include <QtCore/QPointer>
 #include <QtCore/QString>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
@@ -36,6 +38,8 @@
 #include <SettingHandle.h>
 
 #include "LoginStateManager.h"
+
+class QWidget;
 
 class SignInGate : public QObject {
     Q_OBJECT
@@ -52,6 +56,13 @@ public:
     void update();                 // once a frame: while the headset's dialog is up, the hands' state and the dialog kept in view
     void displayPluginChanged();   // the screen follows the display: the headset's entity or the desktop's dialog
     void shutdown();               // the setting cleared
+    /// A sign-in the metaverse no longer takes (ended from elsewhere: "Sign out everywhere else" on the website): the
+    /// saved one goes and the sign-in screen comes back, as after signing out, the name filled in, saying why ("You've
+    /// been signed out. Please sign in again."). Any thread; nothing while the screen is already up.
+    void signInAgain();
+    /// AccountManager::signInEnded's: the form that comes back with the sign-out says why (no sign-out here: the
+    /// account manager signs out right after)
+    void noteSignInEnded(const QString& reason);
 
 public slots:
     void onDismissedLoginDialog();
@@ -82,6 +93,7 @@ private:
     LoginStateManager _loginStateManager;
     bool _resumeWasPostponed{ false };   // the resume was asked before the pause had run
     bool _resumeSafeToRun{ false };      // the pause has run
+    QList<QPointer<QWidget>> _hiddenDocks;   // the docks showing when the screen came up, shown again after it
 };
 
 #endif // hifi_SignInGate_h

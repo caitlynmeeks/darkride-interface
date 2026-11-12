@@ -29,9 +29,53 @@ Item {
 
     HifiStylesUit.HifiConstants { id: hifi }
 
+    // the saved sign-in may have ended from elsewhere ("Sign out everywhere else" on the website): it is asked first, so
+    // a refused one gets the form saying why instead of a world that can't load. No answer in a few seconds, or no
+    // network: in as before (a sign-in nobody refused stays good offline)
+    property bool checking: false
+    property double checkStarted: 0   // for the log line: what the press cost (performance, 11-11)
     function goIn() {
+        if (checking) {
+            return;
+        }
+        checking = true;
+        checkStarted = Date.now();
+        checkTimeout.start();
+        MetaverseRequests.send("GET", "/api/v1/user/profile", null, function (error, code, data) {
+            if (!checking) {
+                return;   // the time ran out and the viewer went in
+            }
+            checking = false;
+            checkTimeout.stop();
+            // "Unverified" (an email not verified yet) is no ended sign-in: in as before (the account manager's rule too)
+            var unverified = !!data && (data.message === "Unverified" || data.reason === "unverified");
+            var refused = error && code === 401 && !unverified;
+            console.log("Continue: the saved sign-in checked in " + (Date.now() - checkStarted) + " ms (answer " + code
+                        + (refused ? ", refused: the form)" : ", in)"));
+            if (refused) {
+                // the form, saying why; the sign-out itself is the account manager's (its refresh, then signInEnded
+                // and logout(): two sign-outs would race)
+                bodyLoader.setSource("LinkAccountBody.qml", { "loginDialog": loginDialog, "root": root,
+                                     "bodyLoader": bodyLoader, "errorString": "You've been signed out. Please sign in again." });
+                return;
+            }
+            enter();
+        });
+    }
+    function enter() {
         loginDialog.dismissLoginDialog();
         root.tryDestroy();
+    }
+    Timer {
+        id: checkTimeout
+        interval: 4000
+        onTriggered: {
+            if (continueBody.checking) {
+                continueBody.checking = false;
+                console.log("Continue: no answer to the sign-in check in " + checkTimeout.interval + " ms; in");
+                continueBody.enter();
+            }
+        }
     }
 
     function signInAsSomeoneElse() {
