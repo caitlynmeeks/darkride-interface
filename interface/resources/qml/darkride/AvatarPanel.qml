@@ -60,7 +60,14 @@ Page {
             ]
         }
     ]
-    Component.onCompleted: currentTab = Math.max(0, Math.min(2, Settings.getValue(tabSetting, 0)))
+    Component.onCompleted: {
+        currentTab = Math.max(0, Math.min(2, Settings.getValue(tabSetting, 0)));
+        // a page is made already visible, so its first opening has no change of visible to hear: the avatars are read
+        // here (the worn avatar, the menu and the name tag read themselves as they are made)
+        if (visible) {
+            library.refresh();
+        }
+    }
     onCurrentTabChanged: Settings.setValue(tabSetting, currentTab)
 
     // a desktop window keeps the page between openings: read the values without a change signal again on each
