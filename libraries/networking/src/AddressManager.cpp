@@ -166,14 +166,19 @@ void AddressManager::storeCurrentAddress() {
         // url.scheme() == HIFI_URL_SCHEME_HTTP ||
         // url.scheme() == HIFI_URL_SCHEME_HTTPS ||
         bool isInErrorState = DependencyManager::get<NodeList>()->getDomainHandler().isInErrorState();
+        // the app saves every 5 s: say it once per spell without a world, not every time (after a refusal it went on
+        // for as long as the app stayed open)
+        static bool notConnectedLogged = false;
         if (isConnected()) {
+            notConnectedLogged = false;
             if (isInErrorState) {
                 // save the last address visited before the problem url.
                 currentAddressHandle.set(lastAddress());
             } else {
                 currentAddressHandle.set(url);
             }
-        } else {
+        } else if (!notConnectedLogged) {
+            notConnectedLogged = true;
             qCWarning(networking) << "Ignoring attempt to save current address because not connected to domain:" << url;
         }
     } else {
