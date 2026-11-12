@@ -26,6 +26,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QMetaMethod>
 
 #include <AccountManager.h>
 #include <AddressManager.h>
@@ -696,6 +697,21 @@ void VerifiedSandboxTests::testSignalsNotForWorlds() {
     for (const char* member : { "loadQMLSource", "loadQMLOnTop", "pushOntoStack", "addButton", "emitScriptEvent",
                                 "sendToQml" }) {
         QVERIFY2(ScriptApiPolicy::deniesMethod(&TabletProxy::staticMetaObject, member), member);
+    }
+    // the address of a lookup that found nothing, found it offline or was refused; that a lookup finished, and the
+    // rest of the location object's signals, stay (the three are real signals of the class, so a rename fails here)
+    const QMetaObject* location = &AddressManager::staticMetaObject;
+    QVERIFY(ScriptApiPolicy::allowsClass(location));
+    for (const char* member : { "lookupResultIsOffline", "lookupResultIsNotFound", "lookupResultIsRefused" }) {
+        QVERIFY2(ScriptApiPolicy::deniesSignal(location, member), member);
+        bool found = false;
+        for (int i = 0; i < location->methodCount() && !found; i++) {
+            found = location->method(i).methodType() == QMetaMethod::Signal && location->method(i).name() == member;
+        }
+        QVERIFY2(found, member);
+    }
+    for (const char* member : { "lookupResultsFinished", "hostChanged", "pathChangeRequired", "goBackPossible" }) {
+        QVERIFY2(!ScriptApiPolicy::deniesSignal(location, member), member);
     }
     // a class a world doesn't get: none of its signals
     QVERIFY(ScriptApiPolicy::deniesSignal(&QObject::staticMetaObject, "destroyed"));
