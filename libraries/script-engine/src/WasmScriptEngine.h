@@ -288,4 +288,295 @@ public:
     QVariantMap getState() const;
 };
 
+// --- The API reference's notes for what the JavaScript guest's shim (tools/wasm-js/runtime.js) and this engine give
+// a script beyond the Script members declared in ScriptEngine.h ---
+
+/**jsdoc
+ * Prints a message to the program log and emits {@link Script.printedMessage}.
+ * The message logged is the message values separated by spaces.
+ * <p>Alternatively, you can use {@link Script.print} or one of the {@link console} API methods.</p>
+ * @function print
+ * @param {...*} [message] - The message values to print.
+ */
+
+/**jsdoc
+ * Decodes base64 to text.
+ * @function atob
+ * @param {string} base64 - The base64 you want to decode.
+ * @returns {string} text
+ */
+
+/**jsdoc
+ * Encodes text to base64.
+ * @function btoa
+ * @param {string} text - The text you want to encode.
+ * @returns {string} base64
+ */
+
+/**jsdoc
+ * The <code>Resource</code> API provides values that define the possible loading states of a resource.
+ *
+ * @namespace Resource
+ *
+ * @hifi-interface
+ * @hifi-client-entity
+ * @hifi-avatar
+ * @hifi-server-entity
+ * @hifi-assignment-client
+ *
+ * @property {Resource.State} State - The possible loading states of a resource. <em>Read-only.</em>
+ */
+
+/**jsdoc
+ * Includes JavaScript from other files in the current script. If a callback is specified, the files are loaded and
+ * included asynchronously, otherwise they are included synchronously (i.e., script execution blocks while the files are
+ * included).
+ * @function Script.include
+ * @variation 0
+ * @param {string[]} filenames - The URLs of the scripts to include. Each can be relative to the current script.
+ * @param {function} [callback=null] - The function to call back when the scripts have been included. It can be either the
+ *     name of a function or an in-line definition.
+ */
+
+/**jsdoc
+ * Includes JavaScript from another file in the current script. If a callback is specified, the file is loaded and included
+ * asynchronously, otherwise it is included synchronously (i.e., script execution blocks while the file is included).
+ * @function Script.include
+ * @param {string} filename - The URL of the script to include. It can be relative to the current script.
+ * @param {function} [callback=null] - The function to call back when the script has been included. It can be either the
+ *     name of a function or an in-line definition.
+ * @example <caption>Include a script file asynchronously.</caption>
+ * // First file: scriptA.js
+ * print("This is script A");
+ *
+ * // Second file: scriptB.js
+ * print("This is script B");
+ * Script.include("scriptA.js", function () {
+ *     print("Script A has been included");
+ * });
+ *
+ * // If you run scriptB.js you should see only scriptB.js in the running scripts list.
+ * // And you should see the following output:
+ * // This is script B
+ * // This is script A
+ * // Script A has been included
+ */
+
+/**jsdoc
+ * Provides access to methods or objects provided in an external JavaScript or JSON file.
+ * See {@link https://legacydocs.tivolicloud.com/script/js-tips.html} for further details.
+ * @function Script.require
+ * @param {string} module - The module to use. May be a JavaScript file, a JSON file, or the name of a system module such
+ *     as <code>"appUi"</code> (i.e., the "appUi.js" system module JavaScript file).
+ * @returns {object|array} The value assigned to <code>module.exports</code> in the JavaScript file, or the value defined
+ *     in the JSON file.
+ */
+
+/**jsdoc
+ * @function Script.resetModuleCache
+ * @param {boolean} [deleteScriptCache=false] - Delete script cache.
+ * @deprecated This function is deprecated and will be removed.
+ */
+
+/**jsdoc
+ * Calls a function repeatedly, at a set interval.
+ * @function Script.setInterval
+ * @param {function} function - The function to call. This can be either the name of a function or an in-line definition.
+ * @param {number} interval - The interval at which to call the function, in ms.
+ * @returns {object} A handle to the interval timer. This can be used in {@link Script.clearInterval}.
+ * @example <caption>Print a message every second.</caption>
+ * Script.setInterval(function () {
+ *     print("Interval timer fired");
+ * }, 1000);
+ */
+
+/**jsdoc
+ * Calls a function once, after a delay.
+ * @function Script.setTimeout
+ * @param {function} function - The function to call. This can be either the name of a function or an in-line definition.
+ * @param {number} timeout - The delay after which to call the function, in ms.
+ * @returns {object} A handle to the timeout timer. This can be used in {@link Script.clearTimeout}.
+ * @example <caption>Print a message once, after a second.</caption>
+ * Script.setTimeout(function () {
+ *     print("Timeout timer fired");
+ * }, 1000);
+ */
+
+/**jsdoc
+ * Stops an interval timer set by {@link Script.setInterval|setInterval}.
+ * @function Script.clearInterval
+ * @param {object} timer - The interval timer to stop.
+ * @example <caption>Stop an interval timer.</caption>
+ * // Print a message every second.
+ * var timer = Script.setInterval(function () {
+ *     print("Interval timer fired");
+ * }, 1000);
+ *
+ * // Stop the timer after 10 seconds.
+ * Script.setTimeout(function () {
+ *     print("Stop interval timer");
+ *     Script.clearInterval(timer);
+ * }, 10000);
+ */
+
+/**jsdoc
+ * Stops a timeout timer set by {@link Script.setTimeout|setTimeout}.
+ * @function Script.clearTimeout
+ * @param {object} timer - The timeout timer to stop.
+ * @example <caption>Stop a timeout timer.</caption>
+ * // Print a message after two seconds.
+ * var timer = Script.setTimeout(function () {
+ *     print("Timer fired");
+ * }, 2000);
+ *
+ * // Uncomment the following line to stop the timer from firing.
+ * //Script.clearTimeout(timer);
+ */
+
+/**jsdoc
+ * Adds a function to the list of functions called when a particular event occurs on a particular entity.
+ * <p>See also, the {@link Entities} API.</p>
+ * @function Script.addEventHandler
+ * @param {Uuid} entityID - The ID of the entity.
+ * @param {Script.EntityEvent} eventName - The name of the event.
+ * @param {Script~entityEventCallback|Script~pointerEventCallback|Script~collisionEventCallback} handler - The function to
+ *     call when the event occurs on the entity. It can be either the name of a function or an in-line definition.
+ * @example <caption>Report when a mouse press occurs on a particular entity.</caption>
+ * var entityID = Entities.addEntity({
+ *     type: "Box",
+ *     position: Vec3.sum(MyAvatar.position, Vec3.multiplyQbyV(MyAvatar.orientation, { x: 0, y: 0, z: -5 })),
+ *     dimensions: { x: 0.5, y: 0.5, z: 0.5 },
+ *     lifetime: 300  // Delete after 5 minutes.
+ * });
+ *
+ * function reportMousePress(entityID, event) {
+ *     print("Mouse pressed on entity: " + JSON.stringify(event));
+ * }
+ *
+ * Script.addEventHandler(entityID, "mousePressOnEntity", reportMousePress);
+ */
+
+/**jsdoc
+ * Removes a function from the list of functions called when an entity event occurs on a particular entity.
+ * <p>See also, the {@link Entities} API.</p>
+ * @function Script.removeEventHandler
+ * @param {Uuid} entityID - The ID of the entity.
+ * @param {Script.EntityEvent} eventName - The name of the entity event.
+ * @param {function} handler - The name of the function to no longer call when the entity event occurs on the entity.
+ */
+
+/**jsdoc
+ * <p>The name of an entity event. When the entity event occurs, any function that has been registered for that event
+ * via {@link Script.addEventHandler} is called with parameters per the entity event.</p>
+ * <table>
+ *   <thead>
+ *     <tr><th>Event Name</th><th>Callback Type</th><th>Entity Event</th></tr>
+ *   </thead>
+ *   <tbody>
+ *     <tr><td><code>"enterEntity"</code></td><td>{@link Script~entityEventCallback|entityEventCallback}</td>
+ *       <td>{@link Entities.enterEntity}</td></tr>
+ *     <tr><td><code>"leaveEntity"</code></td><td>{@link Script~entityEventCallback|entityEventCallback}</td>
+ *       <td>{@link Entities.leaveEntity}</td></tr>
+ *     <tr><td><code>"mousePressOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.mousePressOnEntity}</td></tr>
+ *     <tr><td><code>"mouseMoveOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.mouseMoveOnEntity}</td></tr>
+ *     <tr><td><code>"mouseReleaseOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.mouseReleaseOnEntity}</td></tr>
+ *     <tr><td><code>"clickDownOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.clickDownOnEntity}</td></tr>
+ *     <tr><td><code>"holdingClickOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.holdingClickOnEntity}</td></tr>
+ *     <tr><td><code>"clickReleaseOnEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.clickReleaseOnEntity}</td></tr>
+ *     <tr><td><code>"hoverEnterEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.hoverEnterEntity}</td></tr>
+ *     <tr><td><code>"hoverOverEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.hoverOverEntity}</td></tr>
+ *     <tr><td><code>"hoverLeaveEntity"</code></td><td>{@link Script~pointerEventCallback|pointerEventCallback}</td>
+ *       <td>{@link Entities.hoverLeaveEntity}</td></tr>
+ *     <tr><td><code>"collisionWithEntity"</code><td>{@link Script~collisionEventCallback|collisionEventCallback}</td>
+ *       </td><td>{@link Entities.collisionWithEntity}</td></tr>
+ *   </tbody>
+ * </table>
+ * @typedef {string} Script.EntityEvent
+ */
+
+/**jsdoc
+ * Called when an entity event occurs on an entity as registered with {@link Script.addEventHandler}.
+ * @callback Script~entityEventCallback
+ * @param {Uuid} entityID - The ID of the entity the event has occured on.
+ */
+
+/**jsdoc
+ * Called when a pointer event occurs on an entity as registered with {@link Script.addEventHandler}.
+ * @callback Script~pointerEventCallback
+ * @param {Uuid} entityID - The ID of the entity the event has occurred on.
+ * @param {PointerEvent} pointerEvent - Details of the event.
+ */
+
+/**jsdoc
+ * Called when a collision event occurs on an entity as registered with {@link Script.addEventHandler}.
+ * @callback Script~collisionEventCallback
+ * @param {Uuid} entityA - The ID of one entity in the collision.
+ * @param {Uuid} entityB - The ID of the other entity in the collision.
+ * @param {Collision} collisionEvent - Details of the collision.
+ */
+
+/**jsdoc
+ * Triggered when the script starts for a user. See also, {@link Script.entityScriptPreloadFinished}.
+ * <p>Note: Can only be connected to via <code>this.preload = function (...) { ... }</code> in the entity script.</p>
+ * <p class="availableIn"><strong>Supported Script Types:</strong> Client Entity Scripts &bull; Server Entity Scripts</p>
+ * @function Entities.preload
+ * @param {Uuid} entityID - The ID of the entity that the script is running in.
+ * @returns {Signal}
+ * @example <caption>Get the ID of the entity that a client entity script is running in.</caption>
+ * var entityScript = (function () {
+ *     this.entityID = Uuid.NULL;
+ *
+ *     this.preload = function (entityID) {
+ *         this.entityID = entityID;
+ *         print("Entity ID: " + this.entityID);
+ *     };
+ * });
+ *
+ * var entityID = Entities.addEntity({
+ *     type: "Box",
+ *     position: Vec3.sum(MyAvatar.position, Vec3.multiplyQbyV(MyAvatar.orientation, { x: 0, y: 0, z: -5 })),
+ *     dimensions: { x: 0.5, y: 0.5, z: 0.5 },
+ *     color: { red: 255, green: 0, blue: 0 },
+ *     script: "(" + entityScript + ")",  // Could host the script on a Web server instead.
+ *     lifetime: 300  // Delete after 5 minutes.
+ * });
+ */
+
+/**jsdoc
+ * Triggered when the script terminates for a user.
+ * <p>Note: Can only be connected to via <code>this.unload = function () { ... }</code> in the entity script.</p>
+ * <p class="availableIn"><strong>Supported Script Types:</strong> Client Entity Scripts &bull; Server Entity Scripts</p>
+ * @function Entities.unload
+ * @param {Uuid} entityID - The ID of the entity that the script is running in.
+ * @returns {Signal}
+ */
+
+/**jsdoc
+ * @function Script.evaluate
+ * @param {string} program - Program.
+ * @param {string} filename - File name.
+ * @param {number} [lineNumber=-1] - Line number.
+ * @returns {object} Object.
+ * @deprecated This function is deprecated and will be removed.
+ */
+
+/**jsdoc
+ * Writes a description of every global object this script sees to a JSON file: for an object from the engine, its
+ * class and the methods, properties, signals and enums of its meta-object, with parameter and return types; for
+ * anything else, its kind and members. A developer tool: the file is the machine-readable form of the API in this
+ * script's context. The file goes under the application's own data folder (<code>api-dumps/</code>, the path's
+ * file name only); a test run with the Test API on may name any path.
+ * @function Script.dumpApi
+ * @param {string} path - The file to write.
+ * @returns {boolean} <code>true</code> if the file was written.
+ */
+
 #endif // hifi_WasmScriptEngine_h

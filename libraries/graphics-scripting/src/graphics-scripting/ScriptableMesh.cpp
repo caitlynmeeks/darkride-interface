@@ -255,25 +255,6 @@ bool scriptable::ScriptableMesh::setVertexProperty(glm::uint32 vertexIndex, cons
     return buffer_helpers::setValue(bufferView, vertexIndex, value);
 }
 
-/**jsdoc
- * Called for each vertex when {@link GraphicsMesh.updateVertexAttributes} is called.
- * @callback GraphicsMesh~forEachVertexCallback
- * @param {Object<Graphics.BufferTypeName, Graphics.BufferType>} attributes - The attributes  of the vertex.
- * @param {number} index - The vertex index.
- * @param {object} properties - The properties of the mesh, per {@link GraphicsMesh}.
- */
-
-/**jsdoc
- * Called for each vertex when {@link GraphicsMesh.updateVertexAttributes} is called. The value returned by the script function 
- * should be the modified attributes to update the vertex with, or <code>false</code> to not update the particular vertex.
- * @callback GraphicsMesh~updateVertexAttributesCallback
- * @param {Object<Graphics.BufferTypeName, Graphics.BufferType>} attributes - The attributes  of the vertex.
- * @param {number} index - The vertex index.
- * @param {object} properties - The properties of the mesh, per {@link GraphicsMesh}.
- * @returns {Object<Graphics.BufferTypeName, Graphics.BufferType>|boolean} The attribute values to update the vertex with, or 
- *     <code>false</code> to not update the vertex.
- */
-
 // protect against user scripts sending bogus values
 bool scriptable::ScriptableMesh::isValidIndex(glm::uint32 vertexIndex, const QString& attributeName) const {
     if (!isValid()) {
