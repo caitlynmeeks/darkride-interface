@@ -39,6 +39,7 @@
 
 #include <HttpRequestObject.h>
 #include <ScriptApiPolicy.h>
+#include <ConsoleScriptingInterface.h>
 #include <controllers/impl/endpoints/InputEndpoint.h>
 #include <controllers/impl/endpoints/ActionEndpoint.h>
 #include <controllers/impl/RouteBuilderProxy.h>
@@ -709,6 +710,29 @@ void VerifiedSandboxTests::testWorldScriptStartsNoScript() {
             QVERIFY2(!ScriptApiPolicy::deniesMethod(script, member), member);
         }
         QVERIFY(!ScriptApiPolicy::deniesSignal(script, "scriptEnding"));
+    }
+}
+
+void VerifiedSandboxTests::testWorldScriptKeepsTheScriptLog() {
+    // the Script Log is the visitor's record of what scripts printed: a world's script may add to it (print and the
+    // rest of console) and may not empty it, by console.clear or through Script
+    const QMetaObject* console = &ConsoleScriptingInterface::staticMetaObject;
+    QVERIFY(ScriptApiPolicy::allowsClass(console));
+    QVERIFY(ScriptApiPolicy::deniesMethod(console, "clear"));
+    for (const char* member : { "time", "timeEnd", "trace" }) {
+        QVERIFY2(!ScriptApiPolicy::deniesMethod(console, member), member);
+    }
+    for (const QMetaObject* script : { &ScriptEngine::staticMetaObject, &WasmScriptEngine::staticMetaObject }) {
+        QVERIFY2(ScriptApiPolicy::deniesMethod(script, "clearDebugLogWindow"), script->className());
+    }
+    // the visitor's own script is asked nothing: its console.clear empties the log, once
+    {
+        WasmScriptEngine own(ScriptEngine::CLIENT_SCRIPT, NO_SCRIPT, "about:own.js");
+        int cleared = 0;
+        connect(&own, &ScriptEngine::clearDebugWindow, this, [&cleared] { ++cleared; });
+        ConsoleScriptingInterface ownConsole(&own);   // console finds its engine as its parent
+        ownConsole.clear();
+        QCOMPARE(cleared, 1);
     }
 }
 

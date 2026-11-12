@@ -65,7 +65,8 @@ static const int SENSOR_TO_WORLD_SCALE_RADIX = 10;
 static const float AUDIO_LOUDNESS_SCALE = 1024.0f;
 static const float DEFAULT_AVATAR_DENSITY = 1000.0f; // density of water
 
-#define ASSERT(COND)  do { if (!(COND)) { abort(); } } while(0)
+// says which check failed before it stops the process: an abort with no line in the log can't be told from another
+#define ASSERT(COND)  do { if (!(COND)) { qCCritical(avatars) << "AvatarData check failed:" << #COND << "line" << __LINE__; abort(); } } while(0)
 
 size_t AvatarDataPacket::maxFaceTrackerInfoSize(size_t numBlendshapeCoefficients) {
     return FACE_TRACKER_INFO_SIZE + numBlendshapeCoefficients * sizeof(float);
@@ -134,15 +135,19 @@ AvatarData::~AvatarData() {
 // In C++, if this initialization were in the AvatarInfo, every file would have it's own copy, even for class vars.
 QUrl AvatarData::_defaultFullAvatarModelUrl = {}; 
 
+// the default avatar's folder on the web, published once by metaverse and never changed (a new version gets a new folder);
+// MyAvatar.cpp names the same folder (a frozen file, left as it is)
+const QString AvatarData::DEFAULT_AVATAR_FOLDER_URL = "https://cdn.darkride.ai/avatars/lightling-1/";
+
 void AvatarData::randomizeDefaultFullAvatarModelUrl() {
-    // TODO: this shouldnt have to live on the metaverse.
-    // the idea is that the default avatar is random for each person.
-    // on the server, it will set the albedo in the fst for the top and hair
-    // The Tivoli metaverse (which served a randomized lynden avatar) is gone; use the bundled mannequin
-    // from Overte instead. Without a loadable default avatar the skeleton never loads, the character
-    // controller never gets a rigid body, and the avatar is pinned to the world origin.
-    _defaultFullAvatarModelUrl = PathUtils::resourcesUrl("/meshes/defaultAvatar_full.fst");
+    // The Lightling for everyone (Caity, 11-10: "the mannequin should never appear unless some masochist goes out of
+    // their way to wear it"), at the address a person wearing the default sends, so both are one model in the cache.
+    // It was the bundled mannequin (the Tivoli metaverse's randomized default is gone). Without a loadable default
+    // avatar the skeleton never loads, the character controller never gets a rigid body, and the avatar is pinned to
+    // the world origin: a client reads this folder from its own copy, never the web.
+    _defaultFullAvatarModelUrl = QUrl(DEFAULT_AVATAR_FOLDER_URL + "lightling.fst");
 }
+
 
 const QUrl& AvatarData::defaultFullAvatarModelUrl() {
     if (_defaultFullAvatarModelUrl.isEmpty()) {
@@ -453,10 +458,19 @@ QByteArray AvatarData::toByteArray(AvatarDataDetail dataDetail, quint64 lastSent
         parentID = getParentID();
     }
 
+    // The joints and the blendshapes are copied first and the buffer is sized from the copies, so its size and its
+    // contents come from the same counts.
+    QVector<JointData> jointData;
+    if (wantedFlags & (AvatarDataPacket::PACKET_HAS_JOINT_DATA | AvatarDataPacket::PACKET_HAS_JOINT_DEFAULT_POSE_FLAGS)) {
+        QReadLocker readLock(&_jointDataLock);
+        jointData = _jointData;
+    }
+    const QVector<float> blendshapeCoefficients = _headData->getBlendshapeCoefficients();
+
     const size_t byteArraySize = AvatarDataPacket::MAX_CONSTANT_HEADER_SIZE + NUM_BYTES_RFC4122_UUID +
-        AvatarDataPacket::maxFaceTrackerInfoSize(_headData->getBlendshapeCoefficients().size()) +
-        AvatarDataPacket::maxJointDataSize(_jointData.size()) +
-        AvatarDataPacket::maxJointDefaultPoseFlagsSize(_jointData.size()) +
+        AvatarDataPacket::maxFaceTrackerInfoSize(blendshapeCoefficients.size()) +
+        AvatarDataPacket::maxJointDataSize(jointData.size()) +
+        AvatarDataPacket::maxJointDefaultPoseFlagsSize(jointData.size()) +
         AvatarDataPacket::FAR_GRAB_JOINTS_SIZE;
 
     if (maxDataSize == 0) {
@@ -466,7 +480,8 @@ QByteArray AvatarData::toByteArray(AvatarDataDetail dataDetail, quint64 lastSent
     QByteArray avatarDataByteArray((int)byteArraySize, 0);
     unsigned char* destinationBuffer = reinterpret_cast<unsigned char*>(avatarDataByteArray.data());
     const unsigned char* const startPosition = destinationBuffer;
-    const unsigned char* const packetEnd = destinationBuffer + maxDataSize;
+    // never past the buffer, whatever cap the caller gave
+    const unsigned char* const packetEnd = destinationBuffer + std::min((size_t)maxDataSize, byteArraySize);
 
 #define AVATAR_MEMCPY(src)                          \
     memcpy(destinationBuffer, &(src), sizeof(src)); \
@@ -674,8 +689,7 @@ QByteArray AvatarData::toByteArray(AvatarDataDetail dataDetail, quint64 lastSent
         }
     }
 
-    const auto& blendshapeCoefficients = _headData->getBlendshapeCoefficients();
-    // If it is connected, pack up the data
+    // If it is connected, pack up the data (blendshapeCoefficients: the copy taken above)
     IF_AVATAR_SPACE(PACKET_HAS_FACE_TRACKER_INFO, sizeof(AvatarDataPacket::FaceTrackerInfo) + (size_t)blendshapeCoefficients.size() * sizeof(float)) {
         auto startSection = destinationBuffer;
         auto faceTrackerInfo = reinterpret_cast<AvatarDataPacket::FaceTrackerInfo*>(destinationBuffer);
@@ -697,11 +711,7 @@ QByteArray AvatarData::toByteArray(AvatarDataDetail dataDetail, quint64 lastSent
         }
     }
 
-    QVector<JointData> jointData;
-    if (wantedFlags & (AvatarDataPacket::PACKET_HAS_JOINT_DATA | AvatarDataPacket::PACKET_HAS_JOINT_DEFAULT_POSE_FLAGS)) {
-        QReadLocker readLock(&_jointDataLock);
-        jointData = _jointData;
-    }
+    // jointData: the copy taken above
     const int numJoints = jointData.size();
     assert(numJoints <= 255);
     const int jointBitVectorSize = calcBitVectorSize(numJoints);

@@ -49,6 +49,7 @@
 #include "TextureIndex.h"
 #include <Trace.h>
 #include <StatTracker.h>
+#include <ResourceSizeLimit.h>
 
 #include <TextureMeta.h>
 
@@ -624,6 +625,7 @@ void NetworkTexture::makeRequest() {
         }
 
         _ktxResourceState = LOADING_INITIAL_DATA;
+        _ktxHighMipsAskedByPosition = false;
 
         // Add a fragment to the base url so we can identify the section of the ktx being requested when debugging
         // The actual requested url is _activeUrl and will not contain the fragment
@@ -772,6 +774,9 @@ void NetworkTexture::startRequestForNextMipLevel() {
     }
 }
 
+// the most bytes the seven smallest mips of a KTX take: what the first load asks for from the file's end
+static const int HIGH_MIP_MAX_SIZE = 5516;
+
 // Load mips in the range [low, high] (inclusive)
 void NetworkTexture::startMipRangeRequest(uint16_t low, uint16_t high) {
     if (_ktxMipRequest) {
@@ -791,7 +796,6 @@ void NetworkTexture::startMipRangeRequest(uint16_t low, uint16_t high) {
 
     _ktxMipLevelRangeInFlight = { low, high };
     if (isHighMipRequest) {
-        static const int HIGH_MIP_MAX_SIZE = 5516;
         // This is a special case where we load the high 7 mips
         ByteRange range;
         range.fromInclusive = -HIGH_MIP_MAX_SIZE;
@@ -823,6 +827,34 @@ void NetworkTexture::ktxInitialDataRequestFinished() {
 
     Q_ASSERT(_ktxResourceState == LOADING_INITIAL_DATA);
     Q_ASSERT_X(_ktxHeaderRequest && _ktxMipRequest, __FUNCTION__, "Request should not be null while in ktxInitialDataRequestFinished");
+
+    // The smallest mips are asked for as the file's last bytes ("bytes=-N"), and some hosts refuse that form of range
+    // though they serve ordinary ones (501 from GitHub's raw file host). The header's answer gave the file's size, so
+    // the same bytes are asked for once more by their positions.
+    if (!_ktxHighMipsAskedByPosition && _ktxHeaderRequest->getResult() == ResourceRequest::Success &&
+        _ktxMipRequest->getResult() != ResourceRequest::Success && _ktxHeaderRequest->getRangeRequestSuccessful()) {
+        // the size is the host's word: only one a texture download may have is used (0 = the answer did not give one)
+        const uint64_t saidSize = _ktxHeaderRequest->getTotalSizeOfResource();
+        const int64_t totalSize = saidSize <= (uint64_t)ResourceSizeLimit::forPath(_activeUrl.path()) ? (int64_t)saidSize : 0;
+        auto byPosition = totalSize > 0 ? DependencyManager::get<ResourceManager>()->createResourceRequest(
+            this, _activeUrl, true, -1, "NetworkTexture::ktxInitialDataRequestFinished") : nullptr;
+        if (byPosition) {
+            qCDebug(networking).noquote() << "The host refused the range for the last bytes of" << _url.toDisplayString()
+                << "(status" << _ktxMipRequest->getStatusCode() << "); asking by position in its" << totalSize << "bytes";
+            _ktxHighMipsAskedByPosition = true;
+            _ktxMipRequest->disconnect(this);
+            _ktxMipRequest->deleteLater();
+            _ktxMipRequest = byPosition;
+
+            ByteRange range;
+            range.fromInclusive = std::max<int64_t>(0, totalSize - HIGH_MIP_MAX_SIZE);
+            range.toExclusive = totalSize;
+            _ktxMipRequest->setByteRange(range);
+            connect(_ktxMipRequest, &ResourceRequest::finished, this, &NetworkTexture::ktxInitialDataRequestFinished);
+            _ktxMipRequest->send();
+            return;
+        }
+    }
 
     PROFILE_ASYNC_END(resource, "Resource:" + getType(), QString::number(_requestID), {
         { "from_cache", _ktxHeaderRequest->loadedFromCache() },

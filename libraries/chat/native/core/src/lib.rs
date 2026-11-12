@@ -249,8 +249,24 @@ async fn run(config: Config, events: EventSink, mut queue: mpsc::UnboundedReceiv
         let state = state.clone();
         let busy = busy.clone();
         let work = async move {
+            // the session this command runs in, to ask about if it fails
+            let client = state.client().ok();
             if let Err(e) = Box::pin(handle(&state, &op, &command)).await {
-                state.emit(json!({ "event": "error", "op": op, "message": format!("{e:#}") }));
+                let message = format!("{e:#}");
+                // a sign-in's refusal, and anything to do with a line being sent, always shows: a line must never go
+                // without a sign
+                let quiet_kind = !matches!(op.as_str(), "login_jwt" | "send" | "edit" | "react" | "delete");
+                let ended = match &client {
+                    Some(client) if quiet_kind => refused_for_ended_session(&e) || session_ended(client).await,
+                    _ => false,
+                };
+                if ended {
+                    // the server ended the session while this was on its way: the session watcher signs out and the
+                    // app signs in again, so this isn't an error of its own to show ("Couldn't open: … 401 …")
+                    tracing::debug!("{op} refused, the session has ended: {message}");
+                } else {
+                    state.emit(json!({ "event": "error", "op": op, "message": message }));
+                }
             }
             busy.fetch_sub(1, Ordering::SeqCst);
         };
@@ -591,11 +607,19 @@ async fn started(state: &Arc<State>, client: Client) -> Result<()> {
         }
     }));
 
-    // a session the server has ended (signed out elsewhere, the account closed): signed out here too
+    // a session the server has ended (signed out elsewhere, the account closed, its device removed): signed out here
+    // too. The SDK's channel for these keeps one change, so when two requests are refused at once (a send and the
+    // sync) this falls behind ("lagged"); the change it then reads is the newest one, so it carries on, never stops
+    // there, or the app would stay "ready" with every request refused
     let session_state = state.clone();
     let mut changes = client.subscribe_to_session_changes();
     tasks.push(tokio::spawn(async move {
-        while let Ok(change) = changes.recv().await {
+        loop {
+            let change = match changes.recv().await {
+                Ok(change) => change,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            };
             if let SessionChange::UnknownToken(_) = change {
                 let state = session_state.clone();
                 // from a task of its own: forgetting stops this one
@@ -1093,6 +1117,36 @@ async fn fetch_media(state: &Arc<State>, command: &Value) -> Result<String> {
         std::fs::rename(&partial, &path)?;
     }
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Whether a request was refused because the server no longer knows this session's access token (it ended the
+/// session: signed out everywhere, a password change, an admin): the SDK's own error, with the server's error kind,
+/// among the error's causes. Never a match on the text, which could quote anything. Some of the SDK's wrappers pass
+/// their inner error's message on but not the error itself, so session_ended asks the server when this can't tell.
+fn refused_for_ended_session(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        let kind = if let Some(http) = cause.downcast_ref::<matrix_sdk::HttpError>() {
+            http.client_api_error_kind()
+        } else if let Some(sdk) = cause.downcast_ref::<matrix_sdk::Error>() {
+            sdk.client_api_error_kind()
+        } else {
+            None
+        };
+        unknown_token(kind)
+    })
+}
+
+/// Whether the server has ended this session: it refuses the session's token (one small request, made only after
+/// something has failed)
+async fn session_ended(client: &Client) -> bool {
+    match client.whoami().await {
+        Err(e) => unknown_token(e.client_api_error_kind()),
+        Ok(_) => false,
+    }
+}
+
+fn unknown_token(kind: Option<&matrix_sdk::ruma::api::error::ErrorKind>) -> bool {
+    matches!(kind, Some(matrix_sdk::ruma::api::error::ErrorKind::UnknownToken(_)))
 }
 
 /// Signed out: everything stopped and waited for (Windows can't remove files still open), the server told when asked

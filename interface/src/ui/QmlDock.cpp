@@ -9,11 +9,14 @@
 
 #include "QmlDock.h"
 
+#include <algorithm>
+
 #include <QtCore/QCoreApplication>
 #include <QtQml/QQmlComponent>
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QtGui/QKeyEvent>
 #include <QtGui/QSurfaceFormat>
@@ -137,7 +140,8 @@ private:
 };
 #endif
 
-QmlDock::QmlDock(const QString& name, const QUrl& source, QWidget* parent) : QDockWidget(name, parent), _source(source) {
+QmlDock::QmlDock(const QString& name, const QUrl& source, QWidget* parent) :
+    QDockWidget(name, parent), _name(name), _source(source) {
     setObjectName(name + "Dock");
     // the bottom too, where My Files docks, so they tab with it (Caity, 10-27)
     setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
@@ -151,7 +155,8 @@ QmlDock::QmlDock(const QString& name, const QUrl& source, QWidget* parent) : QDo
         if (visible) {
             makeContent();
         }
-        if (QQuickItem* page = panel()) {
+        // a page on the VR screen isn't the dock's to show or hide
+        if (QQuickItem* page = _away ? nullptr : panel()) {
             page->setVisible(visible);
         }
     });
@@ -204,6 +209,8 @@ void QmlDock::makeContent() {
     for (const auto& named : _contextObjects) {
         context->setContextProperty(named.first, named.second.data());
     }
+    // the page's own panel, so it can close itself as its close box does (Page.qml closePanel: Explore after a Hop)
+    context->setContextProperty("dockPanelName", _name);
     auto component = new QQmlComponent(engine, _source, QQmlComponent::PreferSynchronous, _view);
     QObject* object = component->isReady() ? component->create(context) : nullptr;
     if (!object) {
@@ -229,6 +236,81 @@ QWindow* QmlDock::contentWindow() const {
 #else
     return nullptr;
 #endif
+}
+
+QQuickItem* QmlDock::makePage() {
+    makeContent();
+    return panel();
+}
+
+bool QmlDock::moveTo(QQuickItem* host) {
+    QQuickItem* page = panel();
+    if (!page || !host) {
+        return false;
+    }
+    page->setPosition(QPointF(0, 0));
+    page->setSize(host->size());
+    page->setParentItem(host);   // a slot lays its pages out as they come in (ScreenSlot.qml's scale)
+    page->setVisible(true);
+    _away = true;
+    return true;
+}
+
+bool QmlDock::moveBack(bool shown) {
+    QQuickItem* page = panel();
+    if (!page || !_view) {
+        return false;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    page->setParentItem(_view->contentItem());   // the view is the window here
+#else
+    page->setParentItem(_view->quickWindow()->contentItem());
+#endif
+    page->setPosition(QPointF(0, 0));
+    page->setScale(1.0);
+    if (page->metaObject()->indexOfProperty("screenScale") >= 0) {
+        page->setProperty("screenScale", 1.0);
+    }
+    page->setSize(_view->size());
+    page->setVisible(shown);
+    _away = false;
+    return true;
+}
+
+bool QmlDock::holdsWebView(const QQuickItem* item) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (!item) {
+        return false;
+    }
+    if (item->inherits("QQuickWebEngineView")) {
+        return true;
+    }
+    const QList<QQuickItem*> children = item->childItems();
+    return std::any_of(children.cbegin(), children.cend(), [](const QQuickItem* child) { return holdsWebView(child); });
+#else
+    Q_UNUSED(item);
+    return false;   // Qt 5's web views move between windows (the VR screen's 11-01 runs)
+#endif
+}
+
+void QmlDock::hideAway() {
+    if (QQuickItem* page = _away ? panel() : nullptr) {
+        page->setVisible(false);   // still in its slot; putting it on the screen again shows it (moveTo)
+    }
+}
+
+void QmlDock::releaseAway() {
+    if (!_away) {
+        return;
+    }
+    _away = false;
+    releaseContent();   // the view takes its page with it, out of the slot's window only as it goes
+}
+
+void QmlDock::setPageShown(bool shown) {
+    if (QQuickItem* page = _away ? nullptr : panel()) {
+        page->setVisible(shown);
+    }
 }
 
 QQuickItem* QmlDock::panel() const {

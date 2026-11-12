@@ -147,7 +147,23 @@ bool OpenXrRuntime::check(XrResult result, const char* what) const {
         snprintf(resultName, sizeof(resultName), "XrResult %d", (int)result);
     }
     qCWarning(openxr) << what << "failed:" << resultName;
+    if (result == XR_ERROR_SESSION_LOST || result == XR_ERROR_INSTANCE_LOST) {
+        if (result == XR_ERROR_INSTANCE_LOST) {
+            _needsRestart = true;   // a new instance isn't made in this run
+        }
+        markSessionLost();
+    }
     return false;
+}
+
+// From whichever thread sees it first: a loss event (pollEvents) or a call the runtime refused with SESSION_LOST.
+// With _sessionRunning false, the present thread's frame loop sleeps (OpenXrDisplayPlugin::beginXrFrame), the idle
+// frames stop and the input plugin's update returns early: no OpenXR call is made on the lost session again.
+void OpenXrRuntime::markSessionLost() const {
+    if (!_sessionLost.exchange(true)) {
+        qCWarning(openxr) << "The OpenXR session is lost (the link to the headset dropped, or the runtime is going)";
+    }
+    _sessionRunning = false;
 }
 
 XrPath OpenXrRuntime::toPath(const char* path) const {
@@ -270,6 +286,18 @@ bool OpenXrRuntime::findSystem() {
 }
 
 bool OpenXrRuntime::createSession() {
+    if (_needsRestart) {
+        return false;
+    }
+    // a lost session is replaced: it goes first (it isn't running, so it isn't ended), and the headset is asked for
+    // again. Until a new one is made the loss stands, so no frame call is made meanwhile, and a later pick tries again
+    const bool replacing = _sessionLost;
+    if (replacing) {
+        destroySession();
+        if (!findSystem()) {
+            return false;
+        }
+    }
     if (_session != XR_NULL_HANDLE) {
         return true;
     }
@@ -305,6 +333,11 @@ bool OpenXrRuntime::createSession() {
 #endif
     if (!check(xrCreateSession(_instance, &createInfo, &_session), "xrCreateSession")) {
         _session = XR_NULL_HANDLE;
+        if (replacing) {
+            // Meta's runtime over Link has refused a second session on one GL context in one run (2026-10-28)
+            qCWarning(openxr) << "The runtime gave no new session after the lost one: the headset can be used again after a restart";
+            _needsRestart = true;
+        }
         return false;
     }
 
@@ -338,6 +371,8 @@ bool OpenXrRuntime::createSession() {
 
     _sessionState = XR_SESSION_STATE_UNKNOWN;
     _sessionRunning = false;
+    _sessionLost = false;
+    _exitAsked = false;
     _sessionGeneration++;
     qCDebug(openxr) << "OpenXR session created";
     return true;
@@ -352,7 +387,10 @@ void OpenXrRuntime::destroySession() {
         endRunningSession(true);
     }
     // Destroying the session destroys its spaces, swapchains, action spaces and hand trackers.
-    xrDestroySession(_session);
+    {
+        std::lock_guard<std::mutex> lock(_frameMutex);   // never inside a frame
+        xrDestroySession(_session);
+    }
     _session = XR_NULL_HANDLE;
     _referenceSpace = XR_NULL_HANDLE;
     _viewSpace = XR_NULL_HANDLE;
@@ -373,6 +411,7 @@ void OpenXrRuntime::endRunningSession(bool withFrames) {
     // to STOPPING on the exit request anyway, or is ended regardless after the shorter wait
     const auto EXIT_TIMEOUT = std::chrono::milliseconds(withFrames ? 2000 : 1000);
     const auto deadline = std::chrono::steady_clock::now() + EXIT_TIMEOUT;
+    _exitAsked = true;   // the EXITING that follows is ours
     if (check(xrRequestExitSession(_session), "xrRequestExitSession")) {
         while (_sessionRunning && std::chrono::steady_clock::now() < deadline) {
             XrSessionState state = _sessionState;
@@ -423,6 +462,14 @@ void OpenXrRuntime::updateSessionState(XrSessionState state) {
             _sessionRunning = false;
             break;
         }
+        case XR_SESSION_STATE_LOSS_PENDING:
+        case XR_SESSION_STATE_EXITING:
+            // EXITING after our own exit request (leaving for good, at quit) isn't a loss; EXITING the runtime asked
+            // for (Quit picked in its menu) is: the session is over and VR has no picture
+            if (state == XR_SESSION_STATE_LOSS_PENDING || !_exitAsked) {
+                markSessionLost();
+            }
+            break;
         default:
             break;
     }
@@ -447,6 +494,8 @@ bool OpenXrRuntime::pollEvents() {
             }
             case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING:
                 qCWarning(openxr) << "The OpenXR runtime is going away";
+                _needsRestart = true;   // a new instance isn't made in this run
+                markSessionLost();
                 keepRunning = false;
                 break;
             case XR_TYPE_EVENT_DATA_USER_PRESENCE_CHANGED_EXT:

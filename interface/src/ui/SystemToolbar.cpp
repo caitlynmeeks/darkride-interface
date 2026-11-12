@@ -305,12 +305,15 @@ void SystemToolbar::fitCells() {
     const auto buttons = findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly);
     QSize cell = orientation() == Qt::Vertical ? SIDE_CELL : ROW_CELL;
     for (QToolButton* button : buttons) {
-        button->setMinimumSize(0, 0);
-        button->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
-        cell = cell.expandedTo(button->sizeHint());
+        cell = cell.expandedTo(button->sizeHint());   // a button's size hint isn't bounded by its fixed size
     }
+    // only a cell that changed is set: undoing and redoing a fixed size asks the main window for a layout pass, which
+    // holds every present for 20 ms (Application::notify's gl::ViewChangeGuard): at a badge, a panel's light or the VR
+    // screen's first show
     for (QToolButton* button : buttons) {
-        button->setFixedSize(cell);
+        if (button->minimumSize() != cell || button->maximumSize() != cell) {
+            button->setFixedSize(cell);
+        }
     }
 }
 

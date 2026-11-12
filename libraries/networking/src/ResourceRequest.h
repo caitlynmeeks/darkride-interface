@@ -96,7 +96,7 @@ public:
     QUrl getRelativePathUrl() const { return _relativePathURL; }
     bool loadedFromCache() const { return _loadedFromCache; }
     bool getRangeRequestSuccessful() const { return _rangeRequestSuccessful; }
-    bool getTotalSizeOfResource() const { return _totalSizeOfResource; }
+    uint64_t getTotalSizeOfResource() const { return _totalSizeOfResource; }
     QString getWebMediaType() const { return _webMediaType; }
     void setFailOnRedirect(bool failOnRedirect) { _failOnRedirect = failOnRedirect; }
 

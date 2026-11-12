@@ -134,8 +134,12 @@ const QHash<QByteArray, QSet<QByteArray>> DENIED_METHODS {
         "captureKeyEvents", "releaseKeyEvents", "captureJoystick", "releaseJoystick", "captureEntityClickEvents",
         "releaseEntityClickEvents" } },
     // Script: a world's script starts no script of its own (Script.load); what it needs comes in through
-    // Script.include, into the same engine under the same rules
-    { "ScriptEngine", { "load" } }
+    // Script.include, into the same engine under the same rules. The Script Log is the visitor's own record of what
+    // scripts printed: a world's script adds its lines to it and never empties it
+    { "ScriptEngine", { "load", "clearDebugLogWindow" } },
+    // console: a world's script prints, times and groups its lines as any script does; console.clear empties the
+    // visitor's Script Log, which only the visitor's own scripts may
+    { "ConsoleScriptingInterface", { "clear" } }
 };
 
 // Properties a world's script may write on an allow-listed class (every other write on such a class is refused).
