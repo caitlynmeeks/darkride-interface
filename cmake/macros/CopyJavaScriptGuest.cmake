@@ -25,13 +25,15 @@
 #  call on it raises; imports and exports unchanged.
 #  Revision 6 exports console_eval, a line typed into the scripting console evaluated in the script's global scope;
 #  imports unchanged. A host before it never calls it; this host tells the console when a guest lacks it.
+#  Revision 7's console.clear empties the Script Log through the engine's console object; imports and exports
+#  unchanged, so either host runs either.
 #
 #  Distributed under the Apache License, Version 2.0.
 #  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 #
 macro(COPY_JAVASCRIPT_GUEST DESTINATION_DIR)
-    set(JAVASCRIPT_GUEST_VERSION "0.17.0-6")
-    set(JAVASCRIPT_GUEST_SHA256 "b1ab3f7993850f3c3b28ba67cf732bfaddfaa4e4198e195c6bff6b12d23d7ad3")
+    set(JAVASCRIPT_GUEST_VERSION "0.17.0-7")
+    set(JAVASCRIPT_GUEST_SHA256 "5fae8ba4ea7e1b3b0bccc0734ab9d4ab0af97c5a2fc23eae8a6d566c758103ea")
     set(JAVASCRIPT_GUEST_URL "https://cdn.darkride.ai/deps/darkride-js-${JAVASCRIPT_GUEST_VERSION}.wasm")
     set(JAVASCRIPT_GUEST_NAME "darkride-js-${JAVASCRIPT_GUEST_VERSION}.wasm")
     set(JAVASCRIPT_GUEST "")

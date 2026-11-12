@@ -24,6 +24,7 @@
 #include <AddressManager.h>
 #include <EntityScriptingInterface.h>
 #include <NodeList.h>
+#include <ScriptApiPolicy.h>
 #include <ScriptCaller.h>
 #include <ScriptEngines.h>
 #include <WasmScriptEngine.h>
@@ -379,4 +380,49 @@ void ScriptStopTests::testATopLevelSpinEndsAfterTwoSeconds() {
 void ScriptStopTests::testATopLevelSpinOfALeftWorldEndsAtOnce() {
     const qint64 elapsed = stopATopLevelSpin(ScriptCaller::newWorld());
     QVERIFY2(elapsed >= 0 && elapsed < 1000, qPrintable(QString("ended %1 ms after the stop").arg(elapsed)));
+}
+
+// --- the Script Log, with the same real guest ---------------------------------------------------------------------
+
+namespace {
+
+// runs a script to its end and counts how often it emptied the Script Log
+int clearsOf(RunningScript& script) {
+    std::atomic<int> cleared { 0 };
+    QObject::connect(script.engine.data(), &ScriptEngine::clearDebugWindow, script.engine.data(),
+                     [&cleared] { ++cleared; }, Qt::DirectConnection);
+    script.engine->runInThread();
+    [&script] { QTRY_VERIFY2_WITH_TIMEOUT(script.isDone(), qPrintable(script.report()), SCRIPT_WAIT_MS); }();
+    script.engine->waitTillDoneRunning();
+    return cleared;
+}
+
+const char* const CLEARING_SCRIPT = R"(
+    try {
+        console.clear();
+        print("cleared");
+    } catch (e) {
+        print("refused: " + e.message);
+    }
+    Script.stop();
+)";
+
+} // namespace
+
+// The visitor's own script: console.clear empties the Script Log, once, and raises nothing.
+void ScriptStopTests::testConsoleClearEmptiesTheScriptLog() {
+    RunningScript script(CLEARING_SCRIPT);
+    QCOMPARE(clearsOf(script), 1);
+    QVERIFY2(script.hasLine("cleared"), qPrintable(script.report()));
+    QVERIFY2(script.errors().isEmpty(), qPrintable(script.report()));
+}
+
+// A world's script: the log stays as it is, and the script is told why.
+void ScriptStopTests::testAWorldsConsoleClearIsRefused() {
+    RunningScript script(CLEARING_SCRIPT);
+    script.engine->setWorldId(ScriptCaller::newWorld());
+    QCOMPARE(clearsOf(script), 0);
+    QVERIFY2(!script.hasLine("cleared"), qPrintable(script.report()));
+    const QString refusal = "refused: " + ScriptApiPolicy::refusalLine("ConsoleScriptingInterface", "clear");
+    QVERIFY2(!script.lines().filter(refusal).isEmpty(), qPrintable(script.report()));
 }
