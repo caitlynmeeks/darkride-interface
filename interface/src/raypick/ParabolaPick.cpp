@@ -14,6 +14,7 @@
 #include "scripting/HMDScriptingInterface.h"
 #include "DependencyManager.h"
 #include "PickManager.h"
+#include <WorldPicks.h>
 
 ParabolaPick::ParabolaPick(const glm::vec3& position, const glm::vec3& direction, float speed, const glm::vec3& accelerationAxis, bool rotateAccelerationWithAvatar, bool rotateAccelerationWithParent, bool scaleWithParent, const PickFilter& filter, float maxDistance, bool enabled) :
     Pick(PickParabola(position, speed * direction, accelerationAxis), filter, maxDistance, enabled),
@@ -63,9 +64,13 @@ PickResultPointer ParabolaPick::getEntityIntersection(const PickParabola& pick) 
             searchFilter.setFlag(PickFilter::PRECISE, false);
         }
 
-        ParabolaToEntityIntersectionResult entityRes =
-            DependencyManager::get<EntityScriptingInterface>()->evalParabolaIntersectionVector(pick, searchFilter,
-                getIncludeItemsAs<EntityItemID>(), getIgnoreItemsAs<EntityItemID>());
+        auto cast = [&](const QVector<EntityItemID>& ignore) {
+            return DependencyManager::get<EntityScriptingInterface>()->evalParabolaIntersectionVector(pick, searchFilter,
+                getIncludeItemsAs<EntityItemID>(), ignore);
+        };
+        // a pick a world's script made passes through what is hidden from worlds' scripts; every other pick casts once
+        ParabolaToEntityIntersectionResult entityRes = isMadeByWorld() ?
+            WorldPicks::castPastHidden(getIgnoreItemsAs<EntityItemID>(), cast) : cast(getIgnoreItemsAs<EntityItemID>());
         if (entityRes.intersects) {
             IntersectionType type = IntersectionType::ENTITY;
             if (getFilter().doesPickLocalEntities()) {

@@ -11,12 +11,15 @@
 import QtQuick 2.5
 import QtQuick.Controls 2.12
 import Hifi 1.0 as Hifi
+// Darkride's panel colours (Theme: the colour scheme and skin the person chose)
+import "qrc:///qml/darkride/panel"
 
 
 Rectangle {
     id: root
     width: parent ? parent.width : 100
     height: parent ? parent.height : 100
+    color: Theme.background
 
     signal moved(vector2d position);
     signal resized(size size);
@@ -30,8 +33,17 @@ Rectangle {
         TextArea.flickable: TextArea {
             id: textArea
             text: ""
+            // every line as written: a script's output is never read as formatting (or as pictures to fetch)
+            textFormat: TextEdit.PlainText
             wrapMode: TextEdit.WordWrap
             selectByMouse: true
+            readOnly: true
+            color: Theme.text
+            selectionColor: Theme.tint
+            selectedTextColor: Theme.background
+            font.family: Qt.platform.os === "osx" ? "Menlo" : "Consolas"
+            font.pixelSize: 12
+            background: null
         }
         ScrollBar.vertical: ScrollBar { }
     }

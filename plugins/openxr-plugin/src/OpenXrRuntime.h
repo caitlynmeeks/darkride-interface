@@ -68,6 +68,11 @@ public:
     XrSpace getReferenceSpace() const { return _referenceSpace; }
     XrSpace getViewSpace() const { return _viewSpace; }
     bool isSessionRunning() const { return _sessionRunning; }
+    // The runtime took the session away (the link to the headset dropped, the runtime is going): no frame call is made
+    // on it again, from either thread; the next createSession destroys it and makes a new one
+    bool isSessionLost() const { return _sessionLost; }
+    // the lost session couldn't be replaced in this run (the runtime refused a new one, or its instance went)
+    bool needsRestart() const { return _needsRestart; }
     // The OpenXR display is the active one. Leaving VR keeps the session (Meta's runtime refuses a second one in the same
     // run), so the input side stops reading the headset and controllers while this is false.
     bool isDisplayActive() const { return _displayActive; }
@@ -138,7 +143,12 @@ private:
     bool _userPresenceExtension { false };
 
     std::atomic<XrSessionState> _sessionState { XR_SESSION_STATE_UNKNOWN };
-    std::atomic<bool> _sessionRunning { false };
+    // mutable: check() is const and is where a lost session is seen (its failure branch only)
+    mutable std::atomic<bool> _sessionRunning { false };
+    mutable std::atomic<bool> _sessionLost { false };
+    mutable std::atomic<bool> _needsRestart { false };
+    std::atomic<bool> _exitAsked { false };   // we asked the session to exit (xrRequestExitSession)
+    void markSessionLost() const;
     std::atomic<bool> _displayActive { false };
     std::mutex _eventMutex;   // pollEvents and the session's begin and end, from whichever thread polls
     std::mutex _frameMutex;   // a frame (wait, begin, end) and the session's end never overlap; taken after _eventMutex

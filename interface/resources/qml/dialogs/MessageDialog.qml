@@ -43,6 +43,18 @@ ModalWindow {
         return OffscreenUi.waitForMessageBoxResult(root);
     }
 
+    // Escape's answer, and a world's box's as its visitor leaves the world (WorldDialogs): Cancel, No, Close or Abort;
+    // a box with none of them (an alert's OK) answers its default
+    function dismiss() {
+        if (panel.cancelButton) {
+            panel.reject();
+        } else if (panel.defaultButton) {
+            panel.accept();
+        } else {
+            click(OriginalDialogs.StandardButton.NoButton);
+        }
+    }
+
     property string text
     property string informativeText
     property string detailedText
@@ -53,6 +65,11 @@ ModalWindow {
     property var buttonTexts: ({})
     property int destructiveButton: OriginalDialogs.StandardButton.NoButton
     property int titleWidth: 0  // ModalWindow's own frame sets it while the window is made
+    // a world's script's box (interface's ui/WorldDialogs.h): its world's name; offerBlock shows the tick that stops the
+    // world's dialogs until the visitor leaves it, read as blockWorld when the box is answered
+    property string world: ""
+    property bool offerBlock: false
+    readonly property bool blockWorld: blockCheck.checked
 
     width: panel.width
     height: panel.implicitHeight
@@ -71,7 +88,16 @@ ModalWindow {
             text: StandardButtons.joined(root.text, root.informativeText)
             detailedText: root.detailedText
             buttons: StandardButtons.list(root.buttons, root.defaultButton, root.destructiveButton, root.buttonTexts)
+            world: root.world
             onClicked: root.click(value)
+
+            AlertCheck {
+                id: blockCheck
+                objectName: "blockWorldCheck"
+                visible: root.offerBlock
+                width: parent.width
+                text: "Don't let this world show more dialogs"
+            }
         }
     }
 
@@ -88,7 +114,11 @@ ModalWindow {
             case Qt.Key_Escape:
             case Qt.Key_Back:
                 event.accepted = true;
-                panel.reject();
+                if (root.world !== "") {
+                    root.dismiss();   // a world's box always closes (security's terms), an alert's OK too
+                } else {
+                    panel.reject();
+                }
                 break;
             case Qt.Key_Period:
                 if (event.modifiers === Qt.ControlModifier && Qt.platform.os === "osx") {  // Command-period

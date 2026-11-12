@@ -50,7 +50,8 @@ void CauterizedModel::createRenderItemSet() {
         Q_ASSERT(_modelMeshRenderItems.isEmpty());
 
         _modelMeshRenderItems.clear();
-        _modelMeshMaterialNames.clear();
+        // built aside and put in place under the lock, as in Model::createRenderItemSet
+        std::vector<std::string> materialNames;
 
         Transform transform;
         transform.setTranslation(_translation);
@@ -71,8 +72,10 @@ void CauterizedModel::createRenderItemSet() {
             _modelMeshRenderItems.back()->setHidden(isShapeHidden(shapeID));
 
             auto material = getNetworkModel()->getShapeMaterial(shapeID);
-            _modelMeshMaterialNames.push_back(material ? material->getName() : "");
+            materialNames.push_back(material ? material->getName() : "");
         }
+        QMutexLocker locker(&_mutex);
+        _modelMeshMaterialNames.swap(materialNames);
     } else {
         Model::createRenderItemSet();
     }

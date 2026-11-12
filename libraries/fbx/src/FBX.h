@@ -113,9 +113,22 @@ private:
 };
 QDebug operator<<(QDebug debug, const FBXProperty& property);
 
-// compared as QVariants compare: an array equals no scalar
+// Compared as Qt 5's QVariant compared them: an array equals no scalar, and text and bytes with the same characters are
+// equal. The reader keeps an FBX string as bytes, and the reader's checks compare it with text ("Mesh", "Cluster");
+// Qt 6's QVariant never finds bytes equal to text, so on Qt 6 every FBX mesh was taken for a blendshape and drew nothing
+// (2026-11-10, #67).
 inline bool operator==(const FBXProperty& property, const QVariant& value) {
-    return !property.isArray() && property.scalar() == value;
+    if (property.isArray()) {
+        return false;
+    }
+    const QVariant& scalar = property.scalar();
+    const int type = scalar.userType();
+    const int otherType = value.userType();
+    const auto isText = [](int t) { return t == QMetaType::QByteArray || t == QMetaType::QString; };
+    if (type != otherType && isText(type) && isText(otherType)) {
+        return scalar.toByteArray() == value.toByteArray();  // a QString as its UTF-8 bytes, as Qt 5 converted it
+    }
+    return scalar == value;
 }
 inline bool operator!=(const FBXProperty& property, const QVariant& value) {
     return !(property == value);
