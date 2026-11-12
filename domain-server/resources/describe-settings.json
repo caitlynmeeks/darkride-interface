@@ -49,6 +49,13 @@
           "advanced": true
         },
         {
+          "name": "world_check_url",
+          "label": "Outside check service",
+          "help": "For <strong>Check my world</strong> on the overview: a darkride-world-check service on the internet that knocks on this server's ports from outside and says what answered. It only ever checks the address the request comes from. Leave it empty to check only what this server can see by itself.",
+          "default": "",
+          "advanced": true
+        },
+        {
           "name": "enable_packet_verification",
           "label": "Check every packet",
           "help": "Adds a checksum to the server's network traffic, for extra security at a small cost in speed.",
