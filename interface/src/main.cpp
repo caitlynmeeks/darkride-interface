@@ -8,11 +8,15 @@
 //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
 //
 
+#include <atomic>
+#include <memory>
 #include <thread>
 
 #include <QDebug>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QSemaphore>
 #include <QThreadPool>
 #include <QTranslator>
 #include <QtNetwork/QSslConfiguration>
@@ -42,6 +46,16 @@
 #ifdef Q_OS_MACOS
 #include "MacAutoFill.h"
 #endif
+
+namespace {
+// Qt's TLS set-up, warmed on a pool thread from the top of main() and joined before the Application is built
+struct TlsWarmup {
+    QSemaphore done;                   // released when the set-up is over
+    std::atomic<bool> started { false };  // the pool has begun it (for the log line, if the join times out)
+};
+// Generous: the slow case is a cold Windows start, the system's root certificates read for the first time after a boot
+const int TLS_WARMUP_JOIN_TIMEOUT_MS = 15000;
+}
 
 int main(int argc, const char* argv[]) {
     StartupProfiler::start();
@@ -116,11 +130,18 @@ int main(int argc, const char* argv[]) {
     StartupProfiler::phase("main: settings (Setting::init)");
     Setting::init();
 
-    // The SSL backend's first use loads OpenSSL and the system's root certificates, about 130 ms on this Mac, and it
-    // used to fall on the main thread at start-up: inside the keypair request in a fresh home, inside the profile
-    // request in a signed-in one. Warmed on a pool thread here, beside the rest of the start; a first use that
-    // comes sooner waits on the backend's own lock.
-    QThreadPool::globalInstance()->start([] { QSslConfiguration::defaultConfiguration(); });
+    // The TLS backend's first use loads it and the system's root certificates, about 130 ms on this Mac, and it used to
+    // fall on the main thread at start-up: inside the keypair request in a fresh home, inside the profile request in a
+    // signed-in one. Warmed on a pool thread here, beside the steps below, and joined before the Application is built
+    // (below), so no other thread uses TLS while it runs: two threads in that first set-up at once deadlocked a Windows
+    // start in Qt 6.11's Schannel backend (11-10, the keypair check and this warm-up each waiting on a lock inside the
+    // backend, until the deadlock watchdog ended the process). Nothing between here and the join uses TLS.
+    auto tlsWarmup = std::make_shared<TlsWarmup>();
+    QThreadPool::globalInstance()->start([tlsWarmup] {
+        tlsWarmup->started = true;
+        QSslConfiguration::defaultConfiguration();
+        tlsWarmup->done.release();
+    });
 
 
 
@@ -174,8 +195,35 @@ int main(int argc, const char* argv[]) {
 #endif
         QtWebEngineQuick::initialize();
 #endif
+        // The TLS warm-up's join (its start is above): from here on any thread may use TLS. It is normally over by now,
+        // and the wait is 0.
+        QElapsedTimer tlsJoinTimer;
+        tlsJoinTimer.start();
+        int tlsJoinStep = StartupProfiler::begin("main: join the TLS warm-up (a wait only while it still runs)");
+        const bool tlsWarmedUp = tlsWarmup->done.tryAcquire(1, TLS_WARMUP_JOIN_TIMEOUT_MS);
+        StartupProfiler::end(tlsJoinStep);
+        const qint64 tlsJoinWaitMs = tlsJoinTimer.elapsed();
+        // Nothing but the warm-up has used TLS yet, so a warm-up still running is slow or stuck on its own, not
+        // deadlocked with this thread. The main thread goes on; its first TLS use waits on the backend's lock.
+        QString tlsJoinTimedOut;  // empty when the join found the warm-up finished
+        if (!tlsWarmedUp) {
+            tlsJoinTimedOut = QString("TLS warm-up NOT FINISHED after %1 ms (%2): going on without it; the first TLS "
+                                      "use on any thread waits for it")
+                .arg(tlsJoinWaitMs)
+                .arg(tlsWarmup->started ? QString("running, slow or stuck in Qt's TLS set-up on its own")
+                                        : QString("never started: the thread pool had not run it"));
+            qCWarning(interfaceapp).noquote() << tlsJoinTimedOut;  // the console: the log file comes with the Application
+        }
         Application app(argcExtended, const_cast<char**>(argvExtended.data()), startupTime, runningMarkerExisted);
         PROFILE_SYNC_END(startup, "app full ctor", "");
+        if (tlsJoinTimedOut.isEmpty()) {
+            // debug, as the start-up table is: the Application has set its log rules by now, and they hide hifi.*.info
+            // unless Developer > Verbose Logging is on
+            qCDebug(interfaceapp) << "TLS warm-up joined before the Application was built; the main thread waited"
+                                  << tlsJoinWaitMs << "ms";
+        } else {
+            qCWarning(interfaceapp).noquote() << tlsJoinTimedOut;
+        }
 
         StartupProfiler::phase("main: local server, system information, translator");
 

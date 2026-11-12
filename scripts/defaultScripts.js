@@ -12,7 +12,6 @@
 	// "system/makeUserConnection.js",
 	// "system/tablet-goto.js",
 	// "system/notifications.js",
-	"system/tablet-ui/tabletUI.js",
 	"system/emote.js",
 	"system/vehicles.js", // sit in and drive vehicles (PHYSICS.md round 6)
 	"system/avatarMenu.js", // an imported avatar's menu

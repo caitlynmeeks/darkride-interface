@@ -23,6 +23,7 @@ private slots:
     void refusesCompressedDataOfWrongSize();
     void refusesStringBeyondFile();
     void refusesArrayHeaderCutShort();
+    void comparesTextAndBytesByCharacters();
 };
 
 #endif // hifi_FBXArrayTests_h

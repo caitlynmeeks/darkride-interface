@@ -44,6 +44,7 @@ private slots:
     void testInputAndPrivacyNotForWorlds();
     void testSignalsNotForWorlds();
     void testWorldScriptStartsNoScript();
+    void testWorldScriptKeepsTheScriptLog();
     void testServerEnginesAreRuled();
     void testWorldMappingDestinations();
 

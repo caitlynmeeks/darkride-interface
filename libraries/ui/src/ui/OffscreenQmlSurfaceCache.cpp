@@ -13,6 +13,7 @@
 #include <PathUtils.h>
 #include "OffscreenQmlSurface.h"
 #include "Profile.h"
+#include "TabletScriptingInterface.h"
 
 OffscreenQmlSurfaceCache::OffscreenQmlSurfaceCache() {
 }
@@ -53,6 +54,8 @@ QSharedPointer<OffscreenQmlSurface> OffscreenQmlSurfaceCache::buildSurface(const
         }
     });
 
+    // only the app reaches this cache: its tablet surface is the app's own tablet
+    surface->setAppTablet(rootSource == TabletScriptingInterface::QML);
     surface->load(rootSource);
     surface->resize(QSize(100, 100));
     return surface;

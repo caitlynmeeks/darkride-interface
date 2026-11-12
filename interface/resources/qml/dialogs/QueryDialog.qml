@@ -46,6 +46,11 @@ ModalWindow {
     property var buttonTexts: ({})
     property bool monospace: false
     property int titleWidth: 0  // ModalWindow's own frame sets it while the window is made
+    // a world's script's prompt (interface's ui/WorldDialogs.h): its world's name; offerBlock shows the tick that stops
+    // the world's dialogs until the visitor leaves it, read as blockWorld when the prompt is answered
+    property string world: ""
+    property bool offerBlock: false
+    readonly property bool blockWorld: blockCheck.checked
 
     property bool keyboardEnabled: false
     property bool keyboardRaised: false
@@ -78,6 +83,7 @@ ModalWindow {
             x: parent ? Math.round((parent.width - width) / 2) : 0
             title: root.title
             text: root.label
+            world: root.world
             buttons: StandardButtons.list(StandardButtons.OK | StandardButtons.CANCEL, StandardButtons.OK, 0, root.buttonTexts)
             onClicked: {
                 if (value === StandardButtons.OK) {
@@ -98,6 +104,24 @@ ModalWindow {
                 id: menu
                 visible: !!root.items
                 model: root.items ? root.items : []
+            }
+
+            Text {
+                visible: root.world !== ""
+                width: parent.width
+                text: "Darkride never asks for your password in a world's dialog."
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: panel.worldAmber
+                font.pixelSize: 11 * panel.unit
+            }
+
+            AlertCheck {
+                id: blockCheck
+                objectName: "blockWorldCheck"
+                visible: root.offerBlock
+                width: parent.width
+                text: "Don't let this world show more dialogs"
             }
         }
 

@@ -40,6 +40,10 @@ public:
     static const int WARNING_ELAPSED_HEARTBEAT = 500 * USECS_PER_MSEC; // warn if elapsed heartbeat average is large
     static const int HEARTBEAT_SAMPLES = 100000; // ~5 seconds worth of samples
     static const int HEARTBEAT_TIMER_MSECS = 100;   // the main thread's own beat
+    // The watchdog's own rounds, a second apart, this far apart instead: the whole process stood still (the machine
+    // slept, the process was suspended, or the clock jumped), not the main thread alone. Well under the shortest
+    // limit above, so any stop long enough to trip it is caught
+    static const unsigned long PROCESS_STOOD_STILL_USECS = 30 * USECS_PER_SECOND;
 
     // Whether this build or this machine does without the watchdog: always on Android; under nsight, or with
     // HIFI_DISABLE_WATCHDOG in the environment, elsewhere. (--disableWatchdog is the command line's say.)
@@ -96,6 +100,11 @@ public:
     static ThreadSafeMovingAverage<int, HEARTBEAT_SAMPLES> _movingAverage;
 
     bool _quit { false };
+
+    // run()'s own: when its last round began, and the moment the main thread's heartbeat is counted from at the
+    // earliest (after the process stood still, the time it stood still isn't the main thread's)
+    uint64_t _lastRound { 0 };
+    uint64_t _heartbeatCountsFrom { 0 };
 
     Qt::HANDLE _mainThreadID = nullptr;
 

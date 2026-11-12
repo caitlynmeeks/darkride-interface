@@ -42,6 +42,7 @@
 #include <PickManager.h>
 #include <PointerManager.h>
 #include <RealClicks.h>
+#include <WorldPicks.h>
 #include <ScriptCaller.h>
 #include <Preferences.h>
 #include <RecordingScriptingInterface.h>
@@ -94,6 +95,7 @@
 #include "ui/PanelTheme.h"
 #include "ui/CodeEditor.h"
 #include "ui/Panels.h"
+#include "ui/VrScreen.h"
 #include "chat/FriendsScriptingInterface.h"
 #include "scripting/HMDScriptingInterface.h"
 #include "scripting/KeyboardScriptingInterface.h"
@@ -251,6 +253,52 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
             auto entities = DependencyManager::get<EntityScriptingInterface>();
             return entities && entities->worldMayUse(entityID);
         });
+        // What a world's script reads through its own picks and pointers (WorldPicks): asked on the script's
+        // thread, where forWorldRead answers for the calling world. Set here, before any script engine starts. An
+        // id known to be an entity's (a pick hit it) that is no longer in the tree is not readable; an id that is
+        // no entity's is left to the pick.
+        WorldPicks::setReadCheck([](const QUuid& entityID, bool isEntity) {
+            auto entities = DependencyManager::get<EntityScriptingInterface>();
+            if (!entities) {
+                return false;
+            }
+            if (isEntity) {
+                auto tree = entities->getEntityTree();
+                EntityItemPointer entity;
+                if (tree) {
+                    tree->withReadLock([&] { entity = tree->findEntityByEntityItemID(EntityItemID(entityID)); });
+                }
+                if (!entity) {
+                    return false;
+                }
+            }
+            return entityID.isNull() || !entities->forWorldRead(entityID).isNull();
+        });
+        // What a pick made by a world's script passes through (WorldPicks::castPastHidden): the app's and the
+        // visitor's own local entities. Asked on the main thread, so by the entity; one that can't be found is hidden.
+        WorldPicks::setHiddenCheck([](const QUuid& entityID) {
+            auto entities = DependencyManager::get<EntityScriptingInterface>();
+            auto tree = entities ? entities->getEntityTree() : EntityTreePointer();
+            if (!tree) {
+                return true;
+            }
+            EntityItemPointer entity;
+            tree->withReadLock([&] { entity = tree->findEntityByEntityItemID(EntityItemID(entityID)); });
+            return !entity || (entity->isLocalEntity() && entity->getLocalOwner() != entity::LocalOwner::WORLD);
+        });
+        // A pointer a world's script made delivers its hover and trigger events only into the world's own entities
+        // (Pointer::worldTarget): a domain entity, or one a world's script made. Asked on the main thread, so by the
+        // entity itself, not by the caller; an id that isn't an entity is not the world's.
+        Pointer::setWorldTargetCheck([](const QUuid& entityID) {
+            auto entities = DependencyManager::get<EntityScriptingInterface>();
+            auto tree = entities ? entities->getEntityTree() : EntityTreePointer();
+            if (!tree || entityID.isNull()) {
+                return false;
+            }
+            EntityItemPointer entity;
+            tree->withReadLock([&] { entity = tree->findEntityByEntityItemID(EntityItemID(entityID)); });
+            return entity && entity->isMadeByWorld();
+        });
     }
 
 
@@ -309,6 +357,7 @@ void registerApplicationServices(int listenPort, const QString& defaultScriptsOv
     DependencyManager::set<Panels>();              // the window's panels by name (ui/Panels.h)
     DependencyManager::set<CodeEditor>();          // the Code panel's document (ui/CodeEditor.h), after Build mode's
     DependencyManager::set<MakeDock>();            // the Make dock's one object (make/MakeDock.h), after MakeLink's
+    DependencyManager::set<VrScreen>();            // the VR screen's headset side (ui/VrScreen.h)
     PanelTheme::registerWithQml();
 
 

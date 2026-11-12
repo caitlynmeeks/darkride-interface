@@ -15,6 +15,7 @@
 
 #include "render-utils/ShaderConstants.h"
 #include "DeferredLightingEffect.h"
+#include "GeometryCache.h"
 #include "RenderUtilsLogging.h"
 
 namespace ru {
@@ -30,6 +31,19 @@ namespace gr {
 
 using namespace render;
 extern void initForwardPipelines(ShapePlumber& plumber, const render::ShapePipeline::BatchSetter& batchSetter, const render::ShapePipeline::ItemSetter& itemSetter);
+
+void WarmWebBrowserPipelines::run(const render::RenderContextPointer& renderContext) {
+    if (!GeometryCache::takeWebBrowserWarmup()) {
+        return;
+    }
+    auto geometryCache = DependencyManager::get<GeometryCache>();
+    gpu::doInBatch("WarmWebBrowserPipelines", renderContext->args->_context, [&](gpu::Batch& batch) {
+        // the opaque and the transparent (a page fading in) web-browser pipelines of this render method, not side by
+        // side: setting a pipeline syncs its program, which compiles it the first time
+        batch.setPipeline(geometryCache->getWebBrowserProgram(false, _forward, false));
+        batch.setPipeline(geometryCache->getWebBrowserProgram(true, _forward, false));
+    });
+}
 
 void BeginGPURangeTimer::run(const render::RenderContextPointer& renderContext, gpu::RangeTimerPointer& timer) {
     timer = _gpuTimer;
