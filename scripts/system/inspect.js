@@ -462,7 +462,9 @@ function avatarMoved(place) {
         || Vec3.length(Vec3.subtract(Quat.getFront(place.orientation), Quat.getFront(now.orientation))) > AVATAR_ROTATION_SLOP;
 }
 
-function handleModes() {
+// startedByClick: the press of an Alt+click. The camera's gesture starts only there: Alt alone (Alt-Tab, a menu's Alt key,
+// held while riding) never leaves the plain camera (NexPro, 11-11: one Alt press froze his view while the monorail rode on)
+function handleModes(startedByClick) {
     var newMode = (mode == noMode) ? noMode : detachedMode;
     if (alt) {
         if (control) {
@@ -500,6 +502,9 @@ function handleModes() {
     }
 
     if (mode == noMode && newMode != noMode && (Camera.mode == "independent" || Camera.mode == "entity")) {
+        newMode = noMode;
+    }
+    if (mode == noMode && newMode != noMode && !startedByClick) {
         newMode = noMode;
     }
 
@@ -571,8 +576,28 @@ function keyReleaseEvent(event) {
     }
 }
 
+// Alt, Control (Cmd on a Mac) and Shift as every mouse event says they are held. A key event the scripts never hear (a
+// Web entity holding the keyboard takes it first) can't leave a flag set, and the camera's mode with it: each press and
+// move puts them right.
+function syncModifiers(event) {
+    if (event.isAlt === alt && event.isControl === control && event.isShifted === shift) {
+        return;
+    }
+    alt = event.isAlt;
+    control = event.isControl;
+    shift = event.isShifted;
+    handleModes();
+}
+
 function mousePressEvent(event) {
+    syncModifiers(event);
     if (alt && !isActive) {
+        handleModes(true);   // the gesture starts here, with the click
+        // the camera's gesture, not a click on a page: a Web entity the press gave the keyboard to gives it back, so Alt's
+        // release, walking and Esc reach the scripts and the avatar again (a plain click on a page still keeps it)
+        if (!Uuid.isNull(Entities.keyboardFocusEntity)) {
+            Entities.setKeyboardFocusEntity(Uuid.NULL);
+        }
         mouseLastX = event.x;
         mouseLastY = event.y;
 
@@ -736,6 +761,7 @@ function timeQLerp(quatA, quatB) {
 }
 
 function mouseMoveEvent(event) {
+    syncModifiers(event);
     if (isActive) {
         if (mode != noMode && !rotatingTowardsTarget) {
 
