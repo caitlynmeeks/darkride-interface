@@ -20,6 +20,7 @@
 #include <ColorUtils.h>
 
 #include <gpu/Resource.h>
+#include <gpu/Texture.h>
 #include <gpu/TextureTable.h>
 
 #include "MaterialMappingMode.h"
@@ -621,7 +622,13 @@ public:
     void setTexturesLoading(bool value) { _texturesLoading = value; }
     void setInitialized() { _initialized = true; }
 
-    bool shouldUpdate() const { return !_initialized || _needsUpdate || _texturesLoading; }
+    bool shouldUpdate() const {
+        return !_initialized || _needsUpdate || _texturesLoading ||
+            (_followsTextures && _followedTexturesSeen != gpu::TextureSource::followedTexturesGeneration());
+    }
+
+    // Whether one of its maps follows another entity's texture, and the generation of those it was built with
+    void setFollowsTextures(bool follows, uint32_t generation) { _followsTextures = follows; _followedTexturesSeen = generation; }
 
     int getTextureCount() const { calculateMaterialInfo(); return _textureCount; }
     size_t getTextureSize()  const { calculateMaterialInfo(); return _textureSize; }
@@ -634,6 +641,8 @@ private:
     bool _needsUpdate { false };
     bool _texturesLoading { false };
     bool _initialized { false };
+    bool _followsTextures { false };
+    uint32_t _followedTexturesSeen { 0 };
 
     mutable size_t _textureSize { 0 };
     mutable int _textureCount { 0 };

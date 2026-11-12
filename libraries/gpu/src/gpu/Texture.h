@@ -729,16 +729,28 @@ public:
 
     void setUrl(const QUrl& url) { _imageUrl = url; }
     const QUrl& getUrl() const { return _imageUrl; }
-    const gpu::TexturePointer getGPUTexture() const { return _gpuTexture; }
+    // The texture, or for a source that follows another entity's texture (a web entity's page used as a material's
+    // map), whatever its operator hands out now
+    const gpu::TexturePointer getGPUTexture() const;
     void setType(int type) { _type = type; }
     int getType() const { return _type; }
 
     void resetTexture(gpu::TexturePointer texture);
+    void resetTextureOperator(const std::function<gpu::TexturePointer()>& textureOperator);
 
     bool isDefined() const;
 
+    // Whether this source follows another entity's texture (its operator) rather than holding one of its own
+    bool followsAnotherTexture() const { return (bool)_gpuTextureOperator; }
+
+    // A count that goes up whenever the textures sources like that follow may have changed (a page registered or went,
+    // or showed its first frame): a material holding such a source builds itself again when it moves
+    static uint32_t followedTexturesGeneration();
+    static void followedTexturesChanged();
+
 protected:
     gpu::TexturePointer _gpuTexture;
+    std::function<gpu::TexturePointer()> _gpuTextureOperator { nullptr };
     QUrl _imageUrl;
     int _type { 0 };
 };

@@ -15,6 +15,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QUrl>
+#include <QtCore/QUuid>
 
 #include "EntityItemProperties.h"
 
@@ -116,6 +117,13 @@ namespace EntityContentAddresses {
         return changed;
     }
 
+    // A map that names an entity, "{...}" (a world's Web entity's page: TextureCache::entityIDInMap), is no address:
+    // it reads nothing from anywhere, so it stays. A "{" that isn't an ID is judged as any other address.
+    static bool isEntityIDMap(const QString& value) {
+        const QString trimmed = value.trimmed();
+        return trimmed.startsWith('{') && !QUuid(trimmed).isNull();
+    }
+
     // one material of a material JSON (Entities.Material, parseJSONMaterial in ProceduralMaterialCache.cpp): every
     // "...Map" picture and "lightMapDirection" (the keys it resolves against the material's address), and the
     // addresses of its "procedural" shader
@@ -124,7 +132,7 @@ namespace EntityContentAddresses {
         for (const QString& key : material.keys()) {
             const QJsonValue value = material.value(key);
             const bool picture = key.endsWith(QStringLiteral("Map")) || key == QStringLiteral("lightMapDirection");
-            if (picture && value.isString() && isOnThisComputer(value.toString())) {
+            if (picture && value.isString() && !isEntityIDMap(value.toString()) && isOnThisComputer(value.toString())) {
                 material.insert(key, QString());
                 changed = true;
             } else if (key == QStringLiteral("procedural") && value.isObject()) {

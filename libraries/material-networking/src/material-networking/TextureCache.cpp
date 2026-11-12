@@ -12,6 +12,10 @@
 #include "TextureCache.h"
 
 #include <mutex>
+#include <unordered_map>
+
+#include <QUuid>
+#include <UUIDHasher.h>
 
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -493,6 +497,13 @@ void NetworkTexture::setImage(gpu::TexturePointer texture, int originalWidth,
         finishedLoading(false);
     }
 
+    emit networkTextureCreated(qWeakPointerCast<NetworkTexture, Resource> (_self));
+}
+
+void NetworkTexture::setImageOperator(const std::function<gpu::TexturePointer()>& textureOperator) {
+    _textureSource->resetTextureOperator(textureOperator);
+    _width = _height = 0;
+    finishedLoading((bool)textureOperator);
     emit networkTextureCreated(qWeakPointerCast<NetworkTexture, Resource> (_self));
 }
 
@@ -1493,4 +1504,56 @@ void TextureCache::updateSpectatorCameraNetworkTexture() {
             _spectatorCameraNetworkTexture->setImage(texture, texture->getWidth(), texture->getHeight());
         }
     }
+}
+
+QUuid TextureCache::entityIDInMap(const QString& map) {
+    // a map relative to "materialData" arrives as "%7B...%7D"
+    QString decoded = QUrl::fromPercentEncoding(map.toUtf8());
+    return decoded.startsWith("{") ? QUuid(decoded) : QUuid();
+}
+
+NetworkTexturePointer TextureCache::getTextureByEntityID(const QUuid& entityID, image::TextureUsage::Type type) {
+    if (entityID.isNull()) {
+        return NetworkTexturePointer();
+    }
+    // A reference to another entity's texture, so a resource texture: nothing to download. While the entity isn't
+    // here, or has no picture yet, the map is this kind of map's fallback (black for an emissive map), so the
+    // material settles as it would on a failed download; when the entity's texture registers, goes or shows its
+    // first picture, the materials following it build themselves again (gpu::TextureSource::followedTexturesChanged).
+    auto fallback = getFallbackTextureForType(type);
+    NetworkTexturePointer texture(new NetworkTexture(QUrl(entityID.toString()), true));
+    texture->setImageOperator([entityID, fallback]() {
+        auto entityTexture = Texture::getEntityTexture(entityID);
+        return entityTexture && entityTexture->isDefined() ? entityTexture : fallback;
+    });
+    return texture;
+}
+
+namespace {
+    std::mutex entityTexturesMutex;
+    std::unordered_map<QUuid, std::weak_ptr<gpu::Texture>> entityTextures;
+}
+
+void Texture::registerEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture) {
+    {
+        std::lock_guard<std::mutex> lock(entityTexturesMutex);
+        entityTextures[entityID] = texture;
+    }
+    gpu::TextureSource::followedTexturesChanged();
+}
+
+void Texture::unregisterEntityTexture(const QUuid& entityID, const gpu::TexturePointer& texture) {
+    std::lock_guard<std::mutex> lock(entityTexturesMutex);
+    auto itr = entityTextures.find(entityID);
+    // only its own: a new renderer for the same entity may have registered already
+    if (itr != entityTextures.end() && (itr->second.expired() || itr->second.lock() == texture)) {
+        entityTextures.erase(itr);
+        gpu::TextureSource::followedTexturesChanged();
+    }
+}
+
+gpu::TexturePointer Texture::getEntityTexture(const QUuid& entityID) {
+    std::lock_guard<std::mutex> lock(entityTexturesMutex);
+    auto itr = entityTextures.find(entityID);
+    return itr != entityTextures.end() ? itr->second.lock() : nullptr;
 }

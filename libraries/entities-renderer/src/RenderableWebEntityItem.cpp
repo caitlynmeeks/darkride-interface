@@ -22,6 +22,7 @@
 
 
 #include <GeometryCache.h>
+#include <material-networking/TextureCache.h>
 #include <PathUtils.h>
 #include <PointerEvent.h>
 #include <gl/GLHelpers.h>
@@ -120,6 +121,13 @@ WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(e
 
     _texture = gpu::Texture::createExternal(OffscreenQmlSurface::getDiscardLambda());
     _texture->setSource(__FUNCTION__);
+    // so a world's material can show this page: "albedoMap": "{this entity's id}" (one page on many screens). Only a
+    // page the world made (its own entities, or local ones a world's script made): never the app's own surfaces (the
+    // tablet, the VR screen's pieces) or a visitor's own.
+    if (entity->isMadeByWorld()) {
+        Texture::registerEntityTexture(entity->getID(), _texture);
+        _textureShared = true;
+    }
 
     _contentType = ContentType::HtmlContent;
     // The app's own QML surfaces (the VR screen's pieces, listed by setAppSurface before their renderer is made) get theirs
@@ -135,6 +143,7 @@ WebEntityRenderer::WebEntityRenderer(const EntityItemPointer& entity) : Parent(e
 }
 
 WebEntityRenderer::~WebEntityRenderer() {
+    Texture::unregisterEntityTexture(_entity->getID(), _texture);
     destroyWebSurface();
 
     auto geometryCache = DependencyManager::get<GeometryCache>();
@@ -362,7 +371,11 @@ void WebEntityRenderer::doRender(RenderArgs* args) {
     }
 
     if (newTextureAvailable) {
+        const bool firstPicture = !_texture->isDefined();
         _texture->setExternalTexture(newTextureAndFence.first, newTextureAndFence.second);
+        if (firstPicture && _textureShared) {
+            Texture::entityTextureChanged();   // the materials showing this page swap their fallback for it
+        }
     }
 
     static const glm::vec2 texMin(0.0f), texMax(1.0f), topLeft(-0.5f), bottomRight(0.5f);

@@ -93,6 +93,7 @@ private:
     QSharedPointer<OffscreenQmlSurface> _webSurface { nullptr };
     bool _cachedWebSurface { false };
     gpu::TexturePointer _texture;
+    bool _textureShared { false };   // registered, so a world's material can show this page
     QString _tryingToBuildURL;
 
     glm::u8vec3 _color;

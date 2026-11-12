@@ -387,6 +387,9 @@ void RenderPipelines::updateMultiMaterial(graphics::MultiMaterial& multiMaterial
 
     auto& drawMaterialTextures = multiMaterial.getTextureTable();
     multiMaterial.setTexturesLoading(false);
+    // taken before the maps are read, so a change while they're read still brings a rebuild
+    const uint32_t followedGeneration = gpu::TextureSource::followedTexturesGeneration();
+    bool followsTextures = false;
 
     // The total list of things we need to look for
     static std::set<uint> allFlags;
@@ -424,6 +427,11 @@ void RenderPipelines::updateMultiMaterial(graphics::MultiMaterial& multiMaterial
         bool defaultFallthrough = material->getDefaultFallthrough();
         const auto& materialKey = material->getKey();
         const auto& textureMaps = material->getTextureMaps();
+        for (const auto& map : textureMaps) {
+            if (map.second && map.second->getTextureSource() && map.second->getTextureSource()->followsAnotherTexture()) {
+                followsTextures = true;
+            }
+        }
 
         auto it = flagsToCheck.begin();
         while (it != flagsToCheck.end()) {
@@ -779,6 +787,7 @@ void RenderPipelines::updateMultiMaterial(graphics::MultiMaterial& multiMaterial
     schema._key = (uint32_t)schemaKey._flags.to_ulong();
     schemaBuffer.edit<graphics::MultiMaterial::Schema>() = schema;
     multiMaterial.setNeedsUpdate(false);
+    multiMaterial.setFollowsTextures(followsTextures, followedGeneration);
     multiMaterial.setInitialized();
 }
 

@@ -192,6 +192,13 @@ NetworkMaterialResource::ParsedMaterials NetworkMaterialResource::parseJSONMater
  *     Set to <code>"fallthrough"</code> to fall through to the material below. <code>"hifi_pbr"</code> model only.
  * @property {string} albedoMap - The URL of the albedo texture image. 
  *     Set to <code>"fallthrough"</code> to fall through to the material below. <code>"hifi_pbr"</code> model only.
+ *     Any texture map can be a Web entity's ID, <code>"{...}"</code>, instead of a URL: the map shows that entity's page,
+ *     live, so one page can be shown on many surfaces. An ID works in <code>materialData</code> only; in a material file
+ *     on a web host it resolves against the host, as any relative address does. The Web entity must be one the world
+ *     made. The page comes out upside down (use a <code>materialMappingScale</code> y of <code>-1</code> and a
+ *     <code>materialMappingPos</code> y of <code>1</code>) and lighter than its own colours, because it is read as linear
+ *     (a page can make up for it with an SVG gamma filter, exponent 2.2, on its body). While the Web entity isn't loaded,
+ *     or has no picture yet, the map draws as that kind of map's fallback (black for an emissive map).
  * @property {string} opacityMap - The URL of the opacity texture image. Set the value the same as the <code>albedoMap</code>
  *     value to let the picture decide the transparency when <code>opacityMapMode</code> is not set: a picture whose alpha
  *     is all but 0 or 1 masks, any other blends. With an <code>opacityMapMode</code>, the <code>albedoMap</code>'s alpha is
@@ -784,8 +791,10 @@ graphics::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& baseUrl
     }
 
     const auto url = getTextureUrl(baseUrl, hfmTexture);
-    const auto texture = DependencyManager::get<TextureCache>()->getTexture(url, type, hfmTexture.content,
-                                                                            hfmTexture.maxNumPixels, hfmTexture.sourceChannel);
+    auto textureCache = DependencyManager::get<TextureCache>();
+    const auto entityID = hfmTexture.content.isEmpty() ? TextureCache::entityIDInMap(QString::fromUtf8(hfmTexture.filename)) : QUuid();
+    const auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID, type)
+        : textureCache->getTexture(url, type, hfmTexture.content, hfmTexture.maxNumPixels, hfmTexture.sourceChannel);
     _textures[channel] = Texture{ hfmTexture.name, texture };
 
     auto map = std::make_shared<graphics::TextureMap>();
@@ -803,8 +812,11 @@ graphics::TextureMapPointer NetworkMaterial::fetchTextureMap(const QUrl& url,
                                                              image::ColorChannel sourceChannel) {
     auto textureCache = DependencyManager::get<TextureCache>();
     if (textureCache && !url.isEmpty()) {
+        // a map can name an entity, "{...}": that entity's picture, e.g. a Web entity's page
+        const auto entityID = TextureCache::entityIDInMap(QString::fromUtf8(url.toEncoded()));
         // a channel of a packed picture is copied into a texture of its own as it loads, as glTF's are
-        auto texture = textureCache->getTexture(url, type, QByteArray(), ABSOLUTE_MAX_TEXTURE_NUM_PIXELS, sourceChannel);
+        auto texture = !entityID.isNull() ? textureCache->getTextureByEntityID(entityID, type)
+            : textureCache->getTexture(url, type, QByteArray(), ABSOLUTE_MAX_TEXTURE_NUM_PIXELS, sourceChannel);
         _textures[channel].texture = texture;
 
         auto map = std::make_shared<graphics::TextureMap>();
