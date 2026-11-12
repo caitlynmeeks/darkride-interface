@@ -30,6 +30,7 @@
 #include <SpatiallyNestable.h>
 #include <TriangleSet.h>
 #include <DualQuaternion.h>
+#include <shared/HifiTypes.h>
 
 #include "RenderHifi.h"
 #include "GeometryCache.h"
@@ -494,6 +495,8 @@ protected:
 
     PrimitiveMode _primitiveMode { PrimitiveMode::SOLID };
     bool _useDualQuaternionSkinning { false };
+    // What the model's file is read with when it isn't an .fst, which brings its own (SkeletonModel: worn as an avatar)
+    hifi::VariantMultiHash _resourceMapping;
 
     // debug rendering support
     int _debugMeshBoxesID = GeometryCache::UNKNOWN_ID;

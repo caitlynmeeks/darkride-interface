@@ -19,6 +19,10 @@
 
 #include <shared/HifiTypes.h>
 
+namespace hfm {
+    class Model;
+}
+
 static const unsigned int FST_VERSION = 1;
 static const QString FST_VERSION_FIELD = "version";
 static const QString NAME_FIELD = "name";
@@ -37,6 +41,9 @@ static const QString JOINT_FIELD = "joint";
 static const QString BLENDSHAPE_FIELD = "bs";
 // lines like bs's for the face shapes only face tracking (or a script) moves: the procedural face leaves them alone
 static const QString FACE_TRACKING_BLENDSHAPE_FIELD = "faceTrackingBs";
+// "bsGain = <blendshape> = <gain>": how much of the procedural face's movement the blendshape takes
+// (hfm::Model::proceduralBlendshapeGains), as Import Avatar writes it with the bs lines for an ARKit face
+static const QString BLENDSHAPE_GAIN_FIELD = "bsGain";
 static const QString SCRIPT_FIELD = "script";
 static const QString JOINT_NAME_MAPPING_FIELD = "jointMap";
 static const QString MATERIAL_MAPPING_FIELD = "materialMap";
@@ -84,6 +91,8 @@ public:
     /// The engine's face shapes to the model's own, as the serializers read them: the bs lines and the faceTrackingBs
     /// lines together, keyed by the engine's name, each value [model's shape, weight].
     static hifi::VariantMultiHash getBlendshapeMappings(const hifi::VariantMultiHash& mapping);
+    // the .fst's bsGain lines over the model's own gains
+    static void applyBlendshapeGains(const hifi::VariantMultiHash& mapping, hfm::Model& model);
 
     /// The engine's names that only faceTrackingBs lines map (no bs line names them).
     static QStringList getFaceTrackingOnlyBlendshapes(const hifi::VariantMultiHash& mapping);

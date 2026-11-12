@@ -1489,7 +1489,7 @@ void Model::setURL(const QUrl& url) {
     invalidCalculatedMeshBoxes();
     deleteGeometry();
 
-    auto resource = DependencyManager::get<ModelCache>()->getModelResource(url);
+    auto resource = DependencyManager::get<ModelCache>()->getModelResource(url, GeometryMappingPair(QUrl(), _resourceMapping));
     if (resource) {
         resource->setLoadPriority(this, _loadingPriority);
         _renderWatcher.setResource(resource);

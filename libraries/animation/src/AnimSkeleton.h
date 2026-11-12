@@ -75,6 +75,10 @@ public:
     // Unity's humanoid frames for this skeleton ("humanoid = {...}" in the .fst), for muscle clips.
     const QVariantMap& getHumanoidMuscleFrames() const { return _humanoid.muscleFrames; }
     const QVariantList& getRotationConstraints() const { return _humanoid.rotationConstraints; }
+    // The rotation put after a joint's own in its default pose so its axes are the ones animations expect (an .fst's
+    // jointRotationOffset2, hfm::Model::jointRotationOffsets); identity where it has none. The model's own axes for a
+    // joint are its rig rotation times the inverse of this.
+    glm::quat getJointRotationOffset(int jointIndex) const { return _jointRotationOffsets.value(jointIndex, glm::quat()); }
     const HFMCluster getClusterBindMatricesOriginalValues(int skinDeformerIndex, int clusterIndex) const { return _clusterBindMatrixOriginalValues[skinDeformerIndex][clusterIndex]; }
 
 protected:
@@ -93,6 +97,7 @@ protected:
     QHash<QString, int> _jointIndicesByName;
     std::vector<std::vector<HFMCluster>> _clusterBindMatrixOriginalValues;
     glm::mat4 _geometryOffset;
+    QMap<int, glm::quat> _jointRotationOffsets;
     hfm::HumanoidSettings _humanoid;
 
     // no copies

@@ -142,6 +142,14 @@ public:
 
     void initJointStates(const HFMModel& hfmModel, const glm::mat4& modelOffset);
     void reset(const HFMModel& hfmModel);
+    // how far the model's eyes turn for the gaze's turn (hfm::Model::eyeLookScale)
+    float getEyeLookScale() const { return _eyeLookScale; }
+    // how much of its eye-look expressions per radian of gaze, where its eyes look by expression (hfm::Model's)
+    float getEyeLookExpressionScale() const { return _eyeLookExpressionScale; }
+    // how much of the procedural face's movement a blendshape takes (hfm::Model::proceduralBlendshapeGains)
+    float getProceduralBlendshapeGain(int index) const {
+        return index >= 0 && index < _proceduralBlendshapeGains.size() ? _proceduralBlendshapeGains[index] : 1.0f;
+    }
     bool jointStatesEmpty() const;
     int getJointStateCount() const;
     int indexOfJoint(const QString& jointName) const;
@@ -496,6 +504,30 @@ protected:
     bool _headEnabled { false };
     glm::quat _headTurn;  // ControllerParameters::headTurn, while the head has no IK target
     bool _computeNetworkAnimation { false };
+
+    // A model's node constraints (hfm::NodeConstraint) by joint index, with the rest rotations they turn from, in the
+    // model's own joint axes (those before any joint rotation offset), as its constraints were made in them
+    struct NodeConstraint {
+        hfm::NodeConstraint::Type type { hfm::NodeConstraint::Type::Rotation };
+        int joint { -1 };
+        int source { -1 };
+        glm::vec3 axis;
+        float weight { 1.0f };
+        glm::quat sourceRestLocal;
+        glm::quat jointRestLocal;
+        // whether a constraint before it turns this one's source or the joint's parent, which then need their absolute
+        // poses again before it's applied
+        bool afterTurnedJoint { false };
+    };
+    std::vector<NodeConstraint> _nodeConstraints;
+    float _eyeLookScale { 1.0f };  // the model's (hfm::Model::eyeLookScale and eyeLookMaxAngle)
+    float _eyeLookMaxAngle { 25.0f * RADIANS_PER_DEGREE };
+    float _eyeLookExpressionScale { 0.0f };
+    QVector<float> _proceduralBlendshapeGains;
+    void initNodeConstraints(const HFMModel& hfmModel);
+    void applyNodeConstraints(AnimPoseVec& relativePoses, AnimPoseVec& absolutePoses) const;
+    glm::quat modelAxesRotation(const AnimPoseVec& absolutePoses, int joint) const;
+    glm::quat modelAxesLocalRotation(const AnimPoseVec& absolutePoses, int joint) const;
     bool _sendNetworkNode { false };
 
     AnimContext _lastContext;

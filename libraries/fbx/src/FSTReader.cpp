@@ -16,6 +16,8 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 
+#include <BlendshapeConstants.h>
+#include <hfm/HFM.h>
 #include <NetworkAccessManager.h>
 #include <SharedUtil.h>
 #include <hfm/ModelFormatLogging.h>
@@ -101,6 +103,23 @@ hifi::VariantMultiHash FSTReader::readMapping(const QByteArray& data) {
     hifi::VariantMultiHash mapping = FSTReader::parseMapping(&buffer);
     fixUpLegacyBlendshapes(mapping);
     return mapping;
+}
+
+void FSTReader::applyBlendshapeGains(const hifi::VariantMultiHash& mapping, hfm::Model& model) {
+    const hifi::VariantMultiHash gains = hifi::multiHashFromVariant(mapping.value(BLENDSHAPE_GAIN_FIELD));
+    for (auto it = gains.constBegin(); it != gains.constEnd(); ++it) {
+        const int index = BLENDSHAPE_LOOKUP_MAP.value(it.key(), -1);
+        bool ok = false;
+        const float gain = it.value().toFloat(&ok);
+        if (index < 0 || !ok) {
+            continue;
+        }
+        if (model.proceduralBlendshapeGains.size() <= index) {
+            model.proceduralBlendshapeGains.resize((int)Blendshapes::BlendshapeCount);
+            model.proceduralBlendshapeGains.fill(1.0f);
+        }
+        model.proceduralBlendshapeGains[index] = glm::clamp(gain, 0.0f, 4.0f);
+    }
 }
 
 hifi::VariantMultiHash FSTReader::getBlendshapeMappings(const hifi::VariantMultiHash& mapping) {
