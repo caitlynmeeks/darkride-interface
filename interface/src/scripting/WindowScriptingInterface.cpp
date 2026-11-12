@@ -23,12 +23,14 @@
 #include <plugins/PluginManager.h>
 #include <display-plugins/CompositorHelper.h>
 #include <AddressManager.h>
+#include <ScriptCaller.h>
 #include "AndroidHelper.h"
 #include "Application.h"
 #include "DomainHandler.h"
 #include "MainWindow.h"
 #include "Menu.h"
 #include "OffscreenUi.h"
+#include "ui/WorldDialogs.h"
 #include "editor/Editor.h"
 
 static const QString DESKTOP_LOCATION = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
@@ -108,6 +110,11 @@ void WindowScriptingInterface::raise() {
 /// \param const QString& message message to display
 /// \return QScriptValue::UndefinedValue
 void WindowScriptingInterface::alert(const QString& message) {
+    if (ScriptCaller::isWorld()) {
+        // a world's: named for its world, on security's terms (ui/WorldDialogs.h); on the main thread
+        QMetaObject::invokeMethod(_worldDialogs, "alert", Q_ARG(QString, message));
+        return;
+    }
     OffscreenUi::asyncWarning("", message, QMessageBox::Ok, QMessageBox::Ok);
 }
 
@@ -115,6 +122,15 @@ void WindowScriptingInterface::alert(const QString& message) {
 /// \param const QString& message message to display
 /// \return `true` if 'Yes' was clicked, `false` otherwise
 QVariant WindowScriptingInterface::confirm(const QString& message) {
+    if (ScriptCaller::isWorld()) {
+        bool yes = false;
+        if (QThread::currentThread() == thread()) {
+            yes = _worldDialogs->confirm(message);
+        } else {
+            BLOCKING_INVOKE_METHOD(_worldDialogs, "confirm", Q_RETURN_ARG(bool, yes), Q_ARG(QString, message));
+        }
+        return QVariant(yes);
+    }
     return QVariant((QMessageBox::Yes == OffscreenUi::question("", message, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)));
 }
 
@@ -139,8 +155,20 @@ static QVariantMap promptProperties(const QVariantMap& options) {
 /// \param const QVariantMap& options how the prompt looks (Window.PromptOptions)
 /// \return the text in the text box if the dialog was accepted, `null` otherwise.
 QVariant WindowScriptingInterface::prompt(const QString& message, const QString& defaultText, const QVariantMap& options) {
-    QString result = DependencyManager::get<OffscreenUi>()->inputDialog(OffscreenUi::ICON_NONE, "", message, defaultText,
-                                                                        promptProperties(options)).toString();
+    QString result;
+    if (ScriptCaller::isWorld()) {
+        QVariant answer;
+        if (QThread::currentThread() == thread()) {
+            answer = _worldDialogs->prompt(message, defaultText, promptProperties(options));
+        } else {
+            BLOCKING_INVOKE_METHOD(_worldDialogs, "prompt", Q_RETURN_ARG(QVariant, answer), Q_ARG(QString, message),
+                                   Q_ARG(QString, defaultText), Q_ARG(QVariantMap, promptProperties(options)));
+        }
+        result = answer.toString();
+    } else {
+        result = DependencyManager::get<OffscreenUi>()->inputDialog(OffscreenUi::ICON_NONE, "", message, defaultText,
+                                                                    promptProperties(options)).toString();
+    }
     if (result.isEmpty()) {
         return nullResult();
     }
@@ -152,8 +180,24 @@ QVariant WindowScriptingInterface::prompt(const QString& message, const QString&
 /// \param const QString& defaultText default text in the text box
 /// \param const QVariantMap& options how the prompt looks (Window.PromptOptions)
 void WindowScriptingInterface::promptAsync(const QString& message, const QString& defaultText, const QVariantMap& options) {
-    ModalDialogListener* dlg = DependencyManager::get<OffscreenUi>()->inputDialogAsync(OffscreenUi::ICON_NONE, "", message,
-                                                                                      defaultText, promptProperties(options));
+    ModalDialogListener* dlg = nullptr;
+    if (ScriptCaller::isWorld()) {
+        if (QThread::currentThread() == thread()) {
+            dlg = _worldDialogs->promptAsync(message, defaultText, promptProperties(options));
+        } else {
+            BLOCKING_INVOKE_METHOD(_worldDialogs, "promptAsync", Q_RETURN_ARG(ModalDialogListener*, dlg),
+                                   Q_ARG(QString, message), Q_ARG(QString, defaultText),
+                                   Q_ARG(QVariantMap, promptProperties(options)));
+        }
+        if (!dlg) {
+            // refused: answered as a Cancel, on a later turn as an answer comes
+            QMetaObject::invokeMethod(this, [this] { emit promptTextChanged(QString()); }, Qt::QueuedConnection);
+            return;
+        }
+    } else {
+        dlg = DependencyManager::get<OffscreenUi>()->inputDialogAsync(OffscreenUi::ICON_NONE, "", message, defaultText,
+                                                                      promptProperties(options));
+    }
     connect(dlg, &ModalDialogListener::response, this, [=] (QVariant result) {
         disconnect(dlg, &ModalDialogListener::response, this, nullptr);
         emit promptTextChanged(result.toString());

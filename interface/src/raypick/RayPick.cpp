@@ -13,6 +13,7 @@
 #include "scripting/HMDScriptingInterface.h"
 #include "DependencyManager.h"
 #include "PickManager.h"
+#include <WorldPicks.h>
 
 PickRay RayPick::getMathematicalPick() const {
     if (!parentTransform) {
@@ -65,9 +66,13 @@ PickResultPointer RayPick::getEntityIntersection(const PickRay& pick) {
         searchFilter.setFlag(PickFilter::PRECISE, false);
     }
 
-    RayToEntityIntersectionResult entityRes =
-        DependencyManager::get<EntityScriptingInterface>()->evalRayIntersectionVector(pick, searchFilter,
-            getIncludeItemsAs<EntityItemID>(), getIgnoreItemsAs<EntityItemID>());
+    auto cast = [&](const QVector<EntityItemID>& ignore) {
+        return DependencyManager::get<EntityScriptingInterface>()->evalRayIntersectionVector(pick, searchFilter,
+            getIncludeItemsAs<EntityItemID>(), ignore);
+    };
+    // a pick a world's script made passes through what is hidden from worlds' scripts; every other pick casts once
+    RayToEntityIntersectionResult entityRes = isMadeByWorld() ?
+        WorldPicks::castPastHidden(getIgnoreItemsAs<EntityItemID>(), cast) : cast(getIgnoreItemsAs<EntityItemID>());
     if (entityRes.intersects) {
         IntersectionType type = IntersectionType::ENTITY;
         if (getFilter().doesPickLocalEntities()) {

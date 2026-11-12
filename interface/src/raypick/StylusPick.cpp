@@ -19,6 +19,7 @@
 #include <controllers/UserInputMapper.h>
 
 #include <EntityTreeElement.h>
+#include <WorldPicks.h>
 
 using namespace bilateral;
 float StylusPick::WEB_STYLUS_LENGTH = 0.2f;
@@ -150,6 +151,11 @@ PickResultPointer StylusPick::getEntityIntersection(const StylusTip& pick) {
         }
 
         if (!EntityTreeElement::checkFilterSettings(entity, getFilter())) {
+            continue;
+        }
+
+        // a pick a world's script made passes through what is hidden from worlds' scripts
+        if (isMadeByWorld() && WorldPicks::isHiddenFromWorlds(target)) {
             continue;
         }
 

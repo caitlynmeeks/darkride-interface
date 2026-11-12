@@ -11,6 +11,7 @@
 
 #include "RayPickScriptingInterface.h"
 
+#include <WorldPicks.h>
 #include <QVariant>
 #include "GLMHelpers.h"
 
@@ -33,12 +34,8 @@ void RayPickScriptingInterface::removeRayPick(unsigned int uid) {
 }
 
 QVariantMap RayPickScriptingInterface::getPrevRayPickResult(unsigned int uid) {
-    QVariantMap result;
-    auto pickResult = DependencyManager::get<PickManager>()->getPrevPickResult(uid);
-    if (pickResult) {
-        result = pickResult->toVariantMap();
-    }
-    return result;
+    // as the caller may read it: for a world's script, a hit on an entity it may not read is no hit
+    return WorldPicks::resultForCaller(DependencyManager::get<PickManager>()->getPrevPickResult(uid));
 }
 
 void RayPickScriptingInterface::setPrecisionPicking(unsigned int uid, bool precisionPicking) {

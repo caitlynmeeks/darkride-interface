@@ -418,7 +418,8 @@ void OffscreenQmlSurface::onRootCreated() {
     _audioOutputUpdateTimer.setSingleShot(true);
 #endif
 
-    if (getRootItem()->objectName() == "tabletRoot") {
+    // the system tablet's root: only a surface the app made for its own tablet (setAppTablet)
+    if (_appTablet && getRootItem()->objectName() == "tabletRoot") {
         getSurfaceContext()->setContextProperty("tabletRoot", QVariant::fromValue(getRootItem()));
         auto tabletScriptingInterface = DependencyManager::get<TabletScriptingInterface>();
         tabletScriptingInterface->setQmlTabletRoot("com.highfidelity.interface.tablet.system", this);
@@ -499,6 +500,20 @@ void OffscreenQmlSurface::hoverBeginEvent(const PointerEvent& event, OffscreenTo
 
 void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, OffscreenTouchDevice& device) {
     _activeTouchPoints[event.getID()].hovering = false;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: a pointer that leaves the surface with its button down ends its press here, where it last was. A desktop
+    // mouse dragged off a Web entity is released over something else, and no release would reach this surface: its
+    // button or slider would stay pressed. (A laser's trigger end still comes back afterwards: a release with nothing
+    // pressed, which does nothing.)
+    if (_activeTouchPoints[event.getID()].pressed && getRootItem() && !isPaused()) {
+        const QPointF lastPoint = _activeTouchPoints[event.getID()].touchPoint.scenePosition();
+        QMouseEvent mouseEvent(QEvent::MouseButtonRelease, lastPoint, lastPoint, lastPoint, Qt::LeftButton, Qt::NoButton,
+                               event.getKeyboardModifiers(), mouseDevice());
+        mouseEvent.ignore();
+        QCoreApplication::sendEvent(getWindow(), &mouseEvent);
+        _activeTouchPoints[event.getID()].pressed = false;
+    }
+#endif
     // Send a fake mouse move event if
     // - the event told us to
     // - we aren't pressing with this ID
@@ -511,6 +526,24 @@ void OffscreenQmlSurface::hoverEndEvent(const PointerEvent& event, OffscreenTouc
         updateCursor("default");
     }
 }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+// Qt 6 keeps a mouse's pressed point and the item that grabbed it on the event's DEVICE, not on the window. A mouse event
+// made without a device is the primary mouse's: a page pressed that way holds the real mouse's grab, and the next real
+// mouse release anywhere in the application (the desktop overlay forwards its own, in the overlay's coordinates) is
+// delivered to that page, at the wrong place, before the release meant for it. So each surface sends the mouse events
+// it makes as a device of its own.
+QPointingDevice* OffscreenQmlSurface::mouseDevice() {
+    Q_ASSERT(QThread::currentThread() == thread());   // made as a child of the surface
+    if (!_mouseDevice) {
+        _mouseDevice = new QPointingDevice("OffscreenQmlSurfaceMouse", 0, QInputDevice::DeviceType::Mouse,
+                                           QPointingDevice::PointerType::Generic,
+                                           QInputDevice::Capability::Position | QInputDevice::Capability::Hover, 1, 3,
+                                           QString(), QPointingDeviceUniqueId(), this);
+    }
+    return _mouseDevice;
+}
+#endif
 
 bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, OffscreenTouchDevice& device, bool release) {
 
@@ -570,13 +603,7 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
             _activeTouchPoints[event.getID()].pressed = false;
         }
     }
-    QList<QEventPoint> touchPoints;
-    for (const auto& entry : _activeTouchPoints) {
-        touchPoints.push_back(entry.second.touchPoint);
-    }
-    QTouchEvent touchEvent(touchType, &device, event.getKeyboardModifiers(), touchPoints);
-    touchEvent.setTimestamp((ulong)QDateTime::currentMSecsSinceEpoch());
-    touchEvent.ignore();
+    Q_UNUSED(device);
 #else
     {
         QTouchEvent::TouchPoint point;
@@ -628,8 +655,13 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
     bool eventsAccepted = true;
 
     if (event.getType() == PointerEvent::Move) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        QMouseEvent mouseEvent(QEvent::MouseMove, windowPoint, windowPoint, windowPoint, button, buttons,
+                               event.getKeyboardModifiers(), mouseDevice());
+#else
         QMouseEvent mouseEvent(QEvent::MouseMove, windowPoint, windowPoint, windowPoint, button, buttons,
                                event.getKeyboardModifiers());
+#endif
         // TODO - this line necessary for the QML Tooltop to work (which is not currently being used), but it causes interface to crash on launch on a fresh install
         // need to investigate into why this crash is happening.
         //_qmlContext->setContextProperty("lastMousePosition", windowPoint);
@@ -640,6 +672,24 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
         }
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    // Qt 6: a touch event made here and sent straight to the window reaches its items at (0, 0), not at its point (vr's
+    // touch-check, 2026-11-10: every press of a laser or a desktop mouse on a Web entity in "touch" input landed at the
+    // page's top-left corner, QML and web pages alike, while the mouse move sent above was in place). So the press and the
+    // release go as mouse events at the point, as "mouse" input sends them, and no touch events are sent. They go as this
+    // surface's own mouse device (mouseDevice()), never as the real mouse.
+    if (state == PRESSED || state == RELEASED) {
+        QMouseEvent mouseEvent(state == PRESSED ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease, windowPoint,
+                               windowPoint, windowPoint, Qt::LeftButton, state == PRESSED ? Qt::LeftButton : Qt::NoButton,
+                               event.getKeyboardModifiers(), mouseDevice());
+        mouseEvent.ignore();
+        if (QCoreApplication::sendEvent(getWindow(), &mouseEvent)) {
+            eventSent = true;
+            eventsAccepted &= mouseEvent.isAccepted();
+        }
+    }
+    Q_UNUSED(touchType);
+#else
     if (touchType == QEvent::TouchBegin) {
         _touchBeginAccepted = QCoreApplication::sendEvent(getWindow(), &touchEvent);
         if (_touchBeginAccepted) {
@@ -652,6 +702,7 @@ bool OffscreenQmlSurface::handlePointerEvent(const PointerEvent& event, Offscree
             eventsAccepted &= touchEvent.isAccepted();
         }
     }
+#endif
 
     if (removeTouchPoint) {
         _activeTouchPoints.erase(event.getID());

@@ -38,6 +38,17 @@ TabletModalWindow {
         return OffscreenUi.waitForMessageBoxResult(root);
     }
 
+    // as MessageDialog's: Escape's answer for a world's box, and its answer as the visitor leaves the world
+    function dismiss() {
+        if (panel.cancelButton) {
+            panel.reject();
+        } else if (panel.defaultButton) {
+            panel.accept();
+        } else {
+            click(OriginalDialogs.StandardButton.NoButton);
+        }
+    }
+
     property string text
     property string informativeText
     property string detailedText
@@ -47,6 +58,10 @@ TabletModalWindow {
     property int clickedButton: OriginalDialogs.StandardButton.NoButton
     property var buttonTexts: ({})
     property int destructiveButton: OriginalDialogs.StandardButton.NoButton
+    // a world's script's box, as MessageDialog's (interface's ui/WorldDialogs.h)
+    property string world: ""
+    property bool offerBlock: false
+    readonly property bool blockWorld: blockCheck.checked
 
     AlertPanel {
         id: panel
@@ -58,7 +73,17 @@ TabletModalWindow {
         text: StandardButtons.joined(root.text, root.informativeText)
         detailedText: root.detailedText
         buttons: StandardButtons.list(root.buttons, root.defaultButton, root.destructiveButton, root.buttonTexts)
+        world: root.world
         onClicked: root.click(value)
+
+        AlertCheck {
+            id: blockCheck
+            objectName: "blockWorldCheck"
+            unit: panel.unit
+            visible: root.offerBlock
+            width: parent.width
+            text: "Don't let this world show more dialogs"
+        }
     }
 
     Keys.onPressed: {
@@ -74,7 +99,11 @@ TabletModalWindow {
             case Qt.Key_Escape:
             case Qt.Key_Back:
                 event.accepted = true;
-                panel.reject();
+                if (root.world !== "") {
+                    root.dismiss();
+                } else {
+                    panel.reject();
+                }
                 break;
         }
     }

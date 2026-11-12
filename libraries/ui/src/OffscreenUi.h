@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <functional>
 
+#include <QtCore/QPointer>
 #include <QtCore/QVariant>
 #include <QtCore/QQueue>
 #include <QtWidgets/QFileDialog>
@@ -85,6 +86,9 @@ public:
     QObject* getFlags();
     Q_INVOKABLE bool isPointOnDesktopWindow(QVariant point);
     QQuickItem* getDesktop();
+    // the VR screen (interface's Panels): while it's up, dialogs made on the desktop's QML show over its middle slot
+    // (this host item) instead of the desktop, which in the headset is the HUD; null puts them back
+    void setDialogHost(QQuickItem* host);
     QObject* getRootMenu();
     enum Icon {
         ICON_NONE = 0,
@@ -100,6 +104,9 @@ public:
     Q_INVOKABLE ModalDialogListener* asyncMessageBox(Icon icon, const QString& title, const QString& text, QMessageBox::StandardButtons buttons, QMessageBox::StandardButton defaultButton);
     // Must be called from the main thread
     QQuickItem* createMessageBox(Icon icon, const QString& title, const QString& text, QMessageBox::StandardButtons buttons, QMessageBox::StandardButton defaultButton);
+    // The same, with more of the box's properties set as it opens (a world's dialog: "world", "offerBlock"). Main thread
+    QQuickItem* createMessageBox(Icon icon, const QString& title, const QString& text, QMessageBox::StandardButtons buttons,
+                                 QMessageBox::StandardButton defaultButton, const QVariantMap& properties);
     // Must be called from the main thread
     Q_INVOKABLE int waitForMessageBoxResult(QQuickItem* messageBox);
 
@@ -264,6 +271,9 @@ signals:
 //    void inputDialogResponse(QVariant response);
     void desktopReady();
     void keyboardFocusActive();
+    /// a message box, prompt, file or asset dialog has just been made (main thread): the VR screen comes up for it
+    /// (interface's Panels); a world's dialog has its "world" property set
+    void dialogShown(QQuickItem* dialog);
 
 public slots:
     void removeModalDialog(QObject* modal);
@@ -283,6 +293,9 @@ private:
     ModalDialogListener* assetDialogAsync(const QVariantMap& properties);
 
     QQuickItem* _desktop { nullptr };
+    QPointer<QQuickItem> _dialogHost;
+    QList<QPointer<QQuickItem>> _shownDialogs;   // made on the desktop's QML and not yet answered (deleted ones go null)
+    QQuickItem* placeDialog(QQuickItem* dialog);   // into the dialog host, if there is one
     QList<QObject*> _modalDialogListeners;
     std::unordered_map<int, bool> _pressedKeys;
     VrMenu* _vrMenu { nullptr };

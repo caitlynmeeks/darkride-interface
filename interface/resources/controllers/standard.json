@@ -116,6 +116,8 @@
 		},
 
         { "from": "Standard.Back", "to": "Actions.CycleCamera" },
+        { "from": "Standard.LeftSecondaryThumb", "peek": true, "when": "Application.RightHandDominant", "to": "Actions.ContextMenu" },
+        { "from": "Standard.RightSecondaryThumb", "peek": true, "when": "Application.LeftHandDominant", "to": "Actions.ContextMenu" },
         { "from": "Standard.Start", "to": "Actions.ContextMenu" },
 
         { "from": "Standard.LT", "to": "Actions.LeftHandClick" },

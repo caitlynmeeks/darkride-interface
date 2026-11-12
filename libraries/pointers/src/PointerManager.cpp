@@ -12,10 +12,12 @@
 
 #include <ScriptCaller.h>
 
+#include "WorldPicks.h"
+
 std::shared_ptr<Pointer> PointerManager::find(unsigned int uid) const {
     return resultWithReadLock<std::shared_ptr<Pointer>>([&] {
         auto itr = _pointers.find(uid);
-        if (itr != _pointers.end()) {
+        if (itr != _pointers.end() && WorldPicks::callerMayName(_worldPointers, uid)) {
             return itr->second;
         }
         return std::shared_ptr<Pointer>();
@@ -36,6 +38,7 @@ unsigned int PointerManager::addPointer(std::shared_ptr<Pointer> pointer) {
                 _pointers[result] = pointer;
                 if (int world = ScriptCaller::world()) {
                     _worldPointers[result] = world;
+                    pointer->setMadeByWorld();
                 }
             }
         });
@@ -46,6 +49,9 @@ unsigned int PointerManager::addPointer(std::shared_ptr<Pointer> pointer) {
 void PointerManager::removePointer(unsigned int uid) {
     std::shared_ptr<Pointer> removed;  // destroyed outside the lock: its destructor removes its pick and visuals
     withWriteLock([&] {
+        if (!WorldPicks::callerMayName(_worldPointers, uid)) {
+            return;
+        }
         auto it = _pointers.find(uid);
         if (it != _pointers.end()) {
             removed = it->second;
@@ -104,7 +110,9 @@ QVector<unsigned int> PointerManager::getPointers() const {
     QVector<unsigned int> pointers;
     withReadLock([&] {
         for (auto it = _pointers.cbegin(); it != _pointers.cend(); ++it) {
-            pointers.push_back(it->first);
+            if (WorldPicks::callerMayName(_worldPointers, it->first)) {
+                pointers.push_back(it->first);
+            }
         }
     });
     return pointers;
@@ -190,7 +198,8 @@ void PointerManager::setLength(unsigned int uid, float length) const {
 
 void PointerManager::setLockEndUUID(unsigned int uid, const QUuid& objectID, bool isAvatar, const glm::mat4& offsetMat) const {
     auto pointer = find(uid);
-    if (pointer) {
+    // a world's pointer doesn't lock onto an entity the world may not read (an avatar's id is no entity's)
+    if (pointer && (isAvatar || WorldPicks::callerMayRead(objectID))) {
         pointer->setLockEndUUID(objectID, isAvatar, offsetMat);
     }
 }

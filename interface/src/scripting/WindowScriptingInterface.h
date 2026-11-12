@@ -21,6 +21,8 @@
 
 #include <DependencyManager.h>
 
+#include "ui/WorldDialogs.h"
+
 /**jsdoc
  * The <code>Window</code> API provides various facilities not covered elsewhere, including: window dimensions, window focus, 
  * camera view, announcements, user connections, common dialog boxes, snapshots, file import, domain navigation, domain changes, 
@@ -86,6 +88,12 @@ public slots:
     /**jsdoc
      * Displays a dialog with the specified message and an "OK" button. The dialog is non-modal; the script continues without
      * waiting for a user response.
+     * <p>A world's script (an entity's script, not one the user runs) gets a dialog of the world's own: titled "&lt;world&gt;
+     * asks", its message shown as plain text, in a look unlike the app's. One of a world's dialogs shows at a time: while one
+     * is open, after three in 30 seconds, or once the user has ticked "Don't let this world show more dialogs" (offered from
+     * the second), the call is refused as if the user had answered Cancel (<code>confirm</code> gives <code>false</code>,
+     * <code>prompt</code> <code>null</code>). Leaving the world answers Cancel on its open dialog. The same holds for
+     * {@link Window.confirm|confirm}, {@link Window.prompt|prompt} and {@link Window.promptAsync|promptAsync}.</p>
      * @function Window.alert
      * @param {string} [message=""] - The message to display.
      * @example <caption>Display a friendly greeting.</caption>
@@ -955,6 +963,7 @@ private:
     int createMessageBox(QString title, QString text, int buttons, int defaultButton);
     QHash<int, QQuickItem*> _messageBoxes;
     int _lastMessageBoxID{ -1 };
+    WorldDialogs* _worldDialogs { new WorldDialogs(this) };   // a world's script's dialogs, on security's terms
 };
 
 #endif // hifi_WindowScriptingInterface_h

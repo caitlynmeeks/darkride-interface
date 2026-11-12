@@ -29,6 +29,9 @@ public:
 
     unsigned int addPick(PickQuery::PickType type, const std::shared_ptr<PickQuery> pick);
     void removePick(unsigned int uid);
+    /// May the calling script name this pick: any caller but a world's script may; a world's script only a pick a
+    /// world's script made (WorldPicks::callerMayName)
+    bool callerMayName(unsigned int uid) const;
     /// The picks the world `world`'s scripts made (tagged with ScriptCaller::world() when added) go: its scripts have
     /// stopped. Returns how many went.
     int removeWorldPicks(int world);
@@ -66,7 +69,9 @@ public:
     static const unsigned int INVALID_PICK_ID { 0 };
 
     unsigned int getPerFrameTimeBudget() const { return _perFrameTimeBudget; }
-    void setPerFrameTimeBudget(unsigned int numUsecs) { _perFrameTimeBudget = numUsecs; }
+    /// How long the picks may take each frame: everyone's picks share it, so a world's script doesn't set it (its
+    /// write is ignored); the app and the visitor's own scripts do.
+    void setPerFrameTimeBudget(unsigned int numUsecs);
 
     bool getForceCoarsePicking() { return _forceCoarsePicking; }
 
