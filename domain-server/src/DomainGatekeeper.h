@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <QtCore/QJsonObject>
 #include <QtCore/QObject>
 #include <QtNetwork/QNetworkReply>
 
@@ -50,11 +51,13 @@ public slots:
     void processICEPingReplyPacket(QSharedPointer<ReceivedMessage> message);
     void processICEPeerInformationPacket(QSharedPointer<ReceivedMessage> message);
 
-    void publicKeyJSONCallback(QNetworkReply* requestReply);
-    void publicKeyJSONErrorCallback(QNetworkReply* requestReply);
+    // each answer is filed under the name its request carried (account_name::requestData), never one read back
+    // from an address
+    void publicKeyJSONCallback(QNetworkReply* requestReply, const QJsonObject& callbackData);
+    void publicKeyJSONErrorCallback(QNetworkReply* requestReply, const QJsonObject& callbackData);
 
-    void getIsGroupMemberJSONCallback(QNetworkReply* requestReply);
-    void getIsGroupMemberErrorCallback(QNetworkReply* requestReply);
+    void getIsGroupMemberJSONCallback(QNetworkReply* requestReply, const QJsonObject& callbackData);
+    void getIsGroupMemberErrorCallback(QNetworkReply* requestReply, const QJsonObject& callbackData);
 
     void getDomainOwnerFriendsListJSONCallback(QNetworkReply* requestReply);
     void getDomainOwnerFriendsListErrorCallback(QNetworkReply* requestReply);
@@ -73,6 +76,7 @@ private slots:
 private:
     SharedNodePointer processAssignmentConnectRequest(const NodeConnectionData& nodeConnection,
                                                       const PendingAssignedNodeData& pendingAssignment);
+    // username: the connect request's name once checked (an account's name, lower-cased), or empty for none
     SharedNodePointer processAgentConnectRequest(const NodeConnectionData& nodeConnection,
                                                  const QString& username,
                                                  const QByteArray& usernameSignature);
@@ -125,6 +129,10 @@ private:
     QHash<QString, bool> _inFlightPublicKeyRequests; // keep track of keys we've asked for (and if it was optimistic)
     QSet<QString> _domainOwnerFriends; // keep track of friends of the domain owner
     QSet<QString> _inFlightGroupMembershipsRequests; // keep track of which we've already asked for
+
+    // connect requests dropped for a name that can't be an account's, logged at most once every 10 s
+    quint64 _badNameLastLoggedUsecs { 0 };
+    int _badNamesSinceLogged { 0 };
 
     NodePermissions setPermissionsForUser(bool isLocalUser, QString verifiedUsername, const QHostAddress& senderAddress, 
                                           const QString& hardwareAddress, const QUuid& machineFingerprint);
