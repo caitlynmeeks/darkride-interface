@@ -8,6 +8,7 @@
 
 #include "PointerScriptingInterface.h"
 
+#include <WorldPicks.h>
 #include <QtCore/QVariant>
 #include <GLMHelpers.h>
 #include <ScriptCaller.h>
@@ -545,10 +546,6 @@ void PointerScriptingInterface::editRenderState(unsigned int uid, const QString&
 }
 
 QVariantMap PointerScriptingInterface::getPrevPickResult(unsigned int uid) const { 
-    QVariantMap result;
-    auto pickResult = DependencyManager::get<PointerManager>()->getPrevPickResult(uid);
-    if (pickResult) {
-        result = pickResult->toVariantMap();
-    }
-    return result;
+    // as the caller may read it: for a world's script, a hit on an entity it may not read is no hit
+    return WorldPicks::resultForCaller(DependencyManager::get<PointerManager>()->getPrevPickResult(uid));
 }

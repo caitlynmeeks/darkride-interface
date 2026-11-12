@@ -616,6 +616,11 @@ public:
     AvatarData();
     virtual ~AvatarData();
 
+    // The default avatar (Caity, 11-10: "lightlings are the default"): the Lightling at its fixed web address, the same
+    // address a person wearing the default sends (MyAvatar::defaultAvatarURL). What every viewer shows for a blank
+    // address (an avatar worn from its owner's computer, a body with none of its own) and for a model that fails to
+    // load. A client reads the folder from its own copy (MyAvatar::useBuiltInDefaultAvatar).
+    static const QString DEFAULT_AVATAR_FOLDER_URL;
     static void randomizeDefaultFullAvatarModelUrl();
     static const QUrl& defaultFullAvatarModelUrl();
 

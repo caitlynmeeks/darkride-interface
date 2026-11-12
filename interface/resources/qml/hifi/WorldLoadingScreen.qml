@@ -152,6 +152,9 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight
             text: root.world
+            // a world's name, its author and the status as written, never formatting (only the app's own words are
+            // shown any other way)
+            textFormat: Text.PlainText
             visible: text !== ""
             color: "white"
             font.pixelSize: 40
@@ -163,6 +166,7 @@ Item {
             elide: Text.ElideRight
             topPadding: 6
             text: root.author !== "" ? "by " + root.author : ""
+            textFormat: Text.PlainText
             visible: text !== ""
             color: "#99ffffff"
             font.pixelSize: 19
@@ -219,6 +223,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             topPadding: 14
             text: root.status
+            textFormat: Text.PlainText
             color: "#8cffffff"
             font.pixelSize: 15
         }
@@ -258,6 +263,7 @@ Item {
                         id: label
                         anchors.centerIn: parent
                         text: modelData.label
+                        textFormat: Text.PlainText
                         color: "#e6ffffff"
                         font.pixelSize: 15
                         font.weight: Font.Medium

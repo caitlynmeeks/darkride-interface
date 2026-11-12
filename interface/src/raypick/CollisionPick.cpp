@@ -16,6 +16,8 @@
 #include "ScriptEngineLogging.h"
 #include "UUIDHasher.h"
 
+#include <WorldPicks.h>
+
 PickResultPointer CollisionPickResult::compareAndProcessNewResult(const PickResultPointer& newRes) {
     const std::shared_ptr<CollisionPickResult> newCollisionResult = std::static_pointer_cast<CollisionPickResult>(newRes);
 
@@ -177,12 +179,15 @@ CollisionRegion CollisionPick::getMathematicalPick() const {
     return mathPick;
 }
 
-void CollisionPick::filterIntersections(std::vector<ContactTestResult>& intersections) const {
+void CollisionPick::filterIntersections(std::vector<ContactTestResult>& intersections, bool entities) const {
     const QVector<QUuid>& ignoreItems = getIgnoreItems();
     const QVector<QUuid>& includeItems = getIncludeItems();
     bool isWhitelist = !includeItems.empty();
+    // a pick a world's script made leaves out what is hidden from worlds' scripts (asked only of the entity pass:
+    // an avatar's id is no entity's)
+    const bool leaveOutHidden = entities && isMadeByWorld();
 
-    if (!isWhitelist && ignoreItems.empty()) {
+    if (!isWhitelist && ignoreItems.empty() && !leaveOutHidden) {
         return;
     }
 
@@ -192,7 +197,8 @@ void CollisionPick::filterIntersections(std::vector<ContactTestResult>& intersec
     for (int i = 0; i < n; i++) {
         auto& intersection = intersections[i];
         const QUuid& id = intersection.foundID;
-        if (!ignoreItems.contains(id) && (!isWhitelist || includeItems.contains(id))) {
+        if (!ignoreItems.contains(id) && (!isWhitelist || includeItems.contains(id)) &&
+            !(leaveOutHidden && WorldPicks::isHiddenFromWorlds(id))) {
             filteredIntersections.push_back(intersection);
         }
     }
@@ -208,7 +214,7 @@ PickResultPointer CollisionPick::getEntityIntersection(const CollisionRegion& pi
     getShapeInfoReady(pick);
     
     auto entityIntersections = _physicsEngine->contactTest(USER_COLLISION_MASK_ENTITIES, *_mathPick.shapeInfo, pick.transform, pick.collisionGroup, pick.threshold);
-    filterIntersections(entityIntersections);
+    filterIntersections(entityIntersections, true);
     return std::make_shared<CollisionPickResult>(pick, entityIntersections, std::vector<ContactTestResult>());
 }
 
@@ -220,7 +226,7 @@ PickResultPointer CollisionPick::getAvatarIntersection(const CollisionRegion& pi
     getShapeInfoReady(pick);
     
     auto avatarIntersections = _physicsEngine->contactTest(USER_COLLISION_MASK_AVATARS, *_mathPick.shapeInfo, pick.transform, pick.collisionGroup, pick.threshold);
-    filterIntersections(avatarIntersections);
+    filterIntersections(avatarIntersections, false);
     return std::make_shared<CollisionPickResult>(pick, std::vector<ContactTestResult>(), avatarIntersections);
 }
 

@@ -1,7 +1,7 @@
 # Declare dependencies
 macro (setup_testcase_dependencies)
   # link in the shared libraries (VerifiedSandboxTests makes WebAssembly engines: the edit filter tests' list)
-  link_hifi_libraries(shared test-utils shaders octree gpu graphics fbx networking entities avatars audio animation model-networking controllers wasm-scripting script-engine)
+  link_hifi_libraries(shared test-utils shaders octree gpu graphics fbx networking entities avatars audio animation model-networking controllers pointers wasm-scripting script-engine)
   include_hifi_library_headers(hfm)
   include_hifi_library_headers(image)
   include_hifi_library_headers(ktx)

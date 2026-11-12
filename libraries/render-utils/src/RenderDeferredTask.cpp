@@ -105,6 +105,7 @@ void RenderDeferredTask::configure(const Config& config) {
 
 void RenderDeferredTask::build(JobModel& task, const render::Varying& input, render::Varying& output) {
     task.addJob<SetRenderMethod>("SetRenderMethodTask", render::Args::DEFERRED);
+    task.addJob<WarmWebBrowserPipelines>("WarmWebBrowserPipelines", false);
 
     auto fadeEffect = DependencyManager::get<FadeEffect>();
     // Prepare the ShapePipelines

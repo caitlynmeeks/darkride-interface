@@ -14,12 +14,18 @@
 #include <chrono>
 #include <thread>
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QPointer>
+
 #include <gl/Config.h>
 #include <gpu/Frame.h>
 #include <gpu/gl/GLBackend.h>
 #include <Profile.h>
 #include <shared/NsightHelpers.h>
 #include <ViewFrustum.h>
+#include <OffscreenUi.h>
+#include <ui/Menu.h>
+#include <ui-plugins/PluginContainer.h>
 
 #if defined(Q_OS_WIN)
 #undef near
@@ -143,6 +149,7 @@ void OpenXrDisplayPlugin::customizeContext() {
 
     // the session uses the present thread's context, which is current here; one kept from an earlier visit to VR is
     // used again (see uncustomizeContext)
+    _leaveAsked = false;   // a new visit to VR: a loss in it, or no new session after one, is answered again
     bool session = _runtime->createSession();
     // before the swapchains and this thread's frames: the idle frames of a session kept out of VR stop here
     _runtime->setDisplayActive(true);
@@ -246,6 +253,9 @@ bool OpenXrDisplayPlugin::beginXrFrame() {
         endXrFrame(false);
     }
     if (!_runtime->isSessionRunning() || _swapchains[0] == XR_NULL_HANDLE) {
+        if (_runtime->isSessionLost()) {
+            leaveVrAfterLoss();
+        }
         // xrWaitFrame paces the present thread; without it, don't spin
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         return false;
@@ -283,13 +293,33 @@ void OpenXrDisplayPlugin::endXrFrame(bool submitLayer) {
     _frameBegun = false;
 }
 
+void OpenXrDisplayPlugin::leaveVrAfterLoss() {
+    if (_leaveAsked.exchange(true)) {
+        return;
+    }
+    const bool restart = _runtime->needsRestart();
+    QPointer<OpenXrDisplayPlugin> self(this);
+    // on the main thread, and checked again there: nothing is switched while quitting or once another display is active
+    // (closingDown is true only late; once the app is about to quit it handles no more events, so this never runs then)
+    QMetaObject::invokeMethod(qApp, [self, restart] {
+        if (!self || !self->_container || QCoreApplication::closingDown() ||
+            self->_container->getActiveDisplayPlugin().get() != self.data()) {
+            return;
+        }
+        qCWarning(openxr) << "The headset disconnected: going back to the desktop display";
+        // the visitor's own way out of VR: Display > Desktop (the 2D display plugin's name is its menu item's)
+        self->_container->getPrimaryMenu()->triggerOption(QStringLiteral("Desktop"));
+        OffscreenUi::asyncWarning("Headset disconnected",
+            restart ? "The headset disconnected. It can be used again after Darkride restarts."
+                    : "The headset disconnected. Put it on and pick Display > OpenXR to go back.");
+    }, Qt::QueuedConnection);
+}
+
 // Present thread: begins the OpenXR frame and takes this frame's predicted head and eye poses.
 void OpenXrDisplayPlugin::updatePresentPose() {
     Parent::updatePresentPose();
 
-    if (!_runtime->pollEvents()) {
-        qCWarning(openxr) << "The OpenXR session ended; switch to another display";
-    }
+    _runtime->pollEvents();   // a lost session is marked there; beginXrFrame then leaves VR
     if (!_currentFrame || !beginXrFrame()) {
         return;
     }

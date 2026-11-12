@@ -133,6 +133,8 @@ private:
     ResourceRequest* _ktxMipRequest { nullptr };
     QByteArray _ktxHeaderData;
     QByteArray _ktxHighMipData;
+    // the smallest mips were asked for again by byte positions, after the host refused "the last N bytes"
+    bool _ktxHighMipsAskedByPosition { false };
 
     uint16_t _lowestRequestedMipLevel { NULL_MIP_LEVEL };
     uint16_t _lowestKnownPopulatedMip { NULL_MIP_LEVEL };

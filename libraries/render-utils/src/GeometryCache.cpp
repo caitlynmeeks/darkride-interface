@@ -13,6 +13,7 @@
 
 #include <qmath.h>
 #include <cmath>
+#include <atomic>
 
 #include <QtCore/QThreadPool>
 #include <QtCore/QFileInfo>
@@ -114,6 +115,7 @@ static const uint SHAPE_TEXCOORD0_OFFSET = offsetof(GeometryCache::ShapeVertex, 
 static const uint SHAPE_TANGENT_OFFSET = offsetof(GeometryCache::ShapeVertex, tangent);
 
 std::map<std::tuple<bool, bool, bool>, gpu::PipelinePointer> GeometryCache::_webPipelines;
+static std::atomic<bool> webBrowserWarmupPending { false };
 std::map<std::pair<bool, bool>, gpu::PipelinePointer> GeometryCache::_gridPipelines;
 
 void GeometryCache::computeSimpleHullPointListForShape(const int entityShape, const glm::vec3 &entityExtents, ShapeInfo::PointList &outPointList) {
@@ -2151,6 +2153,14 @@ gpu::PipelinePointer GeometryCache::getWebBrowserProgram(bool transparent, bool 
     }
 
     return _webPipelines[{ transparent, forward, sideBySide }];
+}
+
+void GeometryCache::warmWebBrowserPrograms() {
+    webBrowserWarmupPending.store(true);
+}
+
+bool GeometryCache::takeWebBrowserWarmup() {
+    return webBrowserWarmupPending.exchange(false);
 }
 
 void GeometryCache::bindSimpleProgram(gpu::Batch& batch, bool textured, bool transparent, bool unlit, bool depthBiased, bool isAntiAliased,
